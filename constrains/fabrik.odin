@@ -2,7 +2,7 @@
 package constrains
 
 
-// point_list - set of points that are moved. Last point is kept in place.
+// point_list - set of points that are moved. 0th point is kept in place.
 // length_buffer - used to populate magnitude between points, need to be at least _point_count - 1
 fabrik::proc(point_list:[]vec2, length_buffer:[]f32, target_pos:vec2, max_itterations:int, error_treshold:f32){
     _point_count:int = len(point_list)
