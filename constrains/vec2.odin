@@ -19,3 +19,11 @@ vec2_norm :: proc(a: vec2) -> vec2{
     r:f32 = 1.0 / vec2_mag(a)
     return {a.x * r, a.y * r}
 }
+
+// Useful for on-screen joystick
+vec2_constrain_distance::proc(value:vec2, anchor:vec2, radius:f32)->vec2{
+    _offset:vec2 = {value.x - anchor.x, value.y - anchor.y}
+    _distance:f32 = math.min(vec2_mag(_offset), radius)
+    _dir:vec2 = vec2_norm(_offset)
+    return {anchor.x + _dir.x * _distance, anchor.y + _dir.y * _distance}
+}
