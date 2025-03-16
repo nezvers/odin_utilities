@@ -7,6 +7,7 @@ package constrains
 fabrik::proc(point_list:[]vec2, length_buffer:[]f32, target_pos:vec2, max_itterations:int, error_treshold:f32){
     _point_count:int = len(point_list)
     assert(_point_count > 1)
+    assert(len(length_buffer) >= _point_count - 1)
     
     _total_length:f32 = calculate_lengths(point_list, length_buffer)
     _length_to_target:f32 = vec2_mag({target_pos.x - point_list[_point_count - 1].x, target_pos.y - point_list[_point_count - 1].y})
@@ -32,6 +33,7 @@ fabrik::proc(point_list:[]vec2, length_buffer:[]f32, target_pos:vec2, max_ittera
 calculate_lengths::proc(point_list:[]vec2, length_buffer:[]f32)->(total_length:f32){
     _point_count:int = len(point_list)
     assert(_point_count > 1)
+    assert(len(length_buffer) >= _point_count - 1)
     
         for i in 0..<_point_count-1{
             _distance:vec2 = {point_list[i+1].x - point_list[i].x, point_list[i+1].y - point_list[i].y}
@@ -45,6 +47,7 @@ calculate_lengths::proc(point_list:[]vec2, length_buffer:[]f32)->(total_length:f
 stretch::proc(point_list:[]vec2, length_buffer:[]f32, direction_normal:vec2){
     _point_count:int = len(point_list)
     assert(_point_count > 1)
+    assert(len(length_buffer) >= _point_count - 1)
     
     _last:int = _point_count-1
     
@@ -68,6 +71,7 @@ fabrik_itteration::proc(point_list:[]vec2, length_buffer:[]f32, target_pos:vec2,
 pull_back::proc(point_list:[]vec2, length_buffer:[]f32, pos:vec2){
     _point_count:int = len(point_list)
     assert(_point_count > 1)
+    assert(len(length_buffer) >= _point_count - 1)
     
     _p:vec2 = pos
     for i in 0..<_point_count-1{
@@ -88,6 +92,7 @@ pull_back::proc(point_list:[]vec2, length_buffer:[]f32, pos:vec2){
 pull_front::proc(point_list:[]vec2, length_buffer:[]f32, pos:vec2){
     _point_count:int = len(point_list)
     assert(_point_count > 1)
+    assert(len(length_buffer) >= _point_count - 1)
 
     _last:int = _point_count-1
     _p:vec2 = pos
