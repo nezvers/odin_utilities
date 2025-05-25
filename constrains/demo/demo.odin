@@ -12,12 +12,12 @@ import "core:path/filepath"
 USE_TRACKING_ALLOCATOR :: #config(USE_TRACKING_ALLOCATOR, false)
 
 point_list:[6]rl.Vector2 = {
-	{0.0, 0.0},
-	{10.0, 5.0},
-	{15.0, 0.0},
-	{17.0, 10.0},
-	{25.0, 15.0},
-	{35.0, 5.0},
+	{100.0, 100.0},
+	{120.0, 100.0},
+	{135.0, 100.0},
+	{180.0, 100.0},
+	{225.0, 100.0},
+	{250.0, 100.0},
 }
 
 // gets initialized in game_init()
@@ -98,7 +98,7 @@ game_init :: proc() {
 }
 
 update :: proc() {
-    if (rl.IsMouseButtonPressed(rl.MouseButton.LEFT)){
+    if (rl.IsMouseButtonDown(rl.MouseButton.LEFT)){
 		constrains.fabrik(point_list[:], length_buffer[:], rl.GetMousePosition(), 4, 0.01)
 		//constrains.pull_front(point_list[:], length_buffer[:], rl.GetMousePosition())
 		return
