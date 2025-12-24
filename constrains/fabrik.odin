@@ -5,17 +5,15 @@ package constrains
 // length_buffer - used to populate magnitude between points, need to be at least _point_count - 1
 fabrik::proc(point_list:[]vec2, length_buffer:[]f32, target_pos:vec2, max_itterations:int, error_treshold:f32){
     _point_count:int = len(point_list)
-    _last:int = _point_count - 1;
     assert(_point_count > 1)
     assert(len(length_buffer) >= _point_count - 1)
     
     _total_length:f32 = calculate_lengths(point_list, length_buffer)
-    _start_to_target:vec2 = {target_pos.x - point_list[0].x, target_pos.y - point_list[0].y}
-    _length_to_target:f32 = vec2_mag(_start_to_target)
+    _length_to_target:f32 = vec2_mag({target_pos.x - point_list[0].x, target_pos.y - point_list[0].y})
     
     if _total_length < _length_to_target{
         // Too far, just straighten
-        _dir:vec2 = vec2_norm(_start_to_target)
+        _dir:vec2 = vec2_norm({target_pos.x - point_list[0].x, target_pos.y - point_list[0].y})
         stretch(point_list, length_buffer, _dir)
         return
     }
@@ -45,16 +43,16 @@ calculate_lengths::proc(point_list:[]vec2, length_buffer:[]f32)->(total_length:f
     return
 }
 
-// From 0th
+// Stretch points in direction_normal starting from 0 as root
 stretch::proc(point_list:[]vec2, length_buffer:[]f32, direction_normal:vec2){
     _point_count:int = len(point_list)
     assert(_point_count > 1)
     assert(len(length_buffer) >= _point_count - 1)
-    
-    for i in 0..<_point_count-1{
-        _length:f32 = length_buffer[i]
+        
+    for i in 1..<_point_count{
+        _length:f32 = length_buffer[i -1]
         _offset:vec2 = {direction_normal.x * _length, direction_normal.y * _length}
-        point_list[i + 1] = {point_list[i].x + _offset.x, point_list[i].y + _offset.y}
+        point_list[i] = {point_list[i - 1].x + _offset.x, point_list[i - 1].y + _offset.y}
     }
     return
 }
