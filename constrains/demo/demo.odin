@@ -10,8 +10,9 @@ import "core:path/filepath"
 
 
 USE_TRACKING_ALLOCATOR :: #config(USE_TRACKING_ALLOCATOR, false)
+POINT_COUNT :: 6
 
-point_list:[6]rl.Vector2 = {
+point_list:[POINT_COUNT]rl.Vector2 = {
 	{100.0, 100.0},
 	{120.0, 100.0},
 	{135.0, 100.0},
@@ -22,7 +23,7 @@ point_list:[6]rl.Vector2 = {
 
 // gets initialized in game_init()
 total_length:f32
-length_buffer:[5]f32
+length_buffer:[POINT_COUNT - 1]f32
 start_fabrik:rl.Vector2
 end_fabrik:rl.Vector2
 
@@ -95,15 +96,18 @@ game_init :: proc() {
     total_length = constrains.calculate_lengths(point_list[:], length_buffer[:])
     start_fabrik = point_list[len(point_list)-1]
     end_fabrik = point_list[0]
+
+	// Initialize length buffer for pulling back
+	_ = constrains.calculate_lengths(point_list[:], length_buffer[:])
 }
 
 update :: proc() {
     if (rl.IsMouseButtonDown(rl.MouseButton.LEFT)){
 		constrains.fabrik(point_list[:], length_buffer[:], rl.GetMousePosition(), 4, 0.01)
-		//constrains.pull_front(point_list[:], length_buffer[:], rl.GetMousePosition())
 		return
 	}
     if (rl.IsMouseButtonDown(rl.MouseButton.RIGHT)){
+		// Use FABRIK method to pull points. Requires initialized length buffer.
 		constrains.pull_back(point_list[:], length_buffer[:], rl.GetMousePosition())
 		return
 	}
@@ -119,8 +123,11 @@ draw :: proc() {
 }
 
 draw_lines::proc(slice:[]rl.Vector2){
-	for i in 0..<(len(slice)-1){
-		rl.DrawLineV(slice[i], slice[i+1], rl.WHITE)
+	LINE_COUNT:= len(slice)-1
+	percent:f32 = 0.0
+	for i in 0..< LINE_COUNT {
+		percent = f32(i) / f32(LINE_COUNT -1)
+		rl.DrawLineV(slice[i], slice[i+1], rl.ColorLerp(rl.WHITE, rl.RED, percent))
 	}
 }
 

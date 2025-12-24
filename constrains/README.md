@@ -4,6 +4,7 @@ Set of algorithms for constraining points
 Influenced by - https://zalo.github.io/blog/constraints/
 
 ## Forward and Backward Reaching Inverse Kinematic
+`odin run demo`
 
 ### Example
 ```ruby
