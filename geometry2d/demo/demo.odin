@@ -7,6 +7,13 @@ import "core:log"
 import "core:os"
 import "core:path/filepath"
 
+import geometry2d ".."
+Line :: geometry2d.Line
+Circle :: geometry2d.Circle
+Rect :: geometry2d.Rect
+Triangle :: geometry2d.Triangle
+Ray :: geometry2d.Ray
+
 
 USE_TRACKING_ALLOCATOR :: #config(USE_TRACKING_ALLOCATOR, false)
 
@@ -19,12 +26,14 @@ State :: struct {
 }
 
 state_list: []State = {
+	state_tests,
 	state_draw_shapes,
 }
 StateIndex :: enum {
+	TESTS,
 	DRAW_SHAPES,
 }
-state_index:StateIndex = StateIndex.DRAW_SHAPES
+state_index:StateIndex = StateIndex.TESTS
 
 state_change :: proc(index:StateIndex){
 	if state_list[state_index].exit != nil{

@@ -1,14 +1,8 @@
 package demo
 
+import geometry2d ".."
 import rl "vendor:raylib"
 Color :: rl.Color
-
-import geometry2d ".."
-Line :: geometry2d.Line
-Circle :: geometry2d.Circle
-Rect :: geometry2d.Rect
-Triangle :: geometry2d.Triangle
-Ray :: geometry2d.Ray
 
 // DEMO STATE
 state_draw_shapes:State = {
