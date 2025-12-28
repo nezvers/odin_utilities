@@ -32,10 +32,10 @@ contains_circle_point::proc(c:Circle, p:vec2)->bool{
 // Checks if Triangle contains a point
 contains_triangle_point::proc(t:Triangle, p:vec2)->bool{
     // http://jsfiddle.net/PerroAZUL/zdaY8/1/
-    a:f32 = 0.5 * (-t[1].y * t[2].x + t[0].y * (t[1].x + t[2].x) + t[0].x * (t[1].y - t[2].y) + t[1].x * t[2].y)
+    a:f32 = 0.5 * (-t[1].y * t[2].x + t[0].y * (-t[1].x + t[2].x) + t[0].x * (t[1].y - t[2].y) + t[1].x * t[2].y)
     a_sign:f32 = f32(signf(a))
     s:f32 = (t[0].y * t[2].x - t[0].x * t[2].y + (t[2].y - t[0].y) * p.x + (t[0].x - t[2].x) * p.y) * a_sign
-    v:f32 = (t[0].x * t[1].y - t[0].y * t[1].x + (t[0].y - t[1].y) * p.x + (t[1].x - t[0].x) * p.x) * a_sign
+    v:f32 = (t[0].x * t[1].y - t[0].y * t[1].x + (t[0].y - t[1].y) * p.x + (t[1].x - t[0].x) * p.y) * a_sign
     return s >= 0 && v >= 0 && (s + v) <= 2 * a * a_sign
 }
 
