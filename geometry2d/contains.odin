@@ -26,7 +26,7 @@ contains_rectangle_point::proc(r:Rect, p:vec2)->bool{
 
 // Checks if Circle contains point
 contains_circle_point::proc(c:Circle, p:vec2)->bool{
-    return vec2_mag2(c.xy - p) <= c.z * c.z
+    return vec2_mag2(c.xy - p) <= (c.z * c.z)
 }
 
 // Checks if Triangle contains a point
@@ -63,7 +63,7 @@ contains_point_line::proc(p:vec2, l:Line)->bool{
 
 // Checks if line contains line
 contains_line_line::proc(l1:Line, l2:Line)->bool{
-    return contains_line_point(l1, l2.xy) && contains_line_point(l2, l1.xy)
+    return overlaps_line_point(l1, l2.xy) && overlaps_line_point(l1, l2.zw)
 }
 
 // Checks if line contains line
@@ -122,7 +122,10 @@ contains_line_circle::proc(l:Line, c:Circle)->bool{
 
 // Check if rectangle contains circle
 contains_rectangle_circle::proc(r:Rect, c:Circle)->bool{
-    return r.x + c.z <= c.x && c.x <= c.z - r.x + r.z && r.y + c.y <= c.y && c.y <= c.z - r.y + r.z
+    return r.x + c.z <= c.x     \
+    && c.x <= r.x + r.z - c.z   \
+    && r.y + c.z <= c.y         \
+    && c.y <= r.y + r.w - c.z
 }
 
 // Check if circle contains circle
@@ -133,7 +136,12 @@ contains_circle_circle::proc(c1:Circle, c2:Circle)->bool{
 
 // Check if triangle contains circle
 contains_triangle_circle::proc(t:Triangle, c:Circle)->bool{
-    return contains_triangle_point(t, c.xy) && vec2_mag(c.xy - closest_triangle_circle(t, c)) >= c.z * c.z
+    if !contains_triangle_point(t, c.xy){
+        return false
+    }
+    closest_p:vec2 = closest_triangle_point(t, c.xy)
+    mag_p:f32 = vec2_mag(c.xy - closest_p)
+    return mag_p <= c.z * c.z
 }
 
 // Check if point contains triangle
