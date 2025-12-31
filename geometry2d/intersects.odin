@@ -95,7 +95,7 @@ intersects_line_line::proc(l1:Line, l2:Line)->(points:[1]vec2, point_count:int){
     rn:f32 = ((l2.z - l2.x) * (l1.y - l2.y) - (l2.w - l2.y) * (l1.x - l2.x)) * rd
     sn:f32 = ((l1.z - l1.x) * (l1.y - l2.y) - (l1.w - l1.y) * (l1.x - l2.x)) * rd
 
-    if (rn < 0 || rn > 1 || sn < 0 || sn > 1){
+    if (rn < 0. || rn > 1. || sn < 0. || sn > 1.){
         return
     }
     points[0] = l1.xy + rn * line_vector(l1)
@@ -107,10 +107,11 @@ intersects_line_line::proc(l1:Line, l2:Line)->(points:[1]vec2, point_count:int){
 intersects_rectangle_line::proc(r:Rect, l:Line)->(points:[4]vec2, point_count:int){
     for i in 0..<4{
         _points, _point_count: = intersects_line_line(rect_side(r, u32(i)), l)
-        if (_point_count > 0){
-            points[point_count] = _points[0]
-            point_count += 1
+        if (_point_count == 0){
+            continue
         }
+        points[point_count] = _points[0]
+        point_count += 1
     }
     if point_count > 1{
         point_count = filter_duplicate_points(points[0:point_count])
