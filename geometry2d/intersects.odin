@@ -58,21 +58,26 @@ intersects_circle_point::proc(c:Circle, p:vec2)->(points:[1]vec2, point_count:in
 
 // Get intersection points where Triangle intersects with point
 intersects_triangle_point::proc(t:Triangle, p:vec2)->(points:[1]vec2, point_count:int){
-    if (contains_line_point(triangle_side(t, 0), p)){
+    if overlaps_triangle_point(t, p){
         points[0] = p
         point_count = 1
         return
     }
-    if (contains_line_point(triangle_side(t, 1), p)){
-        points[0] = p
-        point_count = 1
-        return
-    }
-    if (contains_line_point(triangle_side(t, 2), p)){
-        points[0] = p
-        point_count = 1
-        return
-    }
+    // if (contains_line_point(triangle_side(t, 0), p)){
+    //     points[0] = p
+    //     point_count = 1
+    //     return
+    // }
+    // if (contains_line_point(triangle_side(t, 1), p)){
+    //     points[0] = p
+    //     point_count = 1
+    //     return
+    // }
+    // if (contains_line_point(triangle_side(t, 2), p)){
+    //     points[0] = p
+    //     point_count = 1
+    //     return
+    // }
     return
 }
 

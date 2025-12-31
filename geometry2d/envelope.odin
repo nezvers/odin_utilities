@@ -38,7 +38,7 @@ envelope_circle_triangle::proc(t:Triangle)->Circle{
         (t[2].x * t[2].x + t[2].y * t[2].y) * (t[1].x - t[0].x) ) / D)
     
     r:f64 = 0
-    for i in 0..< 3 {
+    for _ in 0..< 3 {
         h:f64 = math.hypot_f64(f64(circumcenter.x - t[0].x), f64(circumcenter.y - t[0].y))
         if h > r {
             r = h
