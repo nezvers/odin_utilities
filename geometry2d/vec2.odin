@@ -65,7 +65,7 @@ vec2_dot :: proc(a: vec2, b: vec2) -> f32{
 
 // Calculates 'scalar' cross product between a vector and another vector (useful for winding orders)
 vec2_cross :: proc(a: vec2, b: vec2) -> f32{
-    return a.x * b.y + a.y * b.x
+    return a.x * b.y - a.y * b.x
 }
 
 // Treat as polar coordinate (R, Theta), return cartesian equivalent (X, Y)

@@ -88,17 +88,30 @@ intersects_point_line::proc(p:vec2, l:Line)->(points:[1]vec2, point_count:int){
 
 // Get intersection points where line segment intersects with line segment
 intersects_line_line::proc(l1:Line, l2:Line)->(points:[1]vec2, point_count:int){
-    rd:f32 = vec2_cross(line_vector(l1), line_vector(l2))
-    if (rd == 0){return}
+    line_vec1 := line_vector(l1)
+    line_vec2 := line_vector(l2)
+    cross_product:f32 = vec2_cross(line_vec1, line_vec2)
+    if (cross_product == 0) { return } // Parallel or Colinear TODO: Return two points
 
-    rd = 1 / rd
-    rn:f32 = ((l2.z - l2.x) * (l1.y - l2.y) - (l2.w - l2.y) * (l1.x - l2.x)) * rd
-    sn:f32 = ((l1.z - l1.x) * (l1.y - l2.y) - (l1.w - l1.y) * (l1.x - l2.x)) * rd
+    inv_cross_prod := 1 / cross_product
+    
+    //rn = (b1b2 x b1a1)
+    r1 := (l2.z - l2.x)
+    r2 := (l1.y - l2.y)
+    r3 := (l2.w - l2.y)
+    r4 := (l1.x - l2.x)
+    rn:f32 = (r1 * r2 - r3 * r4) * inv_cross_prod
+    //sn = (a1a2 x b1a1)
+    s1 := (l1.z - l1.x)
+    s2 := (l1.y - l2.y)
+    s3 := (l1.w - l1.y)
+    s4 := (l1.x - l2.x)
+    sn:f32 = (s1 * s2 - s3 * s4) * inv_cross_prod
 
     if (rn < 0. || rn > 1. || sn < 0. || sn > 1.){
         return
     }
-    points[0] = l1.xy + rn * line_vector(l1)
+    points[0] = l1.xy + rn * line_vec1
     point_count = 1
     return
 }
