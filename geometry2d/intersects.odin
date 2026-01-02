@@ -126,6 +126,7 @@ intersects_rectangle_line::proc(r:Rect, l:Line)->(points:[4]vec2, point_count:in
         points[point_count] = _points[0]
         point_count += 1
     }
+
     if point_count > 1{
         point_count = filter_duplicate_points(points[0:point_count])
     }
@@ -141,10 +142,10 @@ intersects_triangle_line::proc(t:Triangle, l:Line)->(points:[3]vec2, point_count
             point_count += 1
         }
     }
+
     if point_count > 1{
         point_count = filter_duplicate_points(points[0:point_count])
     }
-    // TODO: filter duplicates?
     return
 }
 
@@ -185,7 +186,6 @@ intersects_circle_line::proc(c:Circle, l:Line)->(points:[2]vec2, point_count:int
     if point_count > 1{
         point_count = filter_duplicate_points(points[0:point_count])
     }
-    // TODO: filter duplicates?
     return
 }
 
@@ -208,7 +208,10 @@ intersects_rectangle_rectangle::proc(r1:Rect, r2:Rect)->(points:[8]vec2, point_c
         }
         point_count += _point_count
     }
-    // TODO: filter duplicates?
+    
+    if point_count > 1{
+        point_count = filter_duplicate_points(points[0:point_count])
+    }
     return
 }
 
@@ -221,7 +224,10 @@ intersects_circle_rectangle::proc(c:Circle, r:Rect)->(points:[8]vec2, point_coun
         }
         point_count += _point_count
     }
-    // TODO: filter duplicates?
+    
+    if point_count > 1{
+        point_count = filter_duplicate_points(points[0:point_count])
+    }
     return
 }
 
@@ -234,7 +240,10 @@ intersects_triangle_rectangle::proc(t:Triangle, r:Rect)->(points:[8]vec2, point_
         }
         point_count += _point_count
     }
-    // TODO: filter duplicates?
+    
+    if point_count > 1{
+        point_count = filter_duplicate_points(points[0:point_count])
+    }
     return
 }
 
@@ -296,7 +305,10 @@ intersects_triangle_circle::proc(t:Triangle, c:Circle)->(points:[6]vec2, point_c
         }
         point_count += _point_count
     }
-    // TODO: filter duplicates?
+    
+    if point_count > 1{
+        point_count = filter_duplicate_points(points[0:point_count])
+    }
     return
 }
 
@@ -329,7 +341,10 @@ intersects_triangle_triangle::proc(t1:Triangle, t2:Triangle)->(points:[6]vec2, p
         }
         point_count += _point_count
     }
-    // TODO: filter duplicates?
+    
+    if point_count > 1{
+        point_count = filter_duplicate_points(points[0:point_count])
+    }
     return
 }
 
@@ -362,7 +377,6 @@ intersects_ray_ray::proc(r1:Ray, r2:Ray)->(points:[1]vec2, point_count:int){
         return
     }
     // Intersection, but behind a rays origin, so not really an intersection in context
-    // TODO: filter duplicates?
     return
 }
 
@@ -375,7 +389,6 @@ intersects_ray_point::proc(r:Ray, p:vec2)->(points:[1]vec2, point_count:int){
         point_count = 1
         return
     }
-    // TODO: filter duplicates?
     return
 }
 intersects_point_ray::proc(p:vec2, r:Ray)->(points:[1]vec2, point_count:int){
@@ -472,7 +485,9 @@ intersects_ray_rectangle::proc(r:Ray, rect:Rect)->(points:[2]vec2, point_count:i
         }
     }
     
-    // TODO: filter duplicates?
+    if point_count > 1{
+        point_count = filter_duplicate_points(points[0:point_count])
+    }
     return
 }
 intersects_rectangle_ray::proc(rect:Rect, r:Ray)->(points:[2]vec2, point_count:int){
@@ -491,7 +506,9 @@ intersects_ray_triangle::proc(r:Ray, t:Triangle)->(points:[2]vec2, point_count:i
         }
     }
     
-    // TODO: filter duplicates?
+    if point_count > 1{
+        point_count = filter_duplicate_points(points[0:point_count])
+    }
     return
 }
 intersects_triangle_ray::proc(t:Triangle, r:Ray)->(points:[2]vec2, point_count:int){
