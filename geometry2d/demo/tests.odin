@@ -204,6 +204,7 @@ test_intersects::proc(){
     append_result(&intersects_results, {name = "Circle: Triangle 1",    result = point_count == 2})
     _, point_count = geometry2d.intersects_circle_triangle({3000., 3000., 4000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })
     append_result(&intersects_results, {name = "Circle: Triangle 2",    result = point_count == 0})
+
     _, point_count = geometry2d.intersects_rectangle_point({1000., 1000., 3000., 3000.,}, {2000., 2000.})
     append_result(&intersects_results, {name = "Rectangle: Point 1",    result = point_count == 1})
     _, point_count = geometry2d.intersects_rectangle_point({1000., 1000., 3000., 3000.,}, {4000.01, 2000.})
@@ -216,6 +217,7 @@ test_intersects::proc(){
     append_result(&intersects_results, {name = "Rectangle: Triangle 1", result = point_count == 6})
     _, point_count = geometry2d.intersects_rectangle_triangle({2000., 2000., 2000., 2000.,}, {{1900., 3500.}, {2100., 1990.}, {1000., 1000.}, })
     append_result(&intersects_results, {name = "Rectangle: Triangle 2", result = point_count == 2})
+
     _, point_count = geometry2d.intersects_triangle_point({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1500., 2000.})
     append_result(&intersects_results, {name = "Triangle: Point 1",     result = point_count == 1})
     _, point_count = geometry2d.intersects_triangle_point({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1500., 2000.1})
@@ -234,4 +236,21 @@ test_intersects::proc(){
     append_result(&intersects_results, {name = "Triangle: Rectangle 2", result = point_count == 2})
     _, point_count = geometry2d.intersects_triangle_triangle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {{1000., 2900.}, {3000., 2900.}, {2000., 900.}, })
     append_result(&intersects_results, {name = "Triangle: Triangle 1",  result = point_count == 6})
+
+    _, point_count = geometry2d.intersects_ray_point({1000., 1000., 3000., 0.,}, {2000., 1000.,})
+    append_result(&intersects_results, {name = "Ray: Point 1",  result = point_count == 1})
+    _, point_count = geometry2d.intersects_ray_point({1000., 1000., 3000., 0.,}, {2000., 1000.01,})
+    append_result(&intersects_results, {name = "Ray: Point 2",  result = point_count == 0})
+    _, point_count = geometry2d.intersects_ray_line({1000., 2000., 3000., 0.,}, {2000., 1000., 2000., 4000.,})
+    append_result(&intersects_results, {name = "Ray: Line 1",  result = point_count == 1})
+    _, point_count = geometry2d.intersects_ray_line({1000., 1000., 3000., 3000.,}, {2000., 1000., 5000., 4000.,})
+    append_result(&intersects_results, {name = "Ray: Line 2",  result = point_count == 0})
+    _, point_count = geometry2d.intersects_ray_circle({1000., 2000., 3000., 0.,}, {2000., 2000., 500.,})
+    append_result(&intersects_results, {name = "Ray: Circle 1",  result = point_count == 2})
+    _, point_count = geometry2d.intersects_ray_rectangle({1000., 1000., 4000., 5000.,}, {2000., 2000., 2000., 2000.,})
+    append_result(&intersects_results, {name = "Ray: Rectangle 1",  result = point_count == 2})
+    _, point_count = geometry2d.intersects_ray_triangle({1000., 2000., 3000., 0.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })
+    append_result(&intersects_results, {name = "Ray: Triangle 1",  result = point_count == 2})
+    _, point_count = geometry2d.intersects_ray_ray({1000., 1000., 3000., 3000.,}, {1000., 3000., 3000., -3000.,})
+    append_result(&intersects_results, {name = "Ray: Ray 1",  result = point_count == 1})
 }

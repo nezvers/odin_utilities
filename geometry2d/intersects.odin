@@ -367,7 +367,7 @@ intersects_ray_ray::proc(r1:Ray, r2:Ray)->(points:[1]vec2, point_count:int){
 }
 
 // return intersection point (if it exists) of a ray and a point
-intersection_ray_point::proc(r:Ray, p:vec2)->(points:[1]vec2, point_count:int){
+intersects_ray_point::proc(r:Ray, p:vec2)->(points:[1]vec2, point_count:int){
     l:Line = {r.x, r.y, r.x + r.z, r.y + r.w}
     
     if line_side(l, p) == 0{
@@ -376,6 +376,10 @@ intersection_ray_point::proc(r:Ray, p:vec2)->(points:[1]vec2, point_count:int){
         return
     }
     // TODO: filter duplicates?
+    return
+}
+intersects_point_ray::proc(p:vec2, r:Ray)->(points:[1]vec2, point_count:int){
+    points, point_count = intersects_ray_point(r, p)
     return
 }
 
@@ -400,7 +404,7 @@ intersects_ray_line::proc(r:Ray, l:Line)->(points:[1]vec2, point_count:int){
     t1: = cp2 / cp1 // distance along q1 to intersection
     t2: = cp3 / cp1 // distance along q2 to intersection
 
-    if t1 >= 0 && t2 >= 0{
+    if t1 >= 0 && t2 >= 0 && t2 <= 1 {
         // Intersection, both rays positive
         point_count = 1
         points[0] = r.xy + r.zw * t1
@@ -408,6 +412,10 @@ intersects_ray_line::proc(r:Ray, l:Line)->(points:[1]vec2, point_count:int){
     }
     // Intersection, but behind a rays origin, so not really an intersection in context
     // TODO: filter duplicates?
+    return
+}
+intersects_line_ray::proc(l:Line, r:Ray)->(points:[1]vec2, point_count:int){
+    points, point_count = intersects_ray_line(r, l)
     return
 }
 
@@ -448,19 +456,27 @@ intersects_ray_circle::proc(r:Ray, c:Circle)->(points:[2]vec2, point_count:int){
     }
     return
 }
+intersects_circle_ray::proc(c:Circle, r:Ray)->(points:[2]vec2, point_count:int){
+    points, point_count = intersects_ray_circle(r, c)
+    return
+}
 
 // Get intersection points where a ray intersects a rectangle
 intersects_ray_rectangle::proc(r:Ray, rect:Rect)->(points:[2]vec2, point_count:int){
     for i in 0..<4{
         _points, _point_count: = intersects_ray_line(r, rect_side(rect, u32(i)), )
         if _point_count > 0{
-            assert(point_count < 2, "Too many intersection points")
+            assert(point_count < 2)
             points[point_count] = _points[0]
             point_count += 1
         }
     }
     
     // TODO: filter duplicates?
+    return
+}
+intersects_rectangle_ray::proc(rect:Rect, r:Ray)->(points:[2]vec2, point_count:int){
+    points, point_count = intersects_ray_rectangle(r, rect)
     return
 }
 
@@ -476,5 +492,9 @@ intersects_ray_triangle::proc(r:Ray, t:Triangle)->(points:[2]vec2, point_count:i
     }
     
     // TODO: filter duplicates?
+    return
+}
+intersects_triangle_ray::proc(t:Triangle, r:Ray)->(points:[2]vec2, point_count:int){
+    points, point_count = intersects_ray_triangle(r, t)
     return
 }

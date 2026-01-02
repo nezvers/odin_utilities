@@ -38,8 +38,8 @@ filter_duplicate_points::proc(point_list:[]vec2)->int{
         a:vec2 = point_list[i]
         
         // compare starting from last
-        pc: = point_count - 1
-        for j := pc; j > i; j -= 1{
+        last_i: = point_count - 1
+        for j := last_i; j > i; j -= 1{
             b:vec2 = point_list[j]
 
             if (abs(a.x - b.x) < epsilon && abs(a.y - b.y) < epsilon){
