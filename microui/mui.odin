@@ -18,15 +18,12 @@ mui_state:MuiState
 
 
 init :: proc() -> ^mu.Context {
-    // state.atlas_buffer = make([][4]u8, mu.DEFAULT_ATLAS_WIDTH*mu.DEFAULT_ATLAS_HEIGHT)
 	for alpha, i in mu.default_atlas_alpha {
 		mui_state.atlas_buffer[i] = {0xff, 0xff, 0xff, alpha}
 	}
-
-	// defer delete(state.atlas_buffer)
 		
 	image := rl.Image{
-		data = transmute(rawptr)&mui_state.atlas_buffer[0],
+		data = cast(rawptr)&mui_state.atlas_buffer[0],
 		width   = mu.DEFAULT_ATLAS_WIDTH,
 		height  = mu.DEFAULT_ATLAS_HEIGHT,
 		mipmaps = 1,

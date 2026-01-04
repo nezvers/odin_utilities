@@ -10,11 +10,8 @@ bg_colors:mu.Color = {90, 95, 100, 255}
 ctx: ^mu.Context
 
 main :: proc() {
-	rl.InitWindow(960, 540, "microui-odin")
-	defer rl.CloseWindow()
-	
+	game_init_window()
 	game_init()
-	defer mui.cleanup()
 
 	main_loop: for game_should_run() {
 		update()
@@ -65,8 +62,8 @@ game_should_run :: proc() -> bool {
 }
 
 game_shutdown :: proc() {
-    rl.CloseWindow()
 	mui.cleanup()
+    rl.CloseWindow()
 }
 
 
