@@ -1,7 +1,6 @@
 package demo
 // Based on Karl Zylinski's template - https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template
 
-import geometry2d ".."
 import rl "vendor:raylib"
 import "core:log"
 import "core:os"
@@ -94,14 +93,6 @@ draw :: proc() {
     rl.EndDrawing()
 }
 
-draw_lines::proc(slice:[]rl.Vector2){
-	LINE_COUNT:= len(slice)-1
-	for i in 0..< LINE_COUNT {
-		rl.DrawLineV(slice[i], slice[i+1], rl.WHITE)
-	}
-}
-
-
 game_init_window :: proc() {
     rl.SetConfigFlags({.WINDOW_RESIZABLE, .VSYNC_HINT})
 	rl.InitWindow(1280, 720, "template demo")
@@ -109,7 +100,6 @@ game_init_window :: proc() {
 	rl.SetTargetFPS(500)
 	rl.SetExitKey(nil)
 }
-
 
 game_should_run :: proc() -> bool {
     when ODIN_OS != .JS {
@@ -121,7 +111,6 @@ game_should_run :: proc() -> bool {
     
 	return !rl.IsKeyPressed(.ESCAPE)
 }
-
 
 game_shutdown :: proc() {
     

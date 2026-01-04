@@ -1,6 +1,8 @@
 package spring
+// Second-Order System "Spring"
 
 import "core:math"
+
 
 // translated from https://youtu.be/H-jRx_E8aZ8?t=745
 
@@ -13,11 +15,12 @@ SpringCategory :: enum {
     Undefined,
 }
 
+// r = response curve, negative anticipate, above 1 overshoot, 2 is typical for mechanic movement
 SpringParams :: struct {
-    k:f32,
-    m:f32,
-    omega:f32,
-    zeta:f32,
+    k:f32, // Spring constant
+    m:f32, // mass
+    zeta:f32, // damping applied - 0 is no damping, above 1 smooth curve
+    omega:f32, // frequency
     category:SpringCategory,
 }
 
