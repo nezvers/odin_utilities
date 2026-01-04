@@ -167,10 +167,9 @@ all_windows :: proc(ctx: ^mu.Context) {
 		mu.begin_panel(ctx, "Log")
 		mu.layout_row(ctx, {-1}, -1)
 		mu.text(ctx, mui.read_log())
-		if mui.mui_state.log_buf_updated {
+		if mui.is_log_buffer_updated() {
 			panel := mu.get_current_container(ctx)
 			panel.scroll.y = panel.content_size.y
-			mui.mui_state.log_buf_updated = false
 		}
 		mu.end_panel(ctx)
 		

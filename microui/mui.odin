@@ -168,6 +168,14 @@ write_log :: proc(str: string) {
 	mui_state.log_buf_updated = true
 }
 
+is_log_buffer_updated :: proc() -> bool {
+    if mui_state.log_buf_updated {
+        mui_state.log_buf_updated = false
+        return true
+    }
+    return false
+}
+
 read_log :: proc() -> string {
 	return string(mui_state.log_buf[:mui_state.log_buf_len])
 }
