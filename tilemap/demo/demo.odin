@@ -2,6 +2,10 @@ package demo
 
 // import "core:fmt"
 import rl "vendor:raylib"
+import tilemap ".."
+
+tilemap_buffer: [20 * 20]tilemap.TileID
+tilemap:tilemap.Tilemap
 
 main :: proc() {
 	game_init_window()
@@ -17,7 +21,8 @@ main :: proc() {
 
 
 game_init :: proc() {
-
+	new_tilemap: = tilemap.TilemapInit({}, {20,20}, {16,16}, tilemap_buffer[:], len(tilemap_buffer))
+	tilemap.TilemapClear(&new_tilemap)
 }
 
 update :: proc() {
