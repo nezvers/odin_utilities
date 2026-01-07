@@ -1,7 +1,7 @@
 package demo
 // Based on Karl Zylinski's template - https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template
 
-import constrains ".."
+import fabrik ".."
 import rl "vendor:raylib"
 import "core:fmt"
 import "core:log"
@@ -93,22 +93,22 @@ main :: proc() {
 
 
 game_init :: proc() {
-    total_length = constrains.calculate_lengths(point_list[:], length_buffer[:])
+    total_length = fabrik.calculate_lengths(point_list[:], length_buffer[:])
     start_fabrik = point_list[len(point_list)-1]
     end_fabrik = point_list[0]
 
 	// Initialize length buffer for pulling back
-	_ = constrains.calculate_lengths(point_list[:], length_buffer[:])
+	_ = fabrik.calculate_lengths(point_list[:], length_buffer[:])
 }
 
 update :: proc() {
     if (rl.IsMouseButtonDown(rl.MouseButton.LEFT)){
-		constrains.fabrik(point_list[:], length_buffer[:], rl.GetMousePosition(), 4, 0.01)
+		fabrik.fabrik(point_list[:], length_buffer[:], rl.GetMousePosition(), 4, 0.01)
 		return
 	}
     if (rl.IsMouseButtonDown(rl.MouseButton.RIGHT)){
 		// Use FABRIK method to pull points. Requires initialized length buffer.
-		constrains.pull_back(point_list[:], length_buffer[:], rl.GetMousePosition())
+		fabrik.pull_back(point_list[:], length_buffer[:], rl.GetMousePosition())
 		return
 	}
 }
@@ -134,7 +134,7 @@ draw_lines::proc(slice:[]rl.Vector2){
 
 game_init_window :: proc() {
     rl.SetConfigFlags({.WINDOW_RESIZABLE, .VSYNC_HINT})
-	rl.InitWindow(1280, 720, "constrains demo")
+	rl.InitWindow(1280, 720, "fabrik demo")
 	rl.SetWindowPosition(200, 200)
 	rl.SetTargetFPS(500)
 	rl.SetExitKey(nil)

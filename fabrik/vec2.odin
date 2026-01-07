@@ -1,4 +1,4 @@
-package constrains
+package fabrik
 
 import math "core:math"
 

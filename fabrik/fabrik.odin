@@ -1,5 +1,5 @@
 // Forward and Backward Reach Inverse Kinematics
-package constrains
+package fabrik
 
 // point_list - set of points that are moved. 0th point is kept in place.
 // length_buffer - used to populate magnitude between points, need to be at least _point_count - 1
