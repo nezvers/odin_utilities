@@ -1,5 +1,7 @@
 package discrete_fourier_transform
 
+// translated from https://github.com/SebLague/Audio-Experiments
+
 import math "core:math"
 import thread "core:thread"
 import parallel "parallel"
@@ -40,19 +42,23 @@ DFT :: proc(samples:[]f32, sample_rate:u32)->[]FrequencyData {
         index_f:f32 = cast(f32)freq_index
         sample_sum:vec2 = {}
         for i in 0..< sample_count {
-            angle:f32 = cast(f32)i / sample_count_f * TAU * index_f
+            t:f32 = cast(f32)i / sample_count_f
+            angle:f32 = t * TAU * index_f
             test_point:vec2 = {math.cos(angle), math.sin(angle)}
             sample_sum += test_point * samples[i]
         }
 
         sample_centre:vec2 = sample_sum / sample_count_f
         is_0Hz:bool = freq_index == 0
+
         // The last frequency is equal to samplerate/2 only if sample count is even
         is_nyquist_freq:bool = freq_index == num_frequencies - 1 && sample_count % 2 == 0
         amplitude_scale:f32 = is_0Hz || is_nyquist_freq ? 1.0 : 2.0
+
         amplitude:f32 = vec2_mag(sample_centre) * amplitude_scale
         frequency:f32 = frequency_step * index_f
         phase:f32 = -math.atan2(sample_centre.y, sample_centre.x)
+        
         spectrum[freq_index] = {frequency, amplitude, phase}
     }
 
