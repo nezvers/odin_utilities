@@ -2,7 +2,7 @@ package tilemap
 
 vec2i :: [2]int
 
-rect2i :: struct {
+recti :: struct {
     x: int,
     y: int,
     w: int,
