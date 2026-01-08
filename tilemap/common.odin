@@ -21,7 +21,7 @@ Tilemap :: struct {
     capacity: u32,
 }
 
-// Represents set of tiles that can be randomly chosen
+// Represents set of alternative tiles that can be randomly chosen
 Tile :: struct {
     data: []TileID,
     length: u32,
