@@ -3,6 +3,7 @@
 
 - ✅ FABRIK IK `odin run fabrik/demo`
 - ✅ microui (raylib) `odin run microui/demo`
+- ✅ viewport_rect `odin run viewport_rect/demo`
 - ❎ Geometry2D `odin run geometry2d/demo`
     - ✅ shapes [point, line, circle, rectangle, triangle, ray]
     - ✅ overlap
