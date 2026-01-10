@@ -75,9 +75,9 @@ TilesetInsert :: proc(tileset: ^Tileset, tile:Tile, index:u32){
         return
     }
     for i: = tileset.length; i > index; i -= 1 {
-        tileset.data[i +1] = tileset.data[i]
+        tileset.data[i] = tileset.data[i - 1]
     }
-    tileset.data[index +1] = tileset.data[index]
+    
     tileset.data[index] = tile
     tileset.length += 1
 }

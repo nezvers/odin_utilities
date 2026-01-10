@@ -34,7 +34,7 @@ TileRandType :: enum {
     XY,
 }
 
-TileListInit :: proc(tile_atlas: ^TileAtlas, tile_size:Vector2, texture: ^Texture2D, buffer: []Vector2){
+TileAtlasInit :: proc(tile_atlas: ^TileAtlas, tile_size:Vector2, texture: ^Texture2D, buffer: []Vector2){
     tile_atlas.data = buffer
     tile_atlas.length = 0
     tile_atlas.capacity = cast(u32)len(buffer)
@@ -42,24 +42,30 @@ TileListInit :: proc(tile_atlas: ^TileAtlas, tile_size:Vector2, texture: ^Textur
     tile_atlas.tile_size = tile_size
 }
 
-TileListInsert :: proc(tile_atlas: ^TileAtlas, texture_position:Vector2, index:u32){
+TileAtlasInsert :: proc(tile_atlas: ^TileAtlas, texture_position:Vector2, index:u32){
     if (tile_atlas.length > tile_atlas.capacity - 1){
         assert(false)
         return
     }
-    if (index > tile_atlas.length){
+    if (index > tile_atlas.length || index < 0){
         assert(false)
         return
     }
-    for i:u32 = tile_atlas.length -1; i > index; i -= 1 {
-        tile_atlas.data[i + 1] = tile_atlas.data[i]
+    if index == tile_atlas.length {
+        tile_atlas.data[index] = texture_position
+        tile_atlas.length += 1
+        return
     }
-    tile_atlas.data[index + 1] = tile_atlas.data[index]
+
+    for i:u32 = tile_atlas.length; i > index; i -= 1 {
+        tile_atlas.data[i] = tile_atlas.data[i - 1]
+    }
+    
     tile_atlas.data[index] = texture_position
     tile_atlas.length += 1
 }
 
-TileListRemoveIndex :: proc(tile_atlas: ^TileAtlas, index:u32){
+TileAtlasRemoveIndex :: proc(tile_atlas: ^TileAtlas, index:u32){
     for i: = index; i < tile_atlas.length -1; i += 1{
         tile_atlas.data[i] = tile_atlas.data[i +1]
     }
