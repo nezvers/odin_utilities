@@ -72,7 +72,7 @@ DrawTileset :: proc(
     tileset: ^Tileset, 
     tile_atlas: ^TileAtlas, 
     skip_zero:bool, 
-    rand_type:TileRandType
+    rand_type:TileRandType,
 ){
     tex_rect:Rectangle = {0.0, 0.0, tile_atlas.tile_size.x, tile_atlas.tile_size.y}
     seed:u32 = tileset.random_seed
@@ -89,12 +89,12 @@ DrawTileset :: proc(
 
             tile_id:TileID
             switch(rand_type){
-                case TileRandType.NONE:
-                    tile_id = tm.TilesetGetTile(tileset, cell_id)
-                case TileRandType.SEED:
-                    tile_id = tm.TilesetGetTileAltRandom(tileset, cell_id, &seed)
-                case TileRandType.XY:
-                    tile_id = tm.TilesetGetTileAltDeterministic(tileset, cell_id, x, y)
+            case TileRandType.NONE:
+                tile_id = tm.TilesetGetTile(tileset, cell_id)
+            case TileRandType.SEED:
+                tile_id = tm.TilesetGetTileAltRandom(tileset, cell_id, &seed)
+            case TileRandType.XY:
+                tile_id = tm.TilesetGetTileAltDeterministic(tileset, cell_id, x, y)
             }
 
             cell_pos:Vector2 = {cast(f32)cell_x, cast(f32)cell_y}
@@ -112,31 +112,32 @@ DrawTilesetRecti :: proc(
     tile_atlas: ^TileAtlas, 
     skip_zero:bool, 
     rand_type:TileRandType, 
-    region_rect:recti
+    region_rect:recti,
 ){
-    if region_rect.x < 0 {
-        region_rect.w += region_rect.x
-        region_rect.x = 0
+    rect:recti = region_rect
+    if rect.x < 0 {
+        rect.w += rect.x
+        rect.x = 0
     }
-    if region_rect.y < 0 {
-        region_rect.h += region_rect.y
-        region_rect.y = 0
+    if rect.y < 0 {
+        rect.h += rect.y
+        rect.y = 0
     }
-    region_rect.w += region_rect.x
-    region_rect.h += region_rect.y
-    if region_rect.w > tilemap.size.x {
-        region_rect.w = tilemap.size.x
+    rect.w += rect.x
+    rect.h += rect.y
+    if rect.w > tilemap.size.x {
+        rect.w = tilemap.size.x
     }
-    if region_rect.h > tilemap.size.y {
-        region_rect.h = tilemap.size.y
+    if rect.h > tilemap.size.y {
+        rect.h = tilemap.size.y
     }
 
     tex_rect:Rectangle = {0.0, 0.0, tile_atlas.tile_size.x, tile_atlas.tile_size.y}
     seed:u32 = tileset.random_seed
 
-    for y:int = region_rect.y; y < region_rect.h; y += 1 {
+    for y:int = rect.y; y < rect.h; y += 1 {
         cell_y:int = tilemap.position.y + y * tilemap.tile_size.y
-        for x:int = region_rect.x; x < region_rect.w; x += 1 {
+        for x:int = rect.x; x < rect.w; x += 1 {
             cell_x:int = tilemap.size.x + x * tilemap.tile_size.x
             cell_i:int = x + y * tilemap.size.x
             cell_id:TileID = tilemap.grid[cell_i]
@@ -146,12 +147,12 @@ DrawTilesetRecti :: proc(
 
             tile_id:TileID
             switch(rand_type){
-                case TileRandType.NONE:
-                    tile_id = tm.TilesetGetTile(tileset, cell_id)
-                case TileRandType.SEED:
-                    tile_id = tm.TilesetGetTileAltRandom(tileset, cell_id, &seed)
-                case TileRandType.XY:
-                    tile_id = tm.TilesetGetTileAltDeterministic(tileset, cell_id, x, y)
+            case TileRandType.NONE:
+                tile_id = tm.TilesetGetTile(tileset, cell_id)
+            case TileRandType.SEED:
+                tile_id = tm.TilesetGetTileAltRandom(tileset, cell_id, &seed)
+            case TileRandType.XY:
+                tile_id = tm.TilesetGetTileAltDeterministic(tileset, cell_id, x, y)
             }
 
             cell_pos:Vector2 = {cast(f32)cell_x, cast(f32)cell_y}
