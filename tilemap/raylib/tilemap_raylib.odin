@@ -182,7 +182,7 @@ DragTiles :: proc(
 
         map_difference:vec2i = temp_tilemap_out.position - tilemap.position
 
-        if cast(i32)(flags & tm.Flags.TILEMAP_FLAGS_CLEAR_SOURCE) != 0 {
+        if cast(i32)(flags & tm.Flags.CLEAR_SOURCE) != 0 {
             tm.TilemapSetTileIdBlock(tilemap, map_rect.x, map_rect.y, map_rect.w, map_rect.h, TILE_EMPTY)
         }
 
@@ -192,7 +192,7 @@ DragTiles :: proc(
             map_rect.w,
             map_rect.h,
         }
-        write_empty:bool = cast(i32)(flags & tm.Flags.TILEMAP_FLAGS_WRITE_EMPTY) != 0
+        write_empty:bool = cast(i32)(flags & tm.Flags.WRITE_EMPTY) != 0
         tm.TilemapSetDataRecti(tilemap, data_rect, temp_buffer, write_empty)
 
         temp_tilemap_out.size = {0.0, 0.0}

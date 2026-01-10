@@ -2,10 +2,10 @@
 package tilemap
 
 Flags :: enum {
-    TILEMAP_FLAGS_NONE          = 0,
+    NONE          = 0,
     // If set value is TILE_EMPTY, use it for overwriting
-    TILEMAP_FLAGS_WRITE_EMPTY   = 1,
-    TILEMAP_FLAGS_CLEAR_SOURCE  = 2,
+    WRITE_EMPTY   = 1,
+    CLEAR_SOURCE  = 2,
 }
 
 // Optional
