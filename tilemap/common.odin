@@ -2,7 +2,7 @@ package tilemap
 
 vec2i :: [2]int
 
-rect2i :: struct {
+recti :: struct {
     x: int,
     y: int,
     w: int,
@@ -21,7 +21,7 @@ Tilemap :: struct {
     capacity: u32,
 }
 
-// Represents set of tiles that can be randomly chosen
+// Represents set of alternative tiles that can be randomly chosen
 Tile :: struct {
     data: []TileID,
     length: u32,
