@@ -48,7 +48,7 @@ TileRemoveId :: proc(tile: ^Tile, tile_id:TileID){
 
 TileRemoveIndex :: proc(tile: ^Tile, index:u32){
     for i: = index; i < tile.length -1; i += 1 {
-        tile.data[i] = tile.data[i+1]
+        tile.data[i] = tile.data[i +1]
     }
     tile.length -= 1
 }
@@ -75,15 +75,16 @@ TilesetInsert :: proc(tileset: ^Tileset, tile:Tile, index:u32){
         return
     }
     for i: = tileset.length; i > index; i -= 1 {
-        tileset.data[i+1] = tileset.data[i]
+        tileset.data[i +1] = tileset.data[i]
     }
-    tileset.data[index+1] = tileset.data[index]
+    tileset.data[index +1] = tileset.data[index]
+    tileset.data[index] = tile
     tileset.length += 1
 }
 
 TilesetRemoveIndex :: proc(tileset: ^Tileset, index:u32){
     for i: = index; i < tileset.length -1; i += 1{
-        tileset.data[i] = tileset.data[i+1]
+        tileset.data[i] = tileset.data[i +1]
     }
     tileset.length -= 1
 }
