@@ -7,10 +7,10 @@ TileInit :: proc(tile: ^Tile, index_buffer:[]TileID, initial_length:u32){
     tile.capacity = cast(u32)len(index_buffer)
 }
 
-TileGetDefault :: proc(tile_id:TileID, index_buffer:[]TileID)->Tile{
+TileNewDefault :: proc(index_buffer:[]TileID, initial_length:u32, tile_id:TileID)->Tile{
     tile:Tile = {
         index_buffer,
-        1,
+        initial_length,
         cast(u32)len(index_buffer),
     }
     tile.data[0] = tile_id
@@ -52,4 +52,36 @@ TileRemoveIndex :: proc(tile: ^Tile, index:u32){
         tile.data[i] = tile.data[i +1]
     }
     tile.length -= 1
+}
+
+// Get default 0th ID or TILE_EMPTY if no IDs inside
+TileGetId :: proc(tile: ^Tile)->TileID{
+    if (tile.length == 0){
+        assert(false)
+        return TILE_EMPTY
+    }
+    result:TileID = tile.data[0]
+    return result
+}
+
+// Use pointer to a seed copy when doing a batch of drawing to get repeatable results
+// Seed is mutated
+TileGetRandomSeed :: proc(tile: ^Tile, seed: ^u32)->TileID{
+    if (tile.length == 0){
+        assert(false)
+        return TILE_EMPTY
+    }
+    index_rnd:u32 = cast(u32)rnd_int(seed, 0, cast(int)tile.length)
+    result:TileID = tile.data[index_rnd]
+    return result
+}
+
+TileGetRandomXY :: proc(tile: ^Tile, seed:u32, seed_x:int, seed_y:int)->TileID{
+    if (tile.length == 0){
+        assert(false)
+        return TILE_EMPTY
+    }
+    index_rnd:u32 = cash(seed, seed_x, seed_y) % tile.length
+    result:TileID = tile.data[index_rnd]
+    return result
 }

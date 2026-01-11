@@ -3,7 +3,7 @@ package demo
 // import "core:fmt"
 import rl "vendor:raylib"
 import tm ".."
-// import tr "../raylib"
+import tr "../raylib"
 
 vec2i :: tm.vec2i
 recti :: tm.recti
@@ -23,6 +23,7 @@ Texture2D :: rl.Texture2D
 
 TILE_SIZE:vec2i: {16, 16}
 ATLAS_SIZE:vec2i: {10, 5}
+MAP_SIZE:vec2i: {10, 10}
 
 // Holds texture positions for tiles
 atlas_buffer:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]Vector2
@@ -32,39 +33,38 @@ tile_buffer:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]TileID
 // Holds indexes for Tiles
 tileset_buffer:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]TileID
 
-// Allocated Tile array
-tile_list:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]Tile
-tileset:Tileset
-
-
-tilemap_buffer: [20 * 20]TileID
-tilemap: Tilemap
 tileset_texture: Texture2D
 tile_atlas: tm.TileAtlas
+
+// Allocated Tile array
+tileset:Tileset
+tile_list:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]Tile
+
+tilemap: Tilemap
+tilemap_buffer: [MAP_SIZE.x * MAP_SIZE.y]TileID
 
 
 game_init :: proc() {
 	create_tiles()
-
-	new_tilemap: = tm.TilemapInit({}, {20,20}, {16,16}, tilemap_buffer[0:len(tilemap_buffer)], len(tilemap_buffer))
-	tm.TilemapClear(&new_tilemap)
+	create_tilemap()
 }
 
 game_shutdown :: proc() {
-
+	rl.UnloadTexture(tileset_texture)
 }
 
 update :: proc() {
-
+ //
 }
 
 draw :: proc() {
     rl.BeginDrawing()
-	rl.ClearBackground(rl.WHITE)
+	rl.ClearBackground(rl.RAYWHITE)
 
-	tile_id:TileID = tile_list[5].data[0]
-	tex_pos:Vector2 = tile_atlas.data[tile_id]
-	rl.DrawTextureRec(tileset_texture, {tex_pos.x,tex_pos.y,16,16}, {32, 32}, rl.WHITE)
+	// draw_from_atlas()
+	// draw_from_tiles()
+	// draw_from_tileset()
+	draw_from_tilemap()
 
     rl.EndDrawing()
 }
@@ -86,8 +86,8 @@ create_tiles :: proc(){
 	tile_buffer[0] = TILE_EMPTY
 	tm.TileInit(&tile_list[0], tile_buffer[0:1], initial_length)
 
-
 	// Calculate actual tiles
+	// for each tile in texture generate atlas position and assign ID to Tile
 	for i:int = 0; i < (ATLAS_SIZE.x * ATLAS_SIZE.y); i += 1{
 		x:int = i % TILE_SIZE.x
 		y:int = i / TILE_SIZE.x
@@ -102,4 +102,88 @@ create_tiles :: proc(){
 		tile_buffer[tile_i] = cast(u8)tile_i
 		tm.TileInit(&tile_list[tile_i], tile_buffer[tile_i:tile_i+1], initial_length)
 	}
+}
+
+create_tilemap :: proc(){
+	tilemap = tm.TilemapInit({100, 100}, MAP_SIZE, {16,16}, tilemap_buffer[0:len(tilemap_buffer)], len(tilemap_buffer))
+	// reset map to predictable state
+	tm.TilemapClear(&tilemap)
+	
+	tm.TilemapSetTile(&tilemap, {2, 2}, 1)
+	tm.TilemapSetTile(&tilemap, {3, 2}, 2)
+	tm.TilemapSetTile(&tilemap, {4, 2}, 3)
+}
+
+// Example for drawing atlas directly by recreating whole texture
+draw_from_atlas::proc(){
+	root_position:Vector2 = {100, 100}
+	padding:int = 4
+	// 0th id is TILE_EMPTY
+	id_offset:int = 1
+	for y:int = 0; y < ATLAS_SIZE.y; y += 1 {
+		for x:int = 0; x < ATLAS_SIZE.x; x += 1 {
+			i:int = x + y * ATLAS_SIZE.x + id_offset
+
+			atlas_id:TileID = cast(TileID)i
+			draw_pos:Vector2 = {
+				root_position.x + cast(f32)(x * (TILE_SIZE.x + padding)), 
+				root_position.y + cast(f32)(y * (TILE_SIZE.y + padding)),
+			}
+			tr.DrawTileAtlas(&tile_atlas, atlas_id, draw_pos, &tileset_texture)
+		}
+	}
+}
+
+// Example for drawing atlas directly by recreating whole texture
+draw_from_tiles::proc(){
+	root_position:Vector2 = {100, 100}
+	padding:int = 4
+	// 0th id is TILE_EMPTY
+	id_offset:int = 1
+	for y:int = 0; y < ATLAS_SIZE.y; y += 1 {
+		for x:int = 0; x < ATLAS_SIZE.x; x += 1 {
+			i:int = x + y * ATLAS_SIZE.x + id_offset
+			// Read tiles default 0th ID
+			atlas_id:TileID = tm.TileGetId(&tile_list[i])
+			draw_pos:Vector2 = {
+				root_position.x + cast(f32)(x * (TILE_SIZE.x + padding)), 
+				root_position.y + cast(f32)(y * (TILE_SIZE.y + padding)),
+			}
+			tr.DrawTileAtlas(&tile_atlas, atlas_id, draw_pos, &tileset_texture)
+		}
+	}
+}
+
+// Example for drawing atlas directly by recreating whole texture
+draw_from_tileset::proc(){
+	root_position:Vector2 = {100, 100}
+	padding:int = 4
+	// 0th id is TILE_EMPTY
+	id_offset:int = 1
+	for y:int = 0; y < ATLAS_SIZE.y; y += 1 {
+		for x:int = 0; x < ATLAS_SIZE.x; x += 1 {
+			i:int = x + y * ATLAS_SIZE.x + id_offset
+			
+			// get a tile ID from tileset
+			tile:TileID = tm.TilesetGetTile(&tileset, cast(TileID)i)
+
+			// Read tiles default 0th ID
+			atlas_id:TileID = tm.TileGetId(&tile_list[tile])
+			draw_pos:Vector2 = {
+				root_position.x + cast(f32)(x * (TILE_SIZE.x + padding)), 
+				root_position.y + cast(f32)(y * (TILE_SIZE.y + padding)),
+			}
+			tr.DrawTileAtlas(&tile_atlas, atlas_id, draw_pos, &tileset_texture)
+		}
+	}
+}
+
+draw_from_tilemap :: proc(){
+	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
+	tr.DrawTilemapTileId(&tilemap, rl.GetFontDefault(), 10, rl.LIGHTGRAY)
+
+	mp:Vector2 = rl.GetMousePosition()
+	tr.DrawTilemapCellRect(&tilemap, {cast(int)mp.x, cast(int)mp.y}, 0, rl.GetFontDefault(), 10, rl.GRAY)
+
+	tr.DrawTilemapSelection(&tilemap, {2, 2, 3, 1}, rl.GRAY)
 }
