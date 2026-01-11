@@ -12,5 +12,5 @@
     - ❎ project
     - ❎ envelope
 - ❎ spring `odin run spring/demo`
-- ❎ tilemap `odin run tilemap/demo`
+- ❎ tilemap `odin run demo` Run command from tilemap directory.
 - ❎ verlet2d `odin run verlet2d/demo`
