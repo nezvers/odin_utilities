@@ -166,7 +166,7 @@ DrawTilemapRecti :: proc(
     for y:int = rect.y; y < rect.h; y += 1 {
         cell_y:int = tilemap.position.y + y * tilemap.tile_size.y
         for x:int = rect.x; x < rect.w; x += 1 {
-            cell_x:int = tilemap.size.x + x * tilemap.tile_size.x
+            cell_x:int = tilemap.position.x + x * tilemap.tile_size.x
             cell_i:int = x + y * tilemap.size.x
             cell_id:TileID = tilemap.grid[cell_i]
             if (cell_id == TILE_EMPTY && skip_zero){

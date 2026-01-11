@@ -179,7 +179,11 @@ draw_from_tileset::proc(){
 }
 
 draw_from_tilemap :: proc(){
-	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, true, tm.TileRandType.NONE, &tileset_texture)
+	skip_zero:bool = true
+	// tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+
+	region:recti = {1, 2, 3, 1}
+	tr.DrawTilemapRecti(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, region, &tileset_texture)
 
 	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
 	tr.DrawTilemapTileId(&tilemap, rl.GetFontDefault(), 10, rl.LIGHTGRAY)
@@ -187,5 +191,5 @@ draw_from_tilemap :: proc(){
 	mp:Vector2 = rl.GetMousePosition()
 	tr.DrawTilemapCellRect(&tilemap, {cast(int)mp.x, cast(int)mp.y}, 0, rl.GetFontDefault(), 10, rl.GRAY)
 
-	tr.DrawTilemapSelection(&tilemap, {2, 2, 3, 1}, rl.GRAY)
+	tr.DrawTilemapSelection(&tilemap, region, rl.GRAY)
 }
