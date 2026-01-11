@@ -179,6 +179,8 @@ draw_from_tileset::proc(){
 }
 
 draw_from_tilemap :: proc(){
+	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, true, tm.TileRandType.NONE, &tileset_texture)
+
 	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
 	tr.DrawTilemapTileId(&tilemap, rl.GetFontDefault(), 10, rl.LIGHTGRAY)
 
