@@ -3,10 +3,11 @@ package demo
 // import "core:fmt"
 import rl "vendor:raylib"
 import tm ".."
-import tr "../raylib"
+// import tr "../raylib"
 
 vec2i :: tm.vec2i
 recti :: tm.recti
+TileAtlas :: tm.TileAtlas
 TileID :: tm.TileID
 Tile :: tm.Tile
 Tileset :: tm.Tileset
@@ -39,11 +40,11 @@ tileset:Tileset
 tilemap_buffer: [20 * 20]TileID
 tilemap: Tilemap
 tileset_texture: Texture2D
-tile_atlas: tr.TileAtlas
+tile_atlas: tm.TileAtlas
 
 
 game_init :: proc() {
-	create_tile_atlas()
+	create_tiles()
 
 	new_tilemap: = tm.TilemapInit({}, {20,20}, {16,16}, tilemap_buffer[0:len(tilemap_buffer)], len(tilemap_buffer))
 	tm.TilemapClear(&new_tilemap)
@@ -68,30 +69,37 @@ draw :: proc() {
     rl.EndDrawing()
 }
 
-create_tile_atlas :: proc(){
+create_tiles :: proc(){
 	tileset_texture = rl.LoadTexture("demo/tileset_template.png")
-	tr.TileAtlasInit(&tile_atlas, {cast(f32)TILE_SIZE.x, cast(f32)TILE_SIZE.y}, &tileset_texture, atlas_buffer[0:len(atlas_buffer)])
+	tile_size:Vector2 = {cast(f32)TILE_SIZE.x, cast(f32)TILE_SIZE.y}
+	tm.TileAtlasInit(&tile_atlas, tile_size, atlas_buffer[0:len(atlas_buffer)])
+	
+	// Assign Tile array to a tileset
+	initial_length_tileset:u32 = len(tile_list)
+	tm.TilesetInit(&tileset, tile_list[0:len(tile_list)], initial_length_tileset)
 	
 	// Represents TILE_EMPTY, use skip_zero flag
-	tr.TileAtlasInsert(&tile_atlas, {0.0, 0.0}, 0)
+	tex_pos:Vector2 = {0.0, 0.0}
+	// Each tile gets 1 TileAtlas position
+	initial_length:u32 = 1
+	tm.TileAtlasInsert(&tile_atlas, tex_pos, 0)
 	tile_buffer[0] = TILE_EMPTY
-	tm.TileInit(&tile_list[0], tile_buffer[0:1])
-	tm.TilesetInit(&tileset, tile_list[0:len(tile_list)])
+	tm.TileInit(&tile_list[0], tile_buffer[0:1], initial_length)
 
 
 	// Calculate actual tiles
 	for i:int = 0; i < (ATLAS_SIZE.x * ATLAS_SIZE.y); i += 1{
 		x:int = i % TILE_SIZE.x
 		y:int = i / TILE_SIZE.x
-		tex_pos:Vector2 = {
+		tex_pos = {
 			cast(f32)(x * TILE_SIZE.x),
 			cast(f32)(y * TILE_SIZE.y),
 		}
 
 		tile_i:u32 = cast(u32)(i + 1)
-		tr.TileAtlasInsert(&tile_atlas, tex_pos, tile_i)
+		tm.TileAtlasInsert(&tile_atlas, tex_pos, tile_i)
 		// Assign TileID
 		tile_buffer[tile_i] = cast(u8)tile_i
-		tm.TileInit(&tile_list[tile_i], tile_buffer[tile_i:tile_i+1])
+		tm.TileInit(&tile_list[tile_i], tile_buffer[tile_i:tile_i+1], initial_length)
 	}
 }
