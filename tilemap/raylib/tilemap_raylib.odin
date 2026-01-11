@@ -116,7 +116,7 @@ DrawTilemap :: proc(
             tile_id:TileID
             switch(rand_type){
             case TileRandType.NONE:
-                tile_id = tm.TilesetGetTile(tileset, cell_id)
+                tile_id = tm.TilesetGetId(tileset, cell_id)
             case TileRandType.SEED:
                 tile_id = tm.TilesetGetTileAltRandom(tileset, cell_id, &seed)
             case TileRandType.XY:
@@ -133,6 +133,7 @@ DrawTilemap :: proc(
     }
 }
 
+// Draw selected region. For optimization draw only what is on a screen.
 DrawTilemapRecti :: proc(
     tilemap: ^Tilemap, 
     tileset: ^Tileset, 
@@ -176,7 +177,7 @@ DrawTilemapRecti :: proc(
             tile_id:TileID
             switch(rand_type){
             case TileRandType.NONE:
-                tile_id = tm.TilesetGetTile(tileset, cell_id)
+                tile_id = tm.TilesetGetId(tileset, cell_id)
             case TileRandType.SEED:
                 tile_id = tm.TilesetGetTileAltRandom(tileset, cell_id, &seed)
             case TileRandType.XY:

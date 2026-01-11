@@ -37,12 +37,21 @@ TilesetRemoveIndex :: proc(tileset: ^Tileset, index:u32){
     tileset.length -= 1
 }
 
-TilesetGetTile :: proc(tileset: ^Tileset, tile_id:TileID)->TileID {
+TilesetGetId :: proc(tileset: ^Tileset, tile_id:TileID)->TileID {
     assert(tile_id != TILE_INVALID)
     if (tile_id > cast(u8)(tileset.length - 1)){
         return TILE_EMPTY
     }
     result:TileID = tileset.data[tile_id].data[0]
+    return result
+}
+
+TilesetGetTile :: proc(tileset: ^Tileset, tile_id:TileID)->Tile {
+    assert(tile_id != TILE_INVALID)
+    if (tile_id > cast(u8)(tileset.length - 1)){
+        return {}
+    }
+    result:Tile = tileset.data[tile_id]
     return result
 }
 

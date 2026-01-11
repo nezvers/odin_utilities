@@ -165,7 +165,7 @@ draw_from_tileset::proc(){
 			i:int = x + y * ATLAS_SIZE.x + id_offset
 			
 			// get a tile ID from tileset
-			tile:TileID = tm.TilesetGetTile(&tileset, cast(TileID)i)
+			tile:TileID = tm.TilesetGetId(&tileset, cast(TileID)i)
 
 			// Read tiles default 0th ID
 			atlas_id:TileID = tm.TileGetId(&tile_list[tile])
@@ -180,10 +180,14 @@ draw_from_tileset::proc(){
 
 draw_from_tilemap :: proc(){
 	skip_zero:bool = true
-	// tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
-
 	region:recti = {1, 2, 3, 1}
-	tr.DrawTilemapRecti(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, region, &tileset_texture)
+	show_region:bool = true
+
+	if show_region {
+		tr.DrawTilemapRecti(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, region, &tileset_texture)
+	} else {
+		tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+	}
 
 	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
 	tr.DrawTilemapTileId(&tilemap, rl.GetFontDefault(), 10, rl.LIGHTGRAY)
