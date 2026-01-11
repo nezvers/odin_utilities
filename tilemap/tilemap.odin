@@ -2,10 +2,10 @@
 package tilemap
 
 Flags :: enum {
-    TILEMAP_FLAGS_NONE          = 0,
+    NONE          = 0,
     // If set value is TILE_EMPTY, use it for overwriting
-    TILEMAP_FLAGS_WRITE_EMPTY   = 1,
-    TILEMAP_FLAGS_CLEAR_SOURCE  = 2,
+    WRITE_EMPTY   = 1,
+    CLEAR_SOURCE  = 2,
 }
 
 // Optional
@@ -13,6 +13,7 @@ TilemapInit :: proc(position:vec2i, size:vec2i, tile_size:vec2i, buffer:[]TileID
     return { position, size, tile_size, buffer, buffer_size, }
 }
 
+// Writes TILE_EMPTY on all cells
 TilemapClear :: proc(tilemap: ^Tilemap) {
     for i in 0..< len(tilemap.grid){
         tilemap.grid[i] = TILE_EMPTY
