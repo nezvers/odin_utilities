@@ -275,7 +275,7 @@ draw_tilemap_region :: proc(){
 	// Draw rectangle around tiles
 	tr.DrawTilemapSelection(&tilemap, region, rl.GRAY)
 
-	rl.DrawText("draw_tilemap_region: ", 10, 10, 20, rl.BLACK)
+	rl.DrawText("draw_tilemap_region: reveal tiles with rectangle", 10, 10, 20, rl.BLACK)
 }
 
 draw_tilemap_paint :: proc(){
