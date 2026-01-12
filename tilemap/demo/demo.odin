@@ -29,6 +29,7 @@ Example :: enum {
 	DRAW_TILEMAP,
 	DRAW_TILEMAP_GRID,
 	DRAW_TILEMAP_REGION,
+	DRAW_TILEMAP_PAINT,
 	COUNT,
 }
 current_example:Example = Example.DRAW_ATLAS
@@ -89,6 +90,8 @@ draw :: proc() {
 		draw_tilemap_grid()
 	case Example.DRAW_TILEMAP_REGION:
 		draw_tilemap_region()
+	case Example.DRAW_TILEMAP_PAINT:
+		draw_tilemap_paint()
 	}
 
     rl.EndDrawing()
@@ -240,7 +243,7 @@ draw_from_tilemap :: proc(){
 
 	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
-	rl.DrawText("draw_from_tilemap: TILEMAP -> Tileset -> Tile -> TileAtlas", 10, 10, 20, rl.BLACK)
+	rl.DrawText("draw_from_tilemap: Tilemap -> Tileset -> Tile -> TileAtlas", 10, 10, 20, rl.BLACK)
 }
 
 draw_tilemap_grid :: proc(){
@@ -273,4 +276,50 @@ draw_tilemap_region :: proc(){
 	tr.DrawTilemapSelection(&tilemap, region, rl.GRAY)
 
 	rl.DrawText("draw_tilemap_region: ", 10, 10, 20, rl.BLACK)
+}
+
+draw_tilemap_paint :: proc(){
+	@(static) tile_id:TileID = TILE_EMPTY
+	mouse_position:Vector2 = rl.GetMousePosition()
+	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
+	// Translate position to tile coordinates
+	tile_position:vec2i = tm.TilemapGetPositionWorld2Tile(&tilemap, mouse_position_i)
+	// Don't draw TILE_EMPTY ID
+	skip_zero:bool = true
+	
+	// Read TileID under mouse position
+	mouse_id:TileID = tm.TilemapGetTileWorld(&tilemap, mouse_position_i)
+
+	if mouse_id != TILE_INVALID {
+		// Active while inside tilemap
+		wheel:int = cast(int)rl.GetMouseWheelMove()
+		max_tiles:int = (ATLAS_SIZE.x * ATLAS_SIZE.y + 1)
+		if wheel > 0 {
+			tile_id = cast(TileID)((cast(int)tile_id + 1) % max_tiles)
+		}
+		if wheel < 0 {
+			tile_id = cast(TileID)((cast(int)tile_id - 1 + max_tiles) % max_tiles)
+		}
+
+		if rl.IsMouseButtonPressed(rl.MouseButton.RIGHT){
+			// Copy TileID under mouse
+			tile_id = mouse_id
+		}
+
+		if rl.IsMouseButtonPressed(rl.MouseButton.LEFT){
+			// Set TileID under mouse
+			tm.TilemapSetTile(&tilemap, tile_position, tile_id)
+		}
+	}
+
+	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
+	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+
+	if mouse_id != TILE_INVALID {
+		// Draw a cell aligned to grid and ID under mouse
+		tr.DrawTilemapCellRect(&tilemap, mouse_position_i, tile_id, rl.GetFontDefault(), 10, rl.GRAY)
+
+	}
+
+	rl.DrawText("draw_tilemap_paint: left mouse draw, right mouse copy, mouse scroll change ID", 10, 10, 20, rl.BLACK)
 }
