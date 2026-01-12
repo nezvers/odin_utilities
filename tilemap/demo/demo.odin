@@ -4,6 +4,7 @@ package demo
 import rl "vendor:raylib"
 import tm ".."
 import tr "../raylib"
+import math "core:math"
 
 vec2i :: tm.vec2i
 recti :: tm.recti
@@ -20,6 +21,17 @@ Rectangle :: rl.Rectangle
 Color :: rl.Color
 Font :: rl.Font
 Texture2D :: rl.Texture2D
+
+Example :: enum {
+	DRAW_ATLAS,
+	DRAW_TILE,
+	DRAW_TILESET,
+	DRAW_TILEMAP,
+	DRAW_TILEMAP_GRID,
+	DRAW_TILEMAP_REGION,
+	COUNT,
+}
+current_example:Example = Example.DRAW_ATLAS
 
 TILE_SIZE:vec2i: {16, 16}
 ATLAS_SIZE:vec2i: {10, 5}
@@ -54,17 +66,30 @@ game_shutdown :: proc() {
 }
 
 update :: proc() {
- //
+	if rl.IsKeyPressed(rl.KeyboardKey.TAB) {
+		current_example = cast(Example)((cast(int)current_example + 1) % cast(int)Example.COUNT)
+	}
 }
 
 draw :: proc() {
     rl.BeginDrawing()
 	rl.ClearBackground(rl.RAYWHITE)
 
-	// draw_from_atlas()
-	// draw_from_tiles()
-	// draw_from_tileset()
-	draw_from_tilemap()
+	
+	#partial switch(current_example){
+	case Example.DRAW_ATLAS:
+		draw_from_atlas()
+	case Example.DRAW_TILE:
+		draw_from_tiles()
+	case Example.DRAW_TILESET:
+		draw_from_tileset()
+	case Example.DRAW_TILEMAP:
+		draw_from_tilemap()
+	case Example.DRAW_TILEMAP_GRID:
+		draw_tilemap_grid()
+	case Example.DRAW_TILEMAP_REGION:
+		draw_tilemap_region()
+	}
 
     rl.EndDrawing()
 }
@@ -89,8 +114,8 @@ create_tiles :: proc(){
 	// Calculate actual tiles
 	// for each tile in texture generate atlas position and assign ID to Tile
 	for i:int = 0; i < (ATLAS_SIZE.x * ATLAS_SIZE.y); i += 1{
-		x:int = i % TILE_SIZE.x
-		y:int = i / TILE_SIZE.x
+		x:int = i % ATLAS_SIZE.x
+		y:int = i / ATLAS_SIZE.x
 		tex_pos = {
 			cast(f32)(x * TILE_SIZE.x),
 			cast(f32)(y * TILE_SIZE.y),
@@ -112,12 +137,38 @@ create_tilemap :: proc(){
 	tm.TilemapSetTile(&tilemap, {2, 2}, 1)
 	tm.TilemapSetTile(&tilemap, {3, 2}, 2)
 	tm.TilemapSetTile(&tilemap, {4, 2}, 3)
+	tm.TilemapSetTile(&tilemap, {6, 2}, 4)
+
+	tm.TilemapSetTile(&tilemap, {2, 3}, 1 + cast(TileID)ATLAS_SIZE.x * 1)
+	tm.TilemapSetTile(&tilemap, {3, 3}, 2 + cast(TileID)ATLAS_SIZE.x * 1)
+	tm.TilemapSetTile(&tilemap, {4, 3}, 3 + cast(TileID)ATLAS_SIZE.x * 1)
+	tm.TilemapSetTile(&tilemap, {6, 3}, 4 + cast(TileID)ATLAS_SIZE.x * 1)
+
+	tm.TilemapSetTile(&tilemap, {2, 4}, 1 + cast(TileID)ATLAS_SIZE.x * 2)
+	tm.TilemapSetTile(&tilemap, {3, 4}, 2 + cast(TileID)ATLAS_SIZE.x * 2)
+	tm.TilemapSetTile(&tilemap, {4, 4}, 3 + cast(TileID)ATLAS_SIZE.x * 2)
+	tm.TilemapSetTile(&tilemap, {6, 4}, 4 + cast(TileID)ATLAS_SIZE.x * 2)
+
+	tm.TilemapSetTile(&tilemap, {2, 6}, 1 + cast(TileID)ATLAS_SIZE.x * 3)
+	tm.TilemapSetTile(&tilemap, {3, 6}, 2 + cast(TileID)ATLAS_SIZE.x * 3)
+	tm.TilemapSetTile(&tilemap, {4, 6}, 3 + cast(TileID)ATLAS_SIZE.x * 3)
+
+	tm.TilemapSetTile(&tilemap, {6, 6}, 4 + cast(TileID)ATLAS_SIZE.x * 3)
+}
+
+get_animation_time :: proc(speed:f32)->f32 {
+	@(static) t:f32
+	t += rl.GetFrameTime() * speed
+	if t > 1.0 {
+		t -= cast(f32)cast(i32)t
+	}
+	return t
 }
 
 // Example for drawing atlas directly by recreating whole texture
 draw_from_atlas::proc(){
+	padding:int = 4 + cast(int)(math.sin(get_animation_time(0.2) * math.TAU) * 4.5)
 	root_position:Vector2 = {100, 100}
-	padding:int = 4
 	// 0th id is TILE_EMPTY
 	id_offset:int = 1
 	for y:int = 0; y < ATLAS_SIZE.y; y += 1 {
@@ -132,12 +183,14 @@ draw_from_atlas::proc(){
 			tr.DrawTileAtlas(&tile_atlas, atlas_id, draw_pos, &tileset_texture)
 		}
 	}
+
+	rl.DrawText("draw_from_atlas\nTAB to change", 10, 10, 20, rl.BLACK)
 }
 
 // Example for drawing atlas directly by recreating whole texture
 draw_from_tiles::proc(){
+	padding:int = 4 + cast(int)(math.sin(get_animation_time(0.2) * math.TAU) * 4.5)
 	root_position:Vector2 = {100, 100}
-	padding:int = 4
 	// 0th id is TILE_EMPTY
 	id_offset:int = 1
 	for y:int = 0; y < ATLAS_SIZE.y; y += 1 {
@@ -152,12 +205,14 @@ draw_from_tiles::proc(){
 			tr.DrawTileAtlas(&tile_atlas, atlas_id, draw_pos, &tileset_texture)
 		}
 	}
+
+	rl.DrawText("draw_from_tiles: Tile -> TileAtlas", 10, 10, 20, rl.BLACK)
 }
 
 // Example for drawing atlas directly by recreating whole texture
 draw_from_tileset::proc(){
+	padding:int = 4 + cast(int)(math.sin(get_animation_time(0.2) * math.TAU) * 4.5)
 	root_position:Vector2 = {100, 100}
-	padding:int = 4
 	// 0th id is TILE_EMPTY
 	id_offset:int = 1
 	for y:int = 0; y < ATLAS_SIZE.y; y += 1 {
@@ -176,24 +231,46 @@ draw_from_tileset::proc(){
 			tr.DrawTileAtlas(&tile_atlas, atlas_id, draw_pos, &tileset_texture)
 		}
 	}
+
+	rl.DrawText("draw_from_tileset: Tileset -> Tile -> TileAtlas", 10, 10, 20, rl.BLACK)
 }
 
 draw_from_tilemap :: proc(){
 	skip_zero:bool = true
-	region:recti = {1, 2, 3, 1}
-	show_region:bool = true
 
-	if show_region {
-		tr.DrawTilemapRecti(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, region, &tileset_texture)
-	} else {
-		tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
-	}
+	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
+	rl.DrawText("draw_from_tilemap: TILEMAP -> Tileset -> Tile -> TileAtlas", 10, 10, 20, rl.BLACK)
+}
+
+draw_tilemap_grid :: proc(){
 	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
 	tr.DrawTilemapTileId(&tilemap, rl.GetFontDefault(), 10, rl.LIGHTGRAY)
 
-	mp:Vector2 = rl.GetMousePosition()
-	tr.DrawTilemapCellRect(&tilemap, {cast(int)mp.x, cast(int)mp.y}, 0, rl.GetFontDefault(), 10, rl.GRAY)
+	mouse_position:Vector2 = rl.GetMousePosition()
+	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
+	// Read TileID under mouse position
+	tile_id:TileID = tm.TilemapGetTileWorld(&tilemap, mouse_position_i)
+	// Draw a cell aligned to grid and ID under mouse
+	tr.DrawTilemapCellRect(&tilemap, mouse_position_i, tile_id, rl.GetFontDefault(), 10, rl.GRAY)
 
+	rl.DrawText("draw_tilemap_grid: ", 10, 10, 20, rl.BLACK)
+}
+
+draw_tilemap_region :: proc(){
+	mouse_position:Vector2 = rl.GetMousePosition()
+	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
+	// Translate position to tile coordinates
+	tile_position:vec2i = tm.TilemapGetPositionWorld2Tile(&tilemap, mouse_position_i)
+	region:recti = {tile_position.x, tile_position.y, 4, 3}
+	// Don't draw TILE_EMPTY ID
+	skip_zero:bool = true
+
+	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
+	// Draw only tiles inside region
+	tr.DrawTilemapRecti(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, region, &tileset_texture)
+	// Draw rectangle around tiles
 	tr.DrawTilemapSelection(&tilemap, region, rl.GRAY)
+
+	rl.DrawText("draw_tilemap_region: ", 10, 10, 20, rl.BLACK)
 }
