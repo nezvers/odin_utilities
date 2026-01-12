@@ -1,4 +1,4 @@
-package demo
+package AppState
 
 AppState :: struct {
     enter: proc(),
