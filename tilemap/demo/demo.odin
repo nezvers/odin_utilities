@@ -24,18 +24,31 @@ Color :: rl.Color
 Font :: rl.Font
 Texture2D :: rl.Texture2D
 
+screen_size:Vector2
+
 Example :: enum {
-	DRAW_ATLAS,
-	DRAW_TILE,
-	DRAW_TILESET,
-	DRAW_TILEMAP,
-	DRAW_TILEMAP_GRID,
-	DRAW_TILEMAP_REGION,
-	DRAW_TILEMAP_PAINT,
-	DRAW_TILEMAP_DRAG,
+	ATLAS,
+	TILE,
+	TILESET,
+	TILEMAP,
+	TILEMAP_GRID,
+	TILEMAP_REGION,
+	TILEMAP_PAINT,
+	TILEMAP_DRAG,
 	COUNT,
 }
-current_example:Example = Example.DRAW_TILEMAP_DRAG
+current_example:Example = Example.ATLAS
+
+example_names:[]cstring = {
+	"ATLAS",
+	"TILE",
+	"TILESET",
+	"TILEMAP",
+	"TILEMAP_GRID",
+	"TILEMAP_REGION",
+	"TILEMAP_PAINT",
+	"TILEMAP_DRAG",
+}
 
 TILE_SIZE:vec2i: {16, 16}
 ATLAS_SIZE:vec2i: {10, 5}
@@ -73,6 +86,7 @@ update :: proc() {
 	if rl.IsKeyPressed(rl.KeyboardKey.TAB) {
 		current_example = cast(Example)((cast(int)current_example + 1) % cast(int)Example.COUNT)
 	}
+	screen_size = {cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight()}
 }
 
 draw :: proc() {
@@ -81,22 +95,32 @@ draw :: proc() {
 
 	
 	#partial switch(current_example){
-	case Example.DRAW_ATLAS:
+	case Example.ATLAS:
 		draw_from_atlas()
-	case Example.DRAW_TILE:
+	case Example.TILE:
 		draw_from_tiles()
-	case Example.DRAW_TILESET:
+	case Example.TILESET:
 		draw_from_tileset()
-	case Example.DRAW_TILEMAP:
+	case Example.TILEMAP:
 		draw_from_tilemap()
-	case Example.DRAW_TILEMAP_GRID:
+	case Example.TILEMAP_GRID:
 		draw_tilemap_grid()
-	case Example.DRAW_TILEMAP_REGION:
+	case Example.TILEMAP_REGION:
 		draw_tilemap_region()
-	case Example.DRAW_TILEMAP_PAINT:
+	case Example.TILEMAP_PAINT:
 		draw_tilemap_paint()
-	case Example.DRAW_TILEMAP_DRAG:
+	case Example.TILEMAP_DRAG:
 		draw_tilemap_drag()
+	}
+
+	BUTTON_SIZE: Vector2: {150, 20}
+	BUTTON_PADDING :f32: 2
+	button_rect:Rectangle = {screen_size.x - BUTTON_SIZE.x, 0, BUTTON_SIZE.x, BUTTON_SIZE.y}
+	for i:int; i < cast(int)Example.COUNT; i += 1{
+		if (rl.GuiButton(button_rect, example_names[i])){
+			current_example = cast(Example)i
+		}
+		button_rect.y += BUTTON_SIZE.y + BUTTON_PADDING
 	}
 
     rl.EndDrawing()
@@ -262,7 +286,7 @@ draw_tilemap_grid :: proc(){
 	// Draw a cell aligned to grid and ID under mouse
 	tr.DrawTilemapCellRect(&tilemap, mouse_position_i, tile_id, rl.GetFontDefault(), 10, rl.GRAY)
 
-	rl.DrawText("draw_tilemap_grid: ", 10, 10, 20, rl.BLACK)
+	rl.DrawText("draw_tilemap_grid: display as grid and IDs", 10, 10, 20, rl.BLACK)
 }
 
 draw_tilemap_region :: proc(){
@@ -270,7 +294,7 @@ draw_tilemap_region :: proc(){
 	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
 	// Translate position to tile coordinates
 	tile_position:vec2i = tm.TilemapGetWorld2Tile(&tilemap, mouse_position_i)
-	region:recti = {tile_position.x, tile_position.y, 4, 3}
+	region:recti = {tile_position.x - 5, tile_position.y - 4, 5, 4}
 	// Don't draw TILE_EMPTY ID
 	skip_zero:bool = true
 
@@ -283,18 +307,24 @@ draw_tilemap_region :: proc(){
 	rl.DrawText("draw_tilemap_region: reveal tiles with rectangle", 10, 10, 20, rl.BLACK)
 }
 
+// NOTE: tilemap/editing.odin has PaintTiles funcionality
 draw_tilemap_paint :: proc(){
 	@(static) tile_id:TileID = TILE_EMPTY
+	@(static) position_state:vec2i
 	mouse_position:Vector2 = rl.GetMousePosition()
 	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
-	// Translate position to tile coordinates
-	tile_position:vec2i = tm.TilemapGetWorld2Tile(&tilemap, mouse_position_i)
-	// Don't draw TILE_EMPTY ID
-	skip_zero:bool = true
-	
+
+	input_paint:InputState = tm.GetInputState(
+		rl.IsMouseButtonPressed(rl.MouseButton.LEFT), 
+		rl.IsMouseButtonDown(rl.MouseButton.LEFT),
+		rl.IsMouseButtonReleased(rl.MouseButton.LEFT),
+	)
+
+	tm.PaintTiles(&tilemap, mouse_position_i, &position_state, tile_id, input_paint )
+
 	// Read TileID under mouse position
 	mouse_id:TileID = tm.TilemapGetTileWorld(&tilemap, mouse_position_i)
-
+	
 	if mouse_id != TILE_INVALID {
 		// Active while inside tilemap
 		wheel:int = cast(int)rl.GetMouseWheelMove()
@@ -305,18 +335,15 @@ draw_tilemap_paint :: proc(){
 		if wheel < 0 {
 			tile_id = cast(TileID)((cast(int)tile_id - 1 + max_tiles) % max_tiles)
 		}
-
+		
 		if rl.IsMouseButtonPressed(rl.MouseButton.RIGHT){
 			// Copy TileID under mouse
 			tile_id = mouse_id
 		}
-
-		if rl.IsMouseButtonPressed(rl.MouseButton.LEFT){
-			// Set TileID under mouse
-			tm.TilemapSetTile(&tilemap, tile_position, tile_id)
-		}
 	}
-
+		
+	// Don't draw TILE_EMPTY ID
+	skip_zero:bool = true
 	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
 	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
@@ -405,5 +432,5 @@ draw_tilemap_drag :: proc(){
 
 	tr.DrawTilemapSelection(&tilemap, rect_state, rl.BLACK)
 
-	rl.DrawText("draw_tilemap_drag: left mouse select, right mouse drag, hold CTRL to remove source", 10, 10, 20, rl.BLACK)
+	rl.DrawText("draw_tilemap_drag: left mouse select, right mouse drag, hold CTRL to remove source, ALT to write empty tiles", 10, 10, 20, rl.BLACK)
 }
