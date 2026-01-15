@@ -34,7 +34,6 @@ Tilemap :: struct {
     size:vec2i,
     tile_size:vec2i,
     grid: []TileID,
-    capacity: u32,
 }
 
 // Array of atlas position IDs. Tile->TileAtlas.data
@@ -62,4 +61,58 @@ TileRandType :: enum {
     SEED,
     // Using deterministic Tileset.random_seed + cell X & Y
     XY,
+}
+
+// clip off that is not inside the clip recti
+RectiClipRecti :: proc(clip:^recti, rect:^recti) {
+    if rect.x < clip.x {
+        diff:int = clip.x - rect.x
+        rect.w -= diff
+        rect.x = 0
+    }
+    if rect.y < clip.y {
+        diff:int = clip.y - rect.y
+        rect.h -= diff
+        rect.y = 0
+    }
+    if rect.x + rect.w > clip.w {
+        diff:int = (rect.x + rect.w) - clip.w
+        rect.w -= diff
+    }
+    if rect.y + rect.h > clip.h {
+        diff:int = (rect.y + rect.h) - clip.h
+        rect.h -= diff
+    }
+    if rect.w < 0 {
+        rect.w = 0
+    }
+    if rect.h < 0 {
+        rect.h = 0
+    }
+}
+
+RectiFromRange :: proc(from:vec2i, to:vec2i)->recti {
+    result:recti = {}
+
+    if (to.x < from.x){
+        result.x = to.x
+        result.w = from.x - to.x
+    } else
+    {
+        result.x = from.x
+        result.w = to.x - from.x
+    }
+
+    if (to.y < from.y){
+        result.y = to.y
+        result.h = from.y - to.y
+    } else
+    {
+        result.y = from.y
+        result.h = to.y - from.y
+    }
+
+    result.w += 1
+    result.h += 1
+    return result
 }

@@ -66,7 +66,7 @@ DrawTilemapTileId :: proc(tilemap: ^Tilemap, font:Font, font_size:int, color:Col
 
 // Draw rectangle around tile and draw provided ID
 DrawTilemapCellRect :: proc(tilemap: ^Tilemap, world_pos:vec2i, tile_id:TileID, font:Font, font_size:int, color:Color){
-    tile_pos:vec2i = tm.TilemapGetPositionWorld2Tile(tilemap, world_pos)
+    tile_pos:vec2i = tm.TilemapGetWorld2Tile(tilemap, world_pos)
     tile_x:int = tilemap.position.x + tile_pos.x * tilemap.tile_size.x
     tile_y:int = tilemap.position.y + tile_pos.y * tilemap.tile_size.y
     rl.DrawRectangleLines(cast(i32)tile_x, cast(i32)tile_y, cast(i32)tilemap.tile_size.x, cast(i32)tilemap.tile_size.y, color)

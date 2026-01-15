@@ -1,6 +1,6 @@
 package demo
 
-// import "core:fmt"
+import "core:fmt"
 import rl "vendor:raylib"
 import tm ".."
 import tr "../raylib"
@@ -15,6 +15,8 @@ Tileset :: tm.Tileset
 Tilemap :: tm.Tilemap
 TILE_EMPTY :: tm.TILE_EMPTY
 TILE_INVALID :: tm.TILE_INVALID
+//for editing
+InputState :: tm.InputState
 
 Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
@@ -30,9 +32,10 @@ Example :: enum {
 	DRAW_TILEMAP_GRID,
 	DRAW_TILEMAP_REGION,
 	DRAW_TILEMAP_PAINT,
+	DRAW_TILEMAP_DRAG,
 	COUNT,
 }
-current_example:Example = Example.DRAW_ATLAS
+current_example:Example = Example.DRAW_TILEMAP_DRAG
 
 TILE_SIZE:vec2i: {16, 16}
 ATLAS_SIZE:vec2i: {10, 5}
@@ -92,6 +95,8 @@ draw :: proc() {
 		draw_tilemap_region()
 	case Example.DRAW_TILEMAP_PAINT:
 		draw_tilemap_paint()
+	case Example.DRAW_TILEMAP_DRAG:
+		draw_tilemap_drag()
 	}
 
     rl.EndDrawing()
@@ -133,7 +138,7 @@ create_tiles :: proc(){
 }
 
 create_tilemap :: proc(){
-	tilemap = tm.TilemapInit({100, 100}, MAP_SIZE, {16,16}, tilemap_buffer[0:len(tilemap_buffer)], len(tilemap_buffer))
+	tilemap = tm.TilemapInit({100, 100}, MAP_SIZE, {16,16}, tilemap_buffer[0:len(tilemap_buffer)])
 	// reset map to predictable state
 	tm.TilemapClear(&tilemap)
 	
@@ -264,7 +269,7 @@ draw_tilemap_region :: proc(){
 	mouse_position:Vector2 = rl.GetMousePosition()
 	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
 	// Translate position to tile coordinates
-	tile_position:vec2i = tm.TilemapGetPositionWorld2Tile(&tilemap, mouse_position_i)
+	tile_position:vec2i = tm.TilemapGetWorld2Tile(&tilemap, mouse_position_i)
 	region:recti = {tile_position.x, tile_position.y, 4, 3}
 	// Don't draw TILE_EMPTY ID
 	skip_zero:bool = true
@@ -283,7 +288,7 @@ draw_tilemap_paint :: proc(){
 	mouse_position:Vector2 = rl.GetMousePosition()
 	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
 	// Translate position to tile coordinates
-	tile_position:vec2i = tm.TilemapGetPositionWorld2Tile(&tilemap, mouse_position_i)
+	tile_position:vec2i = tm.TilemapGetWorld2Tile(&tilemap, mouse_position_i)
 	// Don't draw TILE_EMPTY ID
 	skip_zero:bool = true
 	
@@ -322,4 +327,83 @@ draw_tilemap_paint :: proc(){
 	}
 
 	rl.DrawText("draw_tilemap_paint: left mouse draw, right mouse copy, mouse scroll change ID", 10, 10, 20, rl.BLACK)
+}
+
+temp_test :: proc(
+	temp_buffer: []TileID,
+){
+	fmt.printf("tile len=%d\n", len(temp_buffer))
+}
+
+draw_tilemap_drag :: proc(){
+	// Persistent variables to hold previous input state
+	// @(static) input_selection_previous:InputState
+	// @(static) input_drag_previous:InputState
+	@(static) selection_state:vec2i
+	@(static) drag_pos_state:vec2i
+	@(static) map_pos_state:vec2i
+	@(static) rect_state:recti
+	@(static) temp_tilemap:Tilemap = {}
+	@(static) temp_buffer:[MAP_SIZE.x * MAP_SIZE.y]TileID
+
+	input_selection:InputState = tm.GetInputState(
+		rl.IsMouseButtonPressed(rl.MouseButton.LEFT), 
+		rl.IsMouseButtonDown(rl.MouseButton.LEFT),
+		rl.IsMouseButtonReleased(rl.MouseButton.LEFT),
+	)
+
+	input_drag:InputState = tm.GetInputState(
+		rl.IsMouseButtonPressed(rl.MouseButton.RIGHT), 
+		rl.IsMouseButtonDown(rl.MouseButton.RIGHT),
+		rl.IsMouseButtonReleased(rl.MouseButton.RIGHT),
+	)
+
+	if (rect_state.w == 0 || rect_state.h == 0){
+		// no drag without selection
+		input_drag = InputState.NONE
+	}
+	
+	mouse_position:Vector2 = rl.GetMousePosition()
+	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
+	
+
+	if (input_drag != InputState.NONE){
+		write_empty:bool = rl.IsKeyDown(rl.KeyboardKey.LEFT_ALT) || rl.IsKeyDown(rl.KeyboardKey.RIGHT_ALT)
+		remove_source:bool = rl.IsKeyDown(rl.KeyboardKey.LEFT_CONTROL) || rl.IsKeyDown(rl.KeyboardKey.RIGHT_CONTROL)
+		
+		tm.DragTiles(
+			&tilemap,
+			&temp_tilemap,
+			mouse_position_i,
+			&drag_pos_state,
+			&map_pos_state,
+			&rect_state,
+			input_drag,
+			remove_source,
+			write_empty,
+			temp_buffer[0:len(temp_buffer)],
+		)
+
+		// Don't allow to change selection
+		if (input_selection != InputState.NONE){
+			input_selection = InputState.NONE
+		}
+	}
+
+	if (input_selection != InputState.NONE){
+		tm.CreateSelection(&tilemap, mouse_position_i, &selection_state, &rect_state, input_selection)
+	}
+
+	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
+	skip_zero:bool = true
+	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+	if(temp_tilemap.size.x != 0 && rect_state.w != 0){
+		temp_rect:recti = tm.TilemapRecti(&temp_tilemap)
+		tr.DrawTilemapSelection(&temp_tilemap, temp_rect, rl.GRAY)
+		tr.DrawTilemap(&temp_tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+	}
+
+	tr.DrawTilemapSelection(&tilemap, rect_state, rl.BLACK)
+
+	rl.DrawText("draw_tilemap_drag: left mouse select, right mouse drag, hold CTRL to remove source", 10, 10, 20, rl.BLACK)
 }
