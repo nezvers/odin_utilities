@@ -1,7 +1,5 @@
 package tilemap
 
-import "core:fmt"
-
 InputState :: enum {
     NONE,
     START,
@@ -72,7 +70,6 @@ DragTiles :: proc(
     if (selection_rect.w == 0 || selection_rect.h == 0){
         return
     }
-    fmt.printf("tile len=%d\n", len(temp_buffer))
     if input_state == InputState.START {
         // trim selection outside borders
         tilemap_rect:recti = TilemapRecti(tilemap)
