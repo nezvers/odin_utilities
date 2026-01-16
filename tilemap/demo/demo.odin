@@ -127,6 +127,10 @@ draw :: proc() {
 		button_rect.y += BUTTON_SIZE.y + BUTTON_PADDING
 	}
 
+	if (rl.GuiButton(button_rect, "RESET")){
+		create_tilemap()
+	}
+
     rl.EndDrawing()
 }
 
