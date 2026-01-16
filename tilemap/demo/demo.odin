@@ -25,6 +25,7 @@ Font :: rl.Font
 Texture2D :: rl.Texture2D
 
 screen_size:Vector2
+is_hovering_buttons:bool
 
 Example :: enum {
 	ATLAS,
@@ -120,9 +121,14 @@ draw :: proc() {
 	BUTTON_SIZE: Vector2: {150, 20}
 	BUTTON_PADDING :f32: 2
 	button_rect:Rectangle = {screen_size.x - BUTTON_SIZE.x, 0, BUTTON_SIZE.x, BUTTON_SIZE.y}
+	mouse_position:Vector2 = rl.GetMousePosition()
+	is_hovering_buttons = false
 	for i:int; i < cast(int)Example.COUNT; i += 1{
 		if (rl.GuiButton(button_rect, example_names[i])){
 			current_example = cast(Example)i
+		}
+		if (rl.CheckCollisionPointRec(mouse_position, button_rect)){
+			is_hovering_buttons = true
 		}
 		button_rect.y += BUTTON_SIZE.y + BUTTON_PADDING
 	}
@@ -448,6 +454,12 @@ draw_tilemap_resize :: proc(){
 		rl.IsMouseButtonDown(rl.MouseButton.LEFT),
 		rl.IsMouseButtonReleased(rl.MouseButton.LEFT),
 	)
+
+	if (is_hovering_buttons){
+		input_selection = InputState.NONE
+		rect_state.w = 0
+		rect_state.h = 0
+	}
 
 	mouse_position:Vector2 = rl.GetMousePosition()
 	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
