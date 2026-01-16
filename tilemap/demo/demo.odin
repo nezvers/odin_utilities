@@ -1,6 +1,6 @@
 package demo
 
-import "core:fmt"
+// import "core:fmt"
 import rl "vendor:raylib"
 import tm ".."
 import tr "../raylib"
@@ -35,9 +35,10 @@ Example :: enum {
 	TILEMAP_REGION,
 	TILEMAP_PAINT,
 	TILEMAP_DRAG,
+	TILEMAP_RESIZE,
 	COUNT,
 }
-current_example:Example = Example.ATLAS
+current_example:Example = Example.TILEMAP_RESIZE
 
 example_names:[]cstring = {
 	"ATLAS",
@@ -48,6 +49,7 @@ example_names:[]cstring = {
 	"TILEMAP_REGION",
 	"TILEMAP_PAINT",
 	"TILEMAP_DRAG",
+	"TILEMAP_RESIZE",
 }
 
 TILE_SIZE:vec2i: {16, 16}
@@ -111,6 +113,8 @@ draw :: proc() {
 		draw_tilemap_paint()
 	case Example.TILEMAP_DRAG:
 		draw_tilemap_drag()
+	case Example.TILEMAP_RESIZE:
+		draw_tilemap_resize()
 	}
 
 	BUTTON_SIZE: Vector2: {150, 20}
@@ -129,11 +133,11 @@ draw :: proc() {
 create_tiles :: proc(){
 	tileset_texture = rl.LoadTexture("demo/tileset_template.png")
 	tile_size:Vector2 = {cast(f32)TILE_SIZE.x, cast(f32)TILE_SIZE.y}
-	tm.TileAtlasInit(&tile_atlas, tile_size, atlas_buffer[0:len(atlas_buffer)])
+	tm.TileAtlasInit(&tile_atlas, tile_size, atlas_buffer[:])
 	
 	// Assign Tile array to a tileset
 	initial_length_tileset:u32 = len(tile_list)
-	tm.TilesetInit(&tileset, tile_list[0:len(tile_list)], initial_length_tileset)
+	tm.TilesetInit(&tileset, tile_list[:], initial_length_tileset)
 	
 	// Represents TILE_EMPTY, use skip_zero flag
 	tex_pos:Vector2 = {0.0, 0.0}
@@ -162,7 +166,7 @@ create_tiles :: proc(){
 }
 
 create_tilemap :: proc(){
-	tilemap = tm.TilemapInit({100, 100}, MAP_SIZE, {16,16}, tilemap_buffer[0:len(tilemap_buffer)])
+	tilemap = tm.TilemapInit({100, 100}, MAP_SIZE, {16,16}, tilemap_buffer[:])
 	// reset map to predictable state
 	tm.TilemapClear(&tilemap)
 	
@@ -356,16 +360,8 @@ draw_tilemap_paint :: proc(){
 	rl.DrawText("draw_tilemap_paint: left mouse draw, right mouse copy, mouse scroll change ID", 10, 10, 20, rl.BLACK)
 }
 
-temp_test :: proc(
-	temp_buffer: []TileID,
-){
-	fmt.printf("tile len=%d\n", len(temp_buffer))
-}
-
 draw_tilemap_drag :: proc(){
-	// Persistent variables to hold previous input state
-	// @(static) input_selection_previous:InputState
-	// @(static) input_drag_previous:InputState
+	// Persistent variables to hold state
 	@(static) selection_state:vec2i
 	@(static) drag_pos_state:vec2i
 	@(static) map_pos_state:vec2i
@@ -408,7 +404,7 @@ draw_tilemap_drag :: proc(){
 			input_drag,
 			remove_source,
 			write_empty,
-			temp_buffer[0:len(temp_buffer)],
+			temp_buffer[:],
 		)
 
 		// Don't allow to change selection
@@ -433,4 +429,50 @@ draw_tilemap_drag :: proc(){
 	tr.DrawTilemapSelection(&tilemap, rect_state, rl.BLACK)
 
 	rl.DrawText("draw_tilemap_drag: left mouse select, right mouse drag, hold CTRL to remove source, ALT to write empty tiles", 10, 10, 20, rl.BLACK)
+}
+
+draw_tilemap_resize :: proc(){
+	// Persistent variables to hold state
+	@(static) rect_state:recti
+	@(static) selection_state:vec2i
+	@(static) temp_buffer:[MAP_SIZE.x * MAP_SIZE.y]TileID
+
+	size_error:bool
+
+	input_selection:InputState = tm.GetInputState(
+		rl.IsMouseButtonPressed(rl.MouseButton.LEFT), 
+		rl.IsMouseButtonDown(rl.MouseButton.LEFT),
+		rl.IsMouseButtonReleased(rl.MouseButton.LEFT),
+	)
+
+	mouse_position:Vector2 = rl.GetMousePosition()
+	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
+
+	if (input_selection != InputState.NONE){
+		tm.CreateSelection(&tilemap, mouse_position_i, &selection_state, &rect_state, input_selection)
+	}
+
+	rect_area:int = rect_state.w * rect_state.h
+	size_error = rect_area > len(tilemap.grid)
+
+	if (input_selection == InputState.RELEASE){
+		if (!size_error && rect_area > 0){
+			tm.TilemapResize(&tilemap, rect_state, temp_buffer[:])
+		}
+		rect_state.w = 0
+		rect_state.h = 0
+	}
+
+	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
+	skip_zero:bool = true
+	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+
+	tr.DrawTilemapSelection(&tilemap, rect_state, rl.BLACK)
+
+	rl.DrawText("draw_tilemap_resize: left mouse select, ENTER to resize", 10, 10, 20, rl.BLACK)
+
+	if size_error {
+		text:cstring = rl.TextFormat("ERROR: tilemap grid buffer overflow (%d > %d)", rect_area, len(tilemap.grid))
+		rl.DrawText(text, 10, 30, 20, rl.RED)
+	}
 }

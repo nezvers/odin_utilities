@@ -1,6 +1,7 @@
 # Tilemap
 Designed to not allocate but work on provided slices. Meaning user can manage allocations or use predefined buffers.   
-Very flexible and hackable API.
+Very flexible and hackable API.    
+To increase chance for more games including level editors I created common actions as demo examples.
 
 `odin run demo`
 

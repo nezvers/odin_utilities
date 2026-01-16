@@ -47,14 +47,14 @@ TilemapGetUsedRecti :: proc(tilemap: ^Tilemap)->recti{
     top: int = tilemap.size.y - 1
     right: int = 0
     bottom: int = 0
-    for y in 0..< tilemap.size.y {
-        for x in 0..< tilemap.size.x {
+    for y:int = 0; y < tilemap.size.y; y += 1 {
+        for x:int = 0; x < tilemap.size.x; x += 1 {
             if (tilemap.grid[tilemap.size.x * y + x] != TILE_EMPTY) {
                 if (x > right) {
                     right = x
                 }
-                if (x > bottom) {
-                    bottom = x
+                if (y > bottom) {
+                    bottom = y
                 }
                 if (x < left) {
                     left = x
@@ -180,14 +180,14 @@ TilemapSetTileIdBlock :: proc(tilemap: ^Tilemap, left_x:int, top_y:int, columns:
 // Requires a temporary buffer to hold used rectangle
 TilemapResize :: proc(tilemap: ^Tilemap, relative_rect:recti, temp_buffer:[]TileID){
     used_rect:recti = TilemapGetUsedRecti(tilemap)
-    assert(len(temp_buffer) > used_rect.w * used_rect.h)
+    assert(len(temp_buffer) >= used_rect.w * used_rect.h)
 
     TilemapGetRegionData(tilemap, used_rect, temp_buffer)
     // TODO: assert that current tilemap.grid is big enough for the new size
     tilemap.position.x += relative_rect.x * tilemap.tile_size.x
     tilemap.position.y += relative_rect.y * tilemap.tile_size.y
-    tilemap.size.x += (-relative_rect.x + relative_rect.w)
-    tilemap.size.y += (-relative_rect.y + relative_rect.h)
+    tilemap.size.x = relative_rect.w
+    tilemap.size.y = relative_rect.h
     TilemapClear(tilemap)
 
     used_rect.x -= relative_rect.x
