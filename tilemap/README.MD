@@ -7,6 +7,9 @@ To increase chance for more games including level editors I created common actio
 
 Provides `raylib` implementation and demo example for integration with drawing and data management.    
 
+## TileID
+Enum that is used as index in libraries abstractions.
+
 ## TileAtlas
 Represents information about used texture. It holds 2D position slice.    
 
