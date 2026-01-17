@@ -46,7 +46,7 @@ overlaps_rectangle_line::proc(r:Rect, l:Line)->bool{
 // Checks if Circle overlaps with line
 overlaps_circle_line::proc(c:Circle, l:Line)->bool{
     p:vec2 = closest_line_point(l, c.xy)
-    return vec2_mag2(c.xy - p) <= (c.z * c.z)
+    return Vec2Mag2(c.xy - p) <= (c.z * c.z)
 }
 
 // Check if Triangle overlaps line segment
@@ -72,7 +72,7 @@ overlaps_rectangle_rectangle::proc(r1:Rect, r2:Rect)->bool{
 
 // Check if Circle overlaps rectangle
 overlaps_circle_rectangle::proc(c:Circle, r:Rect)->bool{
-    overlap:f32 = vec2_mag2(vec2{clamp(c.x, r.x, r.x + r.z), clamp(c.y, r.y, r.y + r.w)} - c.xy)
+    overlap:f32 = Vec2Mag2(vec2{clamp(c.x, r.x, r.x + r.z), clamp(c.y, r.y, r.y + r.w)} - c.xy)
     if isnan(overlap){overlap = 0}
     return (overlap - (c.z * c.z)) < 0
 }
@@ -99,12 +99,12 @@ overlaps_rectangle_circle::proc(r:Rect, c:Circle)->bool{
 
 // Check if circle overlaps circle
 overlaps_circle_circle::proc(c1:Circle, c2:Circle)->bool{
-    return vec2_mag2(c1.xy - c2.xy) <= (c1.z + c2.z) * (c1.z + c2.z)
+    return Vec2Mag2(c1.xy - c2.xy) <= (c1.z + c2.z) * (c1.z + c2.z)
 }
 
 // Check if triangle overlaps circle
 overlaps_triangle_circle::proc(t:Triangle, c:Circle)->bool{
-    return contains_triangle_point(t, c.xy) || vec2_mag2(c.xy - closest_triangle_point(t, c.xy)) <= c.z * c.z
+    return contains_triangle_point(t, c.xy) || Vec2Mag2(c.xy - closest_triangle_point(t, c.xy)) <= c.z * c.z
 }
 
 // Check if point overlaps triangle

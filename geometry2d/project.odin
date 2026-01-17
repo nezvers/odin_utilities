@@ -6,9 +6,9 @@ import math "core:math"
 project_circle_circle::proc(c1:Circle, c2:Circle, r:Ray)->(end_position:vec2, travel:f32){
     // Inspired by https://math.stackexchange.com/a/929240
 
-    A: = vec2_mag2(r.zw)
-    B: = 2.0 * (vec2_dot(r.xy, r.zw) - vec2_dot(c2.xy, r.zw))
-    C: = vec2_mag2(c2.xy) + vec2_mag2(r.xy) - (2.0 * c2.x * r.x) - (2.0 * c2.y * r.y) - ((c1.z + c2.z) * (c1.z + c2.z))
+    A: = Vec2Mag2(r.zw)
+    B: = 2.0 * (Vec2Dot(r.xy, r.zw) - Vec2Dot(c2.xy, r.zw))
+    C: = Vec2Mag2(c2.xy) + Vec2Mag2(r.xy) - (2.0 * c2.x * r.x) - (2.0 * c2.y * r.y) - ((c1.z + c2.z) * (c1.z + c2.z))
     D: = B * B - 4.0 * A * C
 
     if D < 0.0{

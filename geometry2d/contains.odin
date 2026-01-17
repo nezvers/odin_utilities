@@ -3,7 +3,7 @@ package geometry2d
 
 // Checks if point contains point
 contains_point_point::proc(p:vec2, p2:vec2)->bool{
-    return vec2_mag2(p - p2) < epsilon
+    return Vec2Mag2(p - p2) < epsilon
 }
 
 // Checks if line contains point
@@ -11,8 +11,8 @@ contains_line_point::proc(l:Line, p:vec2)->bool{
     d:f32 = (p.x - l.x) * (l.w - l.y) - (p.y - l.y) * (l.z - l.x)
     if (abs(d) < epsilon){
         vector:vec2 = line_vector(l)
-        dot:f32 = vec2_dot(vector, p - l.xy)
-        mag2:f32 = vec2_mag2(vector)
+        dot:f32 = Vec2Dot(vector, p - l.xy)
+        mag2:f32 = Vec2Mag2(vector)
         u:f32 = dot / mag2
         return (u >= 0.0) && (u <= 1.0)
     }
@@ -26,7 +26,7 @@ contains_rectangle_point::proc(r:Rect, p:vec2)->bool{
 
 // Checks if Circle contains point
 contains_circle_point::proc(c:Circle, p:vec2)->bool{
-    return vec2_mag2(c.xy - p) <= (c.z * c.z)
+    return Vec2Mag2(c.xy - p) <= (c.z * c.z)
 }
 
 // Checks if Triangle contains a point
@@ -42,7 +42,7 @@ contains_triangle_point::proc(t:Triangle, p:vec2)->bool{
 // Checks if raycast contains point
 contains_ray_point::proc(r:Ray, p:vec2)->bool{
     op:vec2 = p - r.xy
-    dot:f32 = vec2_dot(op, r.zw)
+    dot:f32 = Vec2Dot(op, r.zw)
     if (dot < 0){
         return false
     }
@@ -140,7 +140,7 @@ contains_triangle_circle::proc(t:Triangle, c:Circle)->bool{
         return false
     }
     closest_p:vec2 = closest_triangle_point(t, c.xy)
-    mag_p:f32 = vec2_mag(c.xy - closest_p)
+    mag_p:f32 = Vec2Mag(c.xy - closest_p)
     return mag_p <= c.z * c.z
 }
 

@@ -10,7 +10,7 @@ envelope_circle_point::proc(p:vec2)->Circle{
 // Return circle that fully encapsulates a line
 envelope_circle_line::proc(l:Line)->Circle{
     p: = line_point_mult(l, 0.5)
-    return {p.x, p.y, vec2_mag(line_vector(l)) * 0.5}
+    return {p.x, p.y, Vec2Mag(line_vector(l)) * 0.5}
 }
 
 // Return circle that fully encapsulates a rectangle

@@ -48,7 +48,7 @@ intersects_rectangle_point::proc(r:Rect, p:vec2)->(points:[1]vec2, point_count:i
 
 // Get intersection points where Circle intersects with point
 intersects_circle_point::proc(c:Circle, p:vec2)->(points:[1]vec2, point_count:int){
-    if (vec2_mag2(vec2_abs(p - c.xy)) - (c.z * c.z) <= epsilon){
+    if (Vec2Mag2(Vec2Abs(p - c.xy)) - (c.z * c.z) <= epsilon){
         points[0] = p
         point_count = 1
         return
@@ -90,7 +90,7 @@ intersects_point_line::proc(p:vec2, l:Line)->(points:[1]vec2, point_count:int){
 intersects_line_line::proc(l1:Line, l2:Line)->(points:[1]vec2, point_count:int){
     line_vec1 := line_vector(l1)
     line_vec2 := line_vector(l2)
-    cross_product:f32 = vec2_cross(line_vec1, line_vec2)
+    cross_product:f32 = Vec2Cross(line_vec1, line_vec2)
     if (cross_product == 0) { return } // Parallel or Colinear TODO: Return two points
 
     inv_cross_prod := 1 / cross_product
@@ -158,9 +158,9 @@ intersects_circle_line::proc(c:Circle, l:Line)->(points:[2]vec2, point_count:int
     
     // Compute point closest to the Circle on the line
     d:vec2 = line_vector(l)
-    u_line:f32 = vec2_dot(d, c.xy - l.xy) / vec2_mag2(d)
+    u_line:f32 = Vec2Dot(d, c.xy - l.xy) / Vec2Mag2(d)
     closest_point_to_line:vec2 = l.xy + u_line * d
-    dist_to_line:f32 = vec2_mag2(c.xy - closest_point_to_line)
+    dist_to_line:f32 = Vec2Mag2(c.xy - closest_point_to_line)
 
     if abs(dist_to_line - c.z * c.z) < epsilon{
         point_count += 1
@@ -171,14 +171,14 @@ intersects_circle_line::proc(c:Circle, l:Line)->(points:[2]vec2, point_count:int
     // Circle intersects the line
     length:f32 = sqrt(c.z * c.z - dist_to_line)
 
-    p1:vec2 = closest_point_to_line + vec2_norm(line_vector(l)) * length
-    p2:vec2 = closest_point_to_line - vec2_norm(line_vector(l)) * length
+    p1:vec2 = closest_point_to_line + Vec2Norm(line_vector(l)) * length
+    p2:vec2 = closest_point_to_line - Vec2Norm(line_vector(l)) * length
 
-    if vec2_mag2(p1 - closest_line_point(l, p1)) < epsilon * epsilon{
+    if Vec2Mag2(p1 - closest_line_point(l, p1)) < epsilon * epsilon{
         points[point_count] = p1
         point_count += 1
     }
-    if vec2_mag2(p2 - closest_line_point(l, p2)) < epsilon * epsilon{
+    if Vec2Mag2(p2 - closest_line_point(l, p2)) < epsilon * epsilon{
         points[point_count] = p2
         point_count += 1
     }
@@ -267,7 +267,7 @@ intersects_circle_circle::proc(c1:Circle, c2:Circle)->(points:[2]vec2, point_cou
     if c1.xy == c2.xy{return}
 
     between: = c2.xy - c1.xy
-    dist2:f32 = vec2_mag(between)
+    dist2:f32 = Vec2Mag(between)
     radius_sum:f32 = c1.z + c2.z
 
     // circles are too far apart to be touching.
@@ -276,7 +276,7 @@ intersects_circle_circle::proc(c1:Circle, c2:Circle)->(points:[2]vec2, point_cou
     // one circle is inside of the other, they can't be intersecting.
     if (contains_circle_circle(c1, c2) || contains_circle_circle(c2, c1)) {return}
 
-    between_norm: = vec2_norm(between)
+    between_norm: = Vec2Norm(between)
     // circles are touching at exactly 1 point
     if (dist2 == radius_sum) {
         points[0] = c1.xy + between_norm * c1.z
@@ -288,7 +288,7 @@ intersects_circle_circle::proc(c1:Circle, c2:Circle)->(points:[2]vec2, point_cou
     dist: = sqrt(dist2)
     dist_cc: = (dist2 + c1.z * c1.z - c2.z * c2.z)/(2 * dist)
     chord_center: = c1.xy + between_norm * dist_cc
-    half_cord: = vec2_perp(between_norm) * sqrt(c1.z * c1.z - dist_cc * dist_cc)
+    half_cord: = Vec2Perp(between_norm) * sqrt(c1.z * c1.z - dist_cc * dist_cc)
 
     points[0] = chord_center + half_cord
     points[1] = chord_center - half_cord
@@ -353,8 +353,8 @@ intersects_triangle_triangle::proc(t1:Triangle, t2:Triangle)->(points:[6]vec2, p
 // return intersection point (if it exists) of a ray and a ray
 intersects_ray_ray::proc(r1:Ray, r2:Ray)->(points:[1]vec2, point_count:int){
     origin_diff: = r2.xy - r1.xy
-    cp1: = vec2_cross(r1.zw, r2.zw)
-    cp2: = vec2_cross(origin_diff, r2.zw)
+    cp1: = Vec2Cross(r1.zw, r2.zw)
+    cp2: = Vec2Cross(origin_diff, r2.zw)
 
     if cp1 == 0{
         if cp2 == 0{
@@ -366,7 +366,7 @@ intersects_ray_ray::proc(r1:Ray, r2:Ray)->(points:[1]vec2, point_count:int){
         return
     }
 
-    cp3: = vec2_cross(origin_diff, r1.zw)
+    cp3: = Vec2Cross(origin_diff, r1.zw)
     t1: = cp2 / cp1 // distance along q1 to intersection
     t2: = cp3 / cp1 // distance along q2 to intersection
 
@@ -400,8 +400,8 @@ intersects_point_ray::proc(p:vec2, r:Ray)->(points:[1]vec2, point_count:int){
 intersects_ray_line::proc(r:Ray, l:Line)->(points:[1]vec2, point_count:int){
     line_direction: = line_vector(l)
     origin_diff: = l.xy - r.xy
-    cp1: = vec2_cross(r.zw, line_direction)
-    cp2: = vec2_cross(origin_diff, line_direction)
+    cp1: = Vec2Cross(r.zw, line_direction)
+    cp2: = Vec2Cross(origin_diff, line_direction)
 
     if cp1 == 0{
         if cp2 == 0{
@@ -413,7 +413,7 @@ intersects_ray_line::proc(r:Ray, l:Line)->(points:[1]vec2, point_count:int){
         return
     }
 
-    cp3: = vec2_cross(origin_diff, r.zw)
+    cp3: = Vec2Cross(origin_diff, r.zw)
     t1: = cp2 / cp1 // distance along q1 to intersection
     t2: = cp3 / cp1 // distance along q2 to intersection
 
@@ -434,9 +434,9 @@ intersects_line_ray::proc(l:Line, r:Ray)->(points:[1]vec2, point_count:int){
 
 // Get intersection points where a ray intersects a circle
 intersects_ray_circle::proc(r:Ray, c:Circle)->(points:[2]vec2, point_count:int){
-    A: = vec2_mag2(r.zw)
-    B: = 2.0 * (vec2_dot(r.xy, r.zw) - vec2_dot(c.xy, r.zw))
-    C: = vec2_mag2(c.xy) + vec2_mag2(r.xy) - (2.0 * c.x * r.x) - (2.0 * c.y * r.y) - (c.z  * c.z)
+    A: = Vec2Mag2(r.zw)
+    B: = 2.0 * (Vec2Dot(r.xy, r.zw) - Vec2Dot(c.xy, r.zw))
+    C: = Vec2Mag2(c.xy) + Vec2Mag2(r.xy) - (2.0 * c.x * r.x) - (2.0 * c.y * r.y) - (c.z  * c.z)
     D: = B * B - 4.0 * A * C
 
     if D < 0.0{

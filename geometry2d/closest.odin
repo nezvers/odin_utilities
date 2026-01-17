@@ -8,15 +8,15 @@ closest_point_point::proc(p1:vec2, p2:vec2)->vec2{
 // Returns closest point on line to point
 closest_line_point::proc(l:Line, p:vec2)->vec2{
     vector:vec2 = line_vector(l)
-    dot:f32 = vec2_dot(vector, p - l.xy)
-    mag:f32 = vec2_mag2(vector)
+    dot:f32 = Vec2Dot(vector, p - l.xy)
+    mag:f32 = Vec2Mag2(vector)
     clamp:f32 = clamp(dot / mag, 0.0, 1.0)
     return l.xy + clamp * vector
 }
 
 // Returns closest point on Circle to point
 closest_circle_point::proc(c:Circle, p:vec2)->vec2{
-    return c.xy + vec2_norm(p - c.xy) * c.z
+    return c.xy + Vec2Norm(p - c.xy) * c.z
 }
 
 // Returns closest point on rectangle to point
@@ -27,10 +27,10 @@ closest_rectangle_point::proc(r:Rect, p:vec2)->vec2{
     c3:vec2 = closest_line_point(rect_bottom(r), p)
     c4:vec2 = closest_line_point(rect_left(r), p)
 
-    d1:f32 = vec2_mag2(c1 - p)
-    d2:f32 = vec2_mag2(c2 - p)
-    d3:f32 = vec2_mag2(c3 - p)
-    d4:f32 = vec2_mag2(c4 - p)
+    d1:f32 = Vec2Mag2(c1 - p)
+    d2:f32 = Vec2Mag2(c2 - p)
+    d3:f32 = Vec2Mag2(c3 - p)
+    d4:f32 = Vec2Mag2(c4 - p)
 
     cmin:vec2 = c1
     dmin:f32 = d1
@@ -54,15 +54,15 @@ closest_rectangle_point::proc(r:Rect, p:vec2)->vec2{
 closest_triangle_point::proc(t:Triangle, p:vec2)->vec2{
     l:Line = line2D_new(t[0], t[1])
     p0:vec2 = closest_line_point(l, p)
-    d0:f32 = vec2_mag2(p0 - p)
+    d0:f32 = Vec2Mag2(p0 - p)
 
     l.zw = t[2]
     p1:vec2 = closest_line_point(l, p)
-    d1:f32 = vec2_mag2(p1 - p)
+    d1:f32 = Vec2Mag2(p1 - p)
 
     l.xy = t[1]
     p2:vec2 = closest_line_point(l, p)
-    d2:f32 = vec2_mag2(p2 - p)
+    d2:f32 = Vec2Mag2(p2 - p)
 
     if ((d0 <= d1) && (d0 <= d2)){
         return p0
@@ -86,7 +86,7 @@ closest_ray_point::proc(r:Ray, p:vec2)->vec2{
 // Returns closest point on Circle to line
 closest_circle_line::proc(c:Circle, l:Line)->vec2{
     p:vec2 = closest_line_point(l, c.xy)
-    return c.xy + vec2_norm(p - c.xy) * c.z
+    return c.xy + Vec2Norm(p - c.xy) * c.z
 }
 
 // TODO:
