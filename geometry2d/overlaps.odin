@@ -51,7 +51,7 @@ overlaps_circle_line::proc(c:Circle, l:Line)->bool{
 
 // Check if Triangle overlaps line segment
 overlaps_triangle_line::proc(t:Triangle, l:Line)->bool{
-    return overlaps_triangle_point(t, l.xy) || overlaps_line_line(triangle_side(t, 0), l) || overlaps_line_line(triangle_side(t, 1), l) || overlaps_line_line(triangle_side(t, 2), l)
+    return overlaps_triangle_point(t, l.xy) || overlaps_line_line(TriangleSide(t, 0), l) || overlaps_line_line(TriangleSide(t, 1), l) || overlaps_line_line(TriangleSide(t, 2), l)
 }
 
 // Checks if point overlaps with rectangle
@@ -129,5 +129,5 @@ overlaps_circle_triangle::proc(c:Circle, t:Triangle)->bool{
 
 // Check if triangle overlaps triangle
 overlaps_triangle_triangle::proc(t1:Triangle, t2:Triangle)->bool{
-    return overlaps_triangle_line(t1, triangle_side(t2, 0)) || overlaps_triangle_line(t1, triangle_side(t2, 1)) || overlaps_triangle_line(t1, triangle_side(t2, 2)) || overlaps_triangle_point(t2, t1[0])
+    return overlaps_triangle_line(t1, TriangleSide(t2, 0)) || overlaps_triangle_line(t1, TriangleSide(t2, 1)) || overlaps_triangle_line(t1, TriangleSide(t2, 2)) || overlaps_triangle_point(t2, t1[0])
 }

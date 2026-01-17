@@ -156,15 +156,15 @@ contains_line_triangle::proc(l:Line, t:Triangle)->bool{
 
 // Check if rectangle contains triangle
 contains_rectangle_triangle::proc(r:Rect, t:Triangle)->bool{
-    return contains_rectangle_line(r, triangle_side(t, 0)) && contains_rectangle_line(r, triangle_side(t, 1)) && contains_rectangle_line(r, triangle_side(t, 2))
+    return contains_rectangle_line(r, TriangleSide(t, 0)) && contains_rectangle_line(r, TriangleSide(t, 1)) && contains_rectangle_line(r, TriangleSide(t, 2))
 }
 
 // Check if circle contains triangle
 contains_circle_triangle::proc(c:Circle, t:Triangle)->bool{
-    return contains_circle_line(c, triangle_side(t, 0)) && contains_circle_line(c, triangle_side(t, 1)) && contains_circle_line(c, triangle_side(t, 2))
+    return contains_circle_line(c, TriangleSide(t, 0)) && contains_circle_line(c, TriangleSide(t, 1)) && contains_circle_line(c, TriangleSide(t, 2))
 }
 
 // Check if triangle contains triangle
 contains_triangle_triangle::proc(t1:Triangle, t2:Triangle)->bool{
-    return contains_triangle_line(t1, triangle_side(t2, 0)) && contains_triangle_line(t1, triangle_side(t2, 1)) && contains_triangle_line(t1, triangle_side(t2, 2))
+    return contains_triangle_line(t1, TriangleSide(t2, 0)) && contains_triangle_line(t1, TriangleSide(t2, 1)) && contains_triangle_line(t1, TriangleSide(t2, 2))
 }
