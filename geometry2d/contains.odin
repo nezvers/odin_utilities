@@ -63,7 +63,7 @@ ContainsPointLine::proc(p:vec2, l:Line)->bool{
 
 // Checks if line contains line
 ContainsLineLine::proc(l1:Line, l2:Line)->bool{
-    return overlaps_line_point(l1, l2.xy) && overlaps_line_point(l1, l2.zw)
+    return OverlapsLinePoint(l1, l2.xy) && OverlapsLinePoint(l1, l2.zw)
 }
 
 // Checks if line contains line
