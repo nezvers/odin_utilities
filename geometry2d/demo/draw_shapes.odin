@@ -28,7 +28,7 @@ state_draw_draw_shapes :: proc(){
     line:Line = geometry2d.line2D_new({100., 100.}, { 200., 100.})
     draw_line(line, rl.WHITE)
 
-    circle:Circle = geometry2d.circle_new({50., 15.}, 5)
+    circle:Circle = geometry2d.CircleNew({50., 15.}, 5)
     draw_circle(circle, rl.WHITE)
 
     rect:Rect = geometry2d.rect_new({70., 10.}, {10., 10.})
