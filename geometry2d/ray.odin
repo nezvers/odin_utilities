@@ -4,6 +4,6 @@ package geometry2d
 // dir = z, w
 Ray :: [4]f32
 
-ray_new::proc(pos:vec2, vector:vec2)->Ray{
+RayNew::proc(pos:vec2, vector:vec2)->Ray{
     return {pos.x, pos.y, vector.x, vector.y}
 }

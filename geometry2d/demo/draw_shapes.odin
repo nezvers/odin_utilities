@@ -37,7 +37,7 @@ state_draw_draw_shapes :: proc(){
     triangle:Triangle = geometry2d.triangle_new({90., 10.}, {105., 10.}, {97., 20.})
     draw_triangle(triangle, rl.WHITE)
 
-    ray:Ray = geometry2d.ray_new({115., 10.}, {10., 10.})
+    ray:Ray = geometry2d.RayNew({115., 10.}, {10., 10.})
     draw_ray(ray, rl.WHITE)
 }
 
