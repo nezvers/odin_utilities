@@ -18,28 +18,28 @@ rect_middle::proc(r:Rect)->vec2{
 rect_top::proc(r:Rect)->Line{
 	pos:vec2 = r.xy
 	size:vec2 = r.zw
-	return line2D_new({pos.x, pos.y}, {pos.x + size.x, pos.y})
+	return LineNew({pos.x, pos.y}, {pos.x + size.x, pos.y})
 }
 
 // Get line segment from bottom side of rectangle
 rect_bottom::proc(r:Rect)->Line{
 	pos:vec2 = r.xy
 	size:vec2 = r.zw
-	return line2D_new({pos.x, pos.y + size.y}, pos + size)
+	return LineNew({pos.x, pos.y + size.y}, pos + size)
 }
 
 // Get line segment from left side of rectangle
 rect_left::proc(r:Rect)->Line{
 	pos:vec2 = r.xy
 	size:vec2 = r.zw
-	return line2D_new({pos.x, pos.y}, {pos.x, pos.y + size.y})
+	return LineNew({pos.x, pos.y}, {pos.x, pos.y + size.y})
 }
 
 // Get line segment from right side of rectangle
 rect_right::proc(r:Rect)->Line{
 	pos:vec2 = r.xy
 	size:vec2 = r.zw
-	return line2D_new({pos.x + size.x, pos.y}, pos + size)
+	return LineNew({pos.x + size.x, pos.y}, pos + size)
 }
 
 // Get a line from an indexed side, starting top, going clockwise

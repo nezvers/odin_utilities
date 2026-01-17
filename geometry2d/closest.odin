@@ -7,7 +7,7 @@ closest_point_point::proc(p1:vec2, p2:vec2)->vec2{
 
 // Returns closest point on line to point
 closest_line_point::proc(l:Line, p:vec2)->vec2{
-    vector:vec2 = line_vector(l)
+    vector:vec2 = LineVector(l)
     dot:f32 = Vec2Dot(vector, p - l.xy)
     mag:f32 = Vec2Mag2(vector)
     clamp:f32 = clamp(dot / mag, 0.0, 1.0)
@@ -52,7 +52,7 @@ closest_rectangle_point::proc(r:Rect, p:vec2)->vec2{
 
 // Returns closest point on Triangle to point
 closest_triangle_point::proc(t:Triangle, p:vec2)->vec2{
-    l:Line = line2D_new(t[0], t[1])
+    l:Line = LineNew(t[0], t[1])
     p0:vec2 = closest_line_point(l, p)
     d0:f32 = Vec2Mag2(p0 - p)
 

@@ -8,7 +8,7 @@ triangle_new::proc(p0:vec2, p1:vec2, p2:vec2)->Triangle{
 
 // Get a line from an indexed side, starting top, going clockwise
 triangle_side::proc(Triangle:Triangle, i:u32)->Line{
-	return line2D_new(Triangle[i % 3], Triangle[(i +1) % 3])
+	return LineNew(Triangle[i % 3], Triangle[(i +1) % 3])
 }
 
 // Get area of Triangle
@@ -18,9 +18,9 @@ triangle_area::proc(Triangle:Triangle)->f32{
 
 // Get perimeter of Triangle
 triangle_perimeter::proc(Triangle:Triangle)->f32{
-	l1:f32 = line_length(line2D_new(Triangle[0], Triangle[1]))
-	l2:f32 = line_length(line2D_new(Triangle[1], Triangle[2]))
-	l3:f32 = line_length(line2D_new(Triangle[2], Triangle[0]))
+	l1:f32 = LineLength(LineNew(Triangle[0], Triangle[1]))
+	l2:f32 = LineLength(LineNew(Triangle[1], Triangle[2]))
+	l3:f32 = LineLength(LineNew(Triangle[2], Triangle[0]))
 	return l1 + l2 + l3
 }
 

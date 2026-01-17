@@ -10,7 +10,7 @@ contains_point_point::proc(p:vec2, p2:vec2)->bool{
 contains_line_point::proc(l:Line, p:vec2)->bool{
     d:f32 = (p.x - l.x) * (l.w - l.y) - (p.y - l.y) * (l.z - l.x)
     if (abs(d) < epsilon){
-        vector:vec2 = line_vector(l)
+        vector:vec2 = LineVector(l)
         dot:f32 = Vec2Dot(vector, p - l.xy)
         mag2:f32 = Vec2Mag2(vector)
         u:f32 = dot / mag2

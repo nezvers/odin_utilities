@@ -25,7 +25,7 @@ state_update_draw_shapes :: proc(){
 }
 
 state_draw_draw_shapes :: proc(){
-    line:Line = geometry2d.line2D_new({100., 100.}, { 200., 100.})
+    line:Line = geometry2d.LineNew({100., 100.}, { 200., 100.})
     draw_line(line, rl.WHITE)
 
     circle:Circle = geometry2d.CircleNew({50., 15.}, 5)

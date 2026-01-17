@@ -88,8 +88,8 @@ intersects_point_line::proc(p:vec2, l:Line)->(points:[1]vec2, point_count:int){
 
 // Get intersection points where line segment intersects with line segment
 intersects_line_line::proc(l1:Line, l2:Line)->(points:[1]vec2, point_count:int){
-    line_vec1 := line_vector(l1)
-    line_vec2 := line_vector(l2)
+    line_vec1 := LineVector(l1)
+    line_vec2 := LineVector(l2)
     cross_product:f32 = Vec2Cross(line_vec1, line_vec2)
     if (cross_product == 0) { return } // Parallel or Colinear TODO: Return two points
 
@@ -157,7 +157,7 @@ intersects_circle_line::proc(c:Circle, l:Line)->(points:[2]vec2, point_count:int
     }
     
     // Compute point closest to the Circle on the line
-    d:vec2 = line_vector(l)
+    d:vec2 = LineVector(l)
     u_line:f32 = Vec2Dot(d, c.xy - l.xy) / Vec2Mag2(d)
     closest_point_to_line:vec2 = l.xy + u_line * d
     dist_to_line:f32 = Vec2Mag2(c.xy - closest_point_to_line)
@@ -171,8 +171,8 @@ intersects_circle_line::proc(c:Circle, l:Line)->(points:[2]vec2, point_count:int
     // Circle intersects the line
     length:f32 = sqrt(c.z * c.z - dist_to_line)
 
-    p1:vec2 = closest_point_to_line + Vec2Norm(line_vector(l)) * length
-    p2:vec2 = closest_point_to_line - Vec2Norm(line_vector(l)) * length
+    p1:vec2 = closest_point_to_line + Vec2Norm(LineVector(l)) * length
+    p2:vec2 = closest_point_to_line - Vec2Norm(LineVector(l)) * length
 
     if Vec2Mag2(p1 - closest_line_point(l, p1)) < epsilon * epsilon{
         points[point_count] = p1
@@ -384,7 +384,7 @@ intersects_ray_ray::proc(r1:Ray, r2:Ray)->(points:[1]vec2, point_count:int){
 intersects_ray_point::proc(r:Ray, p:vec2)->(points:[1]vec2, point_count:int){
     l:Line = {r.x, r.y, r.x + r.z, r.y + r.w}
     
-    if line_side(l, p) == 0{
+    if LineSide(l, p) == 0{
         points[0] = p
         point_count = 1
         return
@@ -398,7 +398,7 @@ intersects_point_ray::proc(p:vec2, r:Ray)->(points:[1]vec2, point_count:int){
 
 // return intersection point (if it exists) of a ray and a line segment
 intersects_ray_line::proc(r:Ray, l:Line)->(points:[1]vec2, point_count:int){
-    line_direction: = line_vector(l)
+    line_direction: = LineVector(l)
     origin_diff: = l.xy - r.xy
     cp1: = Vec2Cross(r.zw, line_direction)
     cp2: = Vec2Cross(origin_diff, line_direction)
