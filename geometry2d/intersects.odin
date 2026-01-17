@@ -3,8 +3,8 @@ package geometry2d
 import math "core:math"
 
 // Get intersection points where point intersects with point
-intersects_point_point::proc(p1:vec2, p2:vec2)->(points:[1]vec2, point_count:int){
-    if (contains_point_point(p1, p2)){
+IntersectsPointPoint::proc(p1:vec2, p2:vec2)->(points:[1]vec2, point_count:int){
+    if (ContainsPointPoint(p1, p2)){
         points[0] = p1
         point_count = 1
         return
@@ -13,8 +13,8 @@ intersects_point_point::proc(p1:vec2, p2:vec2)->(points:[1]vec2, point_count:int
 }
 
 // Get intersection points where line segment intersects with point
-intersects_line_point::proc(l:Line, p:vec2)->(points:[1]vec2, point_count:int){
-    if (contains_line_point(l, p)){
+IntersectsLinePoint::proc(l:Line, p:vec2)->(points:[1]vec2, point_count:int){
+    if (ContainsLinePoint(l, p)){
         points[0] = p
         point_count = 1
         return
@@ -25,30 +25,30 @@ intersects_line_point::proc(l:Line, p:vec2)->(points:[1]vec2, point_count:int){
 
 // Get intersection points where rectangle intersects with point
 // TODO: Side line check felt weird
-intersects_rectangle_point::proc(r:Rect, p:vec2)->(points:[1]vec2, point_count:int){
-    if (contains_rectangle_point(r,p)){
+IntersectsRectanglePoint::proc(r:Rect, p:vec2)->(points:[1]vec2, point_count:int){
+    if (ContainsRectanglePoint(r,p)){
         points[0] = p
         point_count = 1
         return
     }
-    // if (contains_line_point(rect_top, p)){
+    // if (ContainsLinePoint(RectTop, p)){
     //     return p
     // }
-    // if (contains_line_point(rect_right, p)){
+    // if (ContainsLinePoint(RectRight, p)){
     //     return p
     // }
-    // if (contains_line_point(rect_bottom, p)){
+    // if (ContainsLinePoint(RectBottom, p)){
     //     return p
     // }
-    // if (contains_line_point(rect_left, p)){
+    // if (ContainsLinePoint(RectLeft, p)){
     //     return p
     // }
     return
 }
 
 // Get intersection points where Circle intersects with point
-intersects_circle_point::proc(c:Circle, p:vec2)->(points:[1]vec2, point_count:int){
-    if (vec2_mag2(vec2_abs(p - c.xy)) - (c.z * c.z) <= epsilon){
+IntersectsCirclePoint::proc(c:Circle, p:vec2)->(points:[1]vec2, point_count:int){
+    if (Vec2Mag2(Vec2Abs(p - c.xy)) - (c.z * c.z) <= epsilon){
         points[0] = p
         point_count = 1
         return
@@ -57,23 +57,23 @@ intersects_circle_point::proc(c:Circle, p:vec2)->(points:[1]vec2, point_count:in
 }
 
 // Get intersection points where Triangle intersects with point
-intersects_triangle_point::proc(t:Triangle, p:vec2)->(points:[1]vec2, point_count:int){
-    if overlaps_triangle_point(t, p){
+IntersectsTrianglePoint::proc(t:Triangle, p:vec2)->(points:[1]vec2, point_count:int){
+    if OverlapsTrianglePoint(t, p){
         points[0] = p
         point_count = 1
         return
     }
-    // if (contains_line_point(triangle_side(t, 0), p)){
+    // if (ContainsLinePoint(TriangleSide(t, 0), p)){
     //     points[0] = p
     //     point_count = 1
     //     return
     // }
-    // if (contains_line_point(triangle_side(t, 1), p)){
+    // if (ContainsLinePoint(TriangleSide(t, 1), p)){
     //     points[0] = p
     //     point_count = 1
     //     return
     // }
-    // if (contains_line_point(triangle_side(t, 2), p)){
+    // if (ContainsLinePoint(TriangleSide(t, 2), p)){
     //     points[0] = p
     //     point_count = 1
     //     return
@@ -82,15 +82,15 @@ intersects_triangle_point::proc(t:Triangle, p:vec2)->(points:[1]vec2, point_coun
 }
 
 // Get intersection points where point intersects with line segment
-intersects_point_line::proc(p:vec2, l:Line)->(points:[1]vec2, point_count:int){
-    return intersects_line_point(l, p)
+IntersectsPointLine::proc(p:vec2, l:Line)->(points:[1]vec2, point_count:int){
+    return IntersectsLinePoint(l, p)
 }
 
 // Get intersection points where line segment intersects with line segment
-intersects_line_line::proc(l1:Line, l2:Line)->(points:[1]vec2, point_count:int){
-    line_vec1 := line_vector(l1)
-    line_vec2 := line_vector(l2)
-    cross_product:f32 = vec2_cross(line_vec1, line_vec2)
+IntersectsLineLine::proc(l1:Line, l2:Line)->(points:[1]vec2, point_count:int){
+    line_vec1 := LineVector(l1)
+    line_vec2 := LineVector(l2)
+    cross_product:f32 = Vec2Cross(line_vec1, line_vec2)
     if (cross_product == 0) { return } // Parallel or Colinear TODO: Return two points
 
     inv_cross_prod := 1 / cross_product
@@ -117,9 +117,9 @@ intersects_line_line::proc(l1:Line, l2:Line)->(points:[1]vec2, point_count:int){
 }
 
 // Get intersection points where rectangle intersects with line segment
-intersects_rectangle_line::proc(r:Rect, l:Line)->(points:[4]vec2, point_count:int){
+IntersectsRectangleLine::proc(r:Rect, l:Line)->(points:[4]vec2, point_count:int){
     for i in 0..<4{
-        _points, _point_count: = intersects_line_line(rect_side(r, u32(i)), l)
+        _points, _point_count: = IntersectsLineLine(RectSide(r, u32(i)), l)
         if (_point_count == 0){
             continue
         }
@@ -128,15 +128,15 @@ intersects_rectangle_line::proc(r:Rect, l:Line)->(points:[4]vec2, point_count:in
     }
 
     if point_count > 1{
-        point_count = filter_duplicate_points(points[0:point_count])
+        point_count = FilterDuplicatePoints(points[0:point_count])
     }
     return
 }
 
 // Get intersection points where Triangle intersects with line segment
-intersects_triangle_line::proc(t:Triangle, l:Line)->(points:[3]vec2, point_count:int){
+IntersectsTriangleLine::proc(t:Triangle, l:Line)->(points:[3]vec2, point_count:int){
     for i in 0..<3{
-        _points, _point_count: = intersects_line_line(triangle_side(t, u32(i)), l)
+        _points, _point_count: = IntersectsLineLine(TriangleSide(t, u32(i)), l)
         if (_point_count > 0){
             points[point_count] = _points[0]
             point_count += 1
@@ -144,25 +144,25 @@ intersects_triangle_line::proc(t:Triangle, l:Line)->(points:[3]vec2, point_count
     }
 
     if point_count > 1{
-        point_count = filter_duplicate_points(points[0:point_count])
+        point_count = FilterDuplicatePoints(points[0:point_count])
     }
     return
 }
 
 // Get intersection points where Circle intersects with line segment
-intersects_circle_line::proc(c:Circle, l:Line)->(points:[2]vec2, point_count:int){
-    closest_point_to_segment:vec2 = closest_line_point(l, c.xy)
-    if !overlaps_circle_point(c, closest_point_to_segment){
+IntersectsCircleLine::proc(c:Circle, l:Line)->(points:[2]vec2, point_count:int){
+    closest_point_to_segment:vec2 = ClosestLinePoint(l, c.xy)
+    if !OverlapsCirclePoint(c, closest_point_to_segment){
         return
     }
     
     // Compute point closest to the Circle on the line
-    d:vec2 = line_vector(l)
-    u_line:f32 = vec2_dot(d, c.xy - l.xy) / vec2_mag2(d)
+    d:vec2 = LineVector(l)
+    u_line:f32 = Vec2Dot(d, c.xy - l.xy) / Vec2Mag2(d)
     closest_point_to_line:vec2 = l.xy + u_line * d
-    dist_to_line:f32 = vec2_mag2(c.xy - closest_point_to_line)
+    dist_to_line:f32 = Vec2Mag2(c.xy - closest_point_to_line)
 
-    if abs(dist_to_line - c.z * c.z) < epsilon{
+    if Abs(dist_to_line - c.z * c.z) < epsilon{
         point_count += 1
         points[0] = closest_point_to_line 
         return
@@ -171,38 +171,38 @@ intersects_circle_line::proc(c:Circle, l:Line)->(points:[2]vec2, point_count:int
     // Circle intersects the line
     length:f32 = sqrt(c.z * c.z - dist_to_line)
 
-    p1:vec2 = closest_point_to_line + vec2_norm(line_vector(l)) * length
-    p2:vec2 = closest_point_to_line - vec2_norm(line_vector(l)) * length
+    p1:vec2 = closest_point_to_line + Vec2Norm(LineVector(l)) * length
+    p2:vec2 = closest_point_to_line - Vec2Norm(LineVector(l)) * length
 
-    if vec2_mag2(p1 - closest_line_point(l, p1)) < epsilon * epsilon{
+    if Vec2Mag2(p1 - ClosestLinePoint(l, p1)) < epsilon * epsilon{
         points[point_count] = p1
         point_count += 1
     }
-    if vec2_mag2(p2 - closest_line_point(l, p2)) < epsilon * epsilon{
+    if Vec2Mag2(p2 - ClosestLinePoint(l, p2)) < epsilon * epsilon{
         points[point_count] = p2
         point_count += 1
     }
     
     if point_count > 1{
-        point_count = filter_duplicate_points(points[0:point_count])
+        point_count = FilterDuplicatePoints(points[0:point_count])
     }
     return
 }
 
 // Get intersection points where point intersects with rectangle
-intersects_point_rectangle::proc(p:vec2, r:Rect)->(points:[1]vec2, point_count:int){
-    return intersects_rectangle_point(r, p)
+IntersectsPointRectangle::proc(p:vec2, r:Rect)->(points:[1]vec2, point_count:int){
+    return IntersectsRectanglePoint(r, p)
 }
 
 // Get intersection points where line intersects with rectangle
-intersects_line_rectangle::proc(l:Line, r:Rect)->(points:[4]vec2, point_count:int){
-    return intersects_rectangle_line(r, l)
+IntersectsLineRectangle::proc(l:Line, r:Rect)->(points:[4]vec2, point_count:int){
+    return IntersectsRectangleLine(r, l)
 }
 
 // Get intersection points where rectangle intersects with rectangle
-intersects_rectangle_rectangle::proc(r1:Rect, r2:Rect)->(points:[8]vec2, point_count:int){
+IntersectsRectangleRectangle::proc(r1:Rect, r2:Rect)->(points:[8]vec2, point_count:int){
     for i in 0..<4{
-        _points, _point_count: = intersects_rectangle_line(r1, rect_side(r2, u32(i) ))
+        _points, _point_count: = IntersectsRectangleLine(r1, RectSide(r2, u32(i) ))
         for j in 0..<_point_count{
             points[point_count + j] = _points[j]
         }
@@ -210,15 +210,15 @@ intersects_rectangle_rectangle::proc(r1:Rect, r2:Rect)->(points:[8]vec2, point_c
     }
     
     if point_count > 1{
-        point_count = filter_duplicate_points(points[0:point_count])
+        point_count = FilterDuplicatePoints(points[0:point_count])
     }
     return
 }
 
 // Get intersection points where circle intersects with rectangle
-intersects_circle_rectangle::proc(c:Circle, r:Rect)->(points:[8]vec2, point_count:int){
+IntersectsCircleRectangle::proc(c:Circle, r:Rect)->(points:[8]vec2, point_count:int){
     for i in 0..<4{
-        _points, _point_count: = intersects_circle_line(c, rect_side(r, u32(i) ))
+        _points, _point_count: = IntersectsCircleLine(c, RectSide(r, u32(i) ))
         for j in 0..<_point_count{
             points[point_count + j] = _points[j]
         }
@@ -226,15 +226,15 @@ intersects_circle_rectangle::proc(c:Circle, r:Rect)->(points:[8]vec2, point_coun
     }
     
     if point_count > 1{
-        point_count = filter_duplicate_points(points[0:point_count])
+        point_count = FilterDuplicatePoints(points[0:point_count])
     }
     return
 }
 
 // Get intersection points where triangle intersects with rectangle
-intersects_triangle_rectangle::proc(t:Triangle, r:Rect)->(points:[8]vec2, point_count:int){
+IntersectsTriangleRectangle::proc(t:Triangle, r:Rect)->(points:[8]vec2, point_count:int){
     for i in 0..<4{
-        _points, _point_count: = intersects_triangle_line(t, rect_side(r, u32(i) ))
+        _points, _point_count: = IntersectsTriangleLine(t, RectSide(r, u32(i) ))
         for j in 0..<_point_count{
             points[point_count + j] = _points[j]
         }
@@ -242,41 +242,41 @@ intersects_triangle_rectangle::proc(t:Triangle, r:Rect)->(points:[8]vec2, point_
     }
     
     if point_count > 1{
-        point_count = filter_duplicate_points(points[0:point_count])
+        point_count = FilterDuplicatePoints(points[0:point_count])
     }
     return
 }
 
 // Get intersection points where point intersects with circle
-intersects_point_circle:: proc (p:vec2, c:Circle)->(points:[1]vec2, point_count:int){
-    return intersects_circle_point(c, p)
+IntersectsPointCircle:: proc (p:vec2, c:Circle)->(points:[1]vec2, point_count:int){
+    return IntersectsCirclePoint(c, p)
 }
 
 // Get intersection points where line segment intersects with circle
-intersects_line_circle:: proc (l:Line, c:Circle)->(points:[2]vec2, point_count:int){
-    return intersects_circle_line(c, l)
+IntersectsLineCircle:: proc (l:Line, c:Circle)->(points:[2]vec2, point_count:int){
+    return IntersectsCircleLine(c, l)
 }
 
 // Get intersection points where rectangle intersects with circle
-intersects_rectangle_circle::proc(r:Rect, c:Circle)->(points:[8]vec2, point_count:int){
-    return intersects_circle_rectangle(c, r)
+IntersectsRectangleCircle::proc(r:Rect, c:Circle)->(points:[8]vec2, point_count:int){
+    return IntersectsCircleRectangle(c, r)
 }
 
 // Get intersection points where circle intersects with circle
-intersects_circle_circle::proc(c1:Circle, c2:Circle)->(points:[2]vec2, point_count:int){
+IntersectsCircleCircle::proc(c1:Circle, c2:Circle)->(points:[2]vec2, point_count:int){
     if c1.xy == c2.xy{return}
 
     between: = c2.xy - c1.xy
-    dist2:f32 = vec2_mag(between)
+    dist2:f32 = Vec2Mag(between)
     radius_sum:f32 = c1.z + c2.z
 
     // circles are too far apart to be touching.
     if dist2 > radius_sum * radius_sum {return}
 
     // one circle is inside of the other, they can't be intersecting.
-    if (contains_circle_circle(c1, c2) || contains_circle_circle(c2, c1)) {return}
+    if (ContainsCircleCircle(c1, c2) || ContainsCircleCircle(c2, c1)) {return}
 
-    between_norm: = vec2_norm(between)
+    between_norm: = Vec2Norm(between)
     // circles are touching at exactly 1 point
     if (dist2 == radius_sum) {
         points[0] = c1.xy + between_norm * c1.z
@@ -288,7 +288,7 @@ intersects_circle_circle::proc(c1:Circle, c2:Circle)->(points:[2]vec2, point_cou
     dist: = sqrt(dist2)
     dist_cc: = (dist2 + c1.z * c1.z - c2.z * c2.z)/(2 * dist)
     chord_center: = c1.xy + between_norm * dist_cc
-    half_cord: = vec2_perp(between_norm) * sqrt(c1.z * c1.z - dist_cc * dist_cc)
+    half_cord: = Vec2Perp(between_norm) * sqrt(c1.z * c1.z - dist_cc * dist_cc)
 
     points[0] = chord_center + half_cord
     points[1] = chord_center - half_cord
@@ -297,9 +297,9 @@ intersects_circle_circle::proc(c1:Circle, c2:Circle)->(points:[2]vec2, point_cou
 }
 
 // Get intersection points where triangle intersects with circle
-intersects_triangle_circle::proc(t:Triangle, c:Circle)->(points:[6]vec2, point_count:int){
+IntersectsTriangleCircle::proc(t:Triangle, c:Circle)->(points:[6]vec2, point_count:int){
     for i in 0..<3{
-        _points, _point_count: = intersects_circle_line(c, triangle_side(t, u32(i) ))
+        _points, _point_count: = IntersectsCircleLine(c, TriangleSide(t, u32(i) ))
         for j in 0..<_point_count{
             points[point_count + j] = _points[j]
         }
@@ -307,35 +307,35 @@ intersects_triangle_circle::proc(t:Triangle, c:Circle)->(points:[6]vec2, point_c
     }
     
     if point_count > 1{
-        point_count = filter_duplicate_points(points[0:point_count])
+        point_count = FilterDuplicatePoints(points[0:point_count])
     }
     return
 }
 
 // Get intersection points where point intersects with triangle
-intersects_point_triangle::proc(p:vec2, t:Triangle)->(points:[1]vec2, point_count:int){
-    return intersects_triangle_point(t, p)
+IntersectsPointTriangle::proc(p:vec2, t:Triangle)->(points:[1]vec2, point_count:int){
+    return IntersectsTrianglePoint(t, p)
 }
 
 // Get intersection points where line segment intersects with triangle
-intersects_line_triangle::proc(l:Line, t:Triangle)->(points:[3]vec2, point_count:int){
-    return intersects_triangle_line(t, l)
+IntersectsLineTriangle::proc(l:Line, t:Triangle)->(points:[3]vec2, point_count:int){
+    return IntersectsTriangleLine(t, l)
 }
 
 // Get intersection points where rectangle intersects with triangle
-intersects_rectangle_triangle::proc(r:Rect, t:Triangle)->(points:[8]vec2, point_count:int){
-    return intersects_triangle_rectangle(t, r)
+IntersectsRectangleTriangle::proc(r:Rect, t:Triangle)->(points:[8]vec2, point_count:int){
+    return IntersectsTriangleRectangle(t, r)
 }
 
 // Get intersection points where circle intersects with triangle
-intersects_circle_triangle::proc(c:Circle, t:Triangle)->(points:[6]vec2, point_count:int){
-    return intersects_triangle_circle(t, c)
+IntersectsCircleTriangle::proc(c:Circle, t:Triangle)->(points:[6]vec2, point_count:int){
+    return IntersectsTriangleCircle(t, c)
 }
 
 // Get intersection points where triangle intersects with triangle
-intersects_triangle_triangle::proc(t1:Triangle, t2:Triangle)->(points:[6]vec2, point_count:int){
+IntersectsTriangleTriangle::proc(t1:Triangle, t2:Triangle)->(points:[6]vec2, point_count:int){
     for i in 0..<3{
-        _points, _point_count: = intersects_triangle_line(t1, triangle_side(t2, u32(i) ))
+        _points, _point_count: = IntersectsTriangleLine(t1, TriangleSide(t2, u32(i) ))
         for j in 0..<_point_count{
             points[point_count + j] = _points[j]
         }
@@ -343,7 +343,7 @@ intersects_triangle_triangle::proc(t1:Triangle, t2:Triangle)->(points:[6]vec2, p
     }
     
     if point_count > 1{
-        point_count = filter_duplicate_points(points[0:point_count])
+        point_count = FilterDuplicatePoints(points[0:point_count])
     }
     return
 }
@@ -351,10 +351,10 @@ intersects_triangle_triangle::proc(t1:Triangle, t2:Triangle)->(points:[6]vec2, p
 // RAYS =================================================================================================================
 
 // return intersection point (if it exists) of a ray and a ray
-intersects_ray_ray::proc(r1:Ray, r2:Ray)->(points:[1]vec2, point_count:int){
+IntersectsRayRay::proc(r1:Ray, r2:Ray)->(points:[1]vec2, point_count:int){
     origin_diff: = r2.xy - r1.xy
-    cp1: = vec2_cross(r1.zw, r2.zw)
-    cp2: = vec2_cross(origin_diff, r2.zw)
+    cp1: = Vec2Cross(r1.zw, r2.zw)
+    cp2: = Vec2Cross(origin_diff, r2.zw)
 
     if cp1 == 0{
         if cp2 == 0{
@@ -366,7 +366,7 @@ intersects_ray_ray::proc(r1:Ray, r2:Ray)->(points:[1]vec2, point_count:int){
         return
     }
 
-    cp3: = vec2_cross(origin_diff, r1.zw)
+    cp3: = Vec2Cross(origin_diff, r1.zw)
     t1: = cp2 / cp1 // distance along q1 to intersection
     t2: = cp3 / cp1 // distance along q2 to intersection
 
@@ -381,27 +381,29 @@ intersects_ray_ray::proc(r1:Ray, r2:Ray)->(points:[1]vec2, point_count:int){
 }
 
 // return intersection point (if it exists) of a ray and a point
-intersects_ray_point::proc(r:Ray, p:vec2)->(points:[1]vec2, point_count:int){
+IntersectsRayPoint::proc(r:Ray, p:vec2)->(points:[1]vec2, point_count:int){
     l:Line = {r.x, r.y, r.x + r.z, r.y + r.w}
     
-    if line_side(l, p) == 0{
+    if LineSide(l, p) == 0{
         points[0] = p
         point_count = 1
         return
     }
     return
 }
-intersects_point_ray::proc(p:vec2, r:Ray)->(points:[1]vec2, point_count:int){
-    points, point_count = intersects_ray_point(r, p)
+
+
+IntersectsPointRay::proc(p:vec2, r:Ray)->(points:[1]vec2, point_count:int){
+    points, point_count = IntersectsRayPoint(r, p)
     return
 }
 
 // return intersection point (if it exists) of a ray and a line segment
-intersects_ray_line::proc(r:Ray, l:Line)->(points:[1]vec2, point_count:int){
-    line_direction: = line_vector(l)
+IntersectsRayLine::proc(r:Ray, l:Line)->(points:[1]vec2, point_count:int){
+    line_direction: = LineVector(l)
     origin_diff: = l.xy - r.xy
-    cp1: = vec2_cross(r.zw, line_direction)
-    cp2: = vec2_cross(origin_diff, line_direction)
+    cp1: = Vec2Cross(r.zw, line_direction)
+    cp2: = Vec2Cross(origin_diff, line_direction)
 
     if cp1 == 0{
         if cp2 == 0{
@@ -413,7 +415,7 @@ intersects_ray_line::proc(r:Ray, l:Line)->(points:[1]vec2, point_count:int){
         return
     }
 
-    cp3: = vec2_cross(origin_diff, r.zw)
+    cp3: = Vec2Cross(origin_diff, r.zw)
     t1: = cp2 / cp1 // distance along q1 to intersection
     t2: = cp3 / cp1 // distance along q2 to intersection
 
@@ -427,16 +429,16 @@ intersects_ray_line::proc(r:Ray, l:Line)->(points:[1]vec2, point_count:int){
     // TODO: filter duplicates?
     return
 }
-intersects_line_ray::proc(l:Line, r:Ray)->(points:[1]vec2, point_count:int){
-    points, point_count = intersects_ray_line(r, l)
+IntersectsLineRay::proc(l:Line, r:Ray)->(points:[1]vec2, point_count:int){
+    points, point_count = IntersectsRayLine(r, l)
     return
 }
 
 // Get intersection points where a ray intersects a circle
-intersects_ray_circle::proc(r:Ray, c:Circle)->(points:[2]vec2, point_count:int){
-    A: = vec2_mag2(r.zw)
-    B: = 2.0 * (vec2_dot(r.xy, r.zw) - vec2_dot(c.xy, r.zw))
-    C: = vec2_mag2(c.xy) + vec2_mag2(r.xy) - (2.0 * c.x * r.x) - (2.0 * c.y * r.y) - (c.z  * c.z)
+IntersectsRayCircle::proc(r:Ray, c:Circle)->(points:[2]vec2, point_count:int){
+    A: = Vec2Mag2(r.zw)
+    B: = 2.0 * (Vec2Dot(r.xy, r.zw) - Vec2Dot(c.xy, r.zw))
+    C: = Vec2Mag2(c.xy) + Vec2Mag2(r.xy) - (2.0 * c.x * r.x) - (2.0 * c.y * r.y) - (c.z  * c.z)
     D: = B * B - 4.0 * A * C
 
     if D < 0.0{
@@ -469,15 +471,15 @@ intersects_ray_circle::proc(r:Ray, c:Circle)->(points:[2]vec2, point_count:int){
     }
     return
 }
-intersects_circle_ray::proc(c:Circle, r:Ray)->(points:[2]vec2, point_count:int){
-    points, point_count = intersects_ray_circle(r, c)
+IntersectsCircleRay::proc(c:Circle, r:Ray)->(points:[2]vec2, point_count:int){
+    points, point_count = IntersectsRayCircle(r, c)
     return
 }
 
 // Get intersection points where a ray intersects a rectangle
-intersects_ray_rectangle::proc(r:Ray, rect:Rect)->(points:[2]vec2, point_count:int){
+IntersectsRayRectangle::proc(r:Ray, rect:Rect)->(points:[2]vec2, point_count:int){
     for i in 0..<4{
-        _points, _point_count: = intersects_ray_line(r, rect_side(rect, u32(i)), )
+        _points, _point_count: = IntersectsRayLine(r, RectSide(rect, u32(i)), )
         if _point_count > 0{
             assert(point_count < 2)
             points[point_count] = _points[0]
@@ -486,19 +488,19 @@ intersects_ray_rectangle::proc(r:Ray, rect:Rect)->(points:[2]vec2, point_count:i
     }
     
     if point_count > 1{
-        point_count = filter_duplicate_points(points[0:point_count])
+        point_count = FilterDuplicatePoints(points[0:point_count])
     }
     return
 }
-intersects_rectangle_ray::proc(rect:Rect, r:Ray)->(points:[2]vec2, point_count:int){
-    points, point_count = intersects_ray_rectangle(r, rect)
+IntersectsRectangleRay::proc(rect:Rect, r:Ray)->(points:[2]vec2, point_count:int){
+    points, point_count = IntersectsRayRectangle(r, rect)
     return
 }
 
 // Get intersection points where a ray intersects a triangle
-intersects_ray_triangle::proc(r:Ray, t:Triangle)->(points:[2]vec2, point_count:int){
+IntersectsRayTriangle::proc(r:Ray, t:Triangle)->(points:[2]vec2, point_count:int){
     for i in 0..<3{
-        _points, _point_count: = intersects_ray_line(r, triangle_side(t, u32(i)), )
+        _points, _point_count: = IntersectsRayLine(r, TriangleSide(t, u32(i)), )
         if _point_count > 0{
             assert(point_count < 2, "Too many intersection points")
             points[point_count] = _points[0]
@@ -507,11 +509,13 @@ intersects_ray_triangle::proc(r:Ray, t:Triangle)->(points:[2]vec2, point_count:i
     }
     
     if point_count > 1{
-        point_count = filter_duplicate_points(points[0:point_count])
+        point_count = FilterDuplicatePoints(points[0:point_count])
     }
     return
 }
-intersects_triangle_ray::proc(t:Triangle, r:Ray)->(points:[2]vec2, point_count:int){
-    points, point_count = intersects_ray_triangle(r, t)
+
+
+IntersectsTriangleRay::proc(t:Triangle, r:Ray)->(points:[2]vec2, point_count:int){
+    points, point_count = IntersectsRayTriangle(r, t)
     return
 }

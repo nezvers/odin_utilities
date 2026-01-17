@@ -25,19 +25,19 @@ state_update_draw_shapes :: proc(){
 }
 
 state_draw_draw_shapes :: proc(){
-    line:Line = geometry2d.line2D_new({100., 100.}, { 200., 100.})
+    line:Line = geometry2d.LineNew({100., 100.}, { 200., 100.})
     draw_line(line, rl.WHITE)
 
-    circle:Circle = geometry2d.circle_new({50., 15.}, 5)
+    circle:Circle = geometry2d.CircleNew({50., 15.}, 5)
     draw_circle(circle, rl.WHITE)
 
-    rect:Rect = geometry2d.rect_new({70., 10.}, {10., 10.})
+    rect:Rect = geometry2d.RectNew({70., 10.}, {10., 10.})
     draw_rect(rect, rl.WHITE)
 
-    triangle:Triangle = geometry2d.triangle_new({90., 10.}, {105., 10.}, {97., 20.})
+    triangle:Triangle = geometry2d.TriangleNew({90., 10.}, {105., 10.}, {97., 20.})
     draw_triangle(triangle, rl.WHITE)
 
-    ray:Ray = geometry2d.ray_new({115., 10.}, {10., 10.})
+    ray:Ray = geometry2d.RayNew({115., 10.}, {10., 10.})
     draw_ray(ray, rl.WHITE)
 }
 
