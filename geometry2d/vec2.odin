@@ -6,10 +6,10 @@ vec2 :: [2]f32
 
 
 Vec2Sign::proc(p:vec2)->vec2{
-    return {f32(signf(p.x)), f32(signf(p.y))}
+    return {f32(Signf(p.x)), f32(Signf(p.y))}
 }
 Vec2Abs::proc(p:vec2)->vec2{
-    return {abs(p.x), abs(p.y)}
+    return {Abs(p.x), Abs(p.y)}
 }
 
 // Returns rectangular area of vector

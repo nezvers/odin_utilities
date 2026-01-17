@@ -72,7 +72,7 @@ overlaps_rectangle_rectangle::proc(r1:Rect, r2:Rect)->bool{
 
 // Check if Circle overlaps rectangle
 overlaps_circle_rectangle::proc(c:Circle, r:Rect)->bool{
-    overlap:f32 = Vec2Mag2(vec2{clamp(c.x, r.x, r.x + r.z), clamp(c.y, r.y, r.y + r.w)} - c.xy)
+    overlap:f32 = Vec2Mag2(vec2{Clamp(c.x, r.x, r.x + r.z), Clamp(c.y, r.y, r.y + r.w)} - c.xy)
     if isnan(overlap){overlap = 0}
     return (overlap - (c.z * c.z)) < 0
 }

@@ -309,7 +309,7 @@ namespace olc
 		}
 
 		// Clamp the components of this vector in between the 'element-wise' minimum and maximum of 2 other vectors
-		inline constexpr v_2d clamp(const v_2d& v1, const v_2d& v2) const
+		inline constexpr v_2d Clamp(const v_2d& v1, const v_2d& v2) const
 		{
 			return this->max(v1).min(v2);
 		}
@@ -520,7 +520,7 @@ namespace olc::utils::geom2d
 	namespace internal
 	{
 		template<typename T>
-		inline std::vector<olc::v_2d<T>> filter_duplicate_points(const std::vector<olc::v_2d<T>>& points) {
+		inline std::vector<olc::v_2d<T>> FilterDuplicatePoints(const std::vector<olc::v_2d<T>>& points) {
 			std::vector<olc::v_2d<T>> filtered_points;
 
 			for (const auto& point : points)
@@ -529,7 +529,7 @@ namespace olc::utils::geom2d
 
 				for (const auto& filtered_point : filtered_points)
 				{
-					if (std::abs(point.x - filtered_point.x) < epsilon && std::abs(point.y - filtered_point.y) < epsilon)
+					if (std::Abs(point.x - filtered_point.x) < epsilon && std::Abs(point.y - filtered_point.y) < epsilon)
 					{
 						is_duplicate = true;
 						break;
@@ -610,7 +610,7 @@ namespace olc::utils::geom2d
 		// Returns line equation "mx + a" coefficients where:
 		// x: m
 		// y: a
-		// NOTE: Returns {inf, inf} if std::abs(end.x - start.x) < epsilon:
+		// NOTE: Returns {inf, inf} if std::Abs(end.x - start.x) < epsilon:
 		inline constexpr olc::vd2d coefficients() const
 		{
 			double x1 = start.x;
@@ -619,7 +619,7 @@ namespace olc::utils::geom2d
 			double y2 = end.y;
 
 			// check if line is vertical or close to vertical
-			if (std::abs(x2 - x1) < epsilon) {
+			if (std::Abs(x2 - x1) < epsilon) {
 				return olc::vd2d{ std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity() };
 			}
 
@@ -760,7 +760,7 @@ namespace olc::utils::geom2d
 		// Get area of triangle
 		inline constexpr T area() const
 		{
-			return double(0.5) * std::abs(
+			return double(0.5) * std::Abs(
 				(pos[0].x * (pos[1].y - pos[2].y)) +
 				(pos[1].x * (pos[2].y - pos[0].y)) +
 				(pos[2].x * (pos[0].y - pos[1].y)));
@@ -807,7 +807,7 @@ namespace olc::utils::geom2d
 	inline olc::v_2d<T1> closest(const line<T1>& l, const olc::v_2d<T2>& p)
 	{		
 		auto d = l.vector();
-		double u = std::clamp(double(d.dot(p - l.start)) / d.mag2(), 0.0, 1.0);
+		double u = std::Clamp(double(d.dot(p - l.start)) / d.mag2(), 0.0, 1.0);
 		return l.start + u * d;
 	}
 
@@ -1028,7 +1028,7 @@ namespace olc::utils::geom2d
 	inline constexpr bool contains(const line<T1>& l, const olc::v_2d<T2>& p)
 	{
 		double d = ((p.x - l.start.x) * (l.end.y - l.start.y) - (p.y - l.start.y) * (l.end.x - l.start.x));
-		if (std::abs(d) < epsilon)
+		if (std::Abs(d) < epsilon)
 		{
 			// point is on line
 			double u = l.vector().dot(p - l.start) / l.vector().mag2();
@@ -1177,7 +1177,7 @@ namespace olc::utils::geom2d
 	template<typename T1, typename T2>
 	inline std::vector<olc::v_2d<T2>> intersects(const circle<T1>& c, const olc::v_2d<T2>& p)
 	{
-		if (std::abs((p - c.pos).mag2() - (c.radius * c.radius)) <= epsilon)
+		if (std::Abs((p - c.pos).mag2() - (c.radius * c.radius)) <= epsilon)
 			return { p };
 
 		return {};
@@ -1383,7 +1383,7 @@ namespace olc::utils::geom2d
 			intersections.insert(intersections.end(), v.begin(), v.end());
 		}
 
-		return internal::filter_duplicate_points(intersections);
+		return internal::FilterDuplicatePoints(intersections);
 	}
 
 	// intersects(c,l)
@@ -1404,7 +1404,7 @@ namespace olc::utils::geom2d
 		const auto closestPointToLine = l.start + uLine * d;
 		const auto distToLine = (c.pos - closestPointToLine).mag2();
 
-		if (std::abs(distToLine - c.radius * c.radius) < epsilon)
+		if (std::Abs(distToLine - c.radius * c.radius) < epsilon)
 		{
 			// Circle "kisses" the line
 			return { closestPointToLine };
@@ -1423,7 +1423,7 @@ namespace olc::utils::geom2d
 		if ((p2 - closest(l, p2)).mag2() < epsilon * epsilon)
 			intersections.push_back(p2);
 
-		return internal::filter_duplicate_points(intersections);
+		return internal::FilterDuplicatePoints(intersections);
 	}
 
 	// intersects(t,l)
@@ -1439,7 +1439,7 @@ namespace olc::utils::geom2d
 			intersections.insert(intersections.end(), v.begin(), v.end());
 		}
 
-		return internal::filter_duplicate_points(intersections);
+		return internal::FilterDuplicatePoints(intersections);
 	}
 
 
@@ -1538,7 +1538,7 @@ namespace olc::utils::geom2d
 		// Inspired by this (very clever btw) 
 		// https://stackoverflow.com/questions/45370692/circle-rectangle-collision-response
 		// But modified to work :P
-		double overlap = (olc::v_2d<T2>{ std::clamp(c.pos.x, r.pos.x, r.pos.x + r.size.x), std::clamp(c.pos.y, r.pos.y, r.pos.y + r.size.y) } - c.pos).mag2();
+		double overlap = (olc::v_2d<T2>{ std::Clamp(c.pos.x, r.pos.x, r.pos.x + r.size.x), std::Clamp(c.pos.y, r.pos.y, r.pos.y + r.size.y) } - c.pos).mag2();
 		if (std::isnan(overlap)) overlap = 0;
 		return (overlap - (c.radius * c.radius)) < 0;
 	}
@@ -1585,7 +1585,7 @@ namespace olc::utils::geom2d
 			intersections.insert(intersections.end(), v.begin(), v.end());
 		}
 
-		return internal::filter_duplicate_points(intersections);
+		return internal::FilterDuplicatePoints(intersections);
 	}
 
 	// intersects(c,r)
@@ -1601,7 +1601,7 @@ namespace olc::utils::geom2d
 			intersections.insert(intersections.end(), v.begin(), v.end());
 		}
 
-		return internal::filter_duplicate_points(intersections);
+		return internal::FilterDuplicatePoints(intersections);
 	}
 
 	// intersects(t,r)
@@ -1616,7 +1616,7 @@ namespace olc::utils::geom2d
 			intersections.insert(intersections.end(), v.begin(), v.end());
 		}
 
-		return internal::filter_duplicate_points(intersections);
+		return internal::FilterDuplicatePoints(intersections);
 	}
 
 
@@ -1802,7 +1802,7 @@ namespace olc::utils::geom2d
 			intersections.insert(intersections.end(), v.begin(), v.end());
 		}
 
-		return internal::filter_duplicate_points(intersections);
+		return internal::FilterDuplicatePoints(intersections);
 	}
 
 
@@ -1957,7 +1957,7 @@ namespace olc::utils::geom2d
 			intersections.insert(intersections.end(), v.begin(), v.end());
 		}
 
-		return internal::filter_duplicate_points(intersections);
+		return internal::FilterDuplicatePoints(intersections);
 	}
 
 
@@ -2045,8 +2045,8 @@ namespace olc::utils::geom2d
 	{
 		T1 min_x=std::min(l.start.x,l.end.x);
 		T1 min_y=std::min(l.start.y,l.end.y);
-		T1 size_x=std::abs(l.start.x-l.end.x);
-		T1 size_y=std::abs(l.start.y-l.end.y);
+		T1 size_x=std::Abs(l.start.x-l.end.x);
+		T1 size_y=std::Abs(l.start.y-l.end.y);
 		return {{min_x,min_y},{size_x,size_y}};
 	}
 
@@ -2289,7 +2289,7 @@ namespace olc::utils::geom2d
 	{
 		const line<T1> l = { q.origin, q.origin + q.direction };
 		
-		if (std::abs(l.side(p)) < epsilon )
+		if (std::Abs(l.side(p)) < epsilon )
 			return { p }; // Intersection
 		else
 			return {}; 
@@ -2539,7 +2539,7 @@ namespace olc::utils::geom2d
 			intersections.insert(intersections.end(), v.begin(), v.end());
 		}
 
-		return internal::filter_duplicate_points(intersections);
+		return internal::FilterDuplicatePoints(intersections);
 	}
 
 	// intersects(q,t)
@@ -2555,7 +2555,7 @@ namespace olc::utils::geom2d
 			intersections.insert(intersections.end(), v.begin(), v.end());
 		}
 
-		return internal::filter_duplicate_points(intersections);
+		return internal::FilterDuplicatePoints(intersections);
 	}
 }
 

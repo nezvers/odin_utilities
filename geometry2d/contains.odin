@@ -9,7 +9,7 @@ contains_point_point::proc(p:vec2, p2:vec2)->bool{
 // Checks if line contains point
 contains_line_point::proc(l:Line, p:vec2)->bool{
     d:f32 = (p.x - l.x) * (l.w - l.y) - (p.y - l.y) * (l.z - l.x)
-    if (abs(d) < epsilon){
+    if (Abs(d) < epsilon){
         vector:vec2 = LineVector(l)
         dot:f32 = Vec2Dot(vector, p - l.xy)
         mag2:f32 = Vec2Mag2(vector)
@@ -33,7 +33,7 @@ contains_circle_point::proc(c:Circle, p:vec2)->bool{
 contains_triangle_point::proc(t:Triangle, p:vec2)->bool{
     // http://jsfiddle.net/PerroAZUL/zdaY8/1/
     a:f32 = 0.5 * (-t[1].y * t[2].x + t[0].y * (-t[1].x + t[2].x) + t[0].x * (t[1].y - t[2].y) + t[1].x * t[2].y)
-    a_sign:f32 = f32(signf(a))
+    a_sign:f32 = f32(Signf(a))
     s:f32 = (t[0].y * t[2].x - t[0].x * t[2].y + (t[2].y - t[0].y) * p.x + (t[0].x - t[2].x) * p.y) * a_sign
     v:f32 = (t[0].x * t[1].y - t[0].y * t[1].x + (t[0].y - t[1].y) * p.x + (t[1].x - t[0].x) * p.y) * a_sign
     return s >= 0 && v >= 0 && (s + v) <= 2 * a * a_sign

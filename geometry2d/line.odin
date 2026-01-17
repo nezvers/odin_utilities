@@ -64,7 +64,7 @@ LineCoeficient :: proc(l:Line) -> vec2{
 	y1: = l.y
 	y2: = l.w
 
-	if (abs(x1 - x2) < epsilon){
+	if (Abs(x1 - x2) < epsilon){
 		return {INF_F32, INF_F32}
 	}
 	m: = (y2 - y1) / (x2 - x1)

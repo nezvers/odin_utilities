@@ -10,8 +10,8 @@ closest_line_point::proc(l:Line, p:vec2)->vec2{
     vector:vec2 = LineVector(l)
     dot:f32 = Vec2Dot(vector, p - l.xy)
     mag:f32 = Vec2Mag2(vector)
-    clamp:f32 = clamp(dot / mag, 0.0, 1.0)
-    return l.xy + clamp * vector
+    Clamp:f32 = Clamp(dot / mag, 0.0, 1.0)
+    return l.xy + Clamp * vector
 }
 
 // Returns closest point on Circle to point
