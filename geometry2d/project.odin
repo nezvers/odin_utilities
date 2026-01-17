@@ -3,7 +3,7 @@ package geometry2d
 import math "core:math"
 
 // project a circle, onto a circle, via a ray (i.e. how far along the ray can the circle travel until it contacts the other circle?)
-project_circle_circle::proc(c1:Circle, c2:Circle, r:Ray)->(end_position:vec2, travel:f32){
+ProjectCircleCircle::proc(c1:Circle, c2:Circle, r:Ray)->(end_position:vec2, travel:f32){
     // Inspired by https://math.stackexchange.com/a/929240
 
     A: = Vec2Mag2(r.zw)
@@ -35,17 +35,15 @@ project_circle_circle::proc(c1:Circle, c2:Circle, r:Ray)->(end_position:vec2, tr
         end_position = r.xy + r.zw * travel
         return
     }
-
-    return
 }
 
 // project a circle, onto a point, via a ray (i.e. how far along the ray can the circle travel until it contacts the point?)
-project_circle_point::proc(c:Circle, p:vec2, r:Ray)->(end_position:vec2, travel:f32){
-    return project_circle_circle(c, {p.x, p.y, 0.0}, r)
+ProjectCirclePoint::proc(c:Circle, p:vec2, r:Ray)->(end_position:vec2, travel:f32){
+    return ProjectCircleCircle(c, {p.x, p.y, 0.0}, r)
 }
 
 // project a circle, onto a line segment, via a ray
-project_circle_line::proc(c:Circle, l:Line, r:Ray)->(end_position:vec2, travel:f32){
+ProjectCircleLine::proc(c:Circle, l:Line, r:Ray)->(end_position:vec2, travel:f32){
     // Treat line segment as capsule with radius that of the circle
     // and treat the circle as a point
 
