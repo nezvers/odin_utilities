@@ -4,7 +4,7 @@ import math "core:math"
 
 // Get intersection points where point intersects with point
 intersects_point_point::proc(p1:vec2, p2:vec2)->(points:[1]vec2, point_count:int){
-    if (contains_point_point(p1, p2)){
+    if (ContainsPointPoint(p1, p2)){
         points[0] = p1
         point_count = 1
         return
@@ -14,7 +14,7 @@ intersects_point_point::proc(p1:vec2, p2:vec2)->(points:[1]vec2, point_count:int
 
 // Get intersection points where line segment intersects with point
 intersects_line_point::proc(l:Line, p:vec2)->(points:[1]vec2, point_count:int){
-    if (contains_line_point(l, p)){
+    if (ContainsLinePoint(l, p)){
         points[0] = p
         point_count = 1
         return
@@ -26,21 +26,21 @@ intersects_line_point::proc(l:Line, p:vec2)->(points:[1]vec2, point_count:int){
 // Get intersection points where rectangle intersects with point
 // TODO: Side line check felt weird
 intersects_rectangle_point::proc(r:Rect, p:vec2)->(points:[1]vec2, point_count:int){
-    if (contains_rectangle_point(r,p)){
+    if (ContainsRectanglePoint(r,p)){
         points[0] = p
         point_count = 1
         return
     }
-    // if (contains_line_point(RectTop, p)){
+    // if (ContainsLinePoint(RectTop, p)){
     //     return p
     // }
-    // if (contains_line_point(RectRight, p)){
+    // if (ContainsLinePoint(RectRight, p)){
     //     return p
     // }
-    // if (contains_line_point(RectBottom, p)){
+    // if (ContainsLinePoint(RectBottom, p)){
     //     return p
     // }
-    // if (contains_line_point(RectLeft, p)){
+    // if (ContainsLinePoint(RectLeft, p)){
     //     return p
     // }
     return
@@ -63,17 +63,17 @@ intersects_triangle_point::proc(t:Triangle, p:vec2)->(points:[1]vec2, point_coun
         point_count = 1
         return
     }
-    // if (contains_line_point(TriangleSide(t, 0), p)){
+    // if (ContainsLinePoint(TriangleSide(t, 0), p)){
     //     points[0] = p
     //     point_count = 1
     //     return
     // }
-    // if (contains_line_point(TriangleSide(t, 1), p)){
+    // if (ContainsLinePoint(TriangleSide(t, 1), p)){
     //     points[0] = p
     //     point_count = 1
     //     return
     // }
-    // if (contains_line_point(TriangleSide(t, 2), p)){
+    // if (ContainsLinePoint(TriangleSide(t, 2), p)){
     //     points[0] = p
     //     point_count = 1
     //     return
@@ -274,7 +274,7 @@ intersects_circle_circle::proc(c1:Circle, c2:Circle)->(points:[2]vec2, point_cou
     if dist2 > radius_sum * radius_sum {return}
 
     // one circle is inside of the other, they can't be intersecting.
-    if (contains_circle_circle(c1, c2) || contains_circle_circle(c2, c1)) {return}
+    if (ContainsCircleCircle(c1, c2) || ContainsCircleCircle(c2, c1)) {return}
 
     between_norm: = Vec2Norm(between)
     // circles are touching at exactly 1 point

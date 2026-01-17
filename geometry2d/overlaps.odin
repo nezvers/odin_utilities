@@ -2,32 +2,32 @@ package geometry2d
 
 // Check if point overlaps with point (analogous to contains())
 overlaps_point_point::proc(p1:vec2, p2:vec2)->bool{
-    return contains_point_point(p1, p2)
+    return ContainsPointPoint(p1, p2)
 }
 
 // Checks if line segment overlaps with point
 overlaps_line_point::proc(l:Line, p:vec2)->bool{
-    return contains_line_point(l, p)
+    return ContainsLinePoint(l, p)
 }
 
 // Checks if rectangle overlaps with point
 overlaps_rectangle_point::proc(r:Rect, p:vec2)->bool{
-    return contains_rectangle_point(r, p)
+    return ContainsRectanglePoint(r, p)
 }
 
 // Checks if Circle overlaps with point
 overlaps_circle_point::proc(c:Circle, p:vec2)->bool{
-    return contains_circle_point(c, p)
+    return ContainsCirclePoint(c, p)
 }
 
 // Checks if Triangle overlaps with point
 overlaps_triangle_point::proc(t:Triangle, p:vec2)->bool{
-    return contains_triangle_point(t, p)
+    return ContainsTrianglePoint(t, p)
 }
 
 // Checks if point overlaps with line
 overlaps_point_line::proc(p:vec2, l:Line)->bool{
-    return contains_line_point(l, p)
+    return ContainsLinePoint(l, p)
 }
 
 // Checks if line overlaps with line
@@ -40,7 +40,7 @@ overlaps_line_line::proc(l1:Line, l2:Line)->bool{
 
 // Checks if rectangle overlaps with line
 overlaps_rectangle_line::proc(r:Rect, l:Line)->bool{
-    return contains_rectangle_line(r, l) || overlaps_line_line(RectTop(r), l) || overlaps_line_line(RectRight(r), l) || overlaps_line_line(RectBottom(r), l) || overlaps_line_line(RectLeft(r), l)
+    return ContainsRectangleLine(r, l) || overlaps_line_line(RectTop(r), l) || overlaps_line_line(RectRight(r), l) || overlaps_line_line(RectBottom(r), l) || overlaps_line_line(RectLeft(r), l)
 }
 
 // Checks if Circle overlaps with line
@@ -66,7 +66,7 @@ overlaps_line_rectangle::proc(l:Line, r:Rect)->bool{
 
 // Checks if rectangle overlaps with rectangle
 overlaps_rectangle_rectangle::proc(r1:Rect, r2:Rect)->bool{
-    return contains_rectangle_rectangle(r2, r1)
+    return ContainsRectangleRectangle(r2, r1)
 }
 
 
@@ -79,7 +79,7 @@ overlaps_circle_rectangle::proc(c:Circle, r:Rect)->bool{
 
 // Check if Triangle overlaps rectangle
 overlaps_triangle_rectangle::proc(t:Triangle, r:Rect)->bool{
-    return overlaps_triangle_line(t, RectTop(r)) || overlaps_triangle_line(t, RectRight(r)) || overlaps_triangle_line(t, RectBottom(r)) || overlaps_triangle_line(t, RectLeft(r)) || contains_rectangle_point(r, t[0])
+    return overlaps_triangle_line(t, RectTop(r)) || overlaps_triangle_line(t, RectRight(r)) || overlaps_triangle_line(t, RectBottom(r)) || overlaps_triangle_line(t, RectLeft(r)) || ContainsRectanglePoint(r, t[0])
 }
 
 // Check if point overlaps circle
@@ -104,7 +104,7 @@ overlaps_circle_circle::proc(c1:Circle, c2:Circle)->bool{
 
 // Check if triangle overlaps circle
 overlaps_triangle_circle::proc(t:Triangle, c:Circle)->bool{
-    return contains_triangle_point(t, c.xy) || Vec2Mag2(c.xy - ClosestTrianglePoint(t, c.xy)) <= c.z * c.z
+    return ContainsTrianglePoint(t, c.xy) || Vec2Mag2(c.xy - ClosestTrianglePoint(t, c.xy)) <= c.z * c.z
 }
 
 // Check if point overlaps triangle
