@@ -139,7 +139,7 @@ contains_triangle_circle::proc(t:Triangle, c:Circle)->bool{
     if !contains_triangle_point(t, c.xy){
         return false
     }
-    closest_p:vec2 = closest_triangle_point(t, c.xy)
+    closest_p:vec2 = ClosestTrianglePoint(t, c.xy)
     mag_p:f32 = Vec2Mag(c.xy - closest_p)
     return mag_p <= c.z * c.z
 }

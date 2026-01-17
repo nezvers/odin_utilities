@@ -151,7 +151,7 @@ intersects_triangle_line::proc(t:Triangle, l:Line)->(points:[3]vec2, point_count
 
 // Get intersection points where Circle intersects with line segment
 intersects_circle_line::proc(c:Circle, l:Line)->(points:[2]vec2, point_count:int){
-    closest_point_to_segment:vec2 = closest_line_point(l, c.xy)
+    closest_point_to_segment:vec2 = ClosestLinePoint(l, c.xy)
     if !overlaps_circle_point(c, closest_point_to_segment){
         return
     }
@@ -174,11 +174,11 @@ intersects_circle_line::proc(c:Circle, l:Line)->(points:[2]vec2, point_count:int
     p1:vec2 = closest_point_to_line + Vec2Norm(LineVector(l)) * length
     p2:vec2 = closest_point_to_line - Vec2Norm(LineVector(l)) * length
 
-    if Vec2Mag2(p1 - closest_line_point(l, p1)) < epsilon * epsilon{
+    if Vec2Mag2(p1 - ClosestLinePoint(l, p1)) < epsilon * epsilon{
         points[point_count] = p1
         point_count += 1
     }
-    if Vec2Mag2(p2 - closest_line_point(l, p2)) < epsilon * epsilon{
+    if Vec2Mag2(p2 - ClosestLinePoint(l, p2)) < epsilon * epsilon{
         points[point_count] = p2
         point_count += 1
     }
