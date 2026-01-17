@@ -50,3 +50,29 @@ FilterDuplicatePoints::proc(point_list:[]vec2)->int{
     }
     return point_count
 }
+
+// count - number of points already in the buffer
+AppendPoints::proc(buffer:[]vec2, count:^int, points:[]vec2) {
+    points_len:int = len(points)
+    buffer_len:int = len(buffer)
+    assert(points_len + count^ <= buffer_len)
+    for i:int = 0; i < len(points); i += 1 {
+        buffer[count^] = points[i]
+        count^ += 1
+    }
+}
+
+// Return closest point
+GetClosestPoint::proc(points:[]vec2, target:vec2)->vec2 {
+    assert(len(points) != 0)
+    closest_distance:f32 = INF_F32
+    closest_point:vec2
+    for p in points {
+        dist2:f32 = Vec2Mag2(p - target)
+        if dist2 < closest_distance {
+            closest_distance = dist2
+            closest_point = p
+        }
+    }
+    return closest_point
+}

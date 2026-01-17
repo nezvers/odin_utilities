@@ -19,11 +19,13 @@ TestResult :: struct{
 overlap_results: [dynamic]TestResult
 contains_results: [dynamic]TestResult
 intersects_results: [dynamic]TestResult
+project_results: [dynamic]TestResult
 
 state_enter_tests :: proc(){
     test_overlap()
     test_contains()
     test_intersects()
+    test_project()
 }
 
 state_exit_tests :: proc(){
@@ -78,6 +80,17 @@ state_draw_tests :: proc(){
         y += ROW_OFFSET_TEST
         result_i := int(intersects_results[i].result)
         rl.DrawText(intersects_results[i].name, x, y, FONT_SIZE_TEST, rl.WHITE)
+        rl.DrawText(result_string[result_i], x + RESULT_OFFSET, y, FONT_SIZE_TEST, result_color[result_i])
+    }
+
+    x += COLUMN_OFFSET
+    y = TOP_Y
+    rl.DrawText("PROJECT", x, y, FONT_SIZE_TITLE, rl.WHITE)
+    y += ROW_OFFSET_TITLE
+    for i in 0..< len(project_results){
+        y += ROW_OFFSET_TEST
+        result_i := int(project_results[i].result)
+        rl.DrawText(project_results[i].name, x, y, FONT_SIZE_TEST, rl.WHITE)
         rl.DrawText(result_string[result_i], x + RESULT_OFFSET, y, FONT_SIZE_TEST, result_color[result_i])
     }
 }
@@ -253,4 +266,13 @@ test_intersects::proc(){
     append_result(&intersects_results, {name = "Ray: Triangle 1",  result = point_count == 2})
     _, point_count = geometry2d.IntersectsRayRay({1000., 1000., 3000., 3000.,}, {1000., 3000., 3000., -3000.,})
     append_result(&intersects_results, {name = "Ray: Ray 1",  result = point_count == 1})
+}
+
+test_project :: proc(){
+    _result:geometry2d.ProjectResult
+    _result = geometry2d.ProjectCirclePoint({0,0,100}, {2000, 1000}, {1000, 1000, 1000, 0})
+    append_result(&project_results, {name = "Circle: Point 1", result = _result.hit})
+
+    _result = geometry2d.ProjectCircleLine({0,0,100}, {2000, 1000, 2000, 2000}, {1000, 1000, 1000, 0})
+    append_result(&project_results, {name = "Circle: Line 1", result = _result.hit})
 }

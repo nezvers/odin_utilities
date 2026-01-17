@@ -436,9 +436,13 @@ IntersectsLineRay::proc(l:Line, r:Ray)->(points:[1]vec2, point_count:int){
 
 // Get intersection points where a ray intersects a circle
 IntersectsRayCircle::proc(r:Ray, c:Circle)->(points:[2]vec2, point_count:int){
-    A: = Vec2Mag2(r.zw)
-    B: = 2.0 * (Vec2Dot(r.xy, r.zw) - Vec2Dot(c.xy, r.zw))
-    C: = Vec2Mag2(c.xy) + Vec2Mag2(r.xy) - (2.0 * c.x * r.x) - (2.0 * c.y * r.y) - (c.z  * c.z)
+    r_start:vec2 = r.xy
+    r_vec:vec2 = r.zw
+    c_p:vec2 = c.xy
+    c_r:f32 = c.z
+    A: = Vec2Mag2(r_vec)
+    B: = 2.0 * (Vec2Dot(r_start, r_vec) - Vec2Dot(c_p, r_vec))
+    C: = Vec2Mag2(c_p) + Vec2Mag2(r_start) - (2.0 * c.x * r.x) - (2.0 * c.y * r.y) - (c_r  * c_r)
     D: = B * B - 4.0 * A * C
 
     if D < 0.0{
@@ -452,20 +456,20 @@ IntersectsRayCircle::proc(r:Ray, c:Circle)->(points:[2]vec2, point_count:int){
             return // null
         }
         if s1 < 0{
-            points[0] = r.xy + r.zw * s2
+            points[0] = r_start + r_vec * s2
             point_count = 1
             return
         }
         if s2 < 0{
-            points[0] = r.xy + r.zw * s1
+            points[0] = r_start + r_vec * s1
             point_count = 1
             return
         }
         min_s: = math.min(s1, s2)
         max_s: = math.max(s1, s2)
 
-        points[0] = r.xy + r.zw * min_s
-        points[1] = r.xy + r.zw * max_s
+        points[0] = r_start + r_vec * min_s
+        points[1] = r_start + r_vec * max_s
         point_count = 2
         return
     }
