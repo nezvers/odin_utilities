@@ -88,6 +88,7 @@ ProjectCircleLine::proc(c:Circle, l:Line, r:Ray)->(result:ProjectResult){
 
     result.point = GetClosestPoint(intersection_buffer[:intersection_count], r.xy)
     result.travel = Vec2Mag(r.xy - result.point) / Vec2Mag(r.zw)
+    result.hit = true
     assert(result.travel <= 1.0) // I assume intersection points are along Ray trajectory
     return
 }
@@ -121,6 +122,7 @@ ProjectCircleRectangle::proc(c:Circle, rect:Rect, r:Ray)->(result:ProjectResult)
 
     result.point = GetClosestPoint(intersection_buffer[:intersection_count], r.xy)
     result.travel = Vec2Mag(r.xy - result.point) / Vec2Mag(r.zw)
+    result.hit = true
     assert(result.travel <= 1.0) // I assume intersection points are along Ray trajectory
     return
 }
@@ -150,6 +152,7 @@ ProjectCircleTriangle::proc(c:Circle, t:Triangle, r:Ray)->(result:ProjectResult)
 
     result.point = GetClosestPoint(intersection_buffer[:intersection_count], r.xy)
     result.travel = Vec2Mag(r.xy - result.point) / Vec2Mag(r.zw)
+    result.hit = true
     assert(result.travel <= 1.0) // I assume intersection points are along Ray trajectory
     return
 }
