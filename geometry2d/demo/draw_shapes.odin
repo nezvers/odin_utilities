@@ -31,7 +31,7 @@ state_draw_draw_shapes :: proc(){
     circle:Circle = geometry2d.CircleNew({50., 15.}, 5)
     draw_circle(circle, rl.WHITE)
 
-    rect:Rect = geometry2d.rect_new({70., 10.}, {10., 10.})
+    rect:Rect = geometry2d.RectNew({70., 10.}, {10., 10.})
     draw_rect(rect, rl.WHITE)
 
     triangle:Triangle = geometry2d.triangle_new({90., 10.}, {105., 10.}, {97., 20.})

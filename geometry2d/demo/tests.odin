@@ -118,7 +118,7 @@ test_overlap::proc(){
     append_result(&overlap_results, {name = "Triangle: Point 2", result = !geometry2d.overlaps_triangle_point({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1500., 2000.1})})
     append_result(&overlap_results, {name = "Triangle: Line 1", result = geometry2d.overlaps_triangle_line({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1000., 3000., 3000., 3000.,})})
     append_result(&overlap_results, {name = "Triangle: Line 2", result = !geometry2d.overlaps_triangle_line({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1000., 1000.1, 2000., 3000.1,})})
-    append_result(&overlap_results, {name = "Triangle: Line 3", result = !geometry2d.overlaps_triangle_line({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, geometry2d.rect_left({3000.1, 999., 3000., 3000.,}))})
+    append_result(&overlap_results, {name = "Triangle: Line 3", result = !geometry2d.overlaps_triangle_line({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, geometry2d.RectLeft({3000.1, 999., 3000., 3000.,}))})
     append_result(&overlap_results, {name = "Triangle: Circle 1", result = geometry2d.overlaps_triangle_circle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {5000., 1000., 2000.,})})
     append_result(&overlap_results, {name = "Triangle: Circle 2", result = !geometry2d.overlaps_triangle_circle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {5000.01, 1000., 2000.,})})
     append_result(&overlap_results, {name = "Triangle: Rectangle 1", result = geometry2d.overlaps_triangle_rectangle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {3000., 999., 3000., 3000.,})})

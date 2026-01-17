@@ -22,10 +22,10 @@ closest_circle_point::proc(c:Circle, p:vec2)->vec2{
 // Returns closest point on rectangle to point
 closest_rectangle_point::proc(r:Rect, p:vec2)->vec2{
     // Note: this algorithm can be reused for polygon
-    c1:vec2 = closest_line_point(rect_top(r), p)
-    c2:vec2 = closest_line_point(rect_right(r), p)
-    c3:vec2 = closest_line_point(rect_bottom(r), p)
-    c4:vec2 = closest_line_point(rect_left(r), p)
+    c1:vec2 = closest_line_point(RectTop(r), p)
+    c2:vec2 = closest_line_point(RectRight(r), p)
+    c3:vec2 = closest_line_point(RectBottom(r), p)
+    c4:vec2 = closest_line_point(RectLeft(r), p)
 
     d1:f32 = Vec2Mag2(c1 - p)
     d2:f32 = Vec2Mag2(c2 - p)
