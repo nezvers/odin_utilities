@@ -10,9 +10,11 @@ Circle :: geometry2d.Circle
 Rect :: geometry2d.Rect
 Triangle :: geometry2d.Triangle
 Ray :: geometry2d.Ray
+vec2 :: geometry2d.vec2
 
 Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
+Color :: rl.Color
 
 // DEMO STATES
 State :: struct {
@@ -25,18 +27,21 @@ State :: struct {
 state_list: []State = {
 	state_tests,
 	state_draw_shapes,
+	state_project,
 }
 
 StateIndex :: enum {
 	TESTS,
 	DRAW_SHAPES,
+	PROJECT,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.DRAW_SHAPES
+state_index:StateIndex = StateIndex.PROJECT
 
 button_names:[]cstring = {
 	"TESTS",
 	"DRAW_SHAPES",
+	"PROJECT",
 }
 
 screen_size:Vector2
