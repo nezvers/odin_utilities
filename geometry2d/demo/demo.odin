@@ -29,6 +29,7 @@ state_list: []State = {
 	state_draw_shapes,
 	state_project,
 	state_aabb,
+	state_intersets,
 }
 
 StateIndex :: enum {
@@ -36,15 +37,17 @@ StateIndex :: enum {
 	DRAW_SHAPES,
 	PROJECT,
 	AABB,
+	INTERSECTS,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.AABB
+state_index:StateIndex = StateIndex.INTERSECTS
 
 button_names:[]cstring = {
 	"TESTS",
 	"DRAW_SHAPES",
 	"PROJECT",
 	"AABB",
+	"INTERSECTS",
 }
 
 screen_size:Vector2

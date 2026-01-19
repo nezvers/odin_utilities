@@ -17,8 +17,8 @@ ProjectState::struct{
 project_state_data:ProjectState
 
 state_enter_project :: proc() {
-    project_state_data.pos_a = {100,100}
-    project_state_data.pos_b = {400,100}
+    project_state_data.pos_a = {100,200}
+    project_state_data.pos_b = {500,300}
 }
 
 state_exit_project :: proc() {
