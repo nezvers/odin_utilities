@@ -28,20 +28,23 @@ state_list: []State = {
 	state_tests,
 	state_draw_shapes,
 	state_project,
+	state_aabb,
 }
 
 StateIndex :: enum {
 	TESTS,
 	DRAW_SHAPES,
 	PROJECT,
+	AABB,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.PROJECT
+state_index:StateIndex = StateIndex.AABB
 
 button_names:[]cstring = {
 	"TESTS",
 	"DRAW_SHAPES",
 	"PROJECT",
+	"AABB",
 }
 
 screen_size:Vector2
