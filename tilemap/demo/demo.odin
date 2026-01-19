@@ -89,7 +89,9 @@ update :: proc() {
 	if rl.IsKeyPressed(rl.KeyboardKey.TAB) {
 		current_example = cast(Example)((cast(int)current_example + 1) % cast(int)Example.COUNT)
 	}
-	screen_size = {cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight()}
+	if rl.IsWindowResized() {
+		screen_size = {cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight()}
+	}
 }
 
 draw :: proc() {

@@ -2,7 +2,6 @@ package demo
 
 import geometry2d ".."
 import rl "vendor:raylib"
-Color :: rl.Color
 
 // DEMO STATE
 state_draw_shapes:State = {

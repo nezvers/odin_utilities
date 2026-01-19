@@ -7,8 +7,8 @@ import math "core:math"
 // Shape B is returned without the shapes overlapping
 ProjectResult::struct {
     point:vec2,
-    travel:f32,
     hit:bool,
+    // travel:f32,
 }
 
 // project a circle, onto a circle, via a ray (i.e. how far along the ray can the circle travel until it contacts the other circle?)
@@ -16,37 +16,38 @@ ProjectCircleCircle::proc(c1:Circle, c2:Circle, r:Ray)->(result:ProjectResult) {
     // Inspired by https://math.stackexchange.com/a/929240
     // desmos - https://www.desmos.com/calculator/0kadyeba6y
 
-    A: = Vec2Mag2(r.zw)
+    ray_mag2: = Vec2Mag2(r.zw)
     B: = 2.0 * (Vec2Dot(r.xy, r.zw) - Vec2Dot(c2.xy, r.zw))
     C: = Vec2Mag2(c2.xy) + Vec2Mag2(r.xy) - (2.0 * c2.x * r.x) - (2.0 * c2.y * r.y) - ((c1.z + c2.z) * (c1.z + c2.z))
-    D: = B * B - 4.0 * A * C
+    D: = B * B - 4.0 * ray_mag2 * C
 
     if D < 0.0 {
         // TODO: test travel
         return // null
     } else {
         sD: = sqrt(D)
-        s1: = (-B + sD) / (2.0 * A)
-        s2: = (-B - sD) / (2.0 * A)
+        s1: = (-B + sD) / (2.0 * ray_mag2)
+        s2: = (-B - sD) / (2.0 * ray_mag2)
 
         if s1 < 0 && s2 < 0 {
             // TODO: test travel
             return // null
         }
         if s1 < 0 {
-            result.travel = s2
-            result.point = r.xy + r.zw * result.travel
+            // result.travel = s2
+            result.point = r.xy + r.zw * s2
             result.hit = true
             return
         }
         if s2 < 0 {
-            result.travel = s1
-            result.point = r.xy + r.zw * result.travel
+            // result.travel = s1
+            result.point = r.xy + r.zw * s1
             result.hit = true
             return
         }
-        result.travel = math.min(s1, s2)
-        result.point = r.xy + r.zw * result.travel
+        // result.travel = math.min(s1, s2)
+        travel: = math.min(s1, s2)
+        result.point = r.xy + r.zw * travel
         result.hit = true
         return
     }
@@ -87,9 +88,9 @@ ProjectCircleLine::proc(c:Circle, l:Line, r:Ray)->(result:ProjectResult){
     }
 
     result.point = GetClosestPoint(intersection_buffer[:intersection_count], r.xy)
-    result.travel = Vec2Mag(r.xy - result.point) / Vec2Mag(r.zw)
+    // result.travel = Vec2Mag(r.xy - result.point) / Vec2Mag(r.zw)
     result.hit = true
-    assert(result.travel <= 1.0) // I assume intersection points are along Ray trajectory
+    // assert(result.travel <= 1.0) // I assume intersection points are along Ray trajectory
     return
 }
 
@@ -121,9 +122,9 @@ ProjectCircleRectangle::proc(c:Circle, rect:Rect, r:Ray)->(result:ProjectResult)
     }
 
     result.point = GetClosestPoint(intersection_buffer[:intersection_count], r.xy)
-    result.travel = Vec2Mag(r.xy - result.point) / Vec2Mag(r.zw)
+    // result.travel = Vec2Mag(r.xy - result.point) / Vec2Mag(r.zw)
     result.hit = true
-    assert(result.travel <= 1.0) // I assume intersection points are along Ray trajectory
+    // assert(result.travel <= 1.0) // I assume intersection points are along Ray trajectory
     return
 }
 
@@ -151,8 +152,8 @@ ProjectCircleTriangle::proc(c:Circle, t:Triangle, r:Ray)->(result:ProjectResult)
     }
 
     result.point = GetClosestPoint(intersection_buffer[:intersection_count], r.xy)
-    result.travel = Vec2Mag(r.xy - result.point) / Vec2Mag(r.zw)
+    // result.travel = Vec2Mag(r.xy - result.point) / Vec2Mag(r.zw)
     result.hit = true
-    assert(result.travel <= 1.0) // I assume intersection points are along Ray trajectory
+    // assert(result.travel <= 1.0) // I assume intersection points are along Ray trajectory
     return
 }
