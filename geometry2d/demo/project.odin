@@ -53,7 +53,5 @@ state_draw_project :: proc() {
     if project_result.hit {
         stop_pos:vec2 = project_result.point
         rl.DrawCircleLinesV(stop_pos, shape_a.z, rl.RED)
-    } else {
-        rl.DrawCircleLinesV(mouse_pos, shape_a.z, rl.GRAY)
     }
 }
