@@ -75,11 +75,12 @@ ClosestTrianglePoint::proc(t:Triangle, p:vec2)->vec2{
     return p2
 }
 
-// TODO:
 // Returns closest point on ray to point
 ClosestRayPoint::proc(r:Ray, p:vec2)->vec2{
-    assert(false, "Not implemented")
-    return{}
+    normal:vec2 = Vec2Norm(r.zw)
+    dot:f32 = Vec2Dot(normal, p - r.xy)
+    result:vec2 = r.xy + normal * dot
+    return result
 }
 
 
@@ -92,6 +93,7 @@ ClosestCircleLine::proc(c:Circle, l:Line)->vec2{
 // TODO:
 // Returns closest point on line to line
 ClosestLineLine::proc(l1:Line, l2:Line)->vec2{
+    
     assert(false, "Not implemented")
     return{}
 }
