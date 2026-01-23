@@ -79,7 +79,7 @@ ClosestTrianglePoint::proc(t:Triangle, p:vec2)->vec2{
 ClosestRayPoint::proc(r:Ray, p:vec2)->vec2{
     normal:vec2 = Vec2Norm(r.zw)
     dot:f32 = Vec2Dot(normal, p - r.xy)
-    result:vec2 = r.xy + normal * dot
+    result:vec2 = r.xy + normal * max(dot, 0)
     return result
 }
 
@@ -90,12 +90,40 @@ ClosestCircleLine::proc(c:Circle, l:Line)->vec2{
     return c.xy + Vec2Norm(p - c.xy) * c.z
 }
 
-// TODO:
 // Returns closest point on line to line
 ClosestLineLine::proc(l1:Line, l2:Line)->vec2{
+    points, point_count: = IntersectsLineLine(l1, l2)
+    if (point_count != 0) {
+        return points[0]
+    }
+
+    v1:vec2 = ClosestLinePoint(l1, l2.xy)
+    v2:vec2 = ClosestLinePoint(l1, l2.zw)
+    v3:vec2 = ClosestLinePoint(l2, l1.xy)
+    v4:vec2 = ClosestLinePoint(l2, l1.zw)
+
+    d1:f32 = Vec2Mag2(v1 - l2.xy)
+    d2:f32 = Vec2Mag2(v2 - l2.zw)
+    d3:f32 = Vec2Mag2(v3 - l1.xy)
+    d4:f32 = Vec2Mag2(v4 - l1.zw)
+
+    min_dist:f32 = d1
+    vClosest:vec2 = v1
+
+    if (d2 < min_dist){
+        min_dist = d2
+        vClosest = v2
+    }
+    if (d3 < min_dist){
+        min_dist = d3
+        vClosest = l1.xy
+    }
+    if (d4 < min_dist){
+        min_dist = d4
+        vClosest = l1.zw
+    }
     
-    assert(false, "Not implemented")
-    return{}
+    return vClosest
 }
 
 // TODO:

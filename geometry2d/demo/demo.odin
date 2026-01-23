@@ -27,6 +27,7 @@ State :: struct {
 state_list: []State = {
 	state_tests,
 	state_draw_shapes,
+	state_closest,
 	state_project,
 	state_aabb,
 	state_intersets,
@@ -35,16 +36,18 @@ state_list: []State = {
 StateIndex :: enum {
 	TESTS,
 	DRAW_SHAPES,
+	CLOSEST,
 	PROJECT,
 	AABB,
 	INTERSECTS,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.INTERSECTS
+state_index:StateIndex = StateIndex.CLOSEST
 
 button_names:[]cstring = {
 	"TESTS",
 	"DRAW_SHAPES",
+	"CLOSEST",
 	"PROJECT",
 	"AABB",
 	"INTERSECTS",
