@@ -3,10 +3,6 @@ package spring
 
 import "core:math"
 
-
-// translated from https://youtu.be/H-jRx_E8aZ8?t=745
-// r = response curve, negative anticipate, above 1 overshoot, 2 is typical for mechanic movement
-
 SpringCategory :: enum {
     UndampedFrictionless,
     UnderdampedUnstable,
@@ -22,7 +18,8 @@ SpringParams :: struct {
     category:SpringCategory,
 }
 
-Spring::proc(params:^SpringParams, t:f32, x_0:f32 = 1., v_0:f32 = 0. )->(output:f32){
+SpringMaddHattPatt::proc(params:^SpringParams, t:f32, x_0:f32 = 1., v_0:f32 = 0. )->(output:f32){
+    // translated from https://youtu.be/H-jRx_E8aZ8?t=745
     switch params.category {
     case SpringCategory.UndampedFrictionless:
         sqrt_km: = math.sqrt(params.k / params.m)
