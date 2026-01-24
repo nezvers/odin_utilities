@@ -59,3 +59,16 @@ Spring::proc(params:^SpringParams, t:f32, x_0:f32 = 1., v_0:f32 = 0. )->(output:
     return
 }
 
+// One-dimensional mass-spring-damper simulation. Returns the new velocity given the position and time step.
+// You can then compute the new position using:
+// position += timeStep * newVelocity
+// This drives towards a zero position. By using implicit integration we get a stable solution
+// that doesn't require transcendental functions.
+SpringDamper::proc(hertz:f32, dampingRatio:f32, position:f32, velocity:f32, timeStep:f32)->f32 {
+    // https://github.com/erincatto/box2d/blob/c05c48738fbe5c27625e36c5f0cfbdaddfc8359a/include/box2d/math_functions.h#L673
+    omega:f32 = 2 * math.PI * hertz
+    omegaH:f32 = omega * timeStep
+    result:f32 = (velocity - omega * omegaH * position) / (1 + 2 * dampingRatio * omegaH + omegaH * omegaH)
+    return result
+}
+
