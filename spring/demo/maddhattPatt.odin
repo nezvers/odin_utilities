@@ -19,7 +19,8 @@ params:sp.SpringParams = {
 }
 
 init_maddhattpatt::proc(){
-
+	circle_velocity = {}
+	circle_position = {}
 }
 
 calculate_maddhattpatt_spring::proc(){

@@ -19,18 +19,21 @@ State :: struct {
 }
 
 state_list: []State = {
+	state_damped_spring,
 	state_maddhattpatt,
 }
 
 StateIndex :: enum {
+	DAMPED_SPRING,
 	MADDHATTPATT,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.MADDHATTPATT
+state_index:StateIndex = StateIndex.DAMPED_SPRING
 screen_size:Vector2
 is_hovering_buttons:bool
 
 button_names:[]cstring = {
+	"Damped Spring",
 	"MaddHattPatt",
 }
 

@@ -33,25 +33,26 @@ CalcDampedSpringMotionParams::proc(
         springParams.posVelCoef = 0
         springParams.velPosCoef = 0
         springParams.velVelCoef = 0
+        return
     }
 
     if dampingRatio > 1 + epsilon {
         // over-damped
-        za: = -angularFrequency * dampingRatio
-        zb: = angularFrequency * math.sqrt(dampingRatio*dampingRatio - 1)
-        z1: = za - zb
-        z2: = za + zb
+        za:f32 = -angularFrequency * dampingRatio
+        zb:f32 = angularFrequency * math.sqrt(dampingRatio*dampingRatio - 1)
+        z1:f32 = za - zb
+        z2:f32 = za + zb
 
-        e1: = math.exp(z1 * deltaTime)
-        e2: = math.exp(z2 * deltaTime)
+        e1:f32 = math.exp(z1 * deltaTime)
+        e2:f32 = math.exp(z2 * deltaTime)
 
-        invTwoZb: = 1 / (2 * zb)
+        invTwoZb:f32 = 1 / (2 * zb)
 
-        e1_over_twoZb: = e1 * invTwoZb
-        e2_over_twoZb: = e2 * invTwoZb
+        e1_over_twoZb:f32 = e1 * invTwoZb
+        e2_over_twoZb:f32 = e2 * invTwoZb
 
-        z1e1_over_twoZb: = z1 * e1_over_twoZb
-        z2e2_over_twoZb: = z2 * e2_over_twoZb
+        z1e1_over_twoZb:f32 = z1 * e1_over_twoZb
+        z2e2_over_twoZb:f32 = z2 * e2_over_twoZb
 
         springParams.posPosCoef = e1_over_twoZb * z2 - z2e2_over_twoZb + e2
         springParams.posVelCoef = -e1_over_twoZb + e2_over_twoZb
@@ -61,18 +62,18 @@ CalcDampedSpringMotionParams::proc(
     } else
     if dampingRatio < 1 - epsilon {
         // under-damped
-        omegaZeta: = angularFrequency * dampingRatio
-        alpha: = angularFrequency * math.sqrt(1 - dampingRatio * dampingRatio)
+        omegaZeta:f32 = angularFrequency * dampingRatio
+        alpha:f32 = angularFrequency * math.sqrt(1 - dampingRatio * dampingRatio)
 
-        expTerm: = math.exp(-omegaZeta * deltaTime)
-        cosTerm: = math.cos(alpha * deltaTime)
-        sinTerm: = math.sin(alpha * deltaTime)
+        expTerm:f32 = math.exp(-omegaZeta * deltaTime)
+        cosTerm:f32 = math.cos(alpha * deltaTime)
+        sinTerm:f32 = math.sin(alpha * deltaTime)
 
-        invAlpha: = 1 / alpha
+        invAlpha:f32 = 1 / alpha
 
-        expSin: = expTerm * sinTerm
-        expCos: = expTerm * cosTerm
-        expOmegaZetaSin_over_alpha: = expTerm * omegaZeta * sinTerm * invAlpha
+        expSin:f32 = expTerm * sinTerm
+        expCos:f32 = expTerm * cosTerm
+        expOmegaZetaSin_over_alpha:f32 = expTerm * omegaZeta * sinTerm * invAlpha
 
         springParams.posPosCoef = expCos + expOmegaZetaSin_over_alpha
         springParams.posVelCoef = expSin * invAlpha
@@ -81,9 +82,9 @@ CalcDampedSpringMotionParams::proc(
         springParams.velVelCoef = expCos - expOmegaZetaSin_over_alpha
     } else {
         // critically damped
-        expTerm: = math.exp( -angularFrequency * deltaTime)
-        timeExp: = deltaTime * expTerm
-        timeExpFreq: = timeExp * angularFrequency
+        expTerm:f32 = math.exp( -angularFrequency * deltaTime)
+        timeExp:f32 = deltaTime * expTerm
+        timeExpFreq:f32 = timeExp * angularFrequency
 
         springParams.posPosCoef = timeExpFreq + expTerm
         springParams.posVelCoef = timeExp
@@ -104,7 +105,7 @@ UpdateDampedSpringMotion::proc(
     oldPos: = position^ - targetPosition
     oldVel: = velocity^
 
-    position^ = oldPos * springParams.posPosCoef + oldVel * springParams.posVelCoef
+    position^ = oldPos * springParams.posPosCoef + oldVel * springParams.posVelCoef + targetPosition
     velocity^ = oldVel * springParams.velPosCoef + oldVel * springParams.velVelCoef
 }
 
