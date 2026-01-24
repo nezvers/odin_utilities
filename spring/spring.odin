@@ -5,17 +5,15 @@ import "core:math"
 
 
 // translated from https://youtu.be/H-jRx_E8aZ8?t=745
+// r = response curve, negative anticipate, above 1 overshoot, 2 is typical for mechanic movement
 
 SpringCategory :: enum {
     UndampedFrictionless,
-    UnderdampedStable,
     UnderdampedUnstable,
     CriticallyDamped,
     Overdamped,
-    Undefined,
 }
 
-// r = response curve, negative anticipate, above 1 overshoot, 2 is typical for mechanic movement
 SpringParams :: struct {
     k:f32, // Spring constant
     m:f32, // mass
@@ -30,8 +28,6 @@ Spring::proc(params:^SpringParams, t:f32, x_0:f32 = 1., v_0:f32 = 0. )->(output:
         sqrt_km: = math.sqrt(params.k / params.m)
         output = x_0 * math.cos(sqrt_km * t) + v_0 / sqrt_km * math.sin(sqrt_km * t)
         break
-    
-    case SpringCategory.UnderdampedStable:
     case SpringCategory.UnderdampedUnstable:
         omega_damped: = params.omega * math.sqrt(1.0 - params.zeta * params.zeta)
         A: = x_0
@@ -51,24 +47,20 @@ Spring::proc(params:^SpringParams, t:f32, x_0:f32 = 1., v_0:f32 = 0. )->(output:
         coefficient2: = (eigenvalue1 * x_0 - v_0) / (eigenvalue1 - eigenvalue2)
         output = coefficient1 * math.exp(eigenvalue1 * t) + coefficient2 * math.exp(eigenvalue2 * t)
         break
-    
-    case SpringCategory.Undefined:
-        output = 1.0
-        break
     }
     return
 }
 
+// Box2D SpringDamper
 // One-dimensional mass-spring-damper simulation. Returns the new velocity given the position and time step.
-// You can then compute the new position using:
-// position += timeStep * newVelocity
-// This drives towards a zero position. By using implicit integration we get a stable solution
-// that doesn't require transcendental functions.
-SpringDamper::proc(hertz:f32, dampingRatio:f32, position:f32, velocity:f32, timeStep:f32)->f32 {
+// over 2 hertz becomes unstable
+// velocity = sp.SpringDamper(hertz, damping, (current_length - target_length), velocity, delta_time)
+// current_length += velocity
+SpringDamper::proc(hertz:f32, dampingRatio:f32, position:f32, velocity:f32, timeStep:f32)->(velocity_out:f32) {
     // https://github.com/erincatto/box2d/blob/c05c48738fbe5c27625e36c5f0cfbdaddfc8359a/include/box2d/math_functions.h#L673
     omega:f32 = 2 * math.PI * hertz
     omegaH:f32 = omega * timeStep
-    result:f32 = (velocity - omega * omegaH * position) / (1 + 2 * dampingRatio * omegaH + omegaH * omegaH)
-    return result
+    velocity_out = (velocity - omega * omegaH * position) / (1 + 2 * dampingRatio * omegaH + omegaH * omegaH)
+    return
 }
 

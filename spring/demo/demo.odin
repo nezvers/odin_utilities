@@ -2,72 +2,118 @@ package demo
 
 import rl "vendor:raylib"
 
-import spring ".."
+import sp ".."
 
+hertz:f32 = 2.0
+damping:f32 = 0.8
+cached_values:[60 * 4]f32 = {}
 
-spring_params:spring.SpringParams = {}
-spring_cache:[4 * 60]f32
-spring_min:f32
-spring_max:f32
+params:sp.SpringParams = {
+	37.24,	// k - Constant
+	0.3,	// m - Mass
+	1.7,	// zeta - Damping
+	6.0,	// omega - frequency
+	sp.SpringCategory.Overdamped,
+}
+
+dropdown_text:cstring = "#00#UndampedFrictionless;#00#UnderdampedUnstable;#00#CriticallyDamped;#00#Overdamped"
+dropdown_index:i32 = cast(i32)params.category
+dropdown_edit:bool
+
+circle_position:rl.Vector2 = 0.0
+circle_velocity:rl.Vector2 = {}
 
 calculate_spring::proc(){
-	position:f32 = 0.0
-	target:f32 = 1.0
-	spring_min = 0.0
-	spring_max = 1.0
+	delta_time:: 1.0 / 60
+	current_length:f32 = 0
+	target_length:f32 = 100
+	velocity:f32 = 0
+	offset:f32
+	new_offset:f32
 
-	for i in 0..<len(spring_cache){
-		spring_cache[i] = position
-		if (position < spring_min) {
-			spring_min = position
-		} else
-		if (position > spring_max) {
-			spring_max = position
-		}
-		position = spring.Spring(&spring_params, 0.016, position, target)
+	for i:int = 0; i < len(cached_values); i += 1 {
+		cached_values[i] = current_length
+		offset = current_length - target_length
+		new_offset = sp.Spring(&params, delta_time, offset, velocity)
+		velocity = new_offset - offset
+		current_length += velocity
 	}
 }
 
 game_init :: proc() {
-	spring_params.k = 37.24
-	spring_params.m = 0.3
-	spring_params.zeta = 1.7
-	spring_params.omega = 6.0
-	spring_params.category = spring.SpringCategory.UnderdampedStable
 	calculate_spring()
 }
 
 update :: proc() {
-    if (rl.IsMouseButtonDown(rl.MouseButton.LEFT)){
-		
+    delta_time:f32 = rl.GetFrameTime()
+	target_position:rl.Vector2 = rl.GetMousePosition()
+	offset:rl.Vector2 = circle_position - target_position
+	new_offset:rl.Vector2 = {
+		sp.Spring(&params, delta_time, offset.x, circle_velocity.x),
+		sp.Spring(&params, delta_time, offset.y, circle_velocity.y),
 	}
-    if (rl.IsMouseButtonDown(rl.MouseButton.RIGHT)){
+	circle_velocity = new_offset - offset
 
-	}
+	circle_position.x = clamp(circle_position.x + circle_velocity.x, 1, cast(f32)rl.GetScreenWidth())
+	circle_position.y = clamp(circle_position.y + circle_velocity.y, 1, cast(f32)rl.GetScreenHeight())
 }
 
 draw :: proc() {
     rl.BeginDrawing()
 	rl.ClearBackground(rl.BLACK)
 
+	rl.DrawCircleV(circle_position, 10, rl.PINK)
 
+	draw_graph()
+	draw_gui()
+    rl.EndDrawing()
+}
 
-	x:i32 = 10
-	y:i32 = 400
-	scale:f32 = -100.0
+draw_gui::proc(){
+	height_step:f32 = 30
+	rect:rl.Rectangle = {100, 10, 500, 25}
+	rl.GuiSlider(rect, "Damping", "", &params.zeta, -5, 20)
 	
-	rl.DrawLine(x, y, x + 60 * 4, y, rl.DARKGRAY)
-	rl.DrawLine(x, y + i32(scale), x + 60 * 4, y + i32(scale), rl.GRAY)
+	rect.y += height_step
+	rl.GuiSlider(rect, "Hertz", "", &params.omega, 0, 30)
+	
+	rect.y += height_step
+	rl.GuiSlider(rect, "Constant", "", &params.k, 1, 100)
+	
+	rect.y += height_step
+	rl.GuiSlider(rect, "Mass", "", &params.m, 0.1, 10)
 
-	for i in 0..< (len(spring_cache) - 1) {
-		y1:i32 = i32(spring_cache[i] * scale) + y
-		y2:i32 = i32(spring_cache[i + 1] * scale) + y
-		x1:i32 = x + i32(i)
-		x2:i32 = x1 + 1
-		rl.DrawLine(x1, y1, x2, y2, rl.WHITE)
+	rect.y += height_step
+	if rl.GuiDropdownBox(rect, dropdown_text, &dropdown_index, dropdown_edit) {
+		dropdown_edit = !dropdown_edit
+		if !dropdown_edit {
+			params.category = cast(sp.SpringCategory)dropdown_index
+			circle_velocity = {}
+			calculate_spring()
+		}
 	}
 
-    rl.EndDrawing()
+	rect.x = rect.x + rect.width + 10
+	rect.y = 10
+	rect.width = 75
+	if rl.GuiButton(rect, "Update") {
+		circle_velocity = {}
+		calculate_spring()
+	}
+}
+
+draw_graph::proc(){
+	origin:rl.Vector2 = {100, 300}
+	rl.DrawLineV(origin, {origin.x + len(cached_values), origin.y}, rl.DARKGRAY)
+
+	for i:int = 0; i < len(cached_values) - 1; i += 1 {
+		value:f32 = cached_values[i]
+		next:f32 = cached_values[i+1]
+		from:rl.Vector2 = {origin.x + cast(f32)i, origin.y + value}
+		to:rl.Vector2 = {origin.x + cast(f32)i+1, origin.y + next}
+
+		rl.DrawLineV(from, to, rl.WHITE)
+	}
 }
 
 
