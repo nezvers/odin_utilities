@@ -3,6 +3,35 @@ package spring
 
 import "core:math"
 
+// ==================== INERTIA SPRING ==========================
+// I wasn't happy with solutions I found and included bellow
+// So I created my solution based on frame independant lerping / expDecay
+
+// Freq above 3 becomes unstable
+// Damping around 50 makes settling almost instant
+InertiaSpring::proc(position:^f32, velocity:^f32, target:f32, freq:f32, damping:f32, dt:f32){
+    distance:f32 = target - position^
+    targetVel: = distance * freq
+    velocity^ = expDecay(velocity^, targetVel, damping, dt)
+    position^ += velocity^
+}
+
+// infinite ringing - can create orbiting planets
+// start with freq = 0.01, damping = 10000
+OscilatingSpring::proc(position:^f32, velocity:^f32, target:f32, freq:f32, damping:f32, dt:f32){
+    distance:f32 = target - position^
+    targetVel: = distance * freq
+    velocity^ += expDecay(velocity^, targetVel, damping, dt)
+    position^ += velocity^
+}
+
+// Frame independent lerp
+expDecay::proc(a:f32, b:f32, decay:f32, dt:f32)->f32{
+    // Freya Holmér "Lerp smoothing is broken" - https://youtu.be/LSNQuFEDOyQ?t=2987
+    return b + (a - b) * math.exp(-decay * dt)
+}
+
+
 // ========================= DAMPED SPRING =========================
 // translated from https://gist.github.com/chadcable/92bc3958af5b171e593e36be57ca36ce
 
