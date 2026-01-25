@@ -5,12 +5,13 @@
 - ✅ microui (raylib) `odin run microui/demo`
 - ✅ viewport_rect `odin run viewport_rect/demo`
 - ✅ tilemap `odin run demo` Run command from `tilemap` directory.
-- ❎ Geometry2D `odin run geometry2d/demo`
+- ✅ spring `odin run spring/demo`
+- ❎ geometry2d `odin run geometry2d/demo`
     - ✅ shapes [point, line, circle, rectangle, triangle, ray]
     - ✅ overlap
     - ✅ contains
     - ✅ intersect
+    - ❎ closest
     - ❎ project
     - ❎ envelope
-- ❎ spring `odin run spring/demo`
 - ❎ verlet2d `odin run verlet2d/demo`
