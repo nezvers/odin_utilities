@@ -1,52 +1,47 @@
+#+private file
 package demo
 
 import rl "vendor:raylib"
 import gm ".." // geometry2d
 
+@(private="package")
 state_intersets:State = {
-    enter = state_enter_intersets,
-    exit = state_exit_intersets,
-    update = state_update_intersets,
-    draw = state_draw_intersets,
+    enter,
+    nil,
+    update,
+    draw,
 }
 
-IntersetsState::struct{
-    pos_a:vec2,
-    pos_b:vec2,
-}
-intersets_state_data:IntersetsState
+pos_a:vec2
+pos_b:vec2
 
-state_enter_intersets :: proc() {
-    intersets_state_data.pos_a = {100,100}
-    intersets_state_data.pos_b = {400,300}
+enter :: proc() {
+    pos_a = {100,100}
+    pos_b = {400,300}
 }
 
-state_exit_intersets :: proc() {
-    
-}
-
-state_update_intersets :: proc() {
+update :: proc() {
     if is_hovering_buttons {
         return
     }
     if rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
-        intersets_state_data.pos_a = rl.GetMousePosition()
+        pos_a = rl.GetMousePosition()
     }
     if rl.IsMouseButtonPressed(rl.MouseButton.RIGHT) {
-        intersets_state_data.pos_b = rl.GetMousePosition()
+        pos_b = rl.GetMousePosition()
     }
 }
 
-state_draw_intersets :: proc() {
+draw :: proc() {
     mouse_pos:Vector2 = rl.GetMousePosition()
 
     size:f32 = 100
     shape_a: gm.Line
-    shape_a.xy = intersets_state_data.pos_a
+    shape_a.xy = pos_a
     shape_a.zw = mouse_pos
 
     shape_b: gm.Circle
-    shape_b.xy = intersets_state_data.pos_b
+    shape_b.xy = pos_b
     shape_b.z = size
     
    points, point_count: = gm.IntersectsLineCircle(shape_a, shape_b)

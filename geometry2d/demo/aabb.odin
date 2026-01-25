@@ -1,50 +1,45 @@
+#+private file
 package demo
 
 import rl "vendor:raylib"
 import gm ".." // geometry2d
 
+@(private="package")
 state_aabb:State = {
-    enter = state_enter_aabb,
-    exit = state_exit_aabb,
-    update = state_update_aabb,
-    draw = state_draw_aabb,
+    enter,
+    nil,
+    update,
+    draw,
 }
 
-AABBState::struct{
-    pos_a:vec2,
-    pos_b:vec2,
-}
-aabb_state_data:AABBState
+pos_a:vec2
+pos_b:vec2
 
-state_enter_aabb :: proc() {
-    aabb_state_data.pos_a = {100,100}
-    aabb_state_data.pos_b = {400,100}
+enter :: proc() {
+    pos_a = {100,100}
+    pos_b = {400,100}
 }
 
-state_exit_aabb :: proc() {
-    
-}
-
-state_update_aabb :: proc() {
+update :: proc() {
     if is_hovering_buttons {
         return
     }
     if rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
-        aabb_state_data.pos_a = rl.GetMousePosition()
+        pos_a = rl.GetMousePosition()
     }
     if rl.IsMouseButtonPressed(rl.MouseButton.RIGHT) {
-        aabb_state_data.pos_b = rl.GetMousePosition()
+        pos_b = rl.GetMousePosition()
     }
 }
 
-state_draw_aabb :: proc() {
+draw :: proc() {
     mouse_pos:Vector2 = rl.GetMousePosition()
 
     size:vec2 = {100, 100}
-    shape_a: gm.Rect = {aabb_state_data.pos_a.x, aabb_state_data.pos_a.y, size.x, size.y}
-    shape_b: gm.Rect = {aabb_state_data.pos_b.x, aabb_state_data.pos_b.y, size.x, size.y}
+    shape_a: gm.Rect = {pos_a.x, pos_a.y, size.x, size.y}
+    shape_b: gm.Rect = {pos_b.x, pos_b.y, size.x, size.y}
     offset:vec2 = size * 0.5
-    center_a:vec2 = aabb_state_data.pos_a + offset
+    center_a:vec2 = pos_a + offset
     vector:vec2 = mouse_pos - center_a
     
    aabb_result: = gm.AABBRectRect(shape_a, shape_b, vector)

@@ -45,12 +45,12 @@ StateIndex :: enum {
 state_index:StateIndex = StateIndex.CLOSEST
 
 button_names:[]cstring = {
-	"TESTS",
-	"DRAW_SHAPES",
-	"CLOSEST",
-	"PROJECT",
+	"Tests",
+	"Draw Shapes",
+	"Closest",
+	"Project",
 	"AABB",
-	"INTERSECTS",
+	"Intersects",
 }
 
 screen_size:Vector2

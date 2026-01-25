@@ -1,14 +1,16 @@
+#+private file
 package demo
 
 import geometry2d ".."
 import rl "vendor:raylib"
 
 // DEMO STATE
+@(private="package")
 state_tests:State = {
-    enter = state_enter_tests,
-    exit = state_exit_tests,
-    update = state_update_tests,
-    draw = state_draw_tests,
+    enter,
+    nil,
+    update,
+    draw,
 }
 
 TestResult :: struct{
@@ -21,22 +23,18 @@ contains_results: [dynamic]TestResult
 intersects_results: [dynamic]TestResult
 project_results: [dynamic]TestResult
 
-state_enter_tests :: proc(){
+enter :: proc(){
     test_overlap()
     test_contains()
     test_intersects()
     test_project()
 }
 
-state_exit_tests :: proc(){
+update :: proc(){
 
 }
 
-state_update_tests :: proc(){
-
-}
-
-state_draw_tests :: proc(){
+draw :: proc(){
     RESULT_OFFSET :: 120
     COLUMN_OFFSET :: 200
     ROW_OFFSET_TITLE :: 25

@@ -1,29 +1,18 @@
+#+private file
 package demo
 
 import geometry2d ".."
 import rl "vendor:raylib"
 
-// DEMO STATE
+@(private="package")
 state_draw_shapes:State = {
-    enter = state_enter_draw_shapes,
-    exit = state_exit_draw_shapes,
-    update = state_update_draw_shapes,
-    draw = state_draw_draw_shapes,
+    nil,
+    nil,
+    nil,
+    draw,
 }
 
-state_enter_draw_shapes :: proc(){
-
-}
-
-state_exit_draw_shapes :: proc(){
-
-}
-
-state_update_draw_shapes :: proc(){
-
-}
-
-state_draw_draw_shapes :: proc(){
+draw :: proc(){
     line:Line = geometry2d.LineNew({100., 100.}, { 200., 100.})
     draw_line(line, rl.WHITE)
 
