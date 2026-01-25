@@ -1,21 +1,23 @@
+#+private file
 package demo
 
 import sp ".."
 import rl "vendor:raylib"
 
+@(private="package")
 state_damped_spring:State = {
-    init_damped_spring,
+    init,
     nil,
-    update_damped_spring,
-    draw_damped_spring,
+    update,
+    draw,
 }
 
-init_damped_spring::proc(){
+init::proc(){
 	circle_velocity = {}
 	circle_position = {}
 }
 
-update_damped_spring::proc(){
+update::proc(){
     
     delta_time:f32 = rl.GetFrameTime()
 	target_position:rl.Vector2 = rl.GetMousePosition()
@@ -28,6 +30,6 @@ update_damped_spring::proc(){
     sp.UpdateDampedSpringMotion(&circle_position.y, &circle_velocity.y, target_position.y, &springParams)
 }
 
-draw_damped_spring::proc(){
+draw::proc(){
     rl.DrawCircleV(circle_position, 10, rl.PINK)
 }

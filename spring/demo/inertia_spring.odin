@@ -1,22 +1,24 @@
+#+private file
 package demo
 
 import "core:math"
 import sp ".."
 import rl "vendor:raylib"
 
+@(private="package")
 state_inertia_spring:State = {
-    init_inertia_spring,
+    init,
     nil,
-    update_inertia_spring,
-    draw_inertia_spring,
+    update,
+    draw,
 }
 
-init_inertia_spring::proc(){
+init::proc(){
 	circle_velocity = {}
 	circle_position = {}
 }
 
-update_inertia_spring::proc(){
+update::proc(){
     
     delta_time:f32 = rl.GetFrameTime()
 	target_position:rl.Vector2 = rl.GetMousePosition()
@@ -31,7 +33,7 @@ update_inertia_spring::proc(){
 }
 
 
-draw_inertia_spring::proc(){
+draw::proc(){
     rl.DrawCircleV(circle_position, 10, rl.PINK)
 }
 

@@ -1,13 +1,15 @@
+#+private file
 package demo
 
 import sp ".."
 import rl "vendor:raylib"
 
+@(private="package")
 state_maddhattpatt:State = {
-    init_maddhattpatt,
+    init,
     nil,
-    update_maddhattpatt,
-    draw_maddhattpatt,
+    update,
+    draw,
 }
 
 params:sp.SpringParams = {
@@ -18,12 +20,13 @@ params:sp.SpringParams = {
 	sp.SpringCategory.Overdamped,
 }
 
-init_maddhattpatt::proc(){
+init::proc(){
 	circle_velocity = {}
 	circle_position = {}
+	calculate_spring()
 }
 
-calculate_maddhattpatt_spring::proc(){
+calculate_spring::proc(){
 	delta_time:: 1.0 / 60
 	current_length:f32 = 0
 	target_length:f32 = 100
@@ -40,7 +43,7 @@ calculate_maddhattpatt_spring::proc(){
 	}
 }
 
-update_maddhattpatt :: proc() {
+update :: proc() {
     delta_time:f32 = rl.GetFrameTime()
 	target_position:rl.Vector2 = rl.GetMousePosition()
 	offset:rl.Vector2 = circle_position - target_position
@@ -54,14 +57,14 @@ update_maddhattpatt :: proc() {
 	circle_position.y = clamp(circle_position.y + circle_velocity.y, 1, cast(f32)rl.GetScreenHeight())
 }
 
-draw_maddhattpatt::proc(){
+draw::proc(){
     rl.DrawCircleV(circle_position, 10, rl.PINK)
 
-	draw_graph_maddhattpatt ()
-	draw_gui_maddhattpatt ()
+	draw_graph()
+	draw_gui ()
 }
 
-draw_gui_maddhattpatt ::proc(){
+draw_gui ::proc(){
 	@(static) dropdown_text:cstring = "#00#UndampedFrictionless;#00#UnderdampedUnstable;#00#CriticallyDamped;#00#Overdamped"
 	@(static) dropdown_index:i32
 	@(static) dropdown_edit:bool
@@ -87,7 +90,7 @@ draw_gui_maddhattpatt ::proc(){
 		if !dropdown_edit {
 			params.category = cast(sp.SpringCategory)dropdown_index
 			circle_velocity = {}
-			calculate_maddhattpatt_spring()
+			calculate_spring()
 		}
 	}
 
@@ -96,11 +99,11 @@ draw_gui_maddhattpatt ::proc(){
 	rect.width = 75
 	if rl.GuiButton(rect, "Update") {
 		circle_velocity = {}
-		calculate_maddhattpatt_spring()
+		calculate_spring()
 	}
 }
 
-draw_graph_maddhattpatt ::proc(){
+draw_graph ::proc(){
 	origin:rl.Vector2 = {100, 300}
 	rl.DrawLineV(origin, {origin.x + len(cached_values), origin.y}, rl.DARKGRAY)
 
