@@ -1,5 +1,4 @@
 package demo
-// Based on Karl Zylinski's template - https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template
 
 import fabrik ".."
 import rl "vendor:raylib"
