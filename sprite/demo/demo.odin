@@ -2,6 +2,7 @@ package demo
 
 import rl "vendor:raylib"
 import sp ".."
+import sr "../raylib"
 
 
 Vector2 :: rl.Vector2
@@ -11,7 +12,7 @@ Font :: rl.Font
 Texture2D :: rl.Texture2D
 
 screen_size:Vector2
-sprite_texture: Texture2D
+player_texture: Texture2D
 
 PlayerStates::enum {
     idle,
@@ -35,18 +36,18 @@ player_animations:sp.AnimationSet = {
 
 player_sprite:sp.Sprite = {
     player_animations,
-    {100, 200},
+    {18, 100},
     {-8, -16},
     {1, 1},
 }
 
 game_init :: proc() {
-    sprite_texture = rl.LoadTexture("demo/player_sheet.png")
+    player_texture = rl.LoadTexture("demo/player_sheet.png")
     sp.ChangeAnimation(&player_sprite.animation_set, cast(u32)PlayerStates.walk)
 }
 
 game_shutdown :: proc() {
-	rl.UnloadTexture(sprite_texture)
+	rl.UnloadTexture(player_texture)
 }
 
 update :: proc() {
@@ -56,34 +57,24 @@ update :: proc() {
 draw :: proc() {
     rl.BeginDrawing()
 	rl.ClearBackground(rl.WHITE)
+    screen_size = {cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight()}
+    camera:rl.Camera2D = { {0, 0}, {0,0}, 0, 4,} // zoom in
+    rl.BeginMode2D(camera)
 
     // Draw current frame as preview
     frame_rect:rl.Rectangle = transmute(rl.Rectangle)sp.GetAnimationFrame(&player_sprite.animation_set)
-    rl.DrawTextureRec(sprite_texture, frame_rect, {100, 100}, rl.WHITE)
+    rl.DrawTextureRec(player_texture, frame_rect, {10, 10}, rl.WHITE)
 
+    // PLAYER SPRITE
+    sr.DrawSprite(&player_sprite, &player_texture)
+    
 
-    sprite_rect, texture_rect: = sp.GetSpriteFrame(&player_sprite)
-
-    // Test shapes
-    rl.DrawRectangleLinesEx(transmute(rl.Rectangle)sprite_rect, 1, rl.DARKGRAY)
-    rl.DrawLine(
-        cast(i32)player_sprite.position.x,
-        cast(i32)player_sprite.position.y - 16,
-        cast(i32)player_sprite.position.x,
-        cast(i32)player_sprite.position.y + 16,
-        rl.BLACK,
-    )
-
-    // Player Sprite
-    ORIGIN:rl.Vector2: {0, 0}
-    rl.DrawTexturePro(
-        sprite_texture, 
-        transmute(rl.Rectangle)texture_rect, 
-        transmute(rl.Rectangle)sprite_rect,
-        ORIGIN,
-        0,
-        rl.WHITE,
-    )
-
+    rl.EndMode2D()
+    
+    slider_rect:rl.Rectangle = {screen_size.x - 110, 10, 100, 25}
+    rl.GuiSlider(slider_rect, "scale X", "", &player_sprite.scale.x, -1, 1)
+    slider_rect.y += 30
+    rl.GuiSlider(slider_rect, "scale Y", "", &player_sprite.scale.y, -1, 1)
+    
     rl.EndDrawing()
 }
