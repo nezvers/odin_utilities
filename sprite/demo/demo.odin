@@ -39,6 +39,7 @@ player_sprite:sp.Sprite = {
     {18, 100},
     {-8, -16},
     {1, 1},
+    0.0,
 }
 
 game_init :: proc() {
@@ -66,7 +67,27 @@ draw :: proc() {
     rl.DrawTextureRec(player_texture, frame_rect, {10, 10}, rl.WHITE)
 
     // PLAYER SPRITE
-    sr.DrawSprite(&player_sprite, &player_texture)
+    rl.DrawLine(
+        cast(i32)player_sprite.position.x - 8,
+        cast(i32)player_sprite.position.y,
+        cast(i32)player_sprite.position.x + 8,
+        cast(i32)player_sprite.position.y,
+        rl.BLACK,
+    )
+    rl.DrawLine(
+        cast(i32)player_sprite.position.x,
+        cast(i32)player_sprite.position.y - 8,
+        cast(i32)player_sprite.position.x,
+        cast(i32)player_sprite.position.y + 8,
+        rl.BLACK,
+    )
+    rl.DrawRectangleLines(
+        cast(i32)(player_sprite.position.x + player_sprite.offset.x),
+        cast(i32)(player_sprite.position.y + player_sprite.offset.y),
+        16, 16,
+        rl.DARKGRAY,
+    )
+    sr.DrawSprite(&player_sprite, &player_texture, rl.WHITE)
     
 
     rl.EndMode2D()
@@ -75,6 +96,8 @@ draw :: proc() {
     rl.GuiSlider(slider_rect, "scale X", "", &player_sprite.scale.x, -1, 1)
     slider_rect.y += 30
     rl.GuiSlider(slider_rect, "scale Y", "", &player_sprite.scale.y, -1, 1)
+    slider_rect.y += 30
+    rl.GuiSlider(slider_rect, "rotate", "", &player_sprite.rotation, -180, 180)
     
     rl.EndDrawing()
 }

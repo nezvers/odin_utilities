@@ -26,6 +26,7 @@ Sprite::struct{
     position:vec2,
     offset:vec2,
     scale:vec2,
+    rotation:f32,
 }
 
 ChangeAnimation::proc(animation_set:^AnimationSet, new_animation:u32){
