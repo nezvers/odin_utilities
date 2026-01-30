@@ -60,7 +60,7 @@ GetAnimationFrame::proc(animation_set:^AnimationSet)->rectf {
 
 GetSpriteFrame::proc(sprite:^Sprite)->(sprite_rect:rectf, texture_rect:rectf) {
     texture_rect = GetAnimationFrame(&sprite.animation_set)
-    sprite_rect.xy += sprite.position + sprite.offset
+    sprite_rect.xy = sprite.position
     sprite_rect.zw = texture_rect.zw
     return
 }

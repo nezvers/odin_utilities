@@ -15,33 +15,24 @@ DrawSpriteRaylib::proc(raylib_sprite:^SpriteRaylib){
 }
 
 DrawSprite::proc(sprite:^sp.Sprite, texture:^rl.Texture, tint:rl.Color){
-    sprite_rect, texture_rect: = sp.GetSpriteFrame(sprite)
+    target_rect, source_rect: = sp.GetSpriteFrame(sprite)
 
-    abs_scale:sp.vec2 = {abs(sprite.scale.x), abs(sprite.scale.y)}
-    // Scale X
-    sprite_rect.x = sprite.position.x + sprite.offset.x * abs_scale.x
-    sprite_rect.z *= abs_scale.x
-    // Scale Y
-    sprite_rect.y = sprite.position.y + sprite.offset.y * abs_scale.y
+    target_rect.zw *= sprite.scale
+    origin:rl.Vector2 = -sprite.offset * {abs(sprite.scale.x), abs(sprite.scale.y)}
 
-    origin:rl.Vector2 = {0,0}
-    // Raylib specific texture region flip
-    if (sprite.scale.x < 0) {
-        texture_rect.z *= -1
+    if sprite.scale.x < 0 {
+        source_rect.z *= -1
     }
-    if (sprite.scale.y < 0) {
-        texture_rect.w *= -1
-        sprite_rect.y += sprite.offset.y * sprite.scale.y
-        // origin.y -= sprite_rect.w
+
+    if sprite.scale.y < 0 {
+        source_rect.w *= -1
+        origin.y += -sprite.offset.y * sprite.scale.y
     }
-    sprite_rect.w *= abs_scale.y
 
-
-    // sprite_rect.xy += origin
     rl.DrawTexturePro(
         texture^, 
-        transmute(rl.Rectangle)texture_rect, 
-        transmute(rl.Rectangle)sprite_rect,
+        transmute(rl.Rectangle)source_rect, 
+        transmute(rl.Rectangle)target_rect,
         origin,
         sprite.rotation,
         tint,
