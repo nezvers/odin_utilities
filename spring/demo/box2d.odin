@@ -5,7 +5,7 @@ import sp ".."
 import rl "vendor:raylib"
 
 @(private="package")
-state_inertia_spring:State = {
+state_box2d:State = {
     init,
     nil,
     update,
@@ -28,10 +28,14 @@ update::proc(){
         position = target_position
     }
 
-    damping:f32 = 10
-    freq:f32 = 1
-    sp.InertiaSpring(&position.x, &velocity.x, target_position.x, freq, damping, delta_time)
-    sp.InertiaSpring(&position.y, &velocity.y, target_position.y, freq, damping, delta_time)
+    HERTZ:f32: 0.4
+    DAMPING:f32: 1.5
+    offset:rl.Vector2 = position - target_position
+    velocity = {
+        sp.SpringDamper(HERTZ, DAMPING, offset.x, velocity.x, delta_time),
+        sp.SpringDamper(HERTZ, DAMPING, offset.y, velocity.y, delta_time),
+    }
+    position += velocity
 }
 
 

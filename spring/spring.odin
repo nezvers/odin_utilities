@@ -31,8 +31,24 @@ expDecay::proc(a:f32, b:f32, decay:f32, dt:f32)->f32{
     return b + (a - b) * math.exp(-decay * dt)
 }
 
+// ======================= Box2D ============================
+
+// Box2D SpringDamper
+// One-dimensional mass-spring-damper simulation. Returns the new velocity given the position and time step.
+// over 2 hertz becomes unstable
+// velocity = sp.SpringDamper(hertz, damping, (current_length - target_length), velocity, delta_time)
+// current_length += velocity
+SpringDamper::proc(hertz:f32, dampingRatio:f32, position:f32, velocity:f32, timeStep:f32)->(velocity_out:f32) {
+    // https://github.com/erincatto/box2d/blob/c05c48738fbe5c27625e36c5f0cfbdaddfc8359a/include/box2d/math_functions.h#L673
+    omega:f32 = 2 * math.PI * hertz
+    omegaH:f32 = omega * timeStep
+    velocity_out = (velocity - omega * omegaH * position) / (1 + 2 * dampingRatio * omegaH + omegaH * omegaH)
+    return
+}
+
 
 // ========================= DAMPED SPRING =========================
+// Need help to make it work
 // translated from https://gist.github.com/chadcable/92bc3958af5b171e593e36be57ca36ce
 
 // Cached set of motion parameters that can be used to efficiently update
@@ -138,22 +154,9 @@ UpdateDampedSpringMotion::proc(
     velocity^ = oldVel * springParams.velPosCoef + oldVel * springParams.velVelCoef
 }
 
-// ======================= Box2D ============================
-
-// Box2D SpringDamper
-// One-dimensional mass-spring-damper simulation. Returns the new velocity given the position and time step.
-// over 2 hertz becomes unstable
-// velocity = sp.SpringDamper(hertz, damping, (current_length - target_length), velocity, delta_time)
-// current_length += velocity
-SpringDamper::proc(hertz:f32, dampingRatio:f32, position:f32, velocity:f32, timeStep:f32)->(velocity_out:f32) {
-    // https://github.com/erincatto/box2d/blob/c05c48738fbe5c27625e36c5f0cfbdaddfc8359a/include/box2d/math_functions.h#L673
-    omega:f32 = 2 * math.PI * hertz
-    omegaH:f32 = omega * timeStep
-    velocity_out = (velocity - omega * omegaH * position) / (1 + 2 * dampingRatio * omegaH + omegaH * omegaH)
-    return
-}
-
 // ==================== MaddHattPatt ======================
+// Need help to make it work
+// translated from https://youtu.be/H-jRx_E8aZ8?t=745
 
 SpringCategory :: enum {
     UndampedFrictionless,
@@ -171,7 +174,6 @@ SpringParams :: struct {
 }
 
 SpringMaddHattPatt::proc(params:^SpringParams, t:f32, x_0:f32 = 1., v_0:f32 = 0. )->(output:f32){
-    // translated from https://youtu.be/H-jRx_E8aZ8?t=745
     switch params.category {
     case SpringCategory.UndampedFrictionless:
         sqrt_km: = math.sqrt(params.k / params.m)

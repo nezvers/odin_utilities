@@ -1,14 +1,13 @@
 package demo
 
+import "core:reflect"
+import "core:strings"
+
 import rl "vendor:raylib"
 Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
 Color :: rl.Color
 
-cached_values:[60 * 4]f32 = {}
-
-circle_position:rl.Vector2 = 0.0
-circle_velocity:rl.Vector2 = {}
 
 // DEMO STATES
 State :: struct {
@@ -20,25 +19,20 @@ State :: struct {
 
 state_list: []State = {
 	state_inertia_spring,
-	state_damped_spring,
-	state_maddhattpatt,
+	state_box2d,
 }
 
 StateIndex :: enum {
 	INERTIA_SPRING,
-	DAMPED_SPRING,
-	MADDHATTPATT,
+	BOX2D_SPRING_DAMPER,
 	COUNT,
 }
+
 state_index:StateIndex = StateIndex.INERTIA_SPRING
 screen_size:Vector2
 is_hovering_buttons:bool
 
-button_names:[]cstring = {
-	"Inertia Spring",
-	"Damped Spring",
-	"MaddHattPatt",
-}
+button_names:[StateIndex.COUNT]cstring
 
 state_change :: proc(index:StateIndex){
 	if state_list[state_index].exit != nil{
@@ -51,6 +45,10 @@ state_change :: proc(index:StateIndex){
 }
 
 game_init :: proc() {
+	for i:int; i < cast(int)StateIndex.COUNT; i += 1{
+		name, _: = reflect.enum_name_from_value(cast(StateIndex)i)
+		button_names[i] = strings.clone_to_cstring(name)
+	}
 	state_change(state_index)
 	screen_size = {cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight()}
 }
@@ -72,10 +70,12 @@ draw :: proc() {
 		state_list[state_index].draw()
 	}
 
+	// GUI BUTTONS
 	BUTTON_SIZE: Vector2: {150, 20}
 	BUTTON_PADDING :f32: 2
-	button_rect:Rectangle = {screen_size.x - BUTTON_SIZE.x, 0, BUTTON_SIZE.x, BUTTON_SIZE.y}
+	button_rect:Rectangle = {screen_size.x - BUTTON_SIZE.x - 10, 10, BUTTON_SIZE.x, BUTTON_SIZE.y}
 	mouse_position:Vector2 = rl.GetMousePosition()
+	
 	is_hovering_buttons = false
 	for i:int; i < cast(int)StateIndex.COUNT; i += 1{
 		if (rl.GuiButton(button_rect, button_names[i])){
