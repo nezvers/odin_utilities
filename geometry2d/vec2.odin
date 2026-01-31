@@ -80,8 +80,8 @@ Vec2Polar :: proc(a: vec2) -> vec2{
 
 // Clamp the components of vector in between the 'element-wise' minimum and maximum of 2 other vectors
 Vec2Clamp :: proc(a: vec2, v_min: vec2, v_max: vec2) -> vec2{
-    max:vec2 = Vec2Max(a, v_max)
-    return Vec2Min(max, v_min)
+    max:vec2 = Vec2Min(a, v_max)
+    return Vec2Max(max, v_min)
 }
 
 // Linearly interpolate between vector, and another vector, given normalised parameter 't'

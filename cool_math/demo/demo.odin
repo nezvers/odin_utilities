@@ -3,10 +3,11 @@ package demo
 import rl "vendor:raylib"
 import cm ".."
 
-val:f64
+val:i64
 
 game_init :: proc() {
-    val = cm.fast_exp(0.1)
+    val = cm.Sign(cast(i64)-4)
+    val = cm.Vec2Mag2( [2]i64{4, 0} )
 }
 
 game_shutdown :: proc() {

@@ -1,44 +1,66 @@
 package cool_math
 
-import "core:math"
+import "base:intrinsics"
 
-
-// Frame independent lerp
-expDecay::proc(a:f32, b:f32, decay:f32, dt:f32)->f32{
-    // Freya Holmér "Lerp smoothing is broken" - https://youtu.be/LSNQuFEDOyQ?t=2987
-    return b + (a - b) * math.exp(-decay * dt)
+// Positive is 1
+// Negative is -1
+// Zero is zero
+Sign::proc(x:$T)->T
+where intrinsics.type_is_numeric(T)
+{
+    result:T = x > 0 ? 1 : (x < 0 ? -1 : 0)
+    return result
 }
 
 // Linear motion
-MoveToward::proc(a:f32, b:f32, speed:f32, dt:f32)->f32{
+MoveToward::proc(a:$T, b:T, speed:T, t:$F)->T
+where intrinsics.type_is_numeric(T)
+{
     v: = b - a
-    stepDist: = speed * dt
+    stepDist: = speed * t
     if (stepDist >= abs(v)){
         return b
     }
     return a + math.sign(v) * stepDist
 }
 
-lerp::proc(a:f32, b:f32, t:f32)->f32{
+Lerp::proc(a:$T, b:T, t:T)->T
+where intrinsics.type_is_float(T)
+{
     return a + (b - a) * t
 }
 
-inverseLerp::proc(a:f32, b:f32, t:f32)->f32{
-    diff:f32 = b - a
+// Frame independent lerp
+// decay gives a curve
+// dt is delta time
+ExpDecay::proc(a:$T, b:T, decay:T, dt:T)->T
+where intrinsics.type_is_float(T)
+{
+    // Freya Holmér "Lerp smoothing is broken" - https://youtu.be/LSNQuFEDOyQ?t=2987
+    return b + (a - b) * math.exp(-decay * dt)
+}
+
+InverseLerp::proc(a:$T, b:T, t:T)->T
+where intrinsics.type_is_numeric(T)
+{
+    diff:T = b - a
     if diff == 0 {
         return 1
     }
     return (t - a) / diff
 }
 
-remap::proc(iMin:f32, iMax:f32, oMin:f32, oMax:f32, v:f32)->f32{
+Remap::proc(iMin:$T, iMax:T, oMin:T, oMax:T, v:T)->T
+where intrinsics.type_is_float(T)
+{
     t: = inverseLerp(iMin, iMax, v)
     t = clamp(t, 0, 1)
     return lerp(oMin, oMax, t)
 }
 
 // LITTLE ENDIAN only
-fast_exp::proc(a:f64)->f64 {
+// Approximated, need to tweak values
+FastExp::proc(a:f64)->f64 {
     //https://github.com/ekmett/approximate/blob/c8917831c8a41901009effcb8dd6d664c1222f50/cbits/fast.c#L75
     result:i64 = 6497320848556798 * cast(i64)a + 0x3fef127e83d16f12
     return transmute(f64)result
