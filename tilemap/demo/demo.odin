@@ -32,6 +32,7 @@ state_list: []State = {
 	state_paint,
 	state_drag,
 	state_resize,
+	state_ruletile,
 }
 
 Example :: enum {
@@ -44,9 +45,10 @@ Example :: enum {
 	TILEMAP_PAINT,
 	TILEMAP_DRAG,
 	TILEMAP_RESIZE,
+	RULETILE_PAINT,
 	COUNT,
 }
-current_example:Example = Example.TILEMAP_RESIZE
+current_example:Example = Example.ATLAS
 
 example_names:[]cstring = {
 	"Atlas",
@@ -58,6 +60,7 @@ example_names:[]cstring = {
 	"Tilemap Painting",
 	"Tilemap Dragging",
 	"Tilemap Resizing",
+	"Ruletile Painting",
 }
 
 TILE_SIZE:vec2i: {16, 16}

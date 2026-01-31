@@ -19,6 +19,11 @@ rectf :: struct {
 TileID :: u8
 TILE_EMPTY: TileID: 0
 TILE_INVALID: TileID: 255
+RIGHTi:vec2i:   {1,0}
+LEFTi:vec2i:    {-1,0}
+UPi:vec2i:      {0,-1}
+DOWNi:vec2i:    {0,1}
+ZEROi:vec2i:    {0,0}
 
 // Data about Texture positions
 TileAtlas :: struct {
@@ -56,11 +61,16 @@ Tileset :: struct {
 // Auto tiling rule
 // tile_id - applied tile_id when rules are satisfied
 // group_id - id checked with included & excluded arrays
-RuleTile::struct {
+AutotileRule::struct {
     tile_id:TileID,
-    group_id:TileID,
-    included_cells:[]vec2i,
-    excluded_cells:[]vec2i,
+    match:[]RuleMatch,
+}
+
+// Auto tiling rule
+RuleMatch::struct {
+    id:TileID,
+    offset:vec2i,
+    exclude:bool,
 }
 
 
