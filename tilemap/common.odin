@@ -53,6 +53,16 @@ Tileset :: struct {
     random_seed: u32,
 }
 
+// Auto tiling rule
+// tile_id - applied tile_id when rules are satisfied
+// group_id - id checked with included & excluded arrays
+RuleTile::struct {
+    tile_id:TileID,
+    group_id:TileID,
+    included_cells:[]vec2i,
+    excluded_cells:[]vec2i,
+}
+
 
 TileRandType :: enum {
     // Default TileID

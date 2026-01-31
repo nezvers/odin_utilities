@@ -1,12 +1,5 @@
 package tilemap
 
-RuleTile::struct {
-    tile_id:TileID,
-    group_id:TileID,
-    included_cells:[]vec2i,
-    excluded_cells:[]vec2i,
-}
-
 // Process single cell for tilemap_out
 RuleTileUpdateCell::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]RuleTile, tile_pos:vec2i){
     assert(tile_pos.x > 0)
@@ -91,11 +84,36 @@ RuleTileUpdateTilemap::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]R
 }
 
 RuleTileUpdateRect::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]RuleTile, region:recti){
+    rect:recti = TilemapClampRecti(tilemap_in, region)
     tile_pos:vec2i
-    for y:int = region.y; y < (region.y + region.h); y += 1 {
-        for x:int = region.x; x < (region.x + region.x); x += 1 {
+    for y:int = rect.y; y < (rect.y + rect.h); y += 1 {
+        for x:int = rect.x; x < (rect.x + rect.x); x += 1 {
             tile_pos = {x, y}
             RuleTileUpdateCell(tilemap_in, tilemap_out, rules[:], tile_pos)
         }
+    }
+}
+
+RuleTileUpdateNeighbours::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]RuleTile, tile_pos:vec2i){
+    neighbour_list:[]vec2i = {
+        tile_pos - {-1, -1},
+        tile_pos - {0, -1},
+        tile_pos - {1, -1},
+        tile_pos - {-1, 0},
+        tile_pos - {1, 0},
+        tile_pos - {-1, 1},
+        tile_pos - {0, 1},
+        tile_pos - {1, 1},
+    }
+    test_pos:vec2i
+    for i:int = 0; i < len(neighbour_list); i += 1 {
+        test_pos = neighbour_list[i]
+        if (test_pos.x < 0 || test_pos.y < 0 ){
+            continue
+        }
+        if (test_pos.x > tilemap_in.size.x -1 || test_pos.y > tilemap_in.size.y -1){
+            continue
+        }
+        RuleTileUpdateCell(tilemap_in, tilemap_out, rules[:], test_pos)
     }
 }

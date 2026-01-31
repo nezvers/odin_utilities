@@ -2,6 +2,23 @@ package demo
 
 import rl "vendor:raylib"
 
+// DEMO STATES
+State :: struct {
+	enter : proc(),
+	exit : proc(),
+	update : proc(),
+	draw : proc(),
+}
+
+state_change :: proc(index:Example){
+	if state_list[current_example].exit != nil{
+		state_list[current_example].exit()
+	}
+	current_example = index
+	if state_list[current_example].enter != nil{
+		state_list[current_example].enter()
+	}
+}
 
 main :: proc() {
 	game_init_window()
