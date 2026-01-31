@@ -191,22 +191,33 @@ where intrinsics.type_is_numeric(T)
 }
 
 // Assuming vector is an incident, given a normal, return the reflection
-Vec2Reflect :: proc(a: [2]$T, normal: [2]T) -> [2]T
+Vec2Reflect :: proc(v: [2]$T, normal: [2]T) -> [2]T
 where intrinsics.type_is_numeric(T)
 {
-    return 2 * Vec2Dot(a, normal) * normal - a
+    return 2 * Vec2Dot(v, normal) * normal - v
 }
 
 // 
-Vec2Bounce :: proc(a:[2]$T, normal:[2]T) -> [2]T
+Vec2Bounce :: proc(v:[2]$T, normal:[2]T) -> [2]T
 where intrinsics.type_is_numeric(T)
 {
-    return -Vec2Reflect(a, normal)
+    return -Vec2Reflect(v, normal)
 }
 
 // 
-Vec2Slide :: proc(a:[2]$T, normal:[2]T) -> [2]T
+Vec2Slide :: proc(v:[2]$T, normal:[2]T) -> [2]T
 where intrinsics.type_is_numeric(T)
 {
-    return a - normal * Vec2Dot(a, normal)
+    return v - normal * Vec2Dot(v, normal)
+}
+
+Vec2LimitLength::proc(v:[2]$T, length:T)->[2]T
+where intrinsics.type_is_numeric(T)
+{
+    l:T = Vec2Mag(v)
+    if (l > 0 && length < l){
+        v /= l
+        v *= length
+    }
+    return v
 }
