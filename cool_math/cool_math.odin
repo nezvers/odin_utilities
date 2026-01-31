@@ -37,7 +37,7 @@ remap::proc(iMin:f32, iMax:f32, oMin:f32, oMax:f32, v:f32)->f32{
     return lerp(oMin, oMax, t)
 }
 
-
+// LITTLE ENDIAN only
 fast_exp::proc(a:f64)->f64 {
     //https://github.com/ekmett/approximate/blob/c8917831c8a41901009effcb8dd6d664c1222f50/cbits/fast.c#L75
     result:i64 = 6497320848556798 * cast(i64)a + 0x3fef127e83d16f12
