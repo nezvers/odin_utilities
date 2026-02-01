@@ -2,7 +2,6 @@ package demo
 
 import "core:math"
 import "core:math/rand"
-import "core:math/ease"
 import rl "vendor:raylib"
 Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
@@ -94,9 +93,7 @@ UpdateDustParticle::proc(particle:^Particle, delta_time:f32){
 }
 
 DrawDustParticle::proc(particle:^Particle){
-    // convert 0 -> 1 into 0->1->0
-    up_and_down:f32 = 1.0 - abs(particle.time * 2.0 - 1.0)
-    // But they also have random time start, so not same fade in for every one
-    fade:f32 = ease.cubic_out(up_and_down)
-    pr.DrawParticle(particle, &particle_texture, rl.ColorAlpha(rl.WHITE, fade))
+    // They also have random time start, so not same fade in for every one
+    fade_in_and_out:f32 = math.sin(particle.time * math.PI)
+    pr.DrawParticle(particle, &particle_texture, rl.ColorAlpha(rl.WHITE, fade_in_and_out))
 }
