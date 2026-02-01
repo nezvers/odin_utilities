@@ -10,6 +10,7 @@
 - ✅ Tilemap `odin run demo` Run command from `tilemap` directory.
 - ✅ Spring `odin run spring/demo`
 - ✅ Sprite `odin run demo` Run command from `sprite` directory.
+- ✅ Particles `odin run demo` Run command from `particles` directory.
 - ❎ Geometry2D `odin run geometry2d/demo`
     - ✅ shapes [point, line, circle, rectangle, triangle, ray]
     - ✅ overlap

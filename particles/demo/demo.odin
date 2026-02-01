@@ -1,7 +1,8 @@
 package demo
 
-import "core:math/rand"
 import "core:math"
+import "core:math/rand"
+import "core:math/ease"
 import rl "vendor:raylib"
 Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
@@ -21,20 +22,6 @@ DUST_COUNT::100
 dust_particles:[DUST_COUNT]Particle
 
 screen_size:Vector2
-
-particle:Particle = {
-    tex_pos = tex_pos[:],
-    size = {2,2},
-    position = {100,100},
-    offset = {0,0},
-    scale = {4,4},
-    velocity = {4, 10},
-    rotation = 0,
-    time = 0,
-    frame_time = 1.0/3.0,
-    image_index = 1,
-    alive = true,
-}
 
 game_init :: proc() {
     screen_size = { cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight() }
@@ -107,5 +94,9 @@ UpdateDustParticle::proc(particle:^Particle, delta_time:f32){
 }
 
 DrawDustParticle::proc(particle:^Particle){
-    pr.DrawParticle(particle, &particle_texture, rl.WHITE)
+    // convert 0 -> 1 into 0->1->0
+    up_and_down:f32 = 1.0 - abs(particle.time * 2.0 - 1.0)
+    // But they also have random time start, so not same fade in for every one
+    fade:f32 = ease.cubic_out(up_and_down)
+    pr.DrawParticle(particle, &particle_texture, rl.ColorAlpha(rl.WHITE, fade))
 }
