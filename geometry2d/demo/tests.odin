@@ -8,8 +8,8 @@ import rl "vendor:raylib"
 @(private="package")
 state_tests:State = {
     enter,
+    exit,
     nil,
-    update,
     draw,
 }
 
@@ -30,8 +30,11 @@ enter :: proc(){
     test_project()
 }
 
-update :: proc(){
-
+exit::proc(){
+    delete(overlap_results)
+    delete(contains_results)
+    delete(intersects_results)
+    delete(project_results)
 }
 
 draw :: proc(){
