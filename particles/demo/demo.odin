@@ -70,8 +70,8 @@ SpawnDustParticle::proc(particle:^Particle){
     particle.scale = {4,4}
 
     particle.position = {
-        100.0 + rand.float32() * (screen_size.x - 100.0),
-        100.0 + rand.float32() * (screen_size.y - 100.0),
+        50.0 + rand.float32() * (screen_size.x - 100.0),
+        50.0 + rand.float32() * (screen_size.y - 100.0),
     }
     particle.velocity = {
         -20 + rand.float32() * 40,
