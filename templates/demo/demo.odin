@@ -47,8 +47,8 @@ game_init :: proc() {
 		name, _: = reflect.enum_name_from_value(cast(StateIndex)i)
 		button_names[i] = strings.clone_to_cstring(name)
 	}
-	state_change(state_index)
 	screen_size = {cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight()}
+	state_change(state_index)
 }
 
 game_shutdown :: proc() {

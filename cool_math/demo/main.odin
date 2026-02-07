@@ -10,7 +10,9 @@ main :: proc() {
 	main_loop: for game_should_run() {
 		update()
 		draw()
+		free_all(context.temp_allocator)
 	}
+	free_all(context.temp_allocator)
 
 	game_shutdown()
     rl.CloseWindow()
