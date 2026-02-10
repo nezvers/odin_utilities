@@ -12,7 +12,7 @@
 - ✅ Sprite `odin run demo` Run command from `sprite` directory.
 - ✅ Sound Effect `odin run demo` Run command from `sound_effects` directory.
 - ✅ Particles `odin run demo` Run command from `particles` directory.
-- ✅ Task `odin run task/demo`
+- ✅ Task `odin run task/demo -out:task/demo.exe`
     - Download file
     - Extract TAR & ZIP
     - Clone git repository

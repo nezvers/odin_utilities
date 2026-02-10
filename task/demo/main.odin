@@ -22,6 +22,9 @@ extract_raylib_lib :: proc()->(ok:bool){
 }
 
 clone_raylib_repo :: proc()->(ok:bool){
+	if os.exists(raylib_dir){
+		return true
+	}
 	return task.git_clone("https://github.com/raysan5/raylib.git", "5.5", false, true, "1")
 }
 
