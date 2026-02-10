@@ -12,6 +12,10 @@
 - ✅ Sprite `odin run demo` Run command from `sprite` directory.
 - ✅ Sound Effect `odin run demo` Run command from `sound_effects` directory.
 - ✅ Particles `odin run demo` Run command from `particles` directory.
+- ✅ Task `odin run task/demo`
+    - Download file
+    - Extract TAR & ZIP
+    - Clone git repository
 - ❎ Geometry2D `odin run geometry2d/demo`
     - ✅ shapes [point, line, circle, rectangle, triangle, ray]
     - ✅ overlap

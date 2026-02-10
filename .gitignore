@@ -1,3 +1,9 @@
 log.txt
 *.exe
+*.bin
+*.o
+*.lib
+*.so
+*.a
+*.dll
 *.pdb
