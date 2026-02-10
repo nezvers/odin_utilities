@@ -1,9 +1,24 @@
 package demo
 
 import rl "vendor:raylib"
+import "core:os/os2"
 
 
 main :: proc() {
+	working_dir, err: = os2.get_working_directory(context.allocator)
+	defer delete(working_dir)
+	// Return user to original directory in case project change it
+	defer os2.change_directory(working_dir)
+	if err != nil {
+		return
+	}
+	executable_directory:string
+	executable_directory, err = os2.get_executable_directory(context.allocator)
+	defer delete(executable_directory)
+	if err != nil {
+		return
+	}
+	os2.change_directory(executable_directory)
 	game_init_window()
 	game_init()
 

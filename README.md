@@ -7,11 +7,11 @@
 - ✅ FABRIK IK `odin run fabrik/demo`
 - ✅ Microui (raylib) `odin run microui/demo`
 - ✅ Viewport Rect `odin run viewport_rect/demo`
-- ✅ Tilemap `odin run demo` Run command from `tilemap` directory.
+- ✅ Tilemap `odin run tilemap/demo -out:tilemap/demo.exe`
 - ✅ Spring `odin run spring/demo`
-- ✅ Sprite `odin run demo` Run command from `sprite` directory.
-- ✅ Sound Effect `odin run demo` Run command from `sound_effects` directory.
-- ✅ Particles `odin run demo` Run command from `particles` directory.
+- ✅ Sprite `odin run sprite/demo -out:sprite/demo.exe`
+- ✅ Sound Effect `odin run sound_effects/demo -out:sound_effects/demo.exe`
+- ✅ Particles `odin run particles/demo -out:particles/demo.exe`
 - ✅ Task `odin run task/demo -out:task/demo.exe`
     - Download file
     - Extract TAR & ZIP
