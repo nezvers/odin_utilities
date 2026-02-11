@@ -15,18 +15,18 @@ AutotileRuleUpdateCell::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]
     match_pos:vec2i
     match_rule:^RuleMatch
     
-    index_out:int = tile_pos.x + tile_pos.y * tilemap_out.size.x
+    index_out:i32 = tile_pos.x + tile_pos.y * tilemap_out.size.x
     // TODO: remove
     tile_in:TileID = TilemapGetTile(tilemap_in, tile_pos)
     if tile_in != TILE_EMPTY {
         tile_in = tile_in
     }
 
-    for i:int; i < len(rules); i += 1 {
+    for i:i32; i < cast(i32)len(rules); i += 1 {
         rule = &rules[i]
         
         is_matching = true
-        for j:int = 0; j < len(rule.match); j += 1 {
+        for j:i32 = 0; j < cast(i32)len(rule.match); j += 1 {
             match_rule = &rule.match[j]
             match_pos = tile_pos + match_rule.offset
             
@@ -72,8 +72,8 @@ AutotileRuleUpdateTilemap::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules
     assert(tilemap_in.size == tilemap_out.size)
 
     tile_pos:vec2i
-    for y:int = 0; y < tilemap_in.size.y; y += 1 {
-        for x:int = 0; x < tilemap_in.size.x; x += 1 {
+    for y:i32 = 0; y < tilemap_in.size.y; y += 1 {
+        for x:i32 = 0; x < tilemap_in.size.x; x += 1 {
             tile_pos = {x, y}
             AutotileRuleUpdateCell(tilemap_in, tilemap_out, rules[:], tile_pos)
         }
@@ -83,8 +83,8 @@ AutotileRuleUpdateTilemap::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules
 AutotileRuleUpdateRect::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]AutotileRule, region:recti){
     rect:recti = TilemapClampRecti(tilemap_in, region)
     tile_pos:vec2i
-    for y:int = rect.y; y < (rect.y + rect.h); y += 1 {
-        for x:int = rect.x; x < (rect.x + rect.x); x += 1 {
+    for y:i32 = rect.y; y < (rect.y + rect.h); y += 1 {
+        for x:i32 = rect.x; x < (rect.x + rect.x); x += 1 {
             tile_pos = {x, y}
             AutotileRuleUpdateCell(tilemap_in, tilemap_out, rules[:], tile_pos)
         }

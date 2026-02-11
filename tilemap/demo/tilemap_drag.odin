@@ -41,7 +41,7 @@ draw::proc(){
 	}
 	
 	mouse_position:Vector2 = rl.GetMousePosition()
-	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
+	mouse_position_i:vec2i = {cast(i32)mouse_position.x, cast(i32)mouse_position.y}
 	
 
 	if (input_drag != InputState.NONE){

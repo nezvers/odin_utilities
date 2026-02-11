@@ -1,13 +1,13 @@
 package tilemap
 
 vec2f :: [2]f32
-vec2i :: [2]int
+vec2i :: [2]i32
 
 recti :: struct {
-    x: int,
-    y: int,
-    w: int,
-    h: int,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
 }
 rectf :: struct {
     x: f32,
@@ -86,21 +86,21 @@ TileRandType :: enum {
 // clip off that is not inside the clip recti
 RectiClipRecti :: proc(clip:^recti, rect:^recti) {
     if rect.x < clip.x {
-        diff:int = clip.x - rect.x
+        diff:i32 = clip.x - rect.x
         rect.w -= diff
         rect.x = 0
     }
     if rect.y < clip.y {
-        diff:int = clip.y - rect.y
+        diff:i32 = clip.y - rect.y
         rect.h -= diff
         rect.y = 0
     }
     if rect.x + rect.w > clip.w {
-        diff:int = (rect.x + rect.w) - clip.w
+        diff:i32 = (rect.x + rect.w) - clip.w
         rect.w -= diff
     }
     if rect.y + rect.h > clip.h {
-        diff:int = (rect.y + rect.h) - clip.h
+        diff:i32 = (rect.y + rect.h) - clip.h
         rect.h -= diff
     }
     if rect.w < 0 {

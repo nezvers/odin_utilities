@@ -24,32 +24,32 @@ Texture2D :: rl.Texture2D
 
 // Draw 2D grid lines
 DrawTilemapGrid :: proc(tilemap: ^Tilemap, color:Color){
-    map_width:int = tilemap.size.x * tilemap.tile_size.x
-    map_height:int = tilemap.size.y * tilemap.tile_size.y
+    map_width:i32 = tilemap.size.x * tilemap.tile_size.x
+    map_height:i32 = tilemap.size.y * tilemap.tile_size.y
 
     // Vertical lines
     for x in 0..< tilemap.size.x + 1 {
-        cell_x:int = tilemap.position.x + x * tilemap.tile_size.x
-        rl.DrawLine(cast(i32)cell_x, cast(i32)tilemap.position.y, cast(i32)(cell_x + 1), cast(i32)(tilemap.position.y + map_height), color)
+        cell_x:i32 = tilemap.position.x + x * tilemap.tile_size.x
+        rl.DrawLine(cell_x, tilemap.position.y, (cell_x + 1), (tilemap.position.y + map_height), color)
     }
 
     // Horizontal lines
     for y in 0..< tilemap.size.y + 1 {
-        cell_y:int = tilemap.position.y + y * tilemap.tile_size.y
-        rl.DrawLine(cast(i32)tilemap.position.x, cast(i32)cell_y, cast(i32)(tilemap.position.x + map_width), cast(i32)cell_y, color)
+        cell_y:i32 = tilemap.position.y + y * tilemap.tile_size.y
+        rl.DrawLine(tilemap.position.x, cell_y, (tilemap.position.x + map_width), cell_y, color)
     }
 }
 
 // Draw ID on tile positions for whole tilemap
-DrawTilemapTileId :: proc(tilemap: ^Tilemap, font:Font, font_size:int, color:Color){
-    text_offset_y:int = (tilemap.tile_size.y - font_size) / 2
+DrawTilemapTileId :: proc(tilemap: ^Tilemap, font:Font, font_size:i32, color:Color){
+    text_offset_y:i32 = (tilemap.tile_size.y - font_size) / 2
 
-    for y:int = 0; y < tilemap.size.y; y += 1 {
-        cell_y:int = tilemap.position.y + y * tilemap.tile_size.y
-        for x:int; x < tilemap.size.x; x += 1{
-            cell_x:int = tilemap.position.x + x * tilemap.tile_size.x
-            cell_i:int = x + y * tilemap.size.x
-            assert(cell_i < len(tilemap.grid))
+    for y:i32 = 0; y < tilemap.size.y; y += 1 {
+        cell_y:i32 = tilemap.position.y + y * tilemap.tile_size.y
+        for x:i32; x < tilemap.size.x; x += 1{
+            cell_x:i32 = tilemap.position.x + x * tilemap.tile_size.x
+            cell_i:i32 = x + y * tilemap.size.x
+            assert(cell_i < cast(i32)len(tilemap.grid))
 
             cell_id:tm.TileID = tilemap.grid[cell_i]
             if cell_id == 0 {
@@ -57,7 +57,7 @@ DrawTilemapTileId :: proc(tilemap: ^Tilemap, font:Font, font_size:int, color:Col
             }
             text:cstring = rl.TextFormat("%d", cell_id)
             text_measure:Vector2 = rl.MeasureTextEx(font, text, cast(f32)font_size, 0.0)
-            text_offset_x:int = (tilemap.tile_size.x - cast(int)text_measure.x) / 2
+            text_offset_x:i32 = (tilemap.tile_size.x - cast(i32)text_measure.x) / 2
             text_position:Vector2 = {cast(f32)(cell_x + text_offset_x), cast(f32)(cell_y + text_offset_y + 1)}
             rl.DrawTextEx(font, text, text_position, cast(f32)font_size, 0.0, color)
         }
@@ -65,16 +65,16 @@ DrawTilemapTileId :: proc(tilemap: ^Tilemap, font:Font, font_size:int, color:Col
 }
 
 // Draw rectangle around tile and draw provided ID
-DrawTilemapCellRect :: proc(tilemap: ^Tilemap, world_pos:vec2i, tile_id:TileID, font:Font, font_size:int, color:Color){
+DrawTilemapCellRect :: proc(tilemap: ^Tilemap, world_pos:vec2i, tile_id:TileID, font:Font, font_size:i32, color:Color){
     tile_pos:vec2i = tm.TilemapGetWorld2Tile(tilemap, world_pos)
-    tile_x:int = tilemap.position.x + tile_pos.x * tilemap.tile_size.x
-    tile_y:int = tilemap.position.y + tile_pos.y * tilemap.tile_size.y
-    rl.DrawRectangleLines(cast(i32)tile_x, cast(i32)tile_y, cast(i32)tilemap.tile_size.x, cast(i32)tilemap.tile_size.y, color)
+    tile_x:i32 = tilemap.position.x + tile_pos.x * tilemap.tile_size.x
+    tile_y:i32 = tilemap.position.y + tile_pos.y * tilemap.tile_size.y
+    rl.DrawRectangleLines(tile_x, tile_y, tilemap.tile_size.x, tilemap.tile_size.y, color)
 
     text:cstring = rl.TextFormat("%d", tile_id)
     text_measure:Vector2 = rl.MeasureTextEx(font, text, cast(f32)font_size, 0.0)
-    text_offset_x:int = (tilemap.tile_size.x - cast(int)text_measure.x) / 2
-    text_offset_y:int = (tilemap.tile_size.y - font_size) / 2
+    text_offset_x:i32 = (tilemap.tile_size.x - cast(i32)text_measure.x) / 2
+    text_offset_y:i32 = (tilemap.tile_size.y - font_size) / 2
     text_position:Vector2 = {cast(f32)(tile_x + text_offset_x), cast(f32)(tile_y + text_offset_y)}
     rl.DrawTextEx(font, text, text_position, cast(f32)font_size, 0.0, color)
 }
@@ -103,11 +103,11 @@ DrawTilemap :: proc(
     tex_rect:rectf = {0.0, 0.0, tile_atlas.tile_size.x, tile_atlas.tile_size.y}
     seed:u32 = tileset.random_seed
 
-    for y:int = 0; y < tilemap.size.y; y += 1 {
-        cell_y:int = tilemap.position.y + y * tilemap.tile_size.y
-        for x:int = 0; x < tilemap.size.x; x += 1 {
-            cell_x:int = tilemap.position.x + x * tilemap.tile_size.x
-            cell_i:int = x + y * tilemap.size.x
+    for y:i32 = 0; y < tilemap.size.y; y += 1 {
+        cell_y:i32 = tilemap.position.y + y * tilemap.tile_size.y
+        for x:i32 = 0; x < tilemap.size.x; x += 1 {
+            cell_x:i32 = tilemap.position.x + x * tilemap.tile_size.x
+            cell_i:i32 = x + y * tilemap.size.x
             cell_id:TileID = tilemap.grid[cell_i]
             if (cell_id == TILE_EMPTY && skip_zero){
                 continue
@@ -164,11 +164,11 @@ DrawTilemapRecti :: proc(
     tex_rect:rectf = {0.0, 0.0, tile_atlas.tile_size.x, tile_atlas.tile_size.y}
     seed:u32 = tileset.random_seed
 
-    for y:int = rect.y; y < rect.h; y += 1 {
-        cell_y:int = tilemap.position.y + y * tilemap.tile_size.y
-        for x:int = rect.x; x < rect.w; x += 1 {
-            cell_x:int = tilemap.position.x + x * tilemap.tile_size.x
-            cell_i:int = x + y * tilemap.size.x
+    for y:i32 = rect.y; y < rect.h; y += 1 {
+        cell_y:i32 = tilemap.position.y + y * tilemap.tile_size.y
+        for x:i32 = rect.x; x < rect.w; x += 1 {
+            cell_x:i32 = tilemap.position.x + x * tilemap.tile_size.x
+            cell_i:i32 = x + y * tilemap.size.x
             cell_id:TileID = tilemap.grid[cell_i]
             if (cell_id == TILE_EMPTY && skip_zero){
                 continue

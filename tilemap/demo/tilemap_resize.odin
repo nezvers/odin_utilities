@@ -35,14 +35,14 @@ draw::proc(){
 	}
 
 	mouse_position:Vector2 = rl.GetMousePosition()
-	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
+	mouse_position_i:vec2i = {cast(i32)mouse_position.x, cast(i32)mouse_position.y}
 
 	if (input_selection != InputState.NONE){
 		tm.CreateSelection(&tilemap, mouse_position_i, &selection_state, &rect_state, input_selection)
 	}
 
-	rect_area:int = rect_state.w * rect_state.h
-	size_error = rect_area > len(tilemap.grid)
+	rect_area:i32 = rect_state.w * rect_state.h
+	size_error = rect_area > cast(i32)len(tilemap.grid)
 
 	if (input_selection == InputState.RELEASE){
 		if (!size_error && rect_area > 0){

@@ -74,13 +74,13 @@ TilesetGetTileAltRandom :: proc(tileset: ^Tileset, tile_id:TileID, seed: ^u32)->
     return result
 }
 
-TilesetGetTileAltDeterministic :: proc(tileset: ^Tileset, tile_id:TileID, seed_x:int, seed_y:int)->TileID {
+TilesetGetTileAltDeterministic :: proc(tileset: ^Tileset, tile_id:TileID, seed_x:i32, seed_y:i32)->TileID {
     assert(tile_id != TILE_INVALID)
     if (tile_id > cast(u8)(tileset.length - 1)){
         return TILE_EMPTY
     }
     tile:Tile = tileset.data[tile_id]
-    index_rnd:u32 = cash(tileset.random_seed, seed_x, seed_y) % tile.length
+    index_rnd:u32 = cash(tileset.random_seed, cast(int)seed_x, cast(int)seed_y) % tile.length
     result:TileID = tile.data[index_rnd]
     return result
 }

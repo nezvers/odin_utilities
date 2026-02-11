@@ -43,12 +43,12 @@ TilemapGetTileWorld :: proc(tilemap: ^Tilemap, world_pos: vec2i)->TileID {
 
 // Get rectangle region of populated tiles 
 TilemapGetUsedRecti :: proc(tilemap: ^Tilemap)->recti{
-    left: int = tilemap.size.x - 1
-    top: int = tilemap.size.y - 1
-    right: int = 0
-    bottom: int = 0
-    for y:int = 0; y < tilemap.size.y; y += 1 {
-        for x:int = 0; x < tilemap.size.x; x += 1 {
+    left: i32 = tilemap.size.x - 1
+    top: i32 = tilemap.size.y - 1
+    right: i32 = 0
+    bottom: i32 = 0
+    for y:i32 = 0; y < tilemap.size.y; y += 1 {
+        for x:i32 = 0; x < tilemap.size.x; x += 1 {
             if (tilemap.grid[tilemap.size.x * y + x] != TILE_EMPTY) {
                 if (x > right) {
                     right = x
@@ -117,7 +117,7 @@ TilemapSetTile :: proc(tilemap: ^Tilemap, tile_pos:vec2i, tile_id:TileID){
     if (!x_inside || !y_inside){
         return
     }
-    pos:int = tile_pos.x + tile_pos.y * tilemap.size.x
+    pos:i32 = tile_pos.x + tile_pos.y * tilemap.size.x
     tilemap.grid[pos] = tile_id
 }
 
@@ -129,8 +129,8 @@ TilemapSetTileWorld :: proc(tilemap: ^Tilemap, world_pos:vec2i, tile_id:TileID){
 
 // Translate world coordinates to tile coordinates
 TilemapGetWorld2Tile :: proc(tilemap: ^Tilemap, world_pos:vec2i)->vec2i{
-    x:int = world_pos.x - tilemap.position.x
-    y:int = world_pos.y - tilemap.position.y
+    x:i32 = world_pos.x - tilemap.position.x
+    y:i32 = world_pos.y - tilemap.position.y
     if (x < 0){
         x -= tilemap.tile_size.x
     }
@@ -146,14 +146,14 @@ TilemapGetWorld2Tile :: proc(tilemap: ^Tilemap, world_pos:vec2i)->vec2i{
 
 // Translate tile coordinates to world coordinates
 TilemapGetTile2World :: proc(tilemap: ^Tilemap, tile_pos:vec2i)->vec2i {
-    x:int = tile_pos.x * tilemap.tile_size.x + tilemap.position.x
-    y:int = tile_pos.y * tilemap.tile_size.y + tilemap.position.y
+    x:i32 = tile_pos.x * tilemap.tile_size.x + tilemap.position.x
+    y:i32 = tile_pos.y * tilemap.tile_size.y + tilemap.position.y
     result:vec2i = {x, y}
     return result
 }
 
 // Fills TileID in region
-TilemapSetTileIdBlock :: proc(tilemap: ^Tilemap, left_x:int, top_y:int, columns:int, rows:int, tile_id:TileID){
+TilemapSetTileIdBlock :: proc(tilemap: ^Tilemap, left_x:i32, top_y:i32, columns:i32, rows:i32, tile_id:TileID){
     if (tile_id == TILE_INVALID) {
         return
     }
@@ -170,7 +170,7 @@ TilemapSetTileIdBlock :: proc(tilemap: ^Tilemap, left_x:int, top_y:int, columns:
 
     for y in from.y..< to.y {
         for x in from.x..< to.x {
-            i:int = x + y * tilemap.size.x
+            i:i32 = x + y * tilemap.size.x
             tilemap.grid[i] = tile_id
         }
     }
@@ -180,7 +180,7 @@ TilemapSetTileIdBlock :: proc(tilemap: ^Tilemap, left_x:int, top_y:int, columns:
 // Requires a temporary buffer to hold used rectangle
 TilemapResize :: proc(tilemap: ^Tilemap, relative_rect:recti, temp_buffer:[]TileID){
     used_rect:recti = TilemapGetUsedRecti(tilemap)
-    assert(len(temp_buffer) >= used_rect.w * used_rect.h)
+    assert(cast(i32)len(temp_buffer) >= used_rect.w * used_rect.h)
 
     TilemapGetRegionData(tilemap, used_rect, temp_buffer)
     // TODO: assert that current tilemap.grid is big enough for the new size
@@ -199,7 +199,7 @@ TilemapResize :: proc(tilemap: ^Tilemap, relative_rect:recti, temp_buffer:[]Tile
 // Copy TileID from region and place as 1D array in out_buffer
 TilemapGetRegionData :: proc(tilemap: ^Tilemap, rect_section:recti, out_buffer:[]TileID){
     rect:recti = rect_section
-    buffer_len: = len(out_buffer)
+    buffer_len: = cast(i32)len(out_buffer)
     assert(rect.w * rect.h <= buffer_len)
     assert(rect.x >= 0)
     assert(rect.y >= 0)
@@ -224,20 +224,20 @@ TilemapSetRegionData :: proc(tilemap: ^Tilemap, rect_section:recti, in_buffer:[]
     if (rect.x > tilemap.size.x - 1){return}
     if (rect.y > tilemap.size.y - 1){return}
 
-    right:int = rect.x + rect.w
+    right:i32 = rect.x + rect.w
     if (right - 1 < 0){return}
-    bottom:int = rect.y + rect.h
+    bottom:i32 = rect.y + rect.h
     if (bottom - 1 < 0){return}
 
-    tile_x:int = rect.x >= 0 ? rect.x : 0
-    tile_y:int = rect.y >= 0 ? rect.y : 0
-    tile_r:int = right < tilemap.size.x ? right : tilemap.size.x
-    tile_b:int = bottom < tilemap.size.y ? bottom : tilemap.size.y
+    tile_x:i32 = rect.x >= 0 ? rect.x : 0
+    tile_y:i32 = rect.y >= 0 ? rect.y : 0
+    tile_r:i32 = right < tilemap.size.x ? right : tilemap.size.x
+    tile_b:i32 = bottom < tilemap.size.y ? bottom : tilemap.size.y
 
-    for y:int = tile_y; y < tile_b; y += 1 {
-        diff_y:int = y - rect.y
-        for x:int = tile_x; x < tile_r; x += 1 {
-            diff_x:int = x - rect.x
+    for y:i32 = tile_y; y < tile_b; y += 1 {
+        diff_y:i32 = y - rect.y
+        for x:i32 = tile_x; x < tile_r; x += 1 {
+            diff_x:i32 = x - rect.x
             data_i:u32 = cast(u32)(diff_x + diff_y * rect.w)
             value:TileID = in_buffer[data_i]
             if ((value == TILE_EMPTY) && !write_empty){

@@ -159,9 +159,9 @@ create_tiles :: proc(){
 
 	// Calculate actual tiles
 	// for each tile in texture generate atlas position and assign ID to Tile
-	for i:int = 0; i < (ATLAS_SIZE.x * ATLAS_SIZE.y); i += 1{
-		x:int = i % ATLAS_SIZE.x
-		y:int = i / ATLAS_SIZE.x
+	for i:i32 = 0; i < (ATLAS_SIZE.x * ATLAS_SIZE.y); i += 1{
+		x:i32 = i % ATLAS_SIZE.x
+		y:i32 = i / ATLAS_SIZE.x
 		tex_pos = {
 			cast(f32)(x * TILE_SIZE.x),
 			cast(f32)(y * TILE_SIZE.y),

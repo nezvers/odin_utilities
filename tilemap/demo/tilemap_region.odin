@@ -16,7 +16,7 @@ state_region:State = {
 
 draw::proc(){
 	mouse_position:Vector2 = rl.GetMousePosition()
-	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
+	mouse_position_i:vec2i = {cast(i32)mouse_position.x, cast(i32)mouse_position.y}
 	// Translate position to tile coordinates
 	tile_position:vec2i = tm.TilemapGetWorld2Tile(&tilemap, mouse_position_i)
 	region:recti = {tile_position.x - 5, tile_position.y - 4, 5, 4}

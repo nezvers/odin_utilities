@@ -159,8 +159,8 @@ init::proc(){
     // Init group tilemap
     tile_id:TileID
     tile_pos:vec2i
-    for y:int = 0; y < MAP_SIZE.y; y += 1 {
-        for x:int = 0; x < MAP_SIZE.x; x += 1 {
+    for y:i32 = 0; y < MAP_SIZE.y; y += 1 {
+        for x:i32 = 0; x < MAP_SIZE.x; x += 1 {
             tile_pos = {x, y}
             tile_id = tm.TilemapGetTile(&tilemap, tile_pos)
             if tile_id == TILE_EMPTY {

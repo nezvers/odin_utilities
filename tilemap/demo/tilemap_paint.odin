@@ -18,7 +18,7 @@ draw::proc(){
 	@(static) tile_id:TileID = TILE_EMPTY
 	@(static) position_state:vec2i
 	mouse_position:Vector2 = rl.GetMousePosition()
-	mouse_position_i:vec2i = {cast(int)mouse_position.x, cast(int)mouse_position.y}
+	mouse_position_i:vec2i = {cast(i32)mouse_position.x, cast(i32)mouse_position.y}
 
 	input_paint:InputState = tm.GetInputState(
 		rl.IsMouseButtonPressed(rl.MouseButton.LEFT), 
@@ -33,13 +33,13 @@ draw::proc(){
 	
 	if mouse_id != TILE_INVALID {
 		// Active while inside tilemap
-		wheel:int = cast(int)rl.GetMouseWheelMove()
-		max_tiles:int = (ATLAS_SIZE.x * ATLAS_SIZE.y + 1)
+		wheel:i32 = cast(i32)rl.GetMouseWheelMove()
+		max_tiles:TileID = cast(TileID)(ATLAS_SIZE.x * ATLAS_SIZE.y + 1)
 		if wheel > 0 {
-			tile_id = cast(TileID)((cast(int)tile_id + 1) % max_tiles)
+			tile_id = ((tile_id + 1) % max_tiles)
 		}
 		if wheel < 0 {
-			tile_id = cast(TileID)((cast(int)tile_id - 1 + max_tiles) % max_tiles)
+			tile_id = ((tile_id - 1 + max_tiles) % max_tiles)
 		}
 		
 		if rl.IsMouseButtonPressed(rl.MouseButton.RIGHT){
