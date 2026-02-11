@@ -1,7 +1,7 @@
 # odin_utilities
  Collection of Odin utility libraries for game and app development.    
  Libraries are bite sized and data only and avoiding allocations if possible.    
- Each one comes with demo example and if needed implementations with Raylib.    
+ Each one comes with demo example and if needed glue code at least for Raylib.    
 
 - ✅ App state `odin run app_state/demo`
 - ✅ FABRIK IK `odin run fabrik/demo`
