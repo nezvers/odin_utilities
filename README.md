@@ -13,6 +13,7 @@
 - ✅ Sound Effect `odin run sound_effects/demo -out:sound_effects/demo.exe`
 - ✅ Particles `odin run particles/demo -out:particles/demo.exe`
 - ✅ Task `odin run task/demo -out:task/demo.exe`
+    - Call process with arguments
     - Download file
     - Extract TAR & ZIP
     - Clone git repository
