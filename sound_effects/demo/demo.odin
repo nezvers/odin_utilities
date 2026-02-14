@@ -34,8 +34,8 @@ damage_sfx:sf.SoundEffect = {
 game_init :: proc() {
     rl.InitAudioDevice()
 
-    button_sound = rl.LoadSound("demo/button_sound.wav")
-    damage_sound = rl.LoadSound("demo/damage_sound.wav")
+    button_sound = rl.LoadSound("../assets/sounds/button_sound.wav")
+    damage_sound = rl.LoadSound("../assets/sounds/damage_sound.wav")
 
     // Apply volume setting
     rs.Init(&button_sfx, &button_sound)

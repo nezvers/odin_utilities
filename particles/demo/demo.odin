@@ -25,7 +25,7 @@ screen_size:Vector2
 game_init :: proc() {
     screen_size = { cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight() }
 
-    particle_texture = rl.LoadTexture("demo/dust_4_strip.png")
+    particle_texture = rl.LoadTexture("../assets/textures/dust_4_strip.png")
     for i:int = 0; i < len(dust_particles); i += 1 {
         SpawnDustParticle(&dust_particles[i])
     }

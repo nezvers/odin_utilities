@@ -89,6 +89,7 @@ screen_size:Vector2
 is_hovering_buttons:bool
 
 game_init :: proc() {
+	tileset_texture = rl.LoadTexture("../assets/textures/tileset_template.png")
 	create_tiles()
 	create_tilemap()
 
@@ -141,7 +142,6 @@ draw :: proc() {
 }
 
 create_tiles :: proc(){
-	tileset_texture = rl.LoadTexture("demo/tileset_template.png")
 	tile_size:Vector2 = {cast(f32)TILE_SIZE.x, cast(f32)TILE_SIZE.y}
 	tm.TileAtlasInit(&tile_atlas, tile_size, atlas_buffer[:])
 	

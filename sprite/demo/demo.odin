@@ -43,7 +43,7 @@ player_sprite:sp.Sprite = {
 }
 
 game_init :: proc() {
-    player_texture = rl.LoadTexture("demo/player_sheet.png")
+    player_texture = rl.LoadTexture("../assets/textures/player_sheet.png")
     sp.ChangeAnimation(&player_sprite.animation_set, cast(u32)PlayerStates.walk)
 }
 
