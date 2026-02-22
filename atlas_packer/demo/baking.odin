@@ -11,6 +11,9 @@ rectf::[4]f32
 import stbrp "vendor:stb/rect_pack"
 stb_Rect:: stbrp.Rect
 
+import "core:unicode/utf8"
+import "core:strings"
+
 @(private="package")
 baking_state :State = {
     init,
@@ -24,6 +27,13 @@ Sprite :: struct {
     size: Vector2,
     tex_pos:[]Vector2,
 }
+
+// The letters to extract from the font
+LETTERS_IN_FONT :: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
+FONT_HEIGHT :: 16
+font:rl.Font
+letter_rects:[]rectf
+letter_cstrings:[]cstring
 
 // Used as dynamic atlas
 render_texture:rl.RenderTexture
@@ -75,24 +85,63 @@ pack_rectangles :: proc(rc: ^stbrp.Context, rect_list:[]rectf)->(ok:bool) {
         tex_pos:[2]f32 = {cast(f32)rect.x, cast(f32)rect.y}
         rect_list[id].xy = tex_pos
     }
-    return
+    return true
 }
 
-init :: proc(){
-    reset_atlas()
-    player_texture = rl.LoadTexture("../assets/textures/player_sheet.png")
+prepare_sprite_rects :: proc() {
     // set size for packed rectangles
     player_sprite_packed = make_slice([]rectf, len(player_sprite_source))
     for i:int = 0; i < len(player_sprite_source); i += 1 {
         player_sprite_packed[i].zw = player_sprite_source[i].zw
     }
+}
+
+prepare_font_rects :: proc() {
+    // Collect rectangles for letters
+    letters:[]rune = utf8.string_to_runes(LETTERS_IN_FONT)
+    defer delete(letters)
+    letter_strings:[]string = make_slice([]string, len(letters))
+    defer delete(letter_strings)
+    // Raylib works with cstrings
+    letter_cstrings = make_slice([]cstring, len(letters))
+    letter_rects = make_slice([]rectf, len(letters))
+
+    for i:int = 0; i < len(letters); i += 1 {
+        letter_strings[i] = utf8.runes_to_string(letters[i:i+1])
+        letter_cstrings[i] = strings.clone_to_cstring(letter_strings[i])
+
+        cs:cstring = letter_cstrings[i]
+        size:Vector2 = rl.MeasureTextEx(font, cs, FONT_HEIGHT, 0)
+        letter_rects[i].zw = size
+    }
+    // delete each entry at the end
+    defer {
+        for i:int = 0; i < len(letters); i += 1 {
+            delete(letter_strings[i])
+        }
+    }
+}
+
+init :: proc(){
+    reset_atlas()
+    player_texture = rl.LoadTexture("../assets/textures/player_sheet.png")
+    font = rl.LoadFont("../assets/fonts/font.ttf")
+
+    prepare_sprite_rects()
+    prepare_font_rects()
 
     // Init packer
     rc: stbrp.Context
     rc_nodes: [ATLAS_SIZE.x]stbrp.Node
     stbrp.init_target(&rc, ATLAS_SIZE.x, ATLAS_SIZE.x, raw_data(rc_nodes[:]), ATLAS_SIZE.x)
 
-    pack_rectangles(&rc, player_sprite_packed[:])
+    // Optimally pack everything in one go
+    if !pack_rectangles(&rc, player_sprite_packed[:]) {
+        assert(false, "Failed packing")
+    }
+    if !pack_rectangles(&rc, letter_rects[:]) {
+        assert(false, "Failed packing")
+    }
 
     // Raylib's render texture is flipped vertically
     // Use temporary first then draw it on target render texture
@@ -102,12 +151,16 @@ init :: proc(){
     // Draw sprite tiles to render target
     rl.BeginTextureMode(temp_render_texture)
     // Render player sprites on generated atlas
-    source_rect:rectf
     for i:int = 0; i < len(player_sprite_source); i += 1 {
-        source_rect = player_sprite_source[i]
+        source_rect:rectf = player_sprite_source[i]
         dest_pos:Vector2 = player_sprite_packed[i].xy
         rl.DrawTextureRec(player_texture, transmute(Rectangle)source_rect, dest_pos, rl.WHITE)
     }
+
+    for i:int = 0; i < len(letter_rects); i += 1 {
+        rl.DrawTextEx(font, letter_cstrings[i], letter_rects[i].xy, FONT_HEIGHT, 0, rl.WHITE)
+    }
+
     rl.EndTextureMode()
 
     // Transfer to target render_texture to flip it correclty
@@ -119,7 +172,14 @@ init :: proc(){
 finit :: proc() {
 	rl.UnloadRenderTexture(render_texture)
     rl.UnloadTexture(player_texture)
+    rl.UnloadFont(font)
+    
     delete(player_sprite_packed)
+    delete(letter_rects)
+    for i:int = 0; i < len(letter_cstrings); i += 1 {
+        delete (letter_cstrings[i])
+    }
+    delete(letter_cstrings)
 }
 
 draw :: proc(){
@@ -128,6 +188,7 @@ draw :: proc(){
     dest_rect:Rectangle = {10, 10, rect.width, rect.height}
 
     rl.DrawRectangleLinesEx(rect, 1, rl.BLACK)
+    rl.DrawRectangleRec(rect, rl.LIGHTGRAY)
     rl.DrawTexturePro(render_texture.texture, source_rect, dest_rect, {0,0}, 0.0, rl.WHITE)
 
     // Test player tex_pos
