@@ -6,6 +6,7 @@ import rl "vendor:raylib"
 Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
 vec2i::[2]i32
+rectf::[4]f32
 
 import stbrp "vendor:stb/rect_pack"
 stb_Rect:: stbrp.Rect
@@ -28,52 +29,70 @@ Sprite :: struct {
 render_texture:rl.RenderTexture
 player_texture: rl.Texture2D
 // Holds data about source texture
-player_sprite_source:Sprite = {{16,16}, {{0,0}, {16,0}, {32,0}, {48,0}, {64,0}, {80,0}, {96,0}}}
+player_sprite_source:[]rectf = {
+    {0, 0,16,16},
+    {16,0,16,16},
+    {32,0,16,16},
+    {48,0,16,16},
+    {64,0,16,16},
+    {80,0,16,16},
+    {96,0,16,16},
+}
 // Holds data about generated atlas texture, assigned to spawned instances
-player_tex_pos:[]Vector2
-player_sprite_instance:Sprite
+player_sprite_packed:[]rectf
+
 
 reset_atlas :: proc() {
 	rl.UnloadRenderTexture(render_texture)
 	render_texture = rl.LoadRenderTexture(ATLAS_SIZE.x, ATLAS_SIZE.y)
 }
 
+pack_rectangles :: proc(rc: ^stbrp.Context, rect_list:[]rectf)->(ok:bool) {
+    // Prepare rectangle list for packing
+    pack_rects:[dynamic]stb_Rect
+    defer delete(pack_rects)
+
+    for i:int = 0; i < len(rect_list); i += 1 {
+        rect:rectf = rect_list[i]
+        append(&pack_rects, stb_Rect {
+            id = cast(i32)i,
+            w = stbrp.Coord(rect.z),
+            h = stbrp.Coord(rect.w),
+        })
+    }
+
+    // Packing
+    rect_pack_res := stbrp.pack_rects(rc, raw_data(pack_rects), i32(len(pack_rects)))
+    if rect_pack_res != 1 {
+        fmt.printf("Failed packing \n")
+        return false
+    }
+
+    // Read packed positions
+    for i:int = 0; i < len(pack_rects); i += 1 {
+        rect:^stb_Rect = &pack_rects[i]
+        id:i32 = rect.id
+        tex_pos:[2]f32 = {cast(f32)rect.x, cast(f32)rect.y}
+        rect_list[id].xy = tex_pos
+    }
+    return
+}
+
 init :: proc(){
     reset_atlas()
     player_texture = rl.LoadTexture("../assets/textures/player_sheet.png")
-    player_tex_pos = make_slice([]Vector2, len(player_sprite_source.tex_pos))
-    // Spawned instance
-    player_sprite_instance.tex_pos = player_tex_pos
+    // set size for packed rectangles
+    player_sprite_packed = make_slice([]rectf, len(player_sprite_source))
+    for i:int = 0; i < len(player_sprite_source); i += 1 {
+        player_sprite_packed[i].zw = player_sprite_source[i].zw
+    }
 
     // Init packer
     rc: stbrp.Context
     rc_nodes: [ATLAS_SIZE.x]stbrp.Node
     stbrp.init_target(&rc, ATLAS_SIZE.x, ATLAS_SIZE.x, raw_data(rc_nodes[:]), ATLAS_SIZE.x)
 
-    // Prepare rectangle list for packing
-    pack_rects:[dynamic]stb_Rect
-    for i:int = 0; i < len(player_sprite_source.tex_pos); i += 1 {
-        append(&pack_rects, stb_Rect {
-            id = cast(i32)i,
-            w = stbrp.Coord(player_sprite_source.size.x),
-            h = stbrp.Coord(player_sprite_source.size.y),
-        })
-    }
-
-    // Packing
-    rect_pack_res := stbrp.pack_rects(&rc, raw_data(pack_rects), i32(len(pack_rects)))
-    if rect_pack_res != 1 {
-        fmt.printf("Failed packing \n")
-        return
-    }
-
-    // Update positions on generated atlas
-    for i:int = 0; i < len(pack_rects); i += 1 {
-        rect:^stb_Rect = &pack_rects[i]
-        id:i32 = rect.id
-        tex_pos:Vector2 = {cast(f32)rect.x, cast(f32)rect.y}
-        player_tex_pos[id] = tex_pos
-    }
+    pack_rectangles(&rc, player_sprite_packed[:])
 
     // Raylib's render texture is flipped vertically
     // Use temporary first then draw it on target render texture
@@ -82,16 +101,13 @@ init :: proc(){
 
     // Draw sprite tiles to render target
     rl.BeginTextureMode(temp_render_texture)
-    
     // Render player sprites on generated atlas
-    source_rect:[4]f32 = {0,0, player_sprite_source.size.x, player_sprite_source.size.y}
-    for i:int = 0; i < len(player_sprite_source.tex_pos); i += 1 {
-        source_rect.xy = player_sprite_source.tex_pos[i].xy
-
-        dest_pos:Vector2 = player_tex_pos[i]
+    source_rect:rectf
+    for i:int = 0; i < len(player_sprite_source); i += 1 {
+        source_rect = player_sprite_source[i]
+        dest_pos:Vector2 = player_sprite_packed[i].xy
         rl.DrawTextureRec(player_texture, transmute(Rectangle)source_rect, dest_pos, rl.WHITE)
     }
-
     rl.EndTextureMode()
 
     // Transfer to target render_texture to flip it correclty
@@ -103,7 +119,7 @@ init :: proc(){
 finit :: proc() {
 	rl.UnloadRenderTexture(render_texture)
     rl.UnloadTexture(player_texture)
-    delete(player_tex_pos)
+    delete(player_sprite_packed)
 }
 
 draw :: proc(){
@@ -115,7 +131,8 @@ draw :: proc(){
     rl.DrawTexturePro(render_texture.texture, source_rect, dest_rect, {0,0}, 0.0, rl.WHITE)
 
     // Test player tex_pos
-    rect_player:Rectangle = {player_tex_pos[0].x, player_tex_pos[0].y, player_sprite_source.size.x, player_sprite_source.size.y}
+    // Spawned instance
+    rect_player:Rectangle = transmute(Rectangle)player_sprite_packed[0]
     rl.DrawRectangleLinesEx({530, 10, rect_player.width, rect_player.height}, 1, rl.BLACK)
     rl.DrawTextureRec(render_texture.texture, rect_player, {530, 10}, rl.WHITE)
 }
