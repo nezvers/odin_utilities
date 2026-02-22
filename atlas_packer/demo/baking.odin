@@ -13,6 +13,7 @@ stb_Rect:: stbrp.Rect
 
 import "core:unicode/utf8"
 import "core:strings"
+import "core:slice"
 
 @(private="package")
 baking_state :State = {
@@ -31,7 +32,8 @@ Sprite :: struct {
 // The letters to extract from the font
 LETTERS_IN_FONT :: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
 FONT_HEIGHT :: 16
-font:rl.Font
+font_source:rl.Font
+font_packed:rl.Font
 letter_rects:[]rectf
 letter_cstrings:[]cstring
 
@@ -96,22 +98,62 @@ prepare_sprite_rects :: proc() {
     }
 }
 
-prepare_font_rects :: proc() {
+prepare_font_rects :: proc(font_in:^rl.Font, font_out:^rl.Font) {
+    rune_data :: struct {
+        glyph:rl.GlyphInfo,
+        rect:rectf,
+    }
+    glyph_map:map[rune]rune_data // = make_map(map[rune]rune_data)
+    defer delete(glyph_map)
+    // Cache all glyphs in the source font
+    for i:i32 = 0; i < font_in.glyphCount; i += 1 {
+        glyph:rl.GlyphInfo = font_in.glyphs[i]
+        rect:rectf = transmute(rectf)font_in.recs[i]
+        glyph_map[glyph.value] = {glyph, rect}
+    }
+
     // Collect rectangles for letters
     letters:[]rune = utf8.string_to_runes(LETTERS_IN_FONT)
     defer delete(letters)
+    letter_rects = make([]rectf, len(letters))
+    glyphs := make([]rl.GlyphInfo, len(letter_rects))
+    
+    for i:int = 0; i < len(letters); i += 1 {
+        value, ok: = glyph_map[letters[i]]
+        if !ok {
+            continue
+        }
+        glyphs[i] = {
+            value = value.glyph.value,
+            offsetX = value.glyph.offsetX,
+            offsetY = value.glyph.offsetY,
+            advanceX = value.glyph.advanceX,
+        }
+        letter_rects[i] = value.rect
+    }
+
+    font_out^ = {
+        baseSize = font_source.baseSize,
+        glyphCount = i32(len(glyphs)),
+		glyphPadding = 0,
+		texture = render_texture.texture,
+		recs = raw_data(transmute([]Rectangle)letter_rects),
+		glyphs = raw_data(glyphs),
+    }
+
+
+
     letter_strings:[]string = make_slice([]string, len(letters))
     defer delete(letter_strings)
     // Raylib works with cstrings
     letter_cstrings = make_slice([]cstring, len(letters))
-    letter_rects = make_slice([]rectf, len(letters))
 
     for i:int = 0; i < len(letters); i += 1 {
         letter_strings[i] = utf8.runes_to_string(letters[i:i+1])
         letter_cstrings[i] = strings.clone_to_cstring(letter_strings[i])
 
         cs:cstring = letter_cstrings[i]
-        size:Vector2 = rl.MeasureTextEx(font, cs, FONT_HEIGHT, 0)
+        size:Vector2 = rl.MeasureTextEx(font_in^, cs, cast(f32)font_in.baseSize, 0)
         letter_rects[i].zw = size
     }
     // delete each entry at the end
@@ -125,10 +167,10 @@ prepare_font_rects :: proc() {
 init :: proc(){
     reset_atlas()
     player_texture = rl.LoadTexture("../assets/textures/player_sheet.png")
-    font = rl.LoadFont("../assets/fonts/font.ttf")
+    font_source = rl.LoadFont("../assets/fonts/font.ttf")
 
     prepare_sprite_rects()
-    prepare_font_rects()
+    prepare_font_rects(&font_source, &font_packed)
 
     // Init packer
     rc: stbrp.Context
@@ -158,7 +200,7 @@ init :: proc(){
     }
 
     for i:int = 0; i < len(letter_rects); i += 1 {
-        rl.DrawTextEx(font, letter_cstrings[i], letter_rects[i].xy, FONT_HEIGHT, 0, rl.WHITE)
+        rl.DrawTextEx(font_source, letter_cstrings[i], letter_rects[i].xy, cast(f32)font_source.baseSize, 0, rl.WHITE)
     }
 
     rl.EndTextureMode()
@@ -172,12 +214,13 @@ init :: proc(){
 finit :: proc() {
 	rl.UnloadRenderTexture(render_texture)
     rl.UnloadTexture(player_texture)
-    rl.UnloadFont(font)
+    rl.UnloadFont(font_source)
     
     delete(player_sprite_packed)
     delete(letter_rects)
+    delete(slice.from_ptr(font_packed.glyphs, int(font_packed.glyphCount)))
     for i:int = 0; i < len(letter_cstrings); i += 1 {
-        delete (letter_cstrings[i])
+        delete(letter_cstrings[i])
     }
     delete(letter_cstrings)
 }
