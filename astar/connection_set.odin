@@ -1,10 +1,9 @@
 package astar
 
 Connection2D :: struct{
-	from:vec2i, // top-left
+	from:vec2i,
 	to:vec2i,
 }
-// Set of each connection once as keys
 ConnectionSet2D :: map[Connection2D]struct{}
 
 CreateConnectionSet2D :: proc(nodes:[]Node)->(connections:ConnectionSet2D) {

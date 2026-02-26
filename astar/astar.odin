@@ -7,13 +7,10 @@ package astar
 
 vec2i :: [2]int
 
-Position :: struct {
-    pos:vec2i,
-    cost:int, // additional cost of traversing, but 0 is not traversal (excluded from neighbour list)
-}
 
 Node :: struct {
-    using position : Position,
+    pos:vec2i,
+    weight:int, // additional cost of traversing, but 0 is not traversal (excluded from neighbour list)
     neighbours:[]^Node,
 }
 
@@ -33,6 +30,6 @@ DistanceCostSquared :: proc(from:^vec2i, to:^vec2i)->int{
     return x * x + y * y
 }
 
-PathPositionSort :: proc(a,b:PathPosition)->bool{
-    return a.distance < b.distance
+NodeCostLess :: proc(a:^Node, b:^Node, target:^vec2i)->bool{
+    return a.weight + DistanceCost(&a.pos, target) < b.weight + DistanceCost(&b.pos, target)
 }
