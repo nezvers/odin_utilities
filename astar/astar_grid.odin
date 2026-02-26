@@ -8,7 +8,13 @@ PathPosition :: struct {
 	node: ^Node,
 }
 
-InitGridNeighbours :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node)->(count:int) {
+GridGraph :: struct {
+	size:vec2i,
+	nodes:[]Node,
+	neighbour_buffer:[]^Node,
+}
+
+CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node)->GridGraph {
 	assert(len(nodes) >= (grid_size.x * grid_size.y))
 	assert(len(neighbour_buffer) >= (grid_size.x * grid_size.y * 4))
 
@@ -62,6 +68,11 @@ InitGridNeighbours :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^No
 			from += neigbour_count
 		}
 	}
-	count = from
-	return
+
+	graph:GridGraph = {
+		size = grid_size,
+		nodes = nodes,
+		neighbour_buffer = neighbour_buffer[:from],
+	}
+	return graph
 }
