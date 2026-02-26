@@ -31,10 +31,10 @@ grid_map: [GRID_LEN]int = {
 	1, 1, 1, 1, 0, 1,
 }
 // Astar grid
+grid_graph: astar.GridGraph
 grid_nodes:[GRID_LEN]Node
-
 neighbour_buffer:[NEIGHBOUR_SIZE]^Node
-neighbour_count:int
+
 neighbour_connections: astar.ConnectionSet2D
 
 load_map :: proc(map_cost:[]int) {
@@ -55,7 +55,7 @@ load_map :: proc(map_cost:[]int) {
 
 init :: proc() {
 	load_map(grid_map[:])
-	neighbour_count = astar.InitGridNeighbours(GRID_SIZE, grid_nodes[:], neighbour_buffer[:])
+	grid_graph = astar.CreateGridGraph(GRID_SIZE, grid_nodes[:], neighbour_buffer[:])
 	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
 }
 

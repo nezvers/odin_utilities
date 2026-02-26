@@ -7,10 +7,13 @@ package astar
 
 vec2i :: [2]int
 
-
-Node :: struct {
+Position :: struct {
     pos:vec2i,
     cost:int, // additional cost of traversing, but 0 is not traversal (excluded from neighbour list)
+}
+
+Node :: struct {
+    using position : Position,
     neighbours:[]^Node,
 }
 
