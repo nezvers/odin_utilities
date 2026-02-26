@@ -2,6 +2,11 @@ package astar
 
 // import pq "core:container/priority_queue"
 
+PathPosition :: struct {
+	index: int,
+	cost: int, // cumulative from start position
+	node: ^Node,
+}
 
 InitGridNeighbours :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node)->(count:int) {
 	assert(len(nodes) >= (grid_size.x * grid_size.y))
@@ -11,7 +16,7 @@ InitGridNeighbours :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^No
 	for y:int = 0; y < grid_size.y; y += 1 {
 		for x:int = 0; x < grid_size.x; x += 1 {
 			node:^Node = &nodes[x + y * grid_size.x]
-			if node.weight == 0 {
+			if node.cost == 0 {
 				// Skip solid
 				continue
 			}
@@ -20,7 +25,7 @@ InitGridNeighbours :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^No
 			// LEFT
 			if x > 0 {
 				left:^Node = &nodes[(x - 1) + y * grid_size.x]
-				if left.weight > 0 {
+				if left.cost > 0 {
 					neighbour_buffer[from + neigbour_count] = left
 					neigbour_count += 1
 				}
@@ -28,7 +33,7 @@ InitGridNeighbours :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^No
 			// UP
 			if y > 0 {
 				up:^Node = &nodes[x + (y - 1) * grid_size.x]
-				if up.weight > 0 {
+				if up.cost > 0 {
 					neighbour_buffer[from + neigbour_count] = up
 					neigbour_count += 1
 				}
@@ -36,7 +41,7 @@ InitGridNeighbours :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^No
 			// RIGHT
 			if x < (grid_size.x - 1) {
 				right:^Node = &nodes[(x + 1) + y * grid_size.x]
-				if right.weight > 0 {
+				if right.cost > 0 {
 					neighbour_buffer[from + neigbour_count] = right
 					neigbour_count += 1
 				}
@@ -44,7 +49,7 @@ InitGridNeighbours :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^No
 			// DOWN
 			if y < (grid_size.y - 1) {
 				down:^Node = &nodes[x + (y + 1) * grid_size.x]
-				if down.weight > 0 {
+				if down.cost > 0 {
 					neighbour_buffer[from + neigbour_count] = down
 					neigbour_count += 1
 				}

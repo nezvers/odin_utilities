@@ -46,7 +46,7 @@ load_map :: proc(map_cost:[]int) {
 			cost:int = grid_map[index]
 			grid_nodes[index] = {
 				pos = {x, y},
-				weight = cost,
+				cost = cost,
 				neighbours = {}, // will be set in astar.InitGridNeighbours
 			}
 		}
@@ -86,7 +86,7 @@ draw_node :: proc(node:^Node, rect:Rectangle) {
 	r := rect
 	r.y = rect.y + r.height * cast(f32)node.pos.y
 	r.x = rect.x + r.width * cast(f32)node.pos.x
-	rl.DrawRectangleRec(r, node.weight == 0 ? rl.DARKGRAY : rl.GREEN)
+	rl.DrawRectangleRec(r, node.cost == 0 ? rl.DARKGRAY : rl.GREEN)
 }
 
 draw_neighbour_connection :: proc(node:^Node, rect:Rectangle) {
