@@ -1,0 +1,32 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        // Windows configs (only difference from linux/mac is "type" and "program")
+        {
+            "type": "cppvsdbg",
+            "request": "launch",
+            "preLaunchTask": "Build Debug",
+            "name": "Run Debug",
+            "program": "${workspaceFolder}/demo.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "linux" : {
+                "type": "lldb",
+                "program": "${workspaceFolder}/demo.bin"
+            }
+        },
+        {
+            "type": "cppvsdbg",
+            "request": "launch",
+            "preLaunchTask": "Build Release",
+            "name": "Run Release",
+            "program": "${workspaceFolder}/demo.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "linux" : {
+                "type": "lldb",
+                "program": "${workspaceFolder}/demo.bin"
+            }
+        },
+    ]
+}
