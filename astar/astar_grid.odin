@@ -3,7 +3,8 @@ package astar
 import pq "core:container/priority_queue"
 
 PathPosition :: struct {
-	distance: int, // cumulative from start position
+	distance: int, // to target
+	index: int, // path index
 	node: ^Node,
 	previous: ^Node,
 }
@@ -82,8 +83,8 @@ CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node,
 }
 
 SolveGrid :: proc(graph:GridGraph, from:vec2i, to:vec2i)->(history:map[^Node]PathPosition, current_node:^Node, ok:bool) {
-	start_node, current_ok: = graph.map_nodes[from]
-	if !current_ok {
+	start_node, start_ok: = graph.map_nodes[from]
+	if !start_ok {
 		return
 	}
 	target_pos:vec2i = to
@@ -97,7 +98,7 @@ SolveGrid :: proc(graph:GridGraph, from:vec2i, to:vec2i)->(history:map[^Node]Pat
 	defer pq.destroy(&queue)
 	
 	current_node = start_node
-	current_position: PathPosition = {0, current_node, nil}
+	current_position: PathPosition = {0, 0, current_node, nil}
 	pq.push(&queue, current_position)
 	
 	history[current_node] = current_position
@@ -114,7 +115,8 @@ SolveGrid :: proc(graph:GridGraph, from:vec2i, to:vec2i)->(history:map[^Node]Pat
 			is_used: = next_node in history
 			if is_used { continue }
 			next: = PathPosition{
-				distance = DistanceCostSquared(&current_node.pos, &target_pos) + next_node.cost,
+				distance = DistanceCost(&current_node.pos, &target_pos),
+				index = current_position.index + 1,
 				node = next_node,
 				previous = current_node,
 			}
