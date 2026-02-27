@@ -1,7 +1,7 @@
 package astar
 
 Connection2D :: struct{
-	from:vec2i,
+	from:vec2i, // top-left
 	to:vec2i,
 }
 // Set of each connection once as keys
