@@ -1,11 +1,11 @@
 package astar
 
-// import pq "core:container/priority_queue"
+import pq "core:container/priority_queue"
 
 PathPosition :: struct {
-	index: int,
-	cost: int, // cumulative from start position
+	distance: int, // cumulative from start position
 	node: ^Node,
+	previous: ^Node,
 }
 
 GridGraph :: struct {
@@ -81,16 +81,47 @@ CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node,
 	return graph
 }
 
-SolveGrid :: proc(graph:GridGraph, from:vec2i, to:vec2i)->bool {
-	current_node, current_ok: = graph.map_nodes[from]
+SolveGrid :: proc(graph:GridGraph, from:vec2i, to:vec2i)->(history:map[^Node]PathPosition, current_node:^Node, ok:bool) {
+	start_node, current_ok: = graph.map_nodes[from]
 	if !current_ok {
-		return false
+		return
 	}
-	target_node, target_ok: = graph.map_nodes[to]
+	target_pos:vec2i = to
+	_, target_ok: = graph.map_nodes[to]
 	if !target_ok {
-		return false
+		return
 	}
-
 	
-	return true
+	queue: pq.Priority_Queue(PathPosition)
+	pq.init(&queue, PathPositionSort, pq.default_swap_proc(PathPosition))
+	defer pq.destroy(&queue)
+	
+	current_node = start_node
+	current_position: PathPosition = {0, current_node, nil}
+	pq.push(&queue, current_position)
+	
+	history[current_node] = current_position
+
+	for pq.len(queue) != 0 {
+		current_position = pq.pop(&queue)
+		current_node = current_position.node
+		if current_node.pos == target_pos {
+			ok = true
+			break 
+		} // success
+		
+		for next_node in current_node.neighbours {
+			is_used: = next_node in history
+			if is_used { continue }
+			next: = PathPosition{
+				distance = DistanceCostSquared(&current_node.pos, &target_pos) + next_node.cost,
+				node = next_node,
+				previous = current_node,
+			}
+			history[next_node] = next
+			pq.push(&queue, next)
+		}
+	}
+	
+	return
 }
