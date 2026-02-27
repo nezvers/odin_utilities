@@ -34,5 +34,5 @@ DistanceCostSquared :: proc(from:^vec2i, to:^vec2i)->int{
 }
 
 PathPositionSort :: proc(a,b:PathPosition)->bool{
-    return a.distance < b.distance
+    return a.distance + a.index < b.distance + b.index
 }

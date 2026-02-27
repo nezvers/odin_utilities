@@ -18,18 +18,18 @@ state_grid:State = {
 	draw,
 }
 
-GRID_SIZE :vec2i: {6,6}
+GRID_SIZE :vec2i: {8,6}
 GRID_LEN :: GRID_SIZE.x * GRID_SIZE.y
 NEIGHBOUR_SIZE :: GRID_LEN * 4
 
 // Game map values. 0 is solid. Higher value is higher cost
 grid_map: [GRID_LEN]int = {
-	1, 1, 1, 1, 1, 1,
-	1, 0, 1, 1, 1, 1,
-	0, 1, 1, 0, 0, 0,
-	1, 1, 0, 1, 1, 1,
-	1, 0, 1, 1, 0, 1,
-	1, 1, 1, 1, 0, 1,
+	1, 1, 1, 0, 1, 0, 1, 1,
+	1, 0, 1, 1, 1, 0, 1, 0,
+	0, 1, 1, 0, 0, 0, 1, 1,
+	1, 1, 0, 1, 1, 1, 0, 1,
+	1, 0, 1, 1, 0, 1, 0, 1,
+	1, 1, 1, 1, 1, 1, 1, 1,
 }
 // Astar grid
 grid_graph: astar.GridGraph
@@ -66,7 +66,7 @@ init :: proc() {
 	grid_graph = astar.CreateGridGraph(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], &map_nodes)
 	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
 
-	path_history, end, path_valid = astar.SolveGrid(grid_graph, {0,1}, {5,5})
+	path_history, end, path_valid = astar.SolveGrid(grid_graph, {0,1}, {7,0})
 }
 
 finit :: proc() {
