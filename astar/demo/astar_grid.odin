@@ -8,6 +8,7 @@ Rectangle :: rl.Rectangle
 import astar ".."
 vec2i :: astar.vec2i
 Node :: astar.Node
+PathPosition :: astar.PathPosition
 
 @(private="package")
 state_grid:State = {
@@ -38,6 +39,10 @@ map_nodes:map[vec2i]^Node
 
 neighbour_connections: astar.ConnectionSet2D
 
+path_history: map[^Node]PathPosition
+end:^Node
+path_valid:bool
+
 load_map :: proc(map_cost:[]int) {
 	assert(len(map_cost) >= (GRID_LEN))
 
@@ -60,6 +65,8 @@ init :: proc() {
 
 	grid_graph = astar.CreateGridGraph(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], &map_nodes)
 	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
+
+	path_history, end, path_valid = astar.SolveGrid(grid_graph, {0,1}, {5,5})
 }
 
 finit :: proc() {
@@ -83,7 +90,8 @@ draw :: proc() {
 	}
 	*/
 
-	draw_connections(neighbour_connections, rect)
+	// draw_connections(neighbour_connections, rect)
+	draw_path_history(path_history, end, rect)
 }
 
 draw_node :: proc(node:^Node, rect:Rectangle) {
@@ -109,6 +117,22 @@ draw_connections :: proc(connections:astar.ConnectionSet2D, rect:Rectangle) {
 	for key in connections {
 		from:Vector2 = {rect.x + rect.width * cast(f32)key.from.x, rect.y + rect.height * cast(f32)key.from.y}
 		to:Vector2 = {rect.x + rect.width * cast(f32)key.to.x, rect.y + rect.height * cast(f32)key.to.y}
+		rl.DrawLineV(from, to, rl.GRAY)
+	}
+}
+
+draw_path_history :: proc(history:map[^Node]PathPosition, last:^Node, rect:Rectangle) {
+	point:vec2i = last.pos
+	path_pos, ok: = history[last]
+	if !ok { return }
+	key: ^Node = path_pos.previous
+	for key != nil {
+		path_pos, ok = history[key]
+		if !ok { break }
+		key = path_pos.previous
+		from:Vector2 = {rect.x + rect.width * cast(f32)point.x, rect.y + rect.height * cast(f32)point.y}
+		point = path_pos.node.pos
+		to:Vector2 = {rect.x + rect.width * cast(f32)point.x, rect.y + rect.height * cast(f32)point.y}
 		rl.DrawLineV(from, to, rl.GRAY)
 	}
 }

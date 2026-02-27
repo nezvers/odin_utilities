@@ -33,6 +33,6 @@ DistanceCostSquared :: proc(from:^vec2i, to:^vec2i)->int{
     return x * x + y * y
 }
 
-NodeCostLess :: proc(a:^Node, b:^Node, target:^vec2i)->bool{
-    return a.cost + DistanceCost(&a.pos, target) < b.cost + DistanceCost(&b.pos, target)
+PathPositionSort :: proc(a,b:PathPosition)->bool{
+    return a.distance < b.distance
 }
