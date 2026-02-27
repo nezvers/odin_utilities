@@ -34,7 +34,7 @@ grid_map: [GRID_LEN]int = {
 grid_graph: astar.GridGraph
 grid_nodes:[GRID_LEN]Node
 neighbour_buffer:[NEIGHBOUR_SIZE]^Node
-valid_buffer:[GRID_LEN]^Node
+map_nodes:map[vec2i]^Node
 
 neighbour_connections: astar.ConnectionSet2D
 
@@ -55,13 +55,16 @@ load_map :: proc(map_cost:[]int) {
 }
 
 init :: proc() {
+	map_nodes = make(map[vec2i]^Node)
 	load_map(grid_map[:])
-	grid_graph = astar.CreateGridGraph(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], valid_buffer[:])
+
+	grid_graph = astar.CreateGridGraph(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], &map_nodes)
 	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
 }
 
 finit :: proc() {
 	delete(neighbour_connections)
+	delete(map_nodes)
 }
 
 update :: proc(){}
