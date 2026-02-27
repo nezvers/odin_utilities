@@ -12,12 +12,14 @@ GridGraph :: struct {
 	size:vec2i,
 	nodes:[]Node,
 	neighbour_buffer:[]^Node,
+	valid_nodes:[]^Node,	// unique Nodes that have neighbours
 }
 
-CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node)->GridGraph {
+CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node, valid_buffer:[]^Node)->GridGraph {
 	assert(len(nodes) >= (grid_size.x * grid_size.y))
 	assert(len(neighbour_buffer) >= (grid_size.x * grid_size.y * 4))
 
+	valid_index:int = 0
 	from:int = 0
 	for y:int = 0; y < grid_size.y; y += 1 {
 		for x:int = 0; x < grid_size.x; x += 1 {
@@ -66,6 +68,10 @@ CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node)
 
 			node.neighbours = neighbour_buffer[from:(from + neigbour_count)]
 			from += neigbour_count
+
+			assert(len(valid_buffer) > valid_index)
+			valid_buffer[valid_index] = node
+			valid_index += 1
 		}
 	}
 
@@ -73,6 +79,9 @@ CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node)
 		size = grid_size,
 		nodes = nodes,
 		neighbour_buffer = neighbour_buffer[:from],
+		valid_nodes = valid_buffer[:valid_index],
 	}
 	return graph
 }
+
+SolveGrid :: proc(graph:GridGraph, )
