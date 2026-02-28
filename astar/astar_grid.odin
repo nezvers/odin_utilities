@@ -2,20 +2,14 @@ package astar
 
 import pq "core:container/priority_queue"
 
-PathPosition :: struct {
-	distance: int, // to target
-	index: int, // path index
-	node: ^Node,
-	previous: ^Node,
-}
-
 GridGraph :: struct {
-	size:vec2i,
-	nodes:[]Node,
-	neighbour_buffer:[]^Node,
-	map_nodes:map[vec2i]^Node,	// unique Nodes that have neighbours
+	size:vec2i,					// Grid size, x - width, y - height
+	nodes:[]Node,				// Slice of every position on grid, including non-walkable
+	neighbour_buffer:[]^Node,	// Buffer holding all neighbour pointers and dstributed to Nodes
+	map_nodes:map[vec2i]^Node,	// Hash map of unique Node pointers that have neighbours, meaning all walkable
 }
 
+// TODO: modes (Manhattan - 4 way, Euclidean - 8 way)
 CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node, map_nodes:^map[vec2i]^Node)->GridGraph {
 	assert(len(nodes) >= (grid_size.x * grid_size.y))
 	assert(len(neighbour_buffer) >= (grid_size.x * grid_size.y * 4))
@@ -94,29 +88,39 @@ SolveGrid :: proc(graph:GridGraph, from:vec2i, to:vec2i)->(history:map[^Node]Pat
 	}
 	
 	queue: pq.Priority_Queue(PathPosition)
+	// Init with sorting comparison PathPositionSort
 	pq.init(&queue, PathPositionSort, pq.default_swap_proc(PathPosition))
 	defer pq.destroy(&queue)
 	
-	current_node = start_node
-	current_position: PathPosition = {0, 0, current_node, nil}
-	pq.push(&queue, current_position)
-	
-	history[current_node] = current_position
+	start_position:PathPosition =  {
+		distance   = DistanceCost(&start_node.pos, &target_pos),
+		total_cost = 0,
+		node       = start_node,
+		previous   = nil,
+	}
+	// Initial position
+	pq.push(&queue, start_position)
+	history[start_node] = start_position
 
+	current_position: PathPosition
 	for pq.len(queue) != 0 {
 		current_position = pq.pop(&queue)
 		current_node = current_position.node
 		if current_node.pos == target_pos {
+			// success
 			ok = true
 			break 
-		} // success
+		}
 		
 		for next_node in current_node.neighbours {
-			is_used: = next_node in history
-			if is_used { continue }
+			total_cost: = current_position.total_cost + cast(f32)next_node.cost
+			
+			next_pos, is_used: = history[next_node]
+			if is_used && next_pos.total_cost <= total_cost {continue }
+			
 			next: = PathPosition{
-				distance = DistanceCost(&current_node.pos, &target_pos),
-				index = current_position.index + 1,
+				distance = DistanceCost(&next_node.pos, &target_pos),
+				total_cost = total_cost,
 				node = next_node,
 				previous = current_node,
 			}
