@@ -8,14 +8,15 @@ Position :: struct {
 }
 
 Node :: struct {
-    using position: Position,  // make pos & cost local variables
+    using position: Position,   // make pos & cost local variables
     neighbours:[]^Node,         // slice of Node pointers assigned from neighbour buffer
     // --- runtime (A*) ---
-    g_cost: f32,    // cost from start
-    f_cost: f32,    // g + heuristic
-    previous: ^Node,  // previous node
-    opened: bool,   // in queue
-    closed: bool,   // already processed
+    g_cost: f32,        // cost from start
+    f_cost: f32,        // g + heuristic
+    index: int,         // index from start
+    previous: ^Node,    // previous node
+    opened: bool,       // in queue
+    closed: bool,       // already processed
 }
 
 // Heuristic 1
@@ -34,4 +35,16 @@ DistanceCostSquared :: proc(from:^vec2i, to:^vec2i)->f32{
 
 NodeSort :: proc(a,b:^Node)->bool{
     return a.f_cost < b.f_cost
+}
+
+// Calculate pure path slice
+GetPathSlice :: proc(end: ^Node, buffer: []vec2i)->[]vec2i {
+    assert(len(buffer) >= end.index + 1)
+    result: = buffer[:(end.index + 1)]
+    current: = end
+    for i:int = end.index; i > -1; i -= 1 {
+        result[i] = current.pos
+        current = current.previous
+    }
+    return result
 }

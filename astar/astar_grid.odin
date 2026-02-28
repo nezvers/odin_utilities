@@ -111,6 +111,7 @@ SolveGrid :: proc(
 	start_node.g_cost = 0
 	start_node.f_cost = DistanceCost(&start_node.pos, &target_node.pos)
 	start_node.opened = true
+	start_node.index = 0
 
 	pq.push(&queue, start_node)
 
@@ -136,6 +137,7 @@ SolveGrid :: proc(
 				next.previous = current
 				next.g_cost = tentative_g
 				next.f_cost = tentative_g + DistanceCost(&next.pos, &target_node.pos)
+				next.index = current.index + 1
 
 				if !next.opened {
 					next.opened = true
