@@ -15,6 +15,12 @@ Position :: struct {
 Node :: struct {
     using position : Position,  // make pos & cost local variables
     neighbours:[]^Node,         // slice of Node pointers assigned from neighbour buffer
+    // --- runtime (A*) ---
+    g_cost: f32,    // cost from start
+    f_cost: f32,    // g + heuristic
+    parent: ^Node,  // previous node
+    opened: bool,   // in queue
+    closed: bool,   // already processed
 }
 
 PathPosition :: struct {
@@ -43,4 +49,8 @@ PathPositionSort :: proc(a,b:PathPosition)->bool{
     af := a.total_cost + a.distance
     bf := b.total_cost + b.distance
     return af < bf
+}
+
+NodeSort :: proc(a,b:^Node)->bool{
+    return a.f_cost < b.f_cost
 }

@@ -89,7 +89,12 @@ SolveGrid :: proc(graph:GridGraph, from:vec2i, to:vec2i)->(history:map[^Node]Pat
 	
 	queue: pq.Priority_Queue(PathPosition)
 	// Init with sorting comparison PathPositionSort
-	pq.init(&queue, PathPositionSort, pq.default_swap_proc(PathPosition))
+	pq.init(
+		&queue, 
+		PathPositionSort, 
+		pq.default_swap_proc(PathPosition),
+		len(graph.map_nodes),
+	)
 	defer pq.destroy(&queue)
 	
 	start_position:PathPosition =  {
@@ -109,7 +114,7 @@ SolveGrid :: proc(graph:GridGraph, from:vec2i, to:vec2i)->(history:map[^Node]Pat
 		if current_node.pos == target_pos {
 			// success
 			ok = true
-			break 
+			break
 		}
 		
 		for next_node in current_node.neighbours {
@@ -129,5 +134,79 @@ SolveGrid :: proc(graph:GridGraph, from:vec2i, to:vec2i)->(history:map[^Node]Pat
 		}
 	}
 	
+	return
+}
+
+
+SolveGridStatic :: proc(
+    graph:^GridGraph,
+    from, to:vec2i,
+	queue_buffer: [dynamic]^Node, // pre-allocated, at least len(graph.map_nodes)
+)->(end:^Node, ok:bool){
+	assert(cap(queue_buffer) >= len(graph.map_nodes))
+
+	start_node, start_ok := graph.map_nodes[from]
+	if !start_ok { return }
+
+	target_node, target_ok := graph.map_nodes[to]
+	if !target_ok { return }
+
+	// Reset runtime fields (only walkable nodes)
+	for _, node in graph.map_nodes {
+		node.g_cost = 0
+		node.f_cost = 0
+		node.parent = nil
+		node.opened = false
+		node.closed = false
+	}
+
+	queue: pq.Priority_Queue(^Node)
+	queue.queue = queue_buffer
+	queue.less = NodeSort
+	queue.swap = pq.default_swap_proc(^Node)
+
+	start_node.g_cost = 0
+	start_node.f_cost = DistanceCost(&start_node.pos, &target_node.pos)
+	start_node.opened = true
+
+	pq.push(&queue, start_node)
+
+	for pq.len(queue) != 0 {
+		current := pq.pop(&queue)
+		current.closed = true
+
+		if current == target_node {
+			end = current
+			ok = true
+			break
+		}
+
+		for next in current.neighbours {
+			if next.closed {
+				continue
+			}
+
+			tentative_g := current.g_cost + cast(f32)next.cost
+
+			if !next.opened || tentative_g < next.g_cost {
+
+				next.parent = current
+				next.g_cost = tentative_g
+				next.f_cost = tentative_g + DistanceCost(&next.pos, &target_node.pos)
+
+				if !next.opened {
+					next.opened = true
+					pq.push(&queue, next)
+				} else {
+					for i:int = pq.len(queue) - 1; i > -1; i -= 1 {
+						if queue.queue[i] == next {
+							pq.fix(&queue, i)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return
 }
