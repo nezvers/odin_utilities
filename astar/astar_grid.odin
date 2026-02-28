@@ -76,72 +76,11 @@ CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node, neighbour_buffer:[]^Node,
 	return graph
 }
 
-SolveGrid :: proc(graph:GridGraph, from:vec2i, to:vec2i)->(history:map[^Node]PathPosition, current_node:^Node, ok:bool) {
-	start_node, start_ok: = graph.map_nodes[from]
-	if !start_ok {
-		return
-	}
-	target_pos:vec2i = to
-	_, target_ok: = graph.map_nodes[to]
-	if !target_ok {
-		return
-	}
-	
-	queue: pq.Priority_Queue(PathPosition)
-	// Init with sorting comparison PathPositionSort
-	pq.init(
-		&queue, 
-		PathPositionSort, 
-		pq.default_swap_proc(PathPosition),
-		len(graph.map_nodes),
-	)
-	defer pq.destroy(&queue)
-	
-	start_position:PathPosition =  {
-		distance   = DistanceCost(&start_node.pos, &target_pos),
-		total_cost = 0,
-		node       = start_node,
-		previous   = nil,
-	}
-	// Initial position
-	pq.push(&queue, start_position)
-	history[start_node] = start_position
-
-	current_position: PathPosition
-	for pq.len(queue) != 0 {
-		current_position = pq.pop(&queue)
-		current_node = current_position.node
-		if current_node.pos == target_pos {
-			// success
-			ok = true
-			break
-		}
-		
-		for next_node in current_node.neighbours {
-			total_cost: = current_position.total_cost + cast(f32)next_node.cost
-			
-			next_pos, is_used: = history[next_node]
-			if is_used && next_pos.total_cost <= total_cost {continue }
-			
-			next: = PathPosition{
-				distance = DistanceCost(&next_node.pos, &target_pos),
-				total_cost = total_cost,
-				node = next_node,
-				previous = current_node,
-			}
-			history[next_node] = next
-			pq.push(&queue, next)
-		}
-	}
-	
-	return
-}
-
-
-SolveGridStatic :: proc(
+SolveGrid :: proc(
     graph:^GridGraph,
     from, to:vec2i,
 	queue_buffer: [dynamic]^Node, // pre-allocated, at least len(graph.map_nodes)
+	allocator := context.allocator,
 )->(end:^Node, ok:bool){
 	assert(cap(queue_buffer) >= len(graph.map_nodes))
 
@@ -155,13 +94,17 @@ SolveGridStatic :: proc(
 	for _, node in graph.map_nodes {
 		node.g_cost = 0
 		node.f_cost = 0
-		node.parent = nil
+		node.previous = nil
 		node.opened = false
 		node.closed = false
 	}
 
 	queue: pq.Priority_Queue(^Node)
+	// Custom initialization
 	queue.queue = queue_buffer
+	if queue.queue.allocator.procedure == nil {
+		queue.queue.allocator = allocator
+	}
 	queue.less = NodeSort
 	queue.swap = pq.default_swap_proc(^Node)
 
@@ -190,7 +133,7 @@ SolveGridStatic :: proc(
 
 			if !next.opened || tentative_g < next.g_cost {
 
-				next.parent = current
+				next.previous = current
 				next.g_cost = tentative_g
 				next.f_cost = tentative_g + DistanceCost(&next.pos, &target_node.pos)
 

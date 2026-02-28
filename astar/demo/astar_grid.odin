@@ -8,7 +8,6 @@ Rectangle :: rl.Rectangle
 import astar ".."
 vec2i :: astar.vec2i
 Node :: astar.Node
-PathPosition :: astar.PathPosition
 
 @(private="package")
 state_grid:State = {
@@ -39,13 +38,9 @@ map_nodes:map[vec2i]^Node
 
 neighbour_connections: astar.ConnectionSet2D
 
-path_history: map[^Node]PathPosition
-end:^Node
-path_valid:bool
-
 queue_buffer: [dynamic]^Node
-end2:^Node
-end2_ok:bool
+end_node:^Node
+grid_solve_ok:bool
 
 load_map :: proc(map_cost:[]int) {
 	assert(len(map_cost) >= (GRID_LEN))
@@ -70,15 +65,14 @@ init :: proc() {
 	grid_graph = astar.CreateGridGraph(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], &map_nodes)
 	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
 
-	path_history, end, path_valid = astar.SolveGrid(grid_graph, {0,1}, {7,0})
-
 	reserve(&queue_buffer, len(grid_graph.map_nodes))
-	end2, end2_ok = astar.SolveGridStatic(&grid_graph, {0,1}, {7,0}, queue_buffer)
+	end_node, grid_solve_ok = astar.SolveGrid(&grid_graph, {0,1}, {7,0}, queue_buffer)
 }
 
 finit :: proc() {
 	delete(neighbour_connections)
 	delete(map_nodes)
+	delete(queue_buffer)
 }
 
 update :: proc(){}
@@ -98,8 +92,9 @@ draw :: proc() {
 	*/
 
 	// draw_connections(neighbour_connections, rect)
-	// draw_path_history(path_history, end, rect)
-	draw_path_nodes(end2, rect)
+	if grid_solve_ok {
+		draw_path_nodes(end_node, rect)
+	}
 }
 
 draw_node :: proc(node:^Node, rect:Rectangle) {
@@ -129,32 +124,16 @@ draw_connections :: proc(connections:astar.ConnectionSet2D, rect:Rectangle) {
 	}
 }
 
-draw_path_history :: proc(history:map[^Node]PathPosition, last:^Node, rect:Rectangle) {
-	point:vec2i = last.pos
-	path_pos, ok: = history[last]
-	if !ok { return }
-	key: ^Node = path_pos.previous
-	for key != nil {
-		path_pos, ok = history[key]
-		if !ok { break }
-		key = path_pos.previous
-		from:Vector2 = {rect.x + rect.width * cast(f32)point.x, rect.y + rect.height * cast(f32)point.y}
-		point = path_pos.node.pos
-		to:Vector2 = {rect.x + rect.width * cast(f32)point.x, rect.y + rect.height * cast(f32)point.y}
-		rl.DrawLineV(from, to, rl.GRAY)
-	}
-}
-
 draw_path_nodes :: proc(last:^Node, rect:Rectangle) {
 	assert(last != nil)
 	point:vec2i = last.pos
-	previous: ^Node = last.parent
+	previous: ^Node = last.previous
 	for previous != nil {
 		from:Vector2 = {rect.x + rect.width * cast(f32)point.x, rect.y + rect.height * cast(f32)point.y}
 		point = previous.pos
 		
 		to:Vector2 = {rect.x + rect.width * cast(f32)point.x, rect.y + rect.height * cast(f32)point.y}
 		rl.DrawLineV(from, to, rl.GRAY)
-		previous = previous.parent
+		previous = previous.previous
 	}
 }
