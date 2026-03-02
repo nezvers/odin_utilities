@@ -110,25 +110,25 @@ get_cell :: proc(pos:Vector2)->(cell:vec2i, ok:bool) {
 
 init_manhattan :: proc() {
 	is_8way = false
-	map_nodes = make(map[vec2i]^Node2D)
-	load_map(grid_map[:])
-
-	// 4-way neighbour caching
-	grid_graph = astar.CreateGridGraph(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], &map_nodes)
-	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
-
-	queue_buffer = make([dynamic]^Node2D)
-	reserve(&queue_buffer, len(grid_graph.map_nodes))
-	astar_solve(start_cell, target_cell)
+	init()
 }
 
 init_euclidian :: proc() {
 	is_8way = true
+	init()
+}
+
+init :: proc() {
 	map_nodes = make(map[vec2i]^Node2D)
 	load_map(grid_map[:])
 
-	// 8-way neighbour caching
-	grid_graph = astar.CreateGridGraphEuclidian(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], &map_nodes)
+	if is_8way{
+		// 8-way neighbour caching
+		grid_graph = astar.CreateGridGraphEuclidian(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], &map_nodes)
+	} else {
+		// 4-way neighbour caching
+		grid_graph = astar.CreateGridGraph(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], &map_nodes)
+	}
 	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
 
 	queue_buffer = make([dynamic]^Node2D)

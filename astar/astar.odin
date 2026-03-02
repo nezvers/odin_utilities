@@ -289,7 +289,14 @@ SolveGrid :: proc(
 				continue
 			}
 
-			tentative_g := current.g_cost + next.cost
+			tentative_g := current.g_cost
+			step_distance: = current.pos - next.pos
+			if step_distance.x != 0 && step_distance.y != 0 {
+				// diagonal
+				tentative_g += next.cost * 1.4142135623730951
+			} else {
+				tentative_g += next.cost
+			}
 
 			if !next.opened || tentative_g < next.g_cost {
 
