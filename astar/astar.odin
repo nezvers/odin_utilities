@@ -58,7 +58,7 @@ GetPathSlice2D :: proc(end: ^Node2D, buffer: []Position2D)->[]Position2D {
     return result
 }
 
-// TODO: modes (Manhattan - 4 way, Euclidean - 8 way)
+// Cache neighbours for Manhattan - 4 way
 CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buffer:[]^Node2D, map_nodes:^map[vec2i]^Node2D = nil)->GridGraph2D {
 	assert(len(nodes) >= (grid_size.x * grid_size.y))
 	assert(len(neighbour_buffer) >= (grid_size.x * grid_size.y * 4))
@@ -130,7 +130,7 @@ CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buffer:[]^Nod
 }
 
 // Cache neighbours for 8-way directions
-CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buffer:[]^Node2D, map_nodes:^map[vec2i]^Node2D)->GridGraph2D {
+CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buffer:[]^Node2D, map_nodes:^map[vec2i]^Node2D = nil)->GridGraph2D {
 	assert(len(nodes) >= (grid_size.x * grid_size.y))
 	assert(len(neighbour_buffer) >= (grid_size.x * grid_size.y * 4))
 
