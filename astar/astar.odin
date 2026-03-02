@@ -25,7 +25,7 @@ GridGraph2D :: struct {
 	size:vec2i,					// Grid size, x - width, y - height
 	nodes:[]Node2D,				// Slice of every position on grid, including non-walkable
 	neighbour_buffer:[]^Node2D,	// Buffer holding all neighbour pointers and dstributed to Nodes
-	map_nodes:map[vec2i]^Node2D,	// Hash map of unique Node pointers that have neighbours, meaning all walkable
+	map_nodes:map[vec2i]^Node2D,	// Optional: map of unique Node pointers that have neighbours, meaning all walkable
 }
 
 // Heuristic 1
@@ -59,7 +59,7 @@ GetPathSlice2D :: proc(end: ^Node2D, buffer: []Position2D)->[]Position2D {
 }
 
 // TODO: modes (Manhattan - 4 way, Euclidean - 8 way)
-CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buffer:[]^Node2D, map_nodes:^map[vec2i]^Node2D)->GridGraph2D {
+CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buffer:[]^Node2D, map_nodes:^map[vec2i]^Node2D = nil)->GridGraph2D {
 	assert(len(nodes) >= (grid_size.x * grid_size.y))
 	assert(len(neighbour_buffer) >= (grid_size.x * grid_size.y * 4))
 
@@ -112,7 +112,9 @@ CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buffer:[]^Nod
 			node.neighbours = neighbour_buffer[from:(from + neigbour_count)]
 			from += neigbour_count
 			
-			map_nodes[node.pos] = node
+			if map_nodes != nil{
+				map_nodes[node.pos] = node
+			}
 		}
 	}
 
@@ -120,7 +122,9 @@ CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buffer:[]^Nod
 		size = grid_size,
 		nodes = nodes,
 		neighbour_buffer = neighbour_buffer[:from],
-		map_nodes = map_nodes^,
+	}
+	if map_nodes != nil{
+		graph.map_nodes = map_nodes^
 	}
 	return graph
 }
@@ -222,7 +226,9 @@ CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buff
 			node.neighbours = neighbour_buffer[from:(from + neigbour_count)]
 			from += neigbour_count
 			
-			map_nodes[node.pos] = node
+			if map_nodes != nil{
+				map_nodes[node.pos] = node
+			}
 		}
 	}
 
@@ -230,7 +236,9 @@ CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buff
 		size = grid_size,
 		nodes = nodes,
 		neighbour_buffer = neighbour_buffer[:from],
-		map_nodes = map_nodes^,
+	}
+	if map_nodes != nil{
+		graph.map_nodes = map_nodes^
 	}
 	return graph
 }
@@ -241,7 +249,6 @@ SolveGrid :: proc(
 	queue_buffer: [dynamic]^Node2D, // pre-allocated, at least len(graph.map_nodes)
 	allocator := context.allocator,
 )->(end:^Node2D, ok:bool){
-	assert(cap(queue_buffer) >= len(graph.map_nodes))
 
 	start_node, start_ok := graph.map_nodes[from]
 	if !start_ok { return }
@@ -250,7 +257,7 @@ SolveGrid :: proc(
 	if !target_ok { return }
 
 	// Reset runtime fields (only walkable nodes)
-	for _, node in graph.map_nodes {
+	for &node in graph.nodes {
 		node.g_cost = 0
 		node.f_cost = 0
 		node.previous = nil
