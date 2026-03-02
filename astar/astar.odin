@@ -205,7 +205,6 @@ CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buff
 				}
 			}
 
-
 			if neigbour_count == 0 {
 				continue
 			}
