@@ -66,7 +66,7 @@ load_map :: proc(map_cost:[]int) {
 	}
 }
 
-AstarSolve :: proc(from: vec2i, to: vec2i) {
+astar_solve :: proc(from: vec2i, to: vec2i) {
 	end_node, grid_solve_ok = astar.SolveGrid(&grid_graph, from, to, queue_buffer)
 	if grid_solve_ok {
 		path_result = astar.GetPathSlice2D(end_node, path_buffer[:])
@@ -102,7 +102,7 @@ init :: proc() {
 	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
 
 	reserve(&queue_buffer, len(grid_graph.map_nodes))
-	AstarSolve(start_cell, target_cell)
+	astar_solve(start_cell, target_cell)
 }
 
 finit :: proc() {
@@ -117,7 +117,7 @@ update :: proc() {
 		cell, ok: = get_cell(mouse)
 		if ok && cell != start_cell {
 			start_cell = cell
-			AstarSolve(start_cell, target_cell)
+			astar_solve(start_cell, target_cell)
 		}
 	}
 	if rl.IsMouseButtonPressed(rl.MouseButton.RIGHT) {
@@ -125,7 +125,7 @@ update :: proc() {
 		cell, ok: = get_cell(mouse)
 		if ok && cell != target_cell {
 			target_cell = cell
-			AstarSolve(start_cell, target_cell)
+			astar_solve(start_cell, target_cell)
 		}
 	}
 }
