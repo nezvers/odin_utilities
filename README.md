@@ -4,6 +4,8 @@
  Each one comes with demo example and if needed glue code at least for Raylib.    
 
 - ✅ App state `odin run app_state/demo`
+- ❎ Astar `odin run astar/demo`
+    - ✅ grid 2D (4-way Manhattan, 8-way Euclidian)
 - ✅ FABRIK IK `odin run fabrik/demo`
 - ✅ Microui (raylib) `odin run microui/demo`
 - ✅ Viewport Rect `odin run viewport_rect/demo`
