@@ -47,12 +47,12 @@ NodeSort2D :: proc(a,b:^Node2D)->bool{
 }
 
 // Calculate pure path slice
-GetPathSlice :: proc(end: ^Node2D, buffer: []vec2i)->[]vec2i {
+GetPathSlice2D :: proc(end: ^Node2D, buffer: []Position2D)->[]Position2D {
     assert(len(buffer) >= end.index + 1)
     result: = buffer[:(end.index + 1)]
     current: = end
     for i:int = end.index; i > -1; i -= 1 {
-        result[i] = current.pos
+        result[i] = current.position
         current = current.previous
     }
     return result

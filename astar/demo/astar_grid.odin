@@ -8,6 +8,7 @@ Rectangle :: rl.Rectangle
 import astar ".."
 vec2i :: astar.vec2i
 Node2D :: astar.Node2D
+Position2D :: astar.Position2D
 
 @(private="package")
 state_grid:State = {
@@ -41,8 +42,8 @@ neighbour_connections: astar.ConnectionSet2D
 queue_buffer: [dynamic]^Node2D
 end_node:^Node2D
 grid_solve_ok:bool
-path_buffer: [GRID_LEN]vec2i
-path_result: []vec2i
+path_buffer: [GRID_LEN]Position2D
+path_result: []Position2D
 
 load_map :: proc(map_cost:[]int) {
 	assert(len(map_cost) >= (GRID_LEN))
@@ -70,7 +71,7 @@ init :: proc() {
 	reserve(&queue_buffer, len(grid_graph.map_nodes))
 	end_node, grid_solve_ok = astar.SolveGrid(&grid_graph, {0,1}, {7,0}, queue_buffer)
 	if grid_solve_ok {
-		path_result = astar.GetPathSlice(end_node, path_buffer[:])
+		path_result = astar.GetPathSlice2D(end_node, path_buffer[:])
 	}
 }
 
@@ -144,10 +145,10 @@ draw_path_nodes :: proc(last:^Node2D, rect:Rectangle) {
 	}
 }
 
-draw_path :: proc(path: []vec2i, rect:Rectangle) {
+draw_path :: proc(path: []Position2D, rect:Rectangle) {
 	for i:int = 0; i < len(path) - 1; i += 1 {
-		from:Vector2 = {rect.x + rect.width * cast(f32)path[i].x, rect.y + rect.height * cast(f32)path[i].y}
-		to:Vector2 = {rect.x + rect.width * cast(f32)path[i + 1].x, rect.y + rect.height * cast(f32)path[i + 1].y}
+		from:Vector2 = {rect.x + rect.width * cast(f32)path[i].pos.x, rect.y + rect.height * cast(f32)path[i].pos.y}
+		to:Vector2 = {rect.x + rect.width * cast(f32)path[i + 1].pos.x, rect.y + rect.height * cast(f32)path[i + 1].pos.y}
 		rl.DrawLineV(from, to, rl.GRAY)
 	}
 }
