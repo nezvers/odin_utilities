@@ -149,6 +149,11 @@ draw :: proc() {
 		// draw_path_nodes(end_node, rect)
 		draw_path(path_result, rect)
 	}
+
+	start_point: Vector2 = {rect.x + rect.width * cast(f32)start_cell.x, rect.y + rect.height * cast(f32)start_cell.y}
+	target_point: Vector2 = {rect.x + rect.width * cast(f32)target_cell.x, rect.y + rect.height * cast(f32)target_cell.y}
+	rl.DrawCircleLinesV(start_point, 10, rl.RED)
+	rl.DrawCircleV(target_point, 7.5, rl.BLUE)
 }
 
 draw_node :: proc(node:^Node2D, rect:Rectangle) {
