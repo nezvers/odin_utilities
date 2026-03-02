@@ -125,6 +125,107 @@ CreateGridGraph :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buffer:[]^Nod
 	return graph
 }
 
+// Cache neighbours for 8-way directions
+CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buffer:[]^Node2D, map_nodes:^map[vec2i]^Node2D)->GridGraph2D {
+	assert(len(nodes) >= (grid_size.x * grid_size.y))
+	assert(len(neighbour_buffer) >= (grid_size.x * grid_size.y * 4))
+
+	from:int = 0
+	for y:int = 0; y < grid_size.y; y += 1 {
+		for x:int = 0; x < grid_size.x; x += 1 {
+			node:^Node2D = &nodes[x + y * grid_size.x]
+			if node.cost == 0 {
+				// Skip solid
+				continue
+			}
+			neigbour_count:int = 0
+
+			// LEFT
+			if x > 0 {
+				left:^Node2D = &nodes[(x - 1) + y * grid_size.x]
+				if left.cost > 0 {
+					neighbour_buffer[from + neigbour_count] = left
+					neigbour_count += 1
+				}
+			}
+			// RIGHT
+			if x < (grid_size.x - 1) {
+				right:^Node2D = &nodes[(x + 1) + y * grid_size.x]
+				if right.cost > 0 {
+					neighbour_buffer[from + neigbour_count] = right
+					neigbour_count += 1
+				}
+			}
+			// UP
+			if y > 0 {
+				up:^Node2D = &nodes[x + (y - 1) * grid_size.x]
+				if up.cost > 0 {
+					neighbour_buffer[from + neigbour_count] = up
+					neigbour_count += 1
+				}
+			}
+			// DOWN
+			if y < (grid_size.y - 1) {
+				down:^Node2D = &nodes[x + (y + 1) * grid_size.x]
+				if down.cost > 0 {
+					neighbour_buffer[from + neigbour_count] = down
+					neigbour_count += 1
+				}
+			}
+			// TOP-LEFT
+			if x > 0 && y > 0 {
+				top_left:^Node2D = &nodes[(x - 1) + (y - 1) * grid_size.x]
+				if top_left.cost > 0 {
+					neighbour_buffer[from + neigbour_count] = top_left
+					neigbour_count += 1
+				}
+			}
+			// TOP-RIGHT
+			if x < (grid_size.x - 1) && y > 0 {
+				top_right:^Node2D = &nodes[(x + 1) + (y - 1) * grid_size.x]
+				if top_right.cost > 0 {
+					neighbour_buffer[from + neigbour_count] = top_right
+					neigbour_count += 1
+				}
+			}
+			// BOTTOM-LEFT
+			if x > 0 && y < (grid_size.y - 1) {
+				bottom_left:^Node2D = &nodes[(x - 1) + (y + 1) * grid_size.x]
+				if bottom_left.cost > 0 {
+					neighbour_buffer[from + neigbour_count] = bottom_left
+					neigbour_count += 1
+				}
+			}
+			// BOTTOM-RIGHT
+			if x < (grid_size.x - 1) && y < (grid_size.y - 1) {
+				bottom_right:^Node2D = &nodes[(x + 1) + (y + 1) * grid_size.x]
+				if bottom_right.cost > 0 {
+					neighbour_buffer[from + neigbour_count] = bottom_right
+					neigbour_count += 1
+				}
+			}
+
+
+			if neigbour_count == 0 {
+				continue
+			}
+
+			node.neighbours = neighbour_buffer[from:(from + neigbour_count)]
+			from += neigbour_count
+			
+			map_nodes[node.pos] = node
+		}
+	}
+
+	graph:GridGraph2D = {
+		size = grid_size,
+		nodes = nodes,
+		neighbour_buffer = neighbour_buffer[:from],
+		map_nodes = map_nodes^,
+	}
+	return graph
+}
+
 SolveGrid :: proc(
     graph:^GridGraph2D,
     from, to:vec2i,
