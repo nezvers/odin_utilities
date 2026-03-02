@@ -7,7 +7,7 @@ Connection2D :: struct{
 // Set of each connection once as keys
 ConnectionSet2D :: map[Connection2D]struct{}
 
-CreateConnectionSet2D :: proc(nodes:[]Node)->(connections:ConnectionSet2D) {
+CreateConnectionSet2D :: proc(nodes:[]Node2D)->(connections:ConnectionSet2D) {
 	for node in nodes {
 		for neighbour in node.neighbours {
 			connection:Connection2D
