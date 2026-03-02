@@ -17,15 +17,15 @@ State :: struct {
 }
 
 state_list: []State = {
-	state_grid,
+	state_grid2d,
 }
 
 StateIndex :: enum {
-    GRID,
+    GRID_2D,
     COUNT,
 }
 
-state_index:StateIndex = StateIndex.GRID
+state_index:StateIndex = StateIndex.GRID_2D
 screen_size:Vector2
 is_hovering_buttons:bool
 

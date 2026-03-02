@@ -11,7 +11,7 @@ Node2D :: astar.Node2D
 Position2D :: astar.Position2D
 
 @(private="package")
-state_grid:State = {
+state_grid2d:State = {
 	init,
 	finit,
 	update,
