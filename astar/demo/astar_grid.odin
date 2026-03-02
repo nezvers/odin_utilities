@@ -18,6 +18,8 @@ state_grid:State = {
 	draw,
 }
 
+CELL_SIZE :Vector2: {30, 30}
+GRID_POSITION :Vector2: {100, 100}
 GRID_SIZE :vec2i: {8,6}
 GRID_LEN :: GRID_SIZE.x * GRID_SIZE.y
 NEIGHBOUR_SIZE :: GRID_LEN * 4
@@ -45,6 +47,9 @@ grid_solve_ok:bool
 path_buffer: [GRID_LEN]Position2D
 path_result: []Position2D
 
+start_cell:vec2i = {0,1}
+target_cell:vec2i = {7,0}
+
 load_map :: proc(map_cost:[]int) {
 	assert(len(map_cost) >= (GRID_LEN))
 
@@ -61,6 +66,34 @@ load_map :: proc(map_cost:[]int) {
 	}
 }
 
+AstarSolve :: proc(from: vec2i, to: vec2i) {
+	end_node, grid_solve_ok = astar.SolveGrid(&grid_graph, from, to, queue_buffer)
+	if grid_solve_ok {
+		path_result = astar.GetPathSlice2D(end_node, path_buffer[:])
+	}
+}
+
+get_cell :: proc(pos:Vector2)->(cell:vec2i, ok:bool) {
+	// Out of bounds check
+	if pos.x < GRID_POSITION.x {
+		return
+	}
+	if pos.y < GRID_POSITION.y {
+		return
+	}
+	if pos.x > GRID_POSITION.x + cast(f32)GRID_SIZE.x * CELL_SIZE.x {
+		return
+	}
+	if pos.y > GRID_POSITION.y + cast(f32)GRID_SIZE.y * CELL_SIZE.y {
+		return
+	}
+	// Convert to cell position
+	relative:Vector2 = pos - GRID_POSITION
+	cell = {cast(int)(relative.x / CELL_SIZE.x), cast(int)(relative.y / CELL_SIZE.y)}
+	ok = true
+	return
+}
+
 init :: proc() {
 	map_nodes = make(map[vec2i]^Node2D)
 	load_map(grid_map[:])
@@ -69,10 +102,7 @@ init :: proc() {
 	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
 
 	reserve(&queue_buffer, len(grid_graph.map_nodes))
-	end_node, grid_solve_ok = astar.SolveGrid(&grid_graph, {0,1}, {7,0}, queue_buffer)
-	if grid_solve_ok {
-		path_result = astar.GetPathSlice2D(end_node, path_buffer[:])
-	}
+	AstarSolve(start_cell, target_cell)
 }
 
 finit :: proc() {
@@ -81,10 +111,27 @@ finit :: proc() {
 	delete(queue_buffer)
 }
 
-update :: proc(){}
+update :: proc() {
+	if rl.IsMouseButtonPressed(rl.MouseButton.LEFT) {
+		mouse: = rl.GetMousePosition()
+		cell, ok: = get_cell(mouse)
+		if ok && cell != start_cell {
+			start_cell = cell
+			AstarSolve(start_cell, target_cell)
+		}
+	}
+	if rl.IsMouseButtonPressed(rl.MouseButton.RIGHT) {
+		mouse: = rl.GetMousePosition()
+		cell, ok: = get_cell(mouse)
+		if ok && cell != target_cell {
+			target_cell = cell
+			AstarSolve(start_cell, target_cell)
+		}
+	}
+}
 
 draw :: proc() {
-	rect:Rectangle = {100, 100, 30, 30}
+	rect:Rectangle = {GRID_POSITION.x, GRID_POSITION.y, CELL_SIZE.x, CELL_SIZE.y}
 	for &node in grid_nodes {
 		draw_node(&node, rect)
 	}
