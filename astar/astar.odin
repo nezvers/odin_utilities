@@ -6,7 +6,7 @@ vec2i :: [2]int
 
 Position2D :: struct {
     pos:vec2i,  // cell position on grid
-    cost:int,   // additional cost of traversing, but 0 is not walkable (excluded from neighbour list)
+    cost:f32,   // additional cost of traversing, but 0 is not walkable (excluded from neighbour list)
 }
 
 Node2D :: struct {
@@ -139,6 +139,8 @@ CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buff
 				continue
 			}
 			neigbour_count:int = 0
+			// 4-way bitmask, don't allow diagonal if blocked by both sides
+			blocked:u8
 
 			// LEFT
 			if x > 0 {
@@ -146,14 +148,8 @@ CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buff
 				if left.cost > 0 {
 					neighbour_buffer[from + neigbour_count] = left
 					neigbour_count += 1
-				}
-			}
-			// RIGHT
-			if x < (grid_size.x - 1) {
-				right:^Node2D = &nodes[(x + 1) + y * grid_size.x]
-				if right.cost > 0 {
-					neighbour_buffer[from + neigbour_count] = right
-					neigbour_count += 1
+				} else {
+					blocked |= 1 << 0
 				}
 			}
 			// UP
@@ -162,6 +158,18 @@ CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buff
 				if up.cost > 0 {
 					neighbour_buffer[from + neigbour_count] = up
 					neigbour_count += 1
+				} else {
+					blocked |= 1 << 1
+				}
+			}
+			// RIGHT
+			if x < (grid_size.x - 1) {
+				right:^Node2D = &nodes[(x + 1) + y * grid_size.x]
+				if right.cost > 0 {
+					neighbour_buffer[from + neigbour_count] = right
+					neigbour_count += 1
+				} else {
+					blocked |= 1 << 2
 				}
 			}
 			// DOWN
@@ -170,10 +178,12 @@ CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buff
 				if down.cost > 0 {
 					neighbour_buffer[from + neigbour_count] = down
 					neigbour_count += 1
+				} else {
+					blocked |= 1 << 3
 				}
 			}
 			// TOP-LEFT
-			if x > 0 && y > 0 {
+			if x > 0 && y > 0 && (blocked & 3) != 3 {
 				top_left:^Node2D = &nodes[(x - 1) + (y - 1) * grid_size.x]
 				if top_left.cost > 0 {
 					neighbour_buffer[from + neigbour_count] = top_left
@@ -181,26 +191,26 @@ CreateGridGraphEuclidian :: proc(grid_size:vec2i, nodes:[]Node2D, neighbour_buff
 				}
 			}
 			// TOP-RIGHT
-			if x < (grid_size.x - 1) && y > 0 {
+			if x < (grid_size.x - 1) && y > 0 && (blocked & 6) != 6 {
 				top_right:^Node2D = &nodes[(x + 1) + (y - 1) * grid_size.x]
 				if top_right.cost > 0 {
 					neighbour_buffer[from + neigbour_count] = top_right
 					neigbour_count += 1
 				}
 			}
-			// BOTTOM-LEFT
-			if x > 0 && y < (grid_size.y - 1) {
-				bottom_left:^Node2D = &nodes[(x - 1) + (y + 1) * grid_size.x]
-				if bottom_left.cost > 0 {
-					neighbour_buffer[from + neigbour_count] = bottom_left
-					neigbour_count += 1
-				}
-			}
 			// BOTTOM-RIGHT
-			if x < (grid_size.x - 1) && y < (grid_size.y - 1) {
+			if x < (grid_size.x - 1) && y < (grid_size.y - 1) && (blocked & 12) != 12 {
 				bottom_right:^Node2D = &nodes[(x + 1) + (y + 1) * grid_size.x]
 				if bottom_right.cost > 0 {
 					neighbour_buffer[from + neigbour_count] = bottom_right
+					neigbour_count += 1
+				}
+			}
+			// BOTTOM-LEFT
+			if x > 0 && y < (grid_size.y - 1) && (blocked & 9) != 9 {
+				bottom_left:^Node2D = &nodes[(x - 1) + (y + 1) * grid_size.x]
+				if bottom_left.cost > 0 {
+					neighbour_buffer[from + neigbour_count] = bottom_left
 					neigbour_count += 1
 				}
 			}
@@ -279,7 +289,7 @@ SolveGrid :: proc(
 				continue
 			}
 
-			tentative_g := current.g_cost + cast(f32)next.cost
+			tentative_g := current.g_cost + next.cost
 
 			if !next.opened || tentative_g < next.g_cost {
 

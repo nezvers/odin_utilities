@@ -11,12 +11,21 @@ Node2D :: astar.Node2D
 Position2D :: astar.Position2D
 
 @(private="package")
-state_grid2d:State = {
-	init,
+state_grid2d_manhattan:State = {
+	init_manhattan,
 	finit,
 	update,
 	draw,
 }
+@(private="package")
+state_grid2d_euclidian:State = {
+	init_euclidian,
+	finit,
+	update,
+	draw,
+}
+
+is_8way:bool
 
 CELL_SIZE :Vector2: {30, 30}
 GRID_POSITION :Vector2: {100, 100}
@@ -25,7 +34,7 @@ GRID_LEN :: GRID_SIZE.x * GRID_SIZE.y
 NEIGHBOUR_SIZE :: GRID_LEN * 4
 
 // Game map values. 0 is solid. Higher value is higher cost
-grid_map: [GRID_LEN]int = {
+grid_map: [GRID_LEN]f32 = {
 	1, 1, 1, 0, 1, 0, 1, 1,
 	1, 0, 1, 1, 1, 0, 1, 0,
 	0, 1, 1, 0, 0, 0, 1, 1,
@@ -33,6 +42,7 @@ grid_map: [GRID_LEN]int = {
 	1, 0, 1, 1, 0, 1, 0, 1,
 	1, 1, 1, 1, 1, 1, 1, 1,
 }
+
 // Astar grid
 grid_graph: astar.GridGraph2D
 grid_nodes:[GRID_LEN]Node2D
@@ -50,13 +60,13 @@ path_result: []Position2D
 start_cell:vec2i = {0,1}
 target_cell:vec2i = {7,0}
 
-load_map :: proc(map_cost:[]int) {
+load_map :: proc(map_cost:[]f32) {
 	assert(len(map_cost) >= (GRID_LEN))
 
 	for y:int = 0; y < GRID_SIZE.y; y += 1 {
 		for x:int = 0; x < GRID_SIZE.x; x += 1 {
 			index:int = x + y * GRID_SIZE.x
-			cost:int = grid_map[index]
+			cost:f32 = grid_map[index]
 			grid_nodes[index] = {
 				pos = {x, y},
 				cost = cost,
@@ -67,7 +77,11 @@ load_map :: proc(map_cost:[]int) {
 }
 
 astar_solve :: proc(from: vec2i, to: vec2i) {
-	end_node, grid_solve_ok = astar.SolveGrid(&grid_graph, from, to, queue_buffer)
+	if is_8way{
+		end_node, grid_solve_ok = astar.SolveGrid(&grid_graph, from, to, queue_buffer)
+	} else {
+		end_node, grid_solve_ok = astar.SolveGrid(&grid_graph, from, to, queue_buffer)
+	}
 	if grid_solve_ok {
 		path_result = astar.GetPathSlice2D(end_node, path_buffer[:])
 	}
@@ -94,13 +108,30 @@ get_cell :: proc(pos:Vector2)->(cell:vec2i, ok:bool) {
 	return
 }
 
-init :: proc() {
+init_manhattan :: proc() {
+	is_8way = false
 	map_nodes = make(map[vec2i]^Node2D)
 	load_map(grid_map[:])
 
+	// 4-way neighbour caching
 	grid_graph = astar.CreateGridGraph(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], &map_nodes)
 	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
 
+	queue_buffer = make([dynamic]^Node2D)
+	reserve(&queue_buffer, len(grid_graph.map_nodes))
+	astar_solve(start_cell, target_cell)
+}
+
+init_euclidian :: proc() {
+	is_8way = true
+	map_nodes = make(map[vec2i]^Node2D)
+	load_map(grid_map[:])
+
+	// 8-way neighbour caching
+	grid_graph = astar.CreateGridGraphEuclidian(GRID_SIZE, grid_nodes[:], neighbour_buffer[:], &map_nodes)
+	neighbour_connections = astar.CreateConnectionSet2D(grid_nodes[:])
+
+	queue_buffer = make([dynamic]^Node2D)
 	reserve(&queue_buffer, len(grid_graph.map_nodes))
 	astar_solve(start_cell, target_cell)
 }
