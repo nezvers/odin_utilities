@@ -41,4 +41,8 @@ draw :: proc() {
         }
         rect.y += 30
     }
+
+    peak:Rectangle = {rect.x, rect.y, rect.width * mic_ctx.peak, rect.height}
+    rl.DrawRectangleRec(peak, rl.LIME)
+    rl.DrawRectangleLinesEx(rect, 1, rl.GRAY)
 }
