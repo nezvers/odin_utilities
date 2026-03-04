@@ -15,8 +15,8 @@ MicContext :: struct {
     peak_drop_speed: f32,
 }
 
-Init :: proc(peak_drop_speed:f32 = 1)->(ctx:MicContext, ok:bool) {
-    ctx = {
+Init :: proc(ctx: ^MicContext, peak_drop_speed:f32 = 1)->(ok:bool) {
+    ctx^ = {
         peak_drop_speed = peak_drop_speed,
     }
     if ma.context_init(nil, 0, nil, &ctx.ma_ctx) != ma.result.SUCCESS {
@@ -29,12 +29,12 @@ Init :: proc(peak_drop_speed:f32 = 1)->(ctx:MicContext, ok:bool) {
     ctx.config.capture.channels = 0     // Set to 0 to use the device's native channel count.
     ctx.config.sampleRate = 0           // Set to 0 to use the device's native sample rate.
     ctx.config.dataCallback = DataCallback // This function will be called when miniaudio needs more data.
-    ctx.config.pUserData = cast(rawptr)&ctx
+    ctx.config.pUserData = cast(rawptr)ctx
 
-    if !UpdateDeviceInfo(&ctx){
+    if !UpdateDeviceInfo(ctx){
         return
     }
-    if !SetDevice(&ctx, 0){
+    if !SetDevice(ctx, 0){
         return
     }
 
@@ -55,29 +55,29 @@ UpdateDeviceInfo :: proc(ctx: ^MicContext)->bool {
 }
 
 DataCallback :: proc "c" (device: ^ma.device, output: rawptr, input: rawptr, frame_count: u32) {
-    // ctx: ^MicContext = cast(^MicContext)device.pUserData
-	// sample_rate:u32 = device.sampleRate
-    // channels:u32 = device.capture.channels
-    // sample_count:u32 = frame_count * channels
-    // delta_time:f32 = 1 / cast(f32)sample_rate
-    // drop_amount:f32 = ctx.peak_drop_speed * delta_time
-    // samples:[^]f32 = cast([^]f32)input
-    // s: u32
-    // ch: u32
-    // sample: f32
-    // max_sample: f32
-    // for ;s < sample_count; s += 1 {
-    //     ch = 0
-    //     max_sample = 0
-    //     for ;ch < channels; ch += 1 {
-    //         sample = samples[s]
-    //         if (sample < 0) { sample *= -1 }
-    //         if (max_sample < sample) { max_sample = sample}
-    //     }
-    //     if (ctx.peak < max_sample) { ctx.peak = max_sample }
-    //     else if (ctx.peak > drop_amount) {ctx.peak -= drop_amount}
-    //     else { ctx.peak = 0 }
-    // }
+    ctx: ^MicContext = cast(^MicContext)device.pUserData
+	sample_rate:u32 = device.sampleRate
+    channels:u32 = device.capture.channels
+    sample_count:u32 = frame_count * channels
+    delta_time:f32 = 1 / cast(f32)sample_rate
+    drop_amount:f32 = ctx.peak_drop_speed * delta_time
+    samples:[^]f32 = cast([^]f32)input
+    s: u32
+    ch: u32
+    sample: f32
+    max_sample: f32
+    for ;s < sample_count; s += 1 {
+        ch = 0
+        max_sample = 0
+        for ;ch < channels; ch += 1 {
+            sample = samples[s]
+            if (sample < 0) { sample *= -1 }
+            if (max_sample < sample) { max_sample = sample}
+        }
+        if (ctx.peak < max_sample) { ctx.peak = max_sample }
+        else if (ctx.peak > drop_amount) {ctx.peak -= drop_amount}
+        else { ctx.peak = 0 }
+    }
 }
 
 GetDeviceCount :: proc(ctx: ^MicContext)->u32 {

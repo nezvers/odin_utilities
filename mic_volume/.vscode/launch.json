@@ -6,39 +6,27 @@
             "type": "cppvsdbg",
             "request": "launch",
             "preLaunchTask": "Build Debug",
-            "name": "Run Debug (Windows)",
+            "name": "Run Debug",
             "program": "${workspaceFolder}/demo.exe",
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "linux" : {
+                "type": "lldb",
+                "program": "${workspaceFolder}/demo.bin"
+            }
         },
         {
             "type": "cppvsdbg",
             "request": "launch",
             "preLaunchTask": "Build Release",
-            "name": "Run Release (Windows)",
+            "name": "Run Release",
             "program": "${workspaceFolder}/demo.exe",
             "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        
-        // Linux / Mac configs
-        {
-            "type": "lldb",
-            "request": "launch",
-            "preLaunchTask": "Build Debug",
-            "name": "Run Debug (Linux / Mac)",
-            "args": [],
             "cwd": "${workspaceFolder}",
-            "program": "${workspaceFolder}/demo.bin",
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "preLaunchTask": "Build Release",
-            "name": "Run Release (Linux / Mac)",
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "program": "${workspaceFolder}/demo.bin",
+            "linux" : {
+                "type": "lldb",
+                "program": "${workspaceFolder}/demo.bin"
+            }
         },
     ]
 }
