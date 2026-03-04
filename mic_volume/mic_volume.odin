@@ -23,14 +23,15 @@ Init :: proc(ctx: ^MicContext, peak_drop_speed:f32 = 1)->(ok:bool) {
         ok = false
         return
     }
-
+    
     ctx.config = ma.device_config_init(.capture)
     ctx.config.capture.format = .f32    // Set to .unknown to use the device's native format.
     ctx.config.capture.channels = 0     // Set to 0 to use the device's native channel count.
     ctx.config.sampleRate = 0           // Set to 0 to use the device's native sample rate.
     ctx.config.dataCallback = DataCallback // This function will be called when miniaudio needs more data.
-    ctx.config.pUserData = cast(rawptr)ctx
+    ctx.config.pUserData = cast(rawptr)ctx // Bind reference to be used in data_callback
 
+    // TODO: Refresh device info for added devices
     if !UpdateDeviceInfo(ctx){
         return
     }
@@ -55,7 +56,7 @@ UpdateDeviceInfo :: proc(ctx: ^MicContext)->bool {
 }
 
 DataCallback :: proc "c" (device: ^ma.device, output: rawptr, input: rawptr, frame_count: u32) {
-    ctx: ^MicContext = cast(^MicContext)device.pUserData
+    ctx: ^MicContext = cast(^MicContext)device.pUserData // Access context reference
 	sample_rate:u32 = device.sampleRate
     channels:u32 = device.capture.channels
     sample_count:u32 = frame_count * channels

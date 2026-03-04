@@ -30,6 +30,7 @@ update :: proc() {}
 draw :: proc() {
     rect:Rectangle = {10, 10, 400, 25}
     for i:u32 = 0; i < mic_ctx.capture_count; i += 1 {
+        
         name: cstring = mic.GetDeviceName(&mic_ctx, i)
         if rl.GuiButton(rect, name) {
 
