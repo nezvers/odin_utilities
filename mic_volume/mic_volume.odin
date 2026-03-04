@@ -10,6 +10,7 @@ MicContext :: struct {
     capture_info: [^]ma.device_info,
     playback_count: u32,
     capture_count: u32,
+    current_idx: u32,
     // Peak meter
     peak: f32,
     peak_drop_speed: f32,
@@ -109,6 +110,7 @@ SetDevice :: proc(ctx: ^MicContext, idx:u32)->bool {
         ma.device_uninit(&ctx.device)
         return false
     }
+    ctx.current_idx = idx
     return true
 }
 
