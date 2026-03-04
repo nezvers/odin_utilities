@@ -8,6 +8,7 @@
     - ✅ grid 2D (4-way Manhattan, 8-way Euclidian)
 - ✅ FABRIK IK `odin run fabrik/demo`
 - ✅ Microui (raylib) `odin run microui/demo`
+- ✅ MicMeter `odin run mic_meter/demo`
 - ✅ Viewport Rect `odin run viewport_rect/demo`
 - ✅ Tilemap `odin run tilemap/demo -out:tilemap/demo.exe`
 - ✅ Spring `odin run spring/demo`
