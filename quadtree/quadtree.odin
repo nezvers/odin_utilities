@@ -64,6 +64,73 @@ Quadtree :: struct {
     leaf_ranges: []QTLeafRange,
 }
 
+qt_initialize :: proc(
+    tree: ^Quadtree,
+    root_exponent: u32,
+    max_depth: u32,
+    origin_x: i32,
+    origin_y: i32
+) {
+    tree.root_exponent = root_exponent
+    tree.max_depth     = max_depth
+    tree.origin_x      = origin_x
+    tree.origin_y      = origin_y
+
+    leaf_count := qt_leaf_count(max_depth)
+    tree.leaf_ranges = make([]QTLeafRange, leaf_count)
+}
+
+qt_clear :: proc(tree: ^Quadtree) {
+    for i:int = 0; i < len(tree.leaf_ranges); i += 1 {
+        tree.leaf_ranges[i].count = 0
+        tree.leaf_ranges[i].first_object = 0
+    }
+    clear_dynamic_array(&tree.objects)
+}
+
+qt_leaf_count :: proc(depth: u32) -> u32 {
+    return 1 << (depth * 2)
+}
+
+qt_insert :: proc( tree: ^Quadtree, object: QTObject) {
+    node := qt_locate_parent(object.bounds, tree.root_exponent)
+    start, _ := qt_subtree_range(node, tree.max_depth)
+    leaf_index := start
+    leaf := &tree.leaf_ranges[leaf_index]
+
+    if leaf.count == 0 {
+        leaf.first_object = cast(u32)len(tree.objects)
+    }
+
+    append(&tree.objects, object)
+    leaf.count += 1
+}
+
+qt_traverse_leaves :: proc(
+    tree: ^Quadtree,
+    node: QTNode,
+    callback: proc(object: QTObject)
+) {
+    start, end := qt_subtree_range(node, tree.max_depth)
+    for morton := start; morton <= end; morton += 1 {
+        leaf := tree.leaf_ranges[morton]
+        for i: u32 = 0; i < leaf.count; i += 1 {
+            object := tree.objects[leaf.first_object + i]
+            callback(object)
+        }
+    }
+}
+
+qt_subtree_range :: proc(
+    node: QTNode,
+    max_depth: u32
+) -> (u32, u32) {
+    bits_left := (max_depth - node.depth) * 2
+    start := node.morton << bits_left
+    end   := ((node.morton + 1) << bits_left) - 1
+    return start, end
+}
+
 qt_depth_index :: proc(depth: u32) -> u32 {
     // total nodes before this depth
     return ((1 << (depth * 2)) - 1) / 3
@@ -164,93 +231,6 @@ qt_locate_parent :: proc(
         (part1by1(cy) << 1)
 
     return QTNode{depth, morton}
-}
-
-qt_subtree_range :: proc(
-    node: QTNode,
-    max_depth: u32
-) -> (u32, u32) {
-
-    bits_left := (max_depth - node.depth) * 2
-
-    start := node.morton << bits_left
-    end   := ((node.morton + 1) << bits_left) - 1
-
-    return start, end
-}
-
-qt_leaf_count :: proc(depth: u32) -> u32 {
-    return 1 << (depth * 2)
-}
-
-qt_initialize :: proc(
-    tree: ^Quadtree,
-    root_exponent: u32,
-    max_depth: u32,
-    origin_x: i32,
-    origin_y: i32
-) {
-    tree.root_exponent = root_exponent
-    tree.max_depth     = max_depth
-    tree.origin_x      = origin_x
-    tree.origin_y      = origin_y
-
-    leaf_count := qt_leaf_count(max_depth)
-
-    tree.leaf_ranges = make([]QTLeafRange, leaf_count)
-}
-
-qt_clear :: proc(tree: ^Quadtree) {
-
-    for i:int = 0; i < len(tree.leaf_ranges); i += 1 {
-        tree.leaf_ranges[i].count = 0
-        tree.leaf_ranges[i].first_object = 0
-    }
-
-    clear_dynamic_array(&tree.objects)
-}
-
-qt_insert :: proc(
-    tree: ^Quadtree,
-    object: QTObject
-) {
-
-    node := qt_locate_parent(object.bounds, tree.root_exponent)
-
-    start, _ := qt_subtree_range(node, tree.max_depth)
-
-    leaf_index := start
-
-    leaf := &tree.leaf_ranges[leaf_index]
-
-    if leaf.count == 0 {
-        leaf.first_object = cast(u32)len(tree.objects)
-    }
-
-    append(&tree.objects, object)
-
-    leaf.count += 1
-}
-
-qt_traverse_leaves :: proc(
-    tree: ^Quadtree,
-    node: QTNode,
-    callback: proc(object: QTObject)
-) {
-
-    start, end := qt_subtree_range(node, tree.max_depth)
-
-    for morton := start; morton <= end; morton += 1 {
-
-        leaf := tree.leaf_ranges[morton]
-
-        for i: u32 = 0; i < leaf.count; i += 1 {
-
-            object := tree.objects[leaf.first_object + i]
-
-            callback(object)
-        }
-    }
 }
 
 CollisionPair :: struct {
