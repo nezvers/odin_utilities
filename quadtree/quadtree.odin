@@ -201,8 +201,7 @@ qt_world_to_grid :: proc(
 qt_locate_parent :: proc(
     object: AABB,
     root_exponent: u32
-) -> QTNode {
-
+)->QTNode {
     left   := object.x - object.w
     right  := object.x + object.w
     top    := object.y - object.h
@@ -226,9 +225,7 @@ qt_locate_parent :: proc(
     cx := cast(u32)object.x >> cell_shift
     cy := cast(u32)object.y >> cell_shift
 
-    morton :=
-        part1by1(cx) |
-        (part1by1(cy) << 1)
+    morton := part1by1(cx) | (part1by1(cy) << 1)
 
     return QTNode{depth, morton}
 }
@@ -242,14 +239,12 @@ qt_find_collision_pairs :: proc(
     tree: ^Quadtree,
     pairs: ^[dynamic]CollisionPair
 ) {
-
     for leaf_index: u32 = 0;
         leaf_index < cast(u32)len(tree.leaf_ranges);
         leaf_index += 1
     {
 
         leaf := tree.leaf_ranges[leaf_index]
-
         if leaf.count < 2 {
             continue
         }
@@ -259,7 +254,6 @@ qt_find_collision_pairs :: proc(
 
         for i := start; i < end; i += 1 {
             for j := i + 1; j < end; j += 1 {
-
                 object_a := tree.objects[i]
                 object_b := tree.objects[j]
 
