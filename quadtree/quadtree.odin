@@ -131,29 +131,36 @@ qt_subtree_range :: proc(
     return start, end
 }
 
-qt_depth_index :: proc(depth: u32) -> u32 {
-    // total nodes before this depth
-    return ((1 << (depth * 2)) - 1) / 3
-}
+qt_locate_parent :: proc(
+    object: AABB,
+    root_exponent: u32
+)->QTNode {
+    left   := object.x - object.w
+    right  := object.x + object.w
+    top    := object.y - object.h
+    bottom := object.y + object.h
 
-qt_node_index :: proc(node: QTNode) -> u32 {
-    return qt_depth_index(node.depth) + node.morton
-}
+    dx := cast(u32)(left ~ right)
+    dy := cast(u32)(top  ~ bottom)
 
-qt_child :: proc(node_index: u32, child: u32) -> u32 {
-    return node_index * 4 + 1 + child
-}
+    difference := dx > dy ? dx : dy
 
-qt_parent :: proc(node_index: u32) -> u32 {
-    return (node_index - 1) >> 2
-}
+    depth: u32
+    if difference == 0 {
+        depth = root_exponent
+    } else {
+        // highest differing bit determines smallest power-of-two cell
+        depth = root_exponent - (highest_bit(difference) + 1)
+    }
 
-qt_first_child :: proc(node_index: u32) -> u32 {
-    return node_index * 4 + 1
-}
+    cell_shift := root_exponent - depth
 
-qt_child_at :: proc(node_index: u32, depth: u32) -> u32 {
-    return (node_index >> (depth * 2)) & 3
+    cx := cast(u32)object.x >> cell_shift
+    cy := cast(u32)object.y >> cell_shift
+
+    morton := part1by1(cx) | (part1by1(cy) << 1)
+
+    return QTNode{depth, morton}
 }
 
 highest_bit :: proc(value: u32) -> u32 {
@@ -198,38 +205,6 @@ qt_world_to_grid :: proc(
     return gx, gy
 }
 
-qt_locate_parent :: proc(
-    object: AABB,
-    root_exponent: u32
-)->QTNode {
-    left   := object.x - object.w
-    right  := object.x + object.w
-    top    := object.y - object.h
-    bottom := object.y + object.h
-
-    dx := cast(u32)(left ~ right)
-    dy := cast(u32)(top  ~ bottom)
-
-    difference := dx > dy ? dx : dy
-
-    depth: u32
-    if difference == 0 {
-        depth = root_exponent
-    } else {
-        // highest differing bit determines smallest power-of-two cell
-        depth = root_exponent - (highest_bit(difference) + 1)
-    }
-
-    cell_shift := root_exponent - depth
-
-    cx := cast(u32)object.x >> cell_shift
-    cy := cast(u32)object.y >> cell_shift
-
-    morton := part1by1(cx) | (part1by1(cy) << 1)
-
-    return QTNode{depth, morton}
-}
-
 CollisionPair :: struct {
     a: u32,
     b: u32,
@@ -243,12 +218,10 @@ qt_find_collision_pairs :: proc(
         leaf_index < cast(u32)len(tree.leaf_ranges);
         leaf_index += 1
     {
-
         leaf := tree.leaf_ranges[leaf_index]
         if leaf.count < 2 {
             continue
         }
-
         start := leaf.first_object
         end   := start + leaf.count
 
@@ -266,4 +239,30 @@ qt_find_collision_pairs :: proc(
             }
         }
     }
+}
+
+/*  */
+qt_depth_index :: proc(depth: u32) -> u32 {
+    // total nodes before this depth
+    return ((1 << (depth * 2)) - 1) / 3
+}
+
+qt_node_index :: proc(node: QTNode) -> u32 {
+    return qt_depth_index(node.depth) + node.morton
+}
+
+qt_child :: proc(node_index: u32, child: u32) -> u32 {
+    return node_index * 4 + 1 + child
+}
+
+qt_parent :: proc(node_index: u32) -> u32 {
+    return (node_index - 1) >> 2
+}
+
+qt_first_child :: proc(node_index: u32) -> u32 {
+    return node_index * 4 + 1
+}
+
+qt_child_at :: proc(node_index: u32, depth: u32) -> u32 {
+    return (node_index >> (depth * 2)) & 3
 }
