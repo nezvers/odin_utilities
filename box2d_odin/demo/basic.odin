@@ -1,0 +1,271 @@
+#+private file
+package demo
+
+import b2_odin ".."
+import b2 "vendor:box2d"
+import rl "vendor:raylib"
+
+@(private="package")
+state_basic : State = {
+    init,
+    finit,
+    update,
+    draw,
+}
+
+PlatformStatic :: struct {
+    pos:b2_odin.vec2,
+    size:b2_odin.vec2,
+    body: b2.BodyId,
+    shape: b2.ShapeId,
+}
+
+Input :: struct {
+    x: f32,
+    jump: bool,
+}
+
+Values :: struct {
+    jump_force: f32,
+    run_speed: f32,
+}
+
+ActorState :: struct {
+    pos: b2_odin.vec2,
+    ground_count: u32,
+    grounded: bool,
+}
+
+Sensor :: struct {
+    shape:b2.ShapeId,
+    actor: ^Actor,
+    kind: SensorKind,
+}
+
+Actor :: struct {
+    input: Input,
+    state: ActorState,
+    values: Values,
+    body: b2.BodyId,
+    shape_torso: b2.ShapeId,
+    shape_feet: b2.ShapeId,
+    sensor_ground: Sensor,
+    sensor_hurt: Sensor,
+}
+
+EntityKind :: enum {
+    none            = 0,
+    platform_static  = 1 << 0,
+    coin            = 1 << 1,
+    player          = 1 << 2,
+    enemy           = 1 << 3,
+}
+
+SensorKind :: enum {
+	none,
+	coin,
+	ground,
+	hurt,
+}
+
+JUMP_FORCE :: 550
+SPEED_MAX :: 400
+GRAVITY :: -1000
+
+world_ctx: b2_odin.WorldContext
+
+platforms: []PlatformStatic = {
+    {pos = {10, 500}, size = {1260, 32}}, // bottom floor
+    {pos = {200, 500 - 128}, size = {128, 32}},
+    {pos = {500, 500 - 128}, size = {128, 32}},
+    {pos = {800, 500 - 128}, size = {128, 32}},
+}
+
+player: Actor
+
+init :: proc(){
+    b2_odin.WorldInit(&world_ctx, 32, {0, 0}, sensor_begin_event, sensor_end_event)
+    b2_odin.WorldInitDebug(&world_ctx, 
+        dbg_draw_polygon, 
+        dbg_draw_circle, 
+        dbg_draw_segment,
+        dbg_draw_capsule,
+        dbg_draw_string, 
+        true)
+    create_platforms()
+    init_actor(&player, EntityKind.player, EntityKind.enemy, EntityKind.coin, "Player")
+}
+
+finit :: proc(){
+    for i:int=0; i < len(platforms); i += 1 {
+        b2_odin.DestroyShape(platforms[i].shape)
+        b2_odin.DestroyBody(platforms[i].body)
+    }
+    // Player
+    b2_odin.DestroyShape(player.shape_torso)
+    b2_odin.DestroyShape(player.shape_feet)
+    b2_odin.DestroyShape(player.sensor_ground.shape)
+    b2_odin.DestroyShape(player.sensor_hurt.shape)
+    b2_odin.DestroyBody(player.body)
+
+    b2_odin.WorldFinit(&world_ctx)
+}
+
+update :: proc(){
+    b2_odin.WorldUpdate(&world_ctx, rl.GetFrameTime())
+
+    // player input update
+    player.input.jump = rl.IsKeyDown(rl.KeyboardKey.SPACE)
+    right:bool = rl.IsKeyDown(rl.KeyboardKey.D)
+    left:bool = rl.IsKeyDown(rl.KeyboardKey.A)
+    player.input.x = f32(i32(right)) - f32(i32(left))
+    update_actor(&player)
+}
+
+draw :: proc(){
+    b2_odin.WorldDebug(&world_ctx)
+}
+
+create_platforms :: proc() {
+    name:cstring = "Platform"
+    for i:int=0; i < len(platforms); i += 1 {
+        platforms[i].body = b2_odin.CreateBody(
+            &world_ctx,
+            platforms[i].pos,
+            platforms[i].size,
+            .staticBody,
+            true,
+            name,
+        )
+        platforms[i].shape = b2_odin.CreateShapeBox(
+            platforms[i].body,
+            platforms[i].size,
+            u64(EntityKind.platform_static),
+            u64(EntityKind.player | EntityKind.enemy), // Collide with everything
+            true,
+            1,
+            nil,
+        )
+    }
+}
+
+init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: EntityKind, name:cstring = "") {
+    actor.values.jump_force = JUMP_FORCE
+    actor.values.run_speed = SPEED_MAX
+    pos:b2_odin.vec2 = {50, 100}
+    size:b2_odin.vec2 = {32, 32}
+    half_size: = size * 0.5
+
+    body_def := b2.DefaultBodyDef()
+	body_def.position = b2.Vec2{pos.x, -pos.y - size.y}
+	body_def.type = .dynamicBody
+	body_def.fixedRotation = true
+	body_def.name = name
+    // body_def.gravityScale = 0
+	actor.body = b2.CreateBody(world_ctx.world, body_def)
+
+    // Torso
+    torso_def := b2.DefaultShapeDef()
+	torso_def.filter.categoryBits = u64(kind)
+	torso_def.filter.maskBits = u64(EntityKind.platform_static) | u64(coin)
+	torso_def.material.friction = 0
+	torso_def.density = 1
+
+    capsule_radius := half_size.x - 3.0
+	capsule_top := b2.Vec2{0, half_size.y - capsule_radius - 5.0}
+	capsule_bottom := b2.Vec2{0, -half_size.y + capsule_radius + 3.0}
+	capsule := b2.Capsule{capsule_bottom, capsule_top, capsule_radius}
+    actor.shape_torso = b2.CreateCapsuleShape(actor.body, torso_def, capsule)
+
+    // Feet
+    feet_def := b2.DefaultShapeDef()
+	feet_def.filter.categoryBits = u64(kind)
+	feet_def.filter.maskBits = u64(EntityKind.platform_static | EntityKind.coin)
+	feet_def.material.friction = 1
+	feet_def.density = 1
+
+	feet_box := b2.MakeOffsetRoundedBox(
+		half_size.x - 6.0,
+		1.0,
+		{0, -half_size.y + 2.0},
+		b2.Rot_identity,
+		0.5,
+	)
+	actor.shape_feet = b2.CreatePolygonShape(actor.body, feet_def, feet_box)
+
+    // Ground Sensor
+    ground_sensor_def := b2.DefaultShapeDef()
+	ground_sensor_def.filter.categoryBits = u64(kind)
+	ground_sensor_def.filter.maskBits = u64(EntityKind.platform_static)
+	ground_sensor_def.isSensor = true
+	ground_sensor_def.enableSensorEvents = true
+	ground_sensor_def.userData = rawptr(&actor.sensor_ground)
+
+	ground_sensor_box := b2.MakeOffsetBox(half_size.x - 1.0, 4.0, {0, -half_size.y - 1.0}, b2.Rot_identity)
+	actor.sensor_ground.shape = b2.CreatePolygonShape(actor.body, ground_sensor_def, ground_sensor_box)
+    actor.sensor_ground.actor = actor
+    actor.sensor_ground.kind = .ground
+
+    // Hurt Sensor
+    hurt_sensor_def := b2.DefaultShapeDef()
+	hurt_sensor_def.filter.categoryBits = u64(kind)
+	hurt_sensor_def.filter.maskBits = u64(enemy)
+	hurt_sensor_def.isSensor = true
+	hurt_sensor_def.enableSensorEvents = true
+	hurt_sensor_def.userData = rawptr(&actor.sensor_hurt)
+
+	actor.sensor_hurt.shape = b2.CreateCapsuleShape(actor.body, hurt_sensor_def, capsule)
+    actor.sensor_hurt.actor = actor
+    actor.sensor_hurt.kind = .hurt
+}
+
+update_actor :: proc(actor: ^Actor) {
+    b2_pos: = b2.Body_GetPosition(actor.body)
+    // TODO: use sprite size
+    actor.state.pos = b2_odin.b2_to_pos(b2_pos, {})
+
+    velocity: = b2.Body_GetLinearVelocity(actor.body)
+    target_impulse:b2.Vec2 = velocity
+    if actor.input.x != 0 {
+        target_speed: f32 = actor.input.x * actor.values.run_speed
+        target_impulse.x = lerp(target_impulse.x, target_speed, rl.GetFrameTime() * 0.4)
+    } else {
+        target_impulse.x = lerp(target_impulse.x, 0, rl.GetFrameTime() * 0.6)
+    }
+    if actor.state.grounded & actor.input.jump {
+        actor.state.grounded = false
+        actor.state.ground_count = 0
+        target_impulse.y = actor.values.jump_force
+    } else if !actor.state.grounded {
+        target_impulse.y += GRAVITY * rl.GetFrameTime()
+    }
+    b2.Body_SetLinearVelocity(actor.body, target_impulse)
+}
+
+sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
+    sensor := cast(^Sensor)b2.Shape_GetUserData(event.sensorShapeId)
+    
+    #partial switch sensor.kind {
+    case .none:
+        break
+    case .coin:
+        break
+    case .ground:
+        sensor.actor.state.ground_count += 1
+        sensor.actor.state.grounded = true
+    }
+}
+
+sensor_end_event :: proc(event: b2.SensorEndTouchEvent) {
+    sensor := cast(^Sensor)b2.Shape_GetUserData(event.sensorShapeId)
+    
+    #partial switch sensor.kind {
+    case .none:
+        break
+    case .ground:
+        if sensor.actor.state.ground_count > 0 {
+            sensor.actor.state.ground_count -= 1
+        }
+        sensor.actor.state.grounded = sensor.actor.state.ground_count > 0
+    }
+}
