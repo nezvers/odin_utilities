@@ -103,7 +103,7 @@ finit :: proc(){
     }
     // Player
     b2_odin.DestroyShape(player.shape_torso)
-    b2_odin.DestroyShape(player.shape_feet)
+    // b2_odin.DestroyShape(player.shape_feet)
     b2_odin.DestroyShape(player.sensor_ground.shape)
     b2_odin.DestroyShape(player.sensor_hurt.shape)
     b2_odin.DestroyBody(player.body)
@@ -152,6 +152,8 @@ create_platforms :: proc() {
 init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: EntityKind, name:cstring = "") {
     actor.values.jump_force = JUMP_FORCE
     actor.values.run_speed = SPEED_MAX
+    actor.state.ground_count = 0
+    actor.state.grounded = false
     pos:b2_odin.vec2 = {50, 100}
     size:b2_odin.vec2 = {32, 32}
     half_size: = size * 0.5
@@ -178,20 +180,20 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
     actor.shape_torso = b2.CreateCapsuleShape(actor.body, torso_def, capsule)
 
     // Feet
-    feet_def := b2.DefaultShapeDef()
-	feet_def.filter.categoryBits = u64(kind)
-	feet_def.filter.maskBits = u64(EntityKind.platform_static | EntityKind.coin)
-	feet_def.material.friction = 1
-	feet_def.density = 1
+    // feet_def := b2.DefaultShapeDef()
+	// feet_def.filter.categoryBits = u64(kind)
+	// feet_def.filter.maskBits = u64(EntityKind.platform_static | EntityKind.coin)
+	// feet_def.material.friction = 1
+	// feet_def.density = 1
 
-	feet_box := b2.MakeOffsetRoundedBox(
-		half_size.x - 6.0,
-		1.0,
-		{0, -half_size.y + 2.0},
-		b2.Rot_identity,
-		0.5,
-	)
-	actor.shape_feet = b2.CreatePolygonShape(actor.body, feet_def, feet_box)
+	// feet_box := b2.MakeOffsetRoundedBox(
+	// 	half_size.x - 6.0,
+	// 	1.0,
+	// 	{0, -half_size.y + 2.0},
+	// 	b2.Rot_identity,
+	// 	0.5,
+	// )
+	// actor.shape_feet = b2.CreatePolygonShape(actor.body, feet_def, feet_box)
 
     // Ground Sensor
     ground_sensor_def := b2.DefaultShapeDef()
@@ -228,16 +230,16 @@ update_actor :: proc(actor: ^Actor) {
     target_impulse:b2.Vec2 = velocity
     if actor.input.x != 0 {
         target_speed: f32 = actor.input.x * actor.values.run_speed
-        target_impulse.x = lerp(target_impulse.x, target_speed, rl.GetFrameTime() * 0.4)
+        target_impulse.x = lerp(target_impulse.x, target_speed, rl.GetFrameTime() * 0.8)
     } else {
-        target_impulse.x = lerp(target_impulse.x, 0, rl.GetFrameTime() * 0.6)
+        target_impulse.x = lerp(target_impulse.x, 0, rl.GetFrameTime() * 0.8)
     }
+
+    target_impulse.y += GRAVITY * rl.GetFrameTime()
     if actor.state.grounded & actor.input.jump {
         actor.state.grounded = false
         actor.state.ground_count = 0
         target_impulse.y = actor.values.jump_force
-    } else if !actor.state.grounded {
-        target_impulse.y += GRAVITY * rl.GetFrameTime()
     }
     b2.Body_SetLinearVelocity(actor.body, target_impulse)
 }
