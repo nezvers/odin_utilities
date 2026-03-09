@@ -15,10 +15,33 @@ state_basic : State = {
     draw,
 }
 
-// Allows to identify in PreSolve callback 
+EntityKind :: enum {
+    none            = 0,
+    platform_static  = 1 << 0,
+    actor           = 1 << 1,
+    coin            = 1 << 2,
+    player          = 1 << 3,
+    enemy           = 1 << 4,
+}
+
+SensorKind :: enum {
+	none,
+	coin,
+	ground,
+	hurt,
+}
+
+// Add to ShapeId.userData
 ContactId :: struct {
     entity: rawptr,
     kind: EntityKind,
+}
+
+// Add to sensor ShapeId.userData
+Sensor :: struct {
+    entity: rawptr,
+    kind: SensorKind,
+    shape:b2.ShapeId,
 }
 
 PlatformStatic :: struct {
@@ -27,12 +50,6 @@ PlatformStatic :: struct {
     body: b2.BodyId,
     shape: b2.ShapeId,
     contact: ContactId,
-}
-
-Sensor :: struct {
-    actor: ^Actor,
-    shape:b2.ShapeId,
-    kind: SensorKind,
 }
 
 Actor :: struct {
@@ -56,21 +73,6 @@ Actor :: struct {
     shape_feet: b2.ShapeId,
     sensor_ground: Sensor,
     sensor_hurt: Sensor,
-}
-
-EntityKind :: enum {
-    none            = 0,
-    platform_static  = 1 << 0,
-    coin            = 1 << 1,
-    player          = 1 << 2,
-    enemy           = 1 << 3,
-}
-
-SensorKind :: enum {
-	none,
-	coin,
-	ground,
-	hurt,
 }
 
 JUMP_FORCE :: 550
@@ -150,7 +152,7 @@ create_platforms :: proc() {
             u64(EntityKind.player | EntityKind.enemy), // Collide with everything
             true,
             1,
-            nil,
+            rawptr(&platforms[i].contact),
         )
         platforms[i].contact.entity = rawptr(&platforms[i])
         platforms[i].contact.kind = EntityKind.platform_static
@@ -163,7 +165,7 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
     actor.state.ground_count = 0
     actor.state.grounded = false
     actor.contact.entity = rawptr(actor)
-    actor.contact.kind = kind
+    actor.contact.kind = .actor
     pos: Vec2 = {50, 100}
     size: Vec2 = {32, 32}
     half_size: = size * 0.5
@@ -183,8 +185,8 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
 	torso_def.filter.maskBits = u64(EntityKind.platform_static) | u64(coin)
 	torso_def.material.friction = 0
 	torso_def.density = 1
-    // torso_def.enableContactEvents = true
-    torso_def.enablePreSolveEvents = true
+    torso_def.enablePreSolveEvents = true   // Call PreSolveCallback
+    torso_def.userData = rawptr(&actor.contact)
 
     capsule_radius := half_size.x - 3.0
 	capsule_top: Vec2 = {0, half_size.y - capsule_radius - 5.0}
@@ -218,7 +220,7 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
 
 	ground_sensor_box := b2.MakeOffsetBox(half_size.x - 1.0, 4.0, {0, -half_size.y - 1.0}, b2.Rot_identity)
 	actor.sensor_ground.shape = b2.CreatePolygonShape(actor.body, ground_sensor_def, ground_sensor_box)
-    actor.sensor_ground.actor = actor
+    actor.sensor_ground.entity = rawptr(actor)
     actor.sensor_ground.kind = .ground
 
     // Hurt Sensor
@@ -230,7 +232,7 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
 	hurt_sensor_def.userData = rawptr(&actor.sensor_hurt)
 
 	actor.sensor_hurt.shape = b2.CreateCapsuleShape(actor.body, hurt_sensor_def, capsule)
-    actor.sensor_hurt.actor = actor
+    actor.sensor_hurt.entity = rawptr(actor)
     actor.sensor_hurt.kind = .hurt
 }
 
@@ -255,6 +257,8 @@ update_actor :: proc(actor: ^Actor) {
         target_impulse.y = actor.values.jump_force
     }
     b2.Body_SetLinearVelocity(actor.body, target_impulse)
+    // Reset ground detection
+    actor.state.grounded = false
 }
 
 sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
@@ -266,8 +270,7 @@ sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
     case .coin:
         break
     case .ground:
-        sensor.actor.state.ground_count += 1
-        sensor.actor.state.grounded = true
+        break
     }
 }
 
@@ -278,23 +281,25 @@ sensor_end_event :: proc(event: b2.SensorEndTouchEvent) {
     case .none:
         break
     case .ground:
-        if sensor.actor.state.ground_count > 0 {
-            sensor.actor.state.ground_count -= 1
-        }
-        sensor.actor.state.grounded = sensor.actor.state.ground_count > 0
+        break
     }
 }
 
 PreSolveFcn :: proc "c" (shapeIdA, shapeIdB: b2.ShapeId, manifold: ^b2.Manifold, ctx: rawptr) -> bool {
-    bodyA: = b2.Shape_GetBody(shapeIdA)
-    actorA:^Actor = cast(^Actor)b2.Body_GetUserData(bodyA)
-    _ = actorA
-
-    bodyB: = b2.Shape_GetBody(shapeIdB)
-    actorB:^Actor = cast(^Actor)b2.Body_GetUserData(bodyB)
-    _ = actorB
-    if actorA == actorB {
-        return false
+    contactA: = cast(^ContactId)b2.Shape_GetUserData(shapeIdA)
+    contactB: = cast(^ContactId)b2.Shape_GetUserData(shapeIdB)
+    
+    if contactA.kind == .actor {
+        actor: ^Actor = cast(^Actor)contactA.entity
+        if manifold.normal.y > 0.5 {
+            actor.state.grounded = true
+        }
+    }
+    if contactB.kind == .actor {
+        actor: ^Actor = cast(^Actor)contactB.entity
+        if manifold.normal.y > 0.5 {
+            actor.state.grounded = true
+        }
     }
 
     return true
