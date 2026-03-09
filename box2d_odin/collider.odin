@@ -5,9 +5,9 @@ import b2 "vendor:box2d"
 BITMASK_ALL :: ~u64(0)
 
 CreateBody :: proc(
-    ctx:^WorldContext, 
-    position:vec2, 
-    size:vec2,      // 
+    ctx: ^WorldContext, 
+    position: Vec2, 
+    size: Vec2,      // 
     type: b2.BodyType = .staticBody,
     fixed_rotation:bool = true,
     name:cstring = "",
@@ -23,7 +23,7 @@ CreateBody :: proc(
     return body
 }
 
-BodyLinearVelocity :: proc(body:b2.BodyId, velocity:vec2){
+BodyLinearVelocity :: proc(body:b2.BodyId, velocity: Vec2){
     b2.Body_SetLinearVelocity(body, {velocity.x, -velocity.y})
 }
 
@@ -36,12 +36,12 @@ DestroyShape :: proc(shape: b2.ShapeId) {
 }
 
 CreateShapeBox :: proc(
-    body:b2.BodyId,
-    size:vec2, 
-    categoryBits:u64,       // entity kind
-    maskBits:u64 = BITMASK_ALL,       // collides against
+    body: b2.BodyId,
+    size: Vec2, 
+    categoryBits: u64,       // entity kind
+    maskBits: u64 = BITMASK_ALL,       // collides against
     enableSensorEvents:bool = false,
-    density:f32 = 1,
+    density: f32 = 1,
     userData: rawptr = nil, // rawptr(uintptr(SensorKind.coin))
 )->b2.ShapeId {
     shape_def: = b2.DefaultShapeDef()
@@ -57,12 +57,12 @@ CreateShapeBox :: proc(
 }
 
 CreateShapeCircle :: proc(
-    body:b2.BodyId,
-    radius:f32, 
-    categoryBits:u64,       // entity kind
-    maskBits:u64 = BITMASK_ALL,       // collides against
-    enableSensorEvents:bool = false,
-    density:f32 = 1,
+    body: b2.BodyId,
+    radius: f32, 
+    categoryBits: u64,       // entity kind
+    maskBits: u64 = BITMASK_ALL,       // collides against
+    enableSensorEvents: bool = false,
+    density: f32 = 1,
     userData: rawptr = nil, // rawptr(uintptr(SensorKind.coin))
 )->b2.ShapeId {
     shape_def: = b2.DefaultShapeDef()
@@ -80,11 +80,11 @@ CreateShapeCircle :: proc(
 
 CreateShapeCapsule :: proc(
     body:b2.BodyId,
-    radius:f32, 
-    categoryBits:u64,       // entity kind
-    maskBits:u64 = BITMASK_ALL,       // collides against
-    enableSensorEvents:bool = false,
-    density:f32 = 1,
+    radius: f32, 
+    categoryBits: u64,       // entity kind
+    maskBits: u64 = BITMASK_ALL,       // collides against
+    enableSensorEvents: bool = false,
+    density: f32 = 1,
     userData: rawptr = nil, // rawptr(uintptr(SensorKind.coin))
 )->b2.ShapeId {
     shape_def: = b2.DefaultShapeDef()

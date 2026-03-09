@@ -5,6 +5,8 @@ import b2_odin ".."
 import b2 "vendor:box2d"
 import rl "vendor:raylib"
 
+Vec2 :: b2.Vec2
+
 @(private="package")
 state_basic : State = {
     init,
@@ -13,40 +15,43 @@ state_basic : State = {
     draw,
 }
 
+// Allows to identify in PreSolve callback 
+ContactId :: struct {
+    entity: rawptr,
+    kind: EntityKind,
+}
+
 PlatformStatic :: struct {
-    pos:b2_odin.vec2,
-    size:b2_odin.vec2,
+    pos: Vec2,
+    size: Vec2,
     body: b2.BodyId,
     shape: b2.ShapeId,
-}
-
-Input :: struct {
-    x: f32,
-    jump: bool,
-}
-
-Values :: struct {
-    jump_force: f32,
-    run_speed: f32,
-}
-
-ActorState :: struct {
-    pos: b2_odin.vec2,
-    ground_count: u32,
-    grounded: bool,
+    contact: ContactId,
 }
 
 Sensor :: struct {
-    shape:b2.ShapeId,
     actor: ^Actor,
+    shape:b2.ShapeId,
     kind: SensorKind,
 }
 
 Actor :: struct {
-    input: Input,
-    state: ActorState,
-    values: Values,
+    input: struct {
+        x: f32,
+        jump: bool,
+    },
+    state: struct {
+        pos: Vec2,
+        ground_count: u32,
+        grounded: bool,
+        velocity: Vec2,
+    },
+    values: struct {
+        jump_force: f32,
+        run_speed: f32,
+    },
     body: b2.BodyId,
+    contact: ContactId,
     shape_torso: b2.ShapeId,
     shape_feet: b2.ShapeId,
     sensor_ground: Sensor,
@@ -92,6 +97,7 @@ init :: proc(){
         dbg_draw_capsule,
         dbg_draw_string, 
         true)
+    b2.World_SetPreSolveCallback(world_ctx.world, PreSolveFcn, nil)
     create_platforms()
     init_actor(&player, EntityKind.player, EntityKind.enemy, EntityKind.coin, "Player")
 }
@@ -146,6 +152,8 @@ create_platforms :: proc() {
             1,
             nil,
         )
+        platforms[i].contact.entity = rawptr(&platforms[i])
+        platforms[i].contact.kind = EntityKind.platform_static
     }
 }
 
@@ -154,15 +162,18 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
     actor.values.run_speed = SPEED_MAX
     actor.state.ground_count = 0
     actor.state.grounded = false
-    pos:b2_odin.vec2 = {50, 100}
-    size:b2_odin.vec2 = {32, 32}
+    actor.contact.entity = rawptr(actor)
+    actor.contact.kind = kind
+    pos: Vec2 = {50, 100}
+    size: Vec2 = {32, 32}
     half_size: = size * 0.5
 
     body_def := b2.DefaultBodyDef()
-	body_def.position = b2.Vec2{pos.x, -pos.y - size.y}
+	body_def.position = {pos.x, -pos.y - size.y}
 	body_def.type = .dynamicBody
 	body_def.fixedRotation = true
 	body_def.name = name
+    body_def.userData = rawptr(actor)
     // body_def.gravityScale = 0
 	actor.body = b2.CreateBody(world_ctx.world, body_def)
 
@@ -172,10 +183,12 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
 	torso_def.filter.maskBits = u64(EntityKind.platform_static) | u64(coin)
 	torso_def.material.friction = 0
 	torso_def.density = 1
+    // torso_def.enableContactEvents = true
+    torso_def.enablePreSolveEvents = true
 
     capsule_radius := half_size.x - 3.0
-	capsule_top := b2.Vec2{0, half_size.y - capsule_radius - 5.0}
-	capsule_bottom := b2.Vec2{0, -half_size.y + capsule_radius + 3.0}
+	capsule_top: Vec2 = {0, half_size.y - capsule_radius - 5.0}
+	capsule_bottom: Vec2 = {0, -half_size.y + capsule_radius + 3.0}
 	capsule := b2.Capsule{capsule_bottom, capsule_top, capsule_radius}
     actor.shape_torso = b2.CreateCapsuleShape(actor.body, torso_def, capsule)
 
@@ -227,7 +240,7 @@ update_actor :: proc(actor: ^Actor) {
     actor.state.pos = b2_odin.b2_to_pos(b2_pos, {})
 
     velocity: = b2.Body_GetLinearVelocity(actor.body)
-    target_impulse:b2.Vec2 = velocity
+    target_impulse: Vec2 = velocity
     if actor.input.x != 0 {
         target_speed: f32 = actor.input.x * actor.values.run_speed
         target_impulse.x = lerp(target_impulse.x, target_speed, rl.GetFrameTime() * 0.8)
@@ -270,4 +283,19 @@ sensor_end_event :: proc(event: b2.SensorEndTouchEvent) {
         }
         sensor.actor.state.grounded = sensor.actor.state.ground_count > 0
     }
+}
+
+PreSolveFcn :: proc "c" (shapeIdA, shapeIdB: b2.ShapeId, manifold: ^b2.Manifold, ctx: rawptr) -> bool {
+    bodyA: = b2.Shape_GetBody(shapeIdA)
+    actorA:^Actor = cast(^Actor)b2.Body_GetUserData(bodyA)
+    _ = actorA
+
+    bodyB: = b2.Shape_GetBody(shapeIdB)
+    actorB:^Actor = cast(^Actor)b2.Body_GetUserData(bodyB)
+    _ = actorB
+    if actorA == actorB {
+        return false
+    }
+
+    return true
 }
