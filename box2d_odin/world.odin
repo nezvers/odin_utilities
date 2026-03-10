@@ -33,7 +33,7 @@ WorldInit :: proc(
 
 WorldInitDebug :: proc(
 	ctx: ^WorldContext,
-    dbg_draw_polygon : proc "c" (vertices: [^]b2.Vec2,vertexCount: c.int, color: b2.HexColor,ctx: rawptr),
+    dbg_draw_polygon : proc "c" (vertices: [^]b2.Vec2,vertexCount: c.int, color: b2.HexColor, ctx: rawptr),
 	dbg_draw_circle : proc "c" (center: b2.Vec2, radius:f32, color: b2.HexColor,ctx: rawptr),
 	dbg_draw_segment : proc "c" (p1: b2.Vec2, p2: b2.Vec2, color: b2.HexColor,ctx: rawptr),
 	dbg_draw_capsule : proc "c" (p1, p2: b2.Vec2, radius: f32, color: b2.HexColor, ctx: rawptr),
@@ -47,6 +47,7 @@ WorldInitDebug :: proc(
 	ctx.debug_draw.DrawSolidCapsuleFcn = dbg_draw_capsule
 	ctx.debug_draw.DrawStringFcn = dbg_draw_string
 	ctx.debug_draw.drawBounds = true
+	ctx.debug_draw.drawShapes = true
 }
 
 WorldDebug :: proc(ctx: ^WorldContext) {

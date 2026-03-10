@@ -106,17 +106,18 @@ init :: proc(){
 
 finit :: proc(){
     for i:int=0; i < len(platforms); i += 1 {
-        b2_odin.DestroyShape(platforms[i].shape)
-        b2_odin.DestroyBody(platforms[i].body)
+        if b2.Shape_IsValid(platforms[i].shape){b2_odin.DestroyShape(platforms[i].shape)}
+        if b2.Body_IsValid(platforms[i].body){b2_odin.DestroyBody(platforms[i].body)}
     }
-    // Player
-    b2_odin.DestroyShape(player.shape_torso)
-    // b2_odin.DestroyShape(player.shape_feet)
-    b2_odin.DestroyShape(player.sensor_ground.shape)
-    b2_odin.DestroyShape(player.sensor_hurt.shape)
-    b2_odin.DestroyBody(player.body)
 
-    b2_odin.WorldFinit(&world_ctx)
+    // Free Actors
+    if b2.Shape_IsValid(player.shape_torso){b2_odin.DestroyShape(player.shape_torso)}
+    if b2.Shape_IsValid(player.shape_feet){b2_odin.DestroyShape(player.shape_feet)}
+    if b2.Shape_IsValid(player.sensor_ground.shape){b2_odin.DestroyShape(player.sensor_ground.shape)}
+    if b2.Shape_IsValid(player.sensor_hurt.shape){b2_odin.DestroyShape(player.sensor_hurt.shape)}
+    if b2.Body_IsValid(player.body) {b2_odin.DestroyBody(player.body)}
+    // Free world
+    if b2.World_IsValid(world_ctx.world) {b2_odin.WorldFinit(&world_ctx)}
 }
 
 update :: proc(){
@@ -211,29 +212,29 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
 	// actor.shape_feet = b2.CreatePolygonShape(actor.body, feet_def, feet_box)
 
     // Ground Sensor
-    ground_sensor_def := b2.DefaultShapeDef()
-	ground_sensor_def.filter.categoryBits = u64(kind)
-	ground_sensor_def.filter.maskBits = u64(EntityKind.platform_static)
-	ground_sensor_def.isSensor = true
-	ground_sensor_def.enableSensorEvents = true
-	ground_sensor_def.userData = rawptr(&actor.sensor_ground)
+    // ground_sensor_def := b2.DefaultShapeDef()
+	// ground_sensor_def.filter.categoryBits = u64(kind)
+	// ground_sensor_def.filter.maskBits = u64(EntityKind.platform_static)
+	// ground_sensor_def.isSensor = true
+	// ground_sensor_def.enableSensorEvents = true
+	// ground_sensor_def.userData = rawptr(&actor.sensor_ground)
 
-	ground_sensor_box := b2.MakeOffsetBox(half_size.x - 1.0, 4.0, {0, -half_size.y - 1.0}, b2.Rot_identity)
-	actor.sensor_ground.shape = b2.CreatePolygonShape(actor.body, ground_sensor_def, ground_sensor_box)
-    actor.sensor_ground.entity = rawptr(actor)
-    actor.sensor_ground.kind = .ground
+	// ground_sensor_box := b2.MakeOffsetBox(half_size.x - 1.0, 4.0, {0, -half_size.y - 1.0}, b2.Rot_identity)
+	// actor.sensor_ground.shape = b2.CreatePolygonShape(actor.body, ground_sensor_def, ground_sensor_box)
+    // actor.sensor_ground.entity = rawptr(actor)
+    // actor.sensor_ground.kind = .ground
 
     // Hurt Sensor
-    hurt_sensor_def := b2.DefaultShapeDef()
-	hurt_sensor_def.filter.categoryBits = u64(kind)
-	hurt_sensor_def.filter.maskBits = u64(enemy)
-	hurt_sensor_def.isSensor = true
-	hurt_sensor_def.enableSensorEvents = true
-	hurt_sensor_def.userData = rawptr(&actor.sensor_hurt)
+    // hurt_sensor_def := b2.DefaultShapeDef()
+	// hurt_sensor_def.filter.categoryBits = u64(kind)
+	// hurt_sensor_def.filter.maskBits = u64(enemy)
+	// hurt_sensor_def.isSensor = true
+	// hurt_sensor_def.enableSensorEvents = true
+	// hurt_sensor_def.userData = rawptr(&actor.sensor_hurt)
 
-	actor.sensor_hurt.shape = b2.CreateCapsuleShape(actor.body, hurt_sensor_def, capsule)
-    actor.sensor_hurt.entity = rawptr(actor)
-    actor.sensor_hurt.kind = .hurt
+	// actor.sensor_hurt.shape = b2.CreateCapsuleShape(actor.body, hurt_sensor_def, capsule)
+    // actor.sensor_hurt.entity = rawptr(actor)
+    // actor.sensor_hurt.kind = .hurt
 }
 
 update_actor :: proc(actor: ^Actor) {

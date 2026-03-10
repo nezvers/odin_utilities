@@ -47,10 +47,10 @@ game_init :: proc() {
 		button_names[i] = strings.clone_to_cstring(name)
 	}
 	screen_size = {cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight()}
-	
-	if state_list[state_index].enter != nil{
-		state_list[state_index].enter()
-	}
+	state_change(state_index)
+	// if state_list[state_index].enter != nil{
+	// 	state_list[state_index].enter()
+	// }
 }
 
 game_shutdown :: proc() {
