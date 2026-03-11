@@ -6,6 +6,8 @@ import b2 "vendor:box2d"
 import rl "vendor:raylib"
 
 Vec2 :: b2.Vec2
+Sensor :: b2_odin.Sensor
+Contact :: b2_odin.Contact
 
 @(private="package")
 state_basic : State = {
@@ -31,25 +33,13 @@ SensorKind :: enum {
 	hurt,
 }
 
-// Add to ShapeId.userData
-ContactId :: struct {
-    entity: rawptr,
-    kind: EntityKind,
-}
-
-// Add to sensor ShapeId.userData
-Sensor :: struct {
-    entity: rawptr,
-    kind: SensorKind,
-    shape:b2.ShapeId,
-}
 
 PlatformStatic :: struct {
     pos: Vec2,
     size: Vec2,
     body: b2.BodyId,
     shape: b2.ShapeId,
-    contact: ContactId,
+    contact: Contact,
 }
 
 Actor :: struct {
@@ -68,7 +58,7 @@ Actor :: struct {
         run_speed: f32,
     },
     body: b2.BodyId,
-    contact: ContactId,
+    contact: Contact,
     shape_torso: b2.ShapeId,
     shape_feet: b2.ShapeId,
     sensor_ground: Sensor,
@@ -156,7 +146,7 @@ create_platforms :: proc() {
             rawptr(&platforms[i].contact),
         )
         platforms[i].contact.entity = rawptr(&platforms[i])
-        platforms[i].contact.kind = EntityKind.platform_static
+        platforms[i].contact.kind = u32(EntityKind.platform_static)
     }
 }
 
@@ -166,7 +156,7 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
     actor.state.ground_count = 0
     actor.state.grounded = false
     actor.contact.entity = rawptr(actor)
-    actor.contact.kind = .actor
+    actor.contact.kind = u32(EntityKind.actor)
     pos: Vec2 = {50, 100}
     size: Vec2 = {32, 32}
     half_size: = size * 0.5
@@ -265,7 +255,7 @@ update_actor :: proc(actor: ^Actor) {
 sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
     sensor := cast(^Sensor)b2.Shape_GetUserData(event.sensorShapeId)
     
-    #partial switch sensor.kind {
+    #partial switch SensorKind(sensor.kind) {
     case .none:
         break
     case .coin:
@@ -278,7 +268,7 @@ sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
 sensor_end_event :: proc(event: b2.SensorEndTouchEvent) {
     sensor := cast(^Sensor)b2.Shape_GetUserData(event.sensorShapeId)
     
-    #partial switch sensor.kind {
+    #partial switch SensorKind(sensor.kind) {
     case .none:
         break
     case .ground:
@@ -287,16 +277,16 @@ sensor_end_event :: proc(event: b2.SensorEndTouchEvent) {
 }
 
 PreSolveFcn :: proc "c" (shapeIdA, shapeIdB: b2.ShapeId, manifold: ^b2.Manifold, ctx: rawptr) -> bool {
-    contactA: = cast(^ContactId)b2.Shape_GetUserData(shapeIdA)
-    contactB: = cast(^ContactId)b2.Shape_GetUserData(shapeIdB)
+    contactA: = cast(^Contact)b2.Shape_GetUserData(shapeIdA)
+    contactB: = cast(^Contact)b2.Shape_GetUserData(shapeIdB)
     
-    if contactA.kind == .actor {
+    if contactA.kind == u32(EntityKind.actor) {
         actor: ^Actor = cast(^Actor)contactA.entity
         if manifold.normal.y > 0.5 {
             actor.state.grounded = true
         }
     }
-    if contactB.kind == .actor {
+    if contactB.kind == u32(EntityKind.actor) {
         actor: ^Actor = cast(^Actor)contactB.entity
         if manifold.normal.y > 0.5 {
             actor.state.grounded = true

@@ -11,6 +11,19 @@ Rect :: struct {
     h:f32,
 }
 
+// Add to sensor ShapeId.userData
+Sensor :: struct {
+    entity: rawptr,
+    kind: u32,
+    shape:b2.ShapeId,
+}
+
+// Add to ShapeId.userData
+Contact :: struct {
+    entity: rawptr,
+    kind: u32, // bit flags recommended
+}
+
 // convert a rectangle corner position to box2D center position
 pos_to_b2 :: proc(pos: Vec2, size: Vec2) -> b2.Vec2 {
 	return {pos.x + size.x * 0.5, -pos.y - size.y * 0.5}
