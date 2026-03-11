@@ -82,7 +82,7 @@ player: Actor
 
 init :: proc(){
     b2_odin.WorldInit(&world_ctx, 32, {0, 0}, sensor_begin_event, sensor_end_event)
-    b2_odin.WorldInitDebug(&world_ctx, 
+    WorldInitDebug(&world_ctx, 
         dbg_draw_polygon, 
         dbg_draw_circle, 
         dbg_draw_segment,
