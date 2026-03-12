@@ -6,7 +6,7 @@ import b2 "vendor:box2d"
 import rl "vendor:raylib"
 
 Vec2 :: b2.Vec2
-Sensor :: b2_odin.Sensor
+Sensor :: b2_odin.Sensor(SensorKind)
 Contact :: b2_odin.Contact
 
 @(private="package")
@@ -305,7 +305,7 @@ update_actor :: proc(actor: ^Actor) {
 sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
     sensor := cast(^Sensor)b2.Shape_GetUserData(event.sensorShapeId)
     
-    #partial switch SensorKind(sensor.kind) {
+    #partial switch sensor.kind {
     case .none:
         break
     case .coin:
@@ -318,7 +318,7 @@ sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
 sensor_end_event :: proc(event: b2.SensorEndTouchEvent) {
     sensor := cast(^Sensor)b2.Shape_GetUserData(event.sensorShapeId)
     
-    #partial switch SensorKind(sensor.kind) {
+    #partial switch sensor.kind {
     case .none:
         break
     case .ground:

@@ -12,9 +12,9 @@ Rect :: struct {
 }
 
 // Add to sensor ShapeId.userData
-Sensor :: struct {
+Sensor :: struct($T: typeid) {
     entity: rawptr,
-    kind: u32,
+    kind: T,
     shape:b2.ShapeId,
 }
 
