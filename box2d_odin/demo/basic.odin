@@ -49,13 +49,17 @@ Actor :: struct {
     },
     state: struct {
         pos: Vec2,
-        ground_count: u32,
         grounded: bool,
+        is_jumping: bool,
         velocity: Vec2,
+        remaining_jumps: u32,
     },
     values: struct {
         jump_force: f32,
-        run_speed: f32,
+        max_speed: f32,
+        acceleration: f32,
+        deacceleration: f32,
+        jump_count: u32,
     },
     body: b2.BodyId,
     contact: Contact,
@@ -67,7 +71,10 @@ Actor :: struct {
 
 JUMP_FORCE :: 550
 SPEED_MAX :: 400
+ACCELERATE :: 600
+DEACCELERATE :: 800
 GRAVITY :: -1000
+JUMP_COUNT :: 2
 
 world_ctx: b2_odin.WorldContext
 
@@ -151,9 +158,13 @@ create_platforms :: proc() {
 }
 
 init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: EntityKind, name:cstring = "") {
+    // TODO: pass in "config" values
     actor.values.jump_force = JUMP_FORCE
-    actor.values.run_speed = SPEED_MAX
-    actor.state.ground_count = 0
+    actor.values.acceleration = ACCELERATE
+    actor.values.deacceleration = DEACCELERATE
+    actor.values.max_speed = SPEED_MAX
+    actor.values.jump_count = JUMP_COUNT
+
     actor.state.grounded = false
     actor.contact.entity = rawptr(actor)
     actor.contact.kind = u32(EntityKind.actor)
@@ -228,26 +239,65 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
 }
 
 update_actor :: proc(actor: ^Actor) {
+    delta_time :f32 = rl.GetFrameTime()
     b2_pos: = b2.Body_GetPosition(actor.body)
     // TODO: use sprite size
     actor.state.pos = b2_odin.b2_to_pos(b2_pos, {})
 
     velocity: = b2.Body_GetLinearVelocity(actor.body)
-    target_impulse: Vec2 = velocity
+    target_velocity: Vec2 = velocity
+    // Horizontal speed
     if actor.input.x != 0 {
-        target_speed: f32 = actor.input.x * actor.values.run_speed
-        target_impulse.x = lerp(target_impulse.x, target_speed, rl.GetFrameTime() * 0.8)
+        target_velocity.x = clamp(
+            target_velocity.x + actor.input.x * actor.values.acceleration * delta_time,
+            -actor.values.max_speed,
+            actor.values.max_speed,
+        )
     } else {
-        target_impulse.x = lerp(target_impulse.x, 0, rl.GetFrameTime() * 0.8)
+        abs_speed: f32 = abs(target_velocity.x)
+        if abs_speed > actor.values.deacceleration * delta_time {
+            sign_speed: f32 = Sign(target_velocity.x)
+            target_velocity.x += -sign_speed * delta_time * actor.values.deacceleration
+        } else {
+            target_velocity.x = 0
+        }
     }
 
-    target_impulse.y += GRAVITY * rl.GetFrameTime()
-    if actor.state.grounded & actor.input.jump {
-        actor.state.grounded = false
-        actor.state.ground_count = 0
-        target_impulse.y = actor.values.jump_force
+    // Gravity
+    target_velocity.y += GRAVITY * rl.GetFrameTime()
+
+    // Jumping 
+    if actor.state.grounded {
+        actor.state.remaining_jumps = actor.values.jump_count
+        if actor.input.jump {
+            if !actor.state.is_jumping {
+                actor.state.grounded = false
+                actor.state.is_jumping = true
+                target_velocity.y = actor.values.jump_force
+                actor.state.remaining_jumps -= 1
+            }
+        } else if actor.state.is_jumping {
+            actor.state.is_jumping = false
+        }
+    } else {
+        // Not grounded
+        if actor.input.jump {
+            if !actor.state.is_jumping && actor.state.remaining_jumps > 0 {
+                // Double jump
+                actor.state.is_jumping = true
+                target_velocity.y = actor.values.jump_force
+                actor.state.remaining_jumps -= 1
+            }
+        } else if actor.state.is_jumping {
+            actor.state.is_jumping = false
+            if target_velocity.y > actor.values.jump_force * 0.5 {
+                // Jump release / variable jump height
+                target_velocity.y = actor.values.jump_force * 0.5
+            }
+        }
     }
-    b2.Body_SetLinearVelocity(actor.body, target_impulse)
+
+    b2.Body_SetLinearVelocity(actor.body, target_velocity)
     // Reset ground detection
     actor.state.grounded = false
 }
