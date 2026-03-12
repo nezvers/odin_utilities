@@ -19,9 +19,9 @@ Sensor :: struct($T: typeid) {
 }
 
 // Add to ShapeId.userData
-Contact :: struct {
+Contact :: struct($T: typeid) {
     entity: rawptr,
-    kind: u32, // bit flags recommended
+    kind: T, // bit flags recommended
 }
 
 // convert a rectangle corner position to box2D center position

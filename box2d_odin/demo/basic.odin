@@ -7,7 +7,7 @@ import rl "vendor:raylib"
 
 Vec2 :: b2.Vec2
 Sensor :: b2_odin.Sensor(SensorKind)
-Contact :: b2_odin.Contact
+Contact :: b2_odin.Contact(EntityKind)
 
 @(private="package")
 state_basic : State = {
@@ -153,7 +153,7 @@ create_platforms :: proc() {
             rawptr(&platforms[i].contact),
         )
         platforms[i].contact.entity = rawptr(&platforms[i])
-        platforms[i].contact.kind = u32(EntityKind.platform_static)
+        platforms[i].contact.kind = EntityKind.platform_static
     }
 }
 
@@ -167,7 +167,7 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
 
     actor.state.grounded = false
     actor.contact.entity = rawptr(actor)
-    actor.contact.kind = u32(EntityKind.actor)
+    actor.contact.kind = EntityKind.actor
     pos: Vec2 = {50, 100}
     size: Vec2 = {32, 32}
     half_size: = size * 0.5
@@ -330,13 +330,13 @@ PreSolveFcn :: proc "c" (shapeIdA, shapeIdB: b2.ShapeId, manifold: ^b2.Manifold,
     contactA: = cast(^Contact)b2.Shape_GetUserData(shapeIdA)
     contactB: = cast(^Contact)b2.Shape_GetUserData(shapeIdB)
     
-    if contactA.kind == u32(EntityKind.actor) {
+    if contactA.kind == EntityKind.actor {
         actor: ^Actor = cast(^Actor)contactA.entity
         if manifold.normal.y > 0.5 {
             actor.state.grounded = true
         }
     }
-    if contactB.kind == u32(EntityKind.actor) {
+    if contactB.kind == EntityKind.actor {
         actor: ^Actor = cast(^Actor)contactB.entity
         if manifold.normal.y > 0.5 {
             actor.state.grounded = true
