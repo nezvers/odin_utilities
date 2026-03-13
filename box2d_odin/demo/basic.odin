@@ -2,6 +2,7 @@
 package demo
 
 import b2_odin ".."
+import glue "../raylib"
 import b2 "vendor:box2d"
 import rl "vendor:raylib"
 
@@ -89,13 +90,7 @@ player: Actor
 
 init :: proc(){
     b2_odin.WorldInit(&world_ctx, 32, {0, 0}, sensor_begin_event, sensor_end_event)
-    WorldInitDebug(&world_ctx, 
-        dbg_draw_polygon, 
-        dbg_draw_circle, 
-        dbg_draw_segment,
-        dbg_draw_capsule,
-        dbg_draw_string, 
-        true)
+    glue.WorldInitDebug(&world_ctx)
     b2.World_SetPreSolveCallback(world_ctx.world, PreSolveFcn, nil)
     create_platforms()
     init_actor(&player, EntityKind.player, EntityKind.enemy, EntityKind.coin, "Player")
