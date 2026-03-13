@@ -14,9 +14,12 @@ WorldInitDebug :: proc( ctx: ^b2_odin.WorldContext) {
 	ctx.debug_draw.DrawPolygonFcn = dbg_draw_polygon
 	ctx.debug_draw.DrawSolidPolygonFcn = dbg_draw_polygon_solid
 	ctx.debug_draw.DrawCircleFcn = dbg_draw_circle
+    ctx.debug_draw.DrawSolidCircleFcn = dbg_draw_circle_solid
 	ctx.debug_draw.DrawSegmentFcn = dbg_draw_segment
+	ctx.debug_draw.DrawTransformFcn = dbg_draw_transform
 	ctx.debug_draw.DrawSolidCapsuleFcn = dbg_draw_capsule
 	ctx.debug_draw.DrawStringFcn = dbg_draw_string
+	ctx.debug_draw.DrawPointFcn = dbg_draw_point
 	ctx.debug_draw.drawBounds = true
 	ctx.debug_draw.drawShapes = true
 	ctx.debug_draw.useDrawingBounds = false
@@ -71,6 +74,17 @@ dbg_draw_circle :: proc "c" (
     rl.DrawCircleV({center.x, -center.y}, radius, rl_color)
 }
 
+dbg_draw_circle_solid :: proc "c" (
+    transform: Transform,
+    radius:f32, 
+    color: HexColor,
+    ctx: rawptr,
+) {
+    b2_color: u32 = u32(color) << 8 | 255
+    rl_color: = rl.GetColor(b2_color)
+    rl.DrawCircle(cast(i32)transform.p.x, cast(i32)-transform.p.y, radius, rl_color)
+}
+
 dbg_draw_capsule :: proc "c" (
     p1, p2: Vec2, 
     radius: f32, 
@@ -105,4 +119,14 @@ dbg_draw_string :: proc "c" (
     b2_color: u32 = u32(color) << 8 | 255
     rl_color: = rl.GetColor(b2_color)
     rl.DrawText(s, cast(c.int)p.x, cast(c.int)-p.y, 10, rl_color)
+}
+
+dbg_draw_transform :: proc "c" (transform: Transform, ctx: rawptr) {
+    dbg_draw_segment(transform.p, transform.p + b2.RotateVector(transform.q, {10, 0}), cast(HexColor)0xffffff, ctx)
+}
+
+dbg_draw_point :: proc "c" (p: Vec2, size: f32, color: HexColor, ctx: rawptr) {
+    b2_color: u32 = u32(color) << 8 | 255
+    rl_color: = rl.GetColor(b2_color)
+    rl.DrawCircle(cast(i32)p.x, cast(i32)-p.y, size, rl_color)
 }
