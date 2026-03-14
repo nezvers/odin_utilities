@@ -48,9 +48,6 @@ game_init :: proc() {
 	}
 	screen_size = {cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight()}
 	state_change(state_index)
-	// if state_list[state_index].enter != nil{
-	// 	state_list[state_index].enter()
-	// }
 }
 
 game_shutdown :: proc() {

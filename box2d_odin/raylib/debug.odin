@@ -15,12 +15,13 @@ WorldInitDebug :: proc( ctx: ^b2_odin.WorldContext) {
 	ctx.debug_draw.DrawSolidPolygonFcn = dbg_draw_polygon_solid
 	ctx.debug_draw.DrawCircleFcn = dbg_draw_circle
     ctx.debug_draw.DrawSolidCircleFcn = dbg_draw_circle_solid
+	// ctx.debug_draw.DrawSolidCapsuleFcn = dbg_draw_capsule
+    ctx.debug_draw.DrawSolidCapsuleFcn = dbg_draw_capsule_solid
 	ctx.debug_draw.DrawSegmentFcn = dbg_draw_segment
-	ctx.debug_draw.DrawTransformFcn = dbg_draw_transform
-	ctx.debug_draw.DrawSolidCapsuleFcn = dbg_draw_capsule
 	ctx.debug_draw.DrawStringFcn = dbg_draw_string
+	ctx.debug_draw.DrawTransformFcn = dbg_draw_transform
 	ctx.debug_draw.DrawPointFcn = dbg_draw_point
-	ctx.debug_draw.drawBounds = true
+	// ctx.debug_draw.drawBounds = true
 	ctx.debug_draw.drawShapes = true
 	ctx.debug_draw.useDrawingBounds = false
 }
@@ -97,6 +98,19 @@ dbg_draw_capsule :: proc "c" (
     rl.DrawCircleLinesV({p2.x, -p2.y}, radius, rl_color)
     rl.DrawLineV({p1.x - radius, -p1.y}, {p2.x - radius, -p2.y}, rl_color)
     rl.DrawLineV({p1.x + radius, -p1.y}, {p2.x + radius, -p2.y}, rl_color)
+}
+
+dbg_draw_capsule_solid :: proc "c" (
+    p1, p2: Vec2, 
+    radius: f32, 
+    color: HexColor, 
+    ctx: rawptr,
+){
+    b2_color: u32 = u32(color) << 8 | 255
+    rl_color: = rl.GetColor(b2_color)
+    rl.DrawCircle(cast(i32)p1.x, cast(i32)-p1.y, radius, rl_color)
+    rl.DrawCircle(cast(i32)p2.x, cast(i32)-p2.y, radius, rl_color)
+    rl.DrawRectangleRec({p1.x - radius, -p1.y, radius * 2, p1.y - p2.y}, rl_color)
 }
 
 dbg_draw_segment :: proc "c" (

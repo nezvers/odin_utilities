@@ -143,9 +143,9 @@ create_platforms :: proc() {
             platforms[i].size,
             u64(EntityKind.platform_static),
             u64(EntityKind.player | EntityKind.enemy), // Collide with everything
-            true,
             1,
             rawptr(&platforms[i].contact),
+            true,
         )
         platforms[i].contact.entity = rawptr(&platforms[i])
         platforms[i].contact.kind = EntityKind.platform_static

@@ -17,7 +17,7 @@ CreateBody :: proc(
     body_def: = b2.DefaultBodyDef()
     body_def.position = pos
     body_def.type = .staticBody
-    body_def.fixedRotation = true
+    body_def.fixedRotation = fixed_rotation
     body_def.name = name
     body:b2.BodyId = b2.CreateBody(ctx.world, body_def)
     return body
@@ -40,16 +40,22 @@ CreateShapeBox :: proc(
     size: Vec2, 
     categoryBits: u64,       // entity kind
     maskBits: u64 = BITMASK_ALL,       // collides against
-    enableSensorEvents:bool = false,
     density: f32 = 1,
     userData: rawptr = nil, // rawptr(uintptr(SensorKind.coin))
+    enableSensorEvents:bool = false,
+    enablePreSolveEvents:bool = false,
+    enableContactEvents: bool = false,
+    enableHitEvents: bool = false,
 )->b2.ShapeId {
     shape_def: = b2.DefaultShapeDef()
     shape_def.filter.categoryBits = categoryBits
     shape_def.filter.maskBits = maskBits
     shape_def.density = density
-    shape_def.enableSensorEvents = enableSensorEvents
     shape_def.userData = userData
+    shape_def.enableSensorEvents = enableSensorEvents
+    shape_def.enablePreSolveEvents = enablePreSolveEvents
+    shape_def.enableContactEvents = enableContactEvents
+    shape_def.enableHitEvents = enableHitEvents
     
     box:b2.Polygon = b2.MakeBox(size.x * 0.5 - 1, size.y * 0.5 - 1)
     shape:b2.ShapeId = b2.CreatePolygonShape(body, shape_def, box)
@@ -61,16 +67,22 @@ CreateShapeCircle :: proc(
     radius: f32, 
     categoryBits: u64,       // entity kind
     maskBits: u64 = BITMASK_ALL,       // collides against
-    enableSensorEvents: bool = false,
     density: f32 = 1,
     userData: rawptr = nil, // rawptr(uintptr(SensorKind.coin))
+    enableSensorEvents: bool = false,
+    enablePreSolveEvents:bool = false,
+    enableContactEvents: bool = false,
+    enableHitEvents: bool = false,
 )->b2.ShapeId {
     shape_def: = b2.DefaultShapeDef()
     shape_def.filter.categoryBits = categoryBits
     shape_def.filter.maskBits = maskBits
     shape_def.density = density
-    shape_def.enableSensorEvents = enableSensorEvents
     shape_def.userData = userData
+    shape_def.enableSensorEvents = enableSensorEvents
+    shape_def.enablePreSolveEvents = enablePreSolveEvents
+    shape_def.enableContactEvents = enableContactEvents
+    shape_def.enableHitEvents = enableHitEvents
     
     circle:b2.Circle
     circle.radius = radius
@@ -83,16 +95,22 @@ CreateShapeCapsule :: proc(
     radius: f32, 
     categoryBits: u64,       // entity kind
     maskBits: u64 = BITMASK_ALL,       // collides against
-    enableSensorEvents: bool = false,
     density: f32 = 1,
     userData: rawptr = nil, // rawptr(uintptr(SensorKind.coin))
+    enableSensorEvents: bool = false,
+    enablePreSolveEvents:bool = false,
+    enableContactEvents: bool = false,
+    enableHitEvents: bool = false,
 )->b2.ShapeId {
     shape_def: = b2.DefaultShapeDef()
     shape_def.filter.categoryBits = categoryBits
     shape_def.filter.maskBits = maskBits
     shape_def.density = density
-    shape_def.enableSensorEvents = enableSensorEvents
     shape_def.userData = userData
+    shape_def.enableSensorEvents = enableSensorEvents
+    shape_def.enablePreSolveEvents = enablePreSolveEvents
+    shape_def.enableContactEvents = enableContactEvents
+    shape_def.enableHitEvents = enableHitEvents
     
     circle:b2.Circle
     circle.radius = radius
