@@ -11,7 +11,7 @@ Sensor :: b2_odin.Sensor(SensorKind)
 Contact :: b2_odin.Contact(EntityKind)
 
 @(private="package")
-state_basic : State = {
+state_platformer : State = {
     init,
     finit,
     update,

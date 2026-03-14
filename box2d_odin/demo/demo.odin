@@ -17,15 +17,15 @@ State :: struct {
 }
 
 state_list: []State = {
-	state_basic,
+	state_platformer,
 }
 
 StateIndex :: enum {
-    BASIC,
+    PLATFORMER,
 	COUNT,
 }
 
-state_index:StateIndex = StateIndex.BASIC
+state_index:StateIndex = StateIndex.PLATFORMER
 screen_size:Vector2
 is_hovering_buttons:bool
 
