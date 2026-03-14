@@ -148,15 +148,7 @@ update :: proc(){
     player.input.x = f32(i32(right)) - f32(i32(left))
     update_actor(&player)
 
-    // Coins
-    for i:int = 0; i < len(coins); i += 1 {
-        if !coins[i].active { continue }
-        if coins[i].collected {
-            coins[i].active = false
-            if b2.Shape_IsValid(coins[i].sensor.shape){b2_odin.DestroyShape(coins[i].sensor.shape)}
-            if b2.Body_IsValid(coins[i].body){b2_odin.DestroyBody(coins[i].body)}
-        }
-    }
+    update_coins()
 }
 
 draw :: proc(){
@@ -226,6 +218,19 @@ create_coins :: proc() {
         coins[i].sensor.kind = SensorKind.coin
         coins[i].active = true
         coins[i].collected = false
+    }
+}
+
+update_coins :: proc() {
+    // Remove just collected coin
+    // TODO: use collected buffer
+    for i:int = 0; i < len(coins); i += 1 {
+        if !coins[i].active { continue }
+        if coins[i].collected {
+            coins[i].active = false
+            if b2.Shape_IsValid(coins[i].sensor.shape){b2_odin.DestroyShape(coins[i].sensor.shape)}
+            if b2.Body_IsValid(coins[i].body){b2_odin.DestroyBody(coins[i].body)}
+        }
     }
 }
 
