@@ -42,6 +42,7 @@ CreateShapeBox :: proc(
     maskBits: u64 = BITMASK_ALL,       // collides against
     density: f32 = 1,
     userData: rawptr = nil, // rawptr(uintptr(SensorKind.coin))
+    isSensor: bool = false,
     enableSensorEvents:bool = false,
     enablePreSolveEvents:bool = false,
     enableContactEvents: bool = false,
@@ -52,6 +53,7 @@ CreateShapeBox :: proc(
     shape_def.filter.maskBits = maskBits
     shape_def.density = density
     shape_def.userData = userData
+    shape_def.isSensor = isSensor
     shape_def.enableSensorEvents = enableSensorEvents
     shape_def.enablePreSolveEvents = enablePreSolveEvents
     shape_def.enableContactEvents = enableContactEvents
@@ -69,6 +71,7 @@ CreateShapeCircle :: proc(
     maskBits: u64 = BITMASK_ALL,       // collides against
     density: f32 = 1,
     userData: rawptr = nil, // rawptr(uintptr(SensorKind.coin))
+    isSensor: bool = false,
     enableSensorEvents: bool = false,
     enablePreSolveEvents:bool = false,
     enableContactEvents: bool = false,
@@ -79,6 +82,7 @@ CreateShapeCircle :: proc(
     shape_def.filter.maskBits = maskBits
     shape_def.density = density
     shape_def.userData = userData
+    shape_def.isSensor = isSensor
     shape_def.enableSensorEvents = enableSensorEvents
     shape_def.enablePreSolveEvents = enablePreSolveEvents
     shape_def.enableContactEvents = enableContactEvents
@@ -97,6 +101,7 @@ CreateShapeCapsule :: proc(
     maskBits: u64 = BITMASK_ALL,       // collides against
     density: f32 = 1,
     userData: rawptr = nil, // rawptr(uintptr(SensorKind.coin))
+    isSensor: bool = false,
     enableSensorEvents: bool = false,
     enablePreSolveEvents:bool = false,
     enableContactEvents: bool = false,
@@ -107,6 +112,7 @@ CreateShapeCapsule :: proc(
     shape_def.filter.maskBits = maskBits
     shape_def.density = density
     shape_def.userData = userData
+    shape_def.isSensor = isSensor
     shape_def.enableSensorEvents = enableSensorEvents
     shape_def.enablePreSolveEvents = enablePreSolveEvents
     shape_def.enableContactEvents = enableContactEvents

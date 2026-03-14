@@ -20,7 +20,7 @@ state_platformer : State = {
 
 EntityKind :: enum {
     none            = 0,
-    platform_static  = 1 << 0,
+    platform_static = 1 << 0,
     actor           = 1 << 1,
     coin            = 1 << 2,
     player          = 1 << 3,
@@ -28,12 +28,12 @@ EntityKind :: enum {
 }
 
 SensorKind :: enum {
-	none,
-	coin,
-	ground,
-	hurt,
+    none,
+    actor,
+    coin,
+    ground,
+    hurt,
 }
-
 
 PlatformStatic :: struct {
     pos: Vec2,
@@ -68,6 +68,17 @@ Actor :: struct {
     shape_feet: b2.ShapeId,
     sensor_ground: Sensor,
     sensor_hurt: Sensor,
+    sensor_coin: Sensor,
+}
+
+Coin :: struct {
+    pos: Vec2,
+    size: Vec2,
+    active: bool,
+    collected: bool,
+    body: b2.BodyId,
+    sensor: Sensor,
+    // TODO: add state for animations
 }
 
 JUMP_FORCE :: 550
@@ -87,13 +98,23 @@ platforms: []PlatformStatic = {
 }
 
 player: Actor
+score: int = 0
+
+coins: []Coin = {
+    {pos = {264, 330}, size = {8, 8}},
+    {pos = {564, 330}, size = {8, 8}},
+    {pos = {864, 330}, size = {8, 8}},
+}
 
 init :: proc(){
     b2_odin.WorldInit(&world_ctx, 32, {0, 0}, sensor_begin_event, sensor_end_event)
     glue.WorldInitDebug(&world_ctx)
     b2.World_SetPreSolveCallback(world_ctx.world, PreSolveFcn, nil)
     create_platforms()
+    create_coins()
     init_actor(&player, EntityKind.player, EntityKind.enemy, EntityKind.coin, "Player")
+
+    score = 0
 }
 
 finit :: proc(){
@@ -101,12 +122,17 @@ finit :: proc(){
         if b2.Shape_IsValid(platforms[i].shape){b2_odin.DestroyShape(platforms[i].shape)}
         if b2.Body_IsValid(platforms[i].body){b2_odin.DestroyBody(platforms[i].body)}
     }
+    for i:int=0; i < len(coins); i += 1 {
+        if b2.Shape_IsValid(coins[i].sensor.shape){b2_odin.DestroyShape(coins[i].sensor.shape)}
+        if b2.Body_IsValid(coins[i].body){b2_odin.DestroyBody(coins[i].body)}
+    }
 
     // Free Actors
     if b2.Shape_IsValid(player.shape_torso){b2_odin.DestroyShape(player.shape_torso)}
     if b2.Shape_IsValid(player.shape_feet){b2_odin.DestroyShape(player.shape_feet)}
     if b2.Shape_IsValid(player.sensor_ground.shape){b2_odin.DestroyShape(player.sensor_ground.shape)}
     if b2.Shape_IsValid(player.sensor_hurt.shape){b2_odin.DestroyShape(player.sensor_hurt.shape)}
+    if b2.Shape_IsValid(player.sensor_coin.shape){b2_odin.DestroyShape(player.sensor_coin.shape)}
     if b2.Body_IsValid(player.body) {b2_odin.DestroyBody(player.body)}
     // Free world
     if b2.World_IsValid(world_ctx.world) {b2_odin.WorldFinit(&world_ctx)}
@@ -114,41 +140,92 @@ finit :: proc(){
 
 update :: proc(){
     b2_odin.WorldUpdate(&world_ctx, rl.GetFrameTime())
-
+    
     // player input update
     player.input.jump = rl.IsKeyDown(rl.KeyboardKey.SPACE)
     right:bool = rl.IsKeyDown(rl.KeyboardKey.D)
     left:bool = rl.IsKeyDown(rl.KeyboardKey.A)
     player.input.x = f32(i32(right)) - f32(i32(left))
     update_actor(&player)
+
+    // Coins
+    for i:int = 0; i < len(coins); i += 1 {
+        if !coins[i].active { continue }
+        if coins[i].collected {
+            coins[i].active = false
+            if b2.Shape_IsValid(coins[i].sensor.shape){b2_odin.DestroyShape(coins[i].sensor.shape)}
+            if b2.Body_IsValid(coins[i].body){b2_odin.DestroyBody(coins[i].body)}
+        }
+    }
 }
 
 draw :: proc(){
     b2_odin.WorldDebug(&world_ctx)
+
+    text:cstring
+    if score < len(coins) {
+        text = rl.TextFormat("SCORE: %d", score)
+    } else  {
+        text = rl.TextFormat("COMPLTED!!!")
+    }
+    rl.DrawText(text, 500, 10, 20, rl.YELLOW)
 }
 
 create_platforms :: proc() {
     name:cstring = "Platform"
+    fixed_rotation :: true
+    not_sensor :: false
     for i:int=0; i < len(platforms); i += 1 {
         platforms[i].body = b2_odin.CreateBody(
             &world_ctx,
             platforms[i].pos,
             platforms[i].size,
             .staticBody,
-            true,
+            fixed_rotation,
             name,
         )
         platforms[i].shape = b2_odin.CreateShapeBox(
             platforms[i].body,
             platforms[i].size,
             u64(EntityKind.platform_static),
-            u64(EntityKind.player | EntityKind.enemy), // Collide with everything
+            u64(EntityKind.player | EntityKind.enemy),
             1,
             rawptr(&platforms[i].contact),
-            true,
+            not_sensor,
         )
         platforms[i].contact.entity = rawptr(&platforms[i])
         platforms[i].contact.kind = EntityKind.platform_static
+    }
+}
+
+create_coins :: proc() {
+    name:cstring = "Coin"
+    fixed_rotation :: true
+    is_sensor :: true
+    enable_sensor :: true
+    for i:int = 0; i < len(coins); i += 1 {
+        coins[i].body = b2_odin.CreateBody(
+            &world_ctx,
+            coins[i].pos,
+            coins[i].size,
+            .staticBody,
+            fixed_rotation,
+            name,
+        )
+        coins[i].sensor.shape = b2_odin.CreateShapeBox(
+            coins[i].body,
+            coins[i].size,
+            u64(EntityKind.coin),
+            u64(EntityKind.player),
+            1,
+            rawptr(&coins[i].sensor),
+            is_sensor,
+            enable_sensor,
+        )
+        coins[i].sensor.entity = &coins[i]
+        coins[i].sensor.kind = SensorKind.coin
+        coins[i].active = true
+        coins[i].collected = false
     }
 }
 
@@ -168,69 +245,83 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
     half_size: = size * 0.5
 
     body_def := b2.DefaultBodyDef()
-	body_def.position = {pos.x, -pos.y - size.y}
-	body_def.type = .dynamicBody
-	body_def.fixedRotation = true
-	body_def.name = name
+    body_def.position = {pos.x, -pos.y - size.y}
+    body_def.type = .dynamicBody
+    body_def.fixedRotation = true
+    body_def.name = name
     body_def.userData = rawptr(actor)
     // body_def.gravityScale = 0
-	actor.body = b2.CreateBody(world_ctx.world, body_def)
+    actor.body = b2.CreateBody(world_ctx.world, body_def)
 
     // Torso
+    // TODO: use "config" values
     torso_def := b2.DefaultShapeDef()
-	torso_def.filter.categoryBits = u64(kind)
-	torso_def.filter.maskBits = u64(EntityKind.platform_static) | u64(coin)
-	torso_def.material.friction = 0
-	torso_def.density = 1
+    torso_def.filter.categoryBits = u64(kind) | u64(coin)
+    torso_def.filter.maskBits = u64(EntityKind.platform_static)
+    torso_def.material.friction = 0
+    torso_def.density = 1
+    torso_def.enableSensorEvents = false
     torso_def.enablePreSolveEvents = true   // Call PreSolveCallback
     torso_def.userData = rawptr(&actor.contact)
 
     capsule_radius := half_size.x - 3.0
-	capsule_top: Vec2 = {0, half_size.y - capsule_radius - 5.0}
-	capsule_bottom: Vec2 = {0, -half_size.y + capsule_radius + 3.0}
-	capsule := b2.Capsule{capsule_bottom, capsule_top, capsule_radius}
+    capsule_top: Vec2 = {0, half_size.y - capsule_radius - 5.0}
+    capsule_bottom: Vec2 = {0, -half_size.y + capsule_radius + 3.0}
+    capsule := b2.Capsule{capsule_bottom, capsule_top, capsule_radius}
     actor.shape_torso = b2.CreateCapsuleShape(actor.body, torso_def, capsule)
 
     // Feet
     // feet_def := b2.DefaultShapeDef()
-	// feet_def.filter.categoryBits = u64(kind)
-	// feet_def.filter.maskBits = u64(EntityKind.platform_static | EntityKind.coin)
-	// feet_def.material.friction = 1
-	// feet_def.density = 1
+    // feet_def.filter.categoryBits = u64(kind)
+    // feet_def.filter.maskBits = u64(EntityKind.platform_static | EntityKind.coin)
+    // feet_def.material.friction = 1
+    // feet_def.density = 1
 
-	// feet_box := b2.MakeOffsetRoundedBox(
-	// 	half_size.x - 6.0,
-	// 	1.0,
-	// 	{0, -half_size.y + 2.0},
-	// 	b2.Rot_identity,
-	// 	0.5,
-	// )
-	// actor.shape_feet = b2.CreatePolygonShape(actor.body, feet_def, feet_box)
+    // feet_box := b2.MakeOffsetRoundedBox(
+    // 	half_size.x - 6.0,
+    // 	1.0,
+    // 	{0, -half_size.y + 2.0},
+    // 	b2.Rot_identity,
+    // 	0.5,
+    // )
+    // actor.shape_feet = b2.CreatePolygonShape(actor.body, feet_def, feet_box)
 
     // Ground Sensor
     // ground_sensor_def := b2.DefaultShapeDef()
-	// ground_sensor_def.filter.categoryBits = u64(kind)
-	// ground_sensor_def.filter.maskBits = u64(EntityKind.platform_static)
-	// ground_sensor_def.isSensor = true
-	// ground_sensor_def.enableSensorEvents = true
-	// ground_sensor_def.userData = rawptr(&actor.sensor_ground)
+    // ground_sensor_def.filter.categoryBits = u64(kind)
+    // ground_sensor_def.filter.maskBits = u64(EntityKind.platform_static)
+    // ground_sensor_def.isSensor = true
+    // ground_sensor_def.enableSensorEvents = true
+    // ground_sensor_def.userData = rawptr(&actor.sensor_ground)
 
-	// ground_sensor_box := b2.MakeOffsetBox(half_size.x - 1.0, 4.0, {0, -half_size.y - 1.0}, b2.Rot_identity)
-	// actor.sensor_ground.shape = b2.CreatePolygonShape(actor.body, ground_sensor_def, ground_sensor_box)
+    // ground_sensor_box := b2.MakeOffsetBox(half_size.x - 1.0, 4.0, {0, -half_size.y - 1.0}, b2.Rot_identity)
+    // actor.sensor_ground.shape = b2.CreatePolygonShape(actor.body, ground_sensor_def, ground_sensor_box)
     // actor.sensor_ground.entity = rawptr(actor)
     // actor.sensor_ground.kind = .ground
 
     // Hurt Sensor
-    // hurt_sensor_def := b2.DefaultShapeDef()
-	// hurt_sensor_def.filter.categoryBits = u64(kind)
-	// hurt_sensor_def.filter.maskBits = u64(enemy)
-	// hurt_sensor_def.isSensor = true
-	// hurt_sensor_def.enableSensorEvents = true
-	// hurt_sensor_def.userData = rawptr(&actor.sensor_hurt)
+    hurt_sensor_def := b2.DefaultShapeDef()
+    hurt_sensor_def.filter.categoryBits = u64(kind)
+    hurt_sensor_def.filter.maskBits = u64(coin) // u64(enemy)
+    // hurt_sensor_def.isSensor = true
+    hurt_sensor_def.enableSensorEvents = true
+    hurt_sensor_def.userData = rawptr(&actor.sensor_hurt)
 
-	// actor.sensor_hurt.shape = b2.CreateCapsuleShape(actor.body, hurt_sensor_def, capsule)
-    // actor.sensor_hurt.entity = rawptr(actor)
-    // actor.sensor_hurt.kind = .hurt
+    actor.sensor_hurt.shape = b2.CreateCapsuleShape(actor.body, hurt_sensor_def, capsule)
+    actor.sensor_hurt.entity = rawptr(actor)
+    actor.sensor_hurt.kind = .hurt
+
+    // Hurt Sensor
+    coin_sensor_def := b2.DefaultShapeDef()
+    coin_sensor_def.filter.categoryBits = u64(kind)
+    coin_sensor_def.filter.maskBits = u64(coin) // u64(enemy)
+    // coin_sensor_def.isSensor = true
+    coin_sensor_def.enableSensorEvents = true
+    coin_sensor_def.userData = rawptr(&actor.sensor_coin)
+
+    actor.sensor_coin.shape = b2.CreateCapsuleShape(actor.body, coin_sensor_def, capsule)
+    actor.sensor_coin.entity = rawptr(actor)
+    actor.sensor_coin.kind = .actor
 }
 
 update_actor :: proc(actor: ^Actor) {
@@ -299,11 +390,20 @@ update_actor :: proc(actor: ^Actor) {
 
 sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
     sensor := cast(^Sensor)b2.Shape_GetUserData(event.sensorShapeId)
+    visitor := cast(^Sensor)b2.Shape_GetUserData(event.visitorShapeId)
     
     #partial switch sensor.kind {
     case .none:
         break
+    case .actor:
+        break
     case .coin:
+        coin: = cast(^Coin)sensor.entity
+        if coin.collected { return }
+        if visitor.kind == .actor && cast(^Actor)visitor.entity == &player {
+            coin.collected = true
+            score += 1
+        }
         break
     case .ground:
         break
