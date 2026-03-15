@@ -430,7 +430,8 @@ update_actor :: proc(actor: ^Actor) {
             }
         }
     }
-    
+    // NOTE: even with velocity up, next frame collision event sttill happen.
+    // state.velocity used to skip state.grounded
     actor.state.velocity = target_velocity
     b2.Body_SetLinearVelocity(actor.body, target_velocity)
     // Reset ground detection
