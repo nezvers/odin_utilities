@@ -431,6 +431,7 @@ update_actor :: proc(actor: ^Actor) {
         }
     }
     
+    actor.state.velocity = target_velocity
     b2.Body_SetLinearVelocity(actor.body, target_velocity)
     // Reset ground detection
     actor.state.grounded = false
@@ -486,13 +487,15 @@ PreSolveFcn :: proc "c" (shapeIdA, shapeIdB: b2.ShapeId, manifold: ^b2.Manifold,
     
     if contactA.kind == EntityKind.actor {
         actor: ^Actor = cast(^Actor)contactA.entity
-        if manifold.normal.y > 0.5 {
+        // WORKAROUND: after jumping up, this still triggers frame after
+        if !(actor.state.velocity.y > 0) && (manifold.normal.y > 0.5) {
             actor.state.grounded = true
         }
     }
     if contactB.kind == EntityKind.actor {
         actor: ^Actor = cast(^Actor)contactB.entity
-        if manifold.normal.y > 0.5 {
+        // WORKAROUND: after jumping up, this still triggers frame after
+        if !(actor.state.velocity.y > 0) && (manifold.normal.y > 0.5) {
             actor.state.grounded = true
         }
     }
