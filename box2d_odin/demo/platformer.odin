@@ -35,6 +35,7 @@ SensorKind :: enum {
     coin,
     jumpad,
     ground,
+    prop,
     hurt,
 }
 
@@ -46,7 +47,11 @@ Props :: struct {
     contact: Contact,
 }
 PlatformStatic :: Props
-Box :: Props
+
+Box :: struct {
+    using prop: Props,
+    sensor_prop: Sensor,
+}
 
 Actor :: struct {
     input: struct {
@@ -73,7 +78,7 @@ Actor :: struct {
     shape_feet: b2.ShapeId,
     sensor_ground: Sensor,
     sensor_hurt: Sensor,
-    sensor_coin: Sensor,
+    sensor_actor: Sensor,
 }
 
 Trigger :: struct {
@@ -143,6 +148,7 @@ finit :: proc(){
     }
     for i:int=0; i < len(boxes); i += 1 {
         if b2.Shape_IsValid(boxes[i].shape){b2_odin.DestroyShape(boxes[i].shape)}
+        if b2.Shape_IsValid(boxes[i].sensor_prop.shape){b2_odin.DestroyShape(boxes[i].sensor_prop.shape)}
         if b2.Body_IsValid(boxes[i].body){b2_odin.DestroyBody(boxes[i].body)}
     }
     for i:int=0; i < len(coins); i += 1 {
@@ -159,7 +165,7 @@ finit :: proc(){
     if b2.Shape_IsValid(player.shape_feet){b2_odin.DestroyShape(player.shape_feet)}
     if b2.Shape_IsValid(player.sensor_ground.shape){b2_odin.DestroyShape(player.sensor_ground.shape)}
     if b2.Shape_IsValid(player.sensor_hurt.shape){b2_odin.DestroyShape(player.sensor_hurt.shape)}
-    if b2.Shape_IsValid(player.sensor_coin.shape){b2_odin.DestroyShape(player.sensor_coin.shape)}
+    if b2.Shape_IsValid(player.sensor_actor.shape){b2_odin.DestroyShape(player.sensor_actor.shape)}
     if b2.Body_IsValid(player.body) {b2_odin.DestroyBody(player.body)}
     // Free world
     if b2.World_IsValid(world_ctx.world) {b2_odin.WorldFinit(&world_ctx)}
@@ -267,7 +273,7 @@ create_jump_pads :: proc() {
             jump_pads[i].body,
             jump_pads[i].size,
             u64(EntityKind.jumpad),
-            u64(EntityKind.player),
+            u64(EntityKind.player | EntityKind.prop),
             1,
             rawptr(&jump_pads[i].sensor),
             is_sensor,
@@ -284,6 +290,7 @@ create_boxes :: proc() {
     name:cstring = "Box"
     fixed_rotation :: false
     not_sensor :: false
+    enable_sensorevents :: true
     for i:int=0; i < len(boxes); i += 1 {
         boxes[i].body = b2_odin.CreateBody(
             &world_ctx,
@@ -297,13 +304,26 @@ create_boxes :: proc() {
             boxes[i].body,
             boxes[i].size,
             u64(EntityKind.prop),
-            u64(EntityKind.player | EntityKind.enemy | EntityKind.platform_static),
+            u64(EntityKind.prop | EntityKind.player | EntityKind.enemy | EntityKind.platform_static),
             1,
             rawptr(&boxes[i].contact),
             not_sensor,
         )
-        boxes[i].contact.entity = rawptr(&boxes[i])
         boxes[i].contact.kind = EntityKind.prop
+        boxes[i].contact.entity = rawptr(&boxes[i])
+
+        boxes[i].sensor_prop.shape = b2_odin.CreateShapeBox(
+            boxes[i].body,
+            boxes[i].size,
+            u64(EntityKind.prop),
+            u64(EntityKind.jumpad),
+            1,
+            rawptr(&boxes[i].sensor_prop),
+            not_sensor,
+            enable_sensorevents,
+        )
+        boxes[i].sensor_prop.kind = SensorKind.prop
+        boxes[i].sensor_prop.entity = &boxes[i]
     }
 }
 
@@ -377,11 +397,11 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
     coin_sensor_def.filter.maskBits = u64(coin) | u64(EntityKind.jumpad)
     // coin_sensor_def.isSensor = true
     coin_sensor_def.enableSensorEvents = true
-    coin_sensor_def.userData = rawptr(&actor.sensor_coin)
+    coin_sensor_def.userData = rawptr(&actor.sensor_actor)
 
-    actor.sensor_coin.shape = b2.CreateCapsuleShape(actor.body, coin_sensor_def, capsule)
-    actor.sensor_coin.entity = rawptr(actor)
-    actor.sensor_coin.kind = .actor
+    actor.sensor_actor.shape = b2.CreateCapsuleShape(actor.body, coin_sensor_def, capsule)
+    actor.sensor_actor.entity = rawptr(actor)
+    actor.sensor_actor.kind = .actor
 
     // Feet
     // feet_def := b2.DefaultShapeDef()
@@ -517,6 +537,13 @@ sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
             velocity.y = JUMP_FORCE * 1.3
             
             b2.Body_SetLinearVelocity(actor.body, velocity)
+        } else if visitor.kind == .prop {
+            prop: ^Props = cast(^Props)visitor.entity
+            
+            velocity: = b2.Body_GetLinearVelocity(prop.body)
+            velocity.y = JUMP_FORCE * 1.3
+            
+            b2.Body_SetLinearVelocity(prop.body, velocity)
         }
         break
     case .ground:
