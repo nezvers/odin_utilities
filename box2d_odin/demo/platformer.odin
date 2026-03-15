@@ -26,6 +26,7 @@ EntityKind :: enum {
     jumpad          = 1 << 3,
     player          = 1 << 4,
     enemy           = 1 << 5,
+    prop            = 1 << 6,
 }
 
 SensorKind :: enum {
@@ -37,13 +38,15 @@ SensorKind :: enum {
     hurt,
 }
 
-PlatformStatic :: struct {
+Props :: struct {
     pos: Vec2,
     size: Vec2,
     body: b2.BodyId,
     shape: b2.ShapeId,
     contact: Contact,
 }
+PlatformStatic :: Props
+Box :: Props
 
 Actor :: struct {
     input: struct {
@@ -83,6 +86,7 @@ Trigger :: struct {
     // TODO: add state for animations
 }
 Coin :: Trigger
+Jumpad :: Trigger
 
 JUMP_FORCE :: 550
 SPEED_MAX :: 400
@@ -100,6 +104,12 @@ platforms: []PlatformStatic = {
     {pos = {800, 500 - 128}, size = {128, 32}},
 }
 
+boxes: []Box = {
+    {pos = {290, 310}, size = {32, 32}},
+    {pos = {590, 310}, size = {32, 32}},
+    {pos = {890, 310}, size = {32, 32}},
+}
+
 player: Actor
 score: int = 0
 
@@ -109,7 +119,7 @@ coins: []Coin = {
     {pos = {864, 330}, size = {8, 8}},
 }
 
-jump_pads: []Trigger = {
+jump_pads: []Jumpad = {
     {pos = {380, 496}, size = {32, 4}},
 }
 
@@ -118,6 +128,7 @@ init :: proc(){
     glue.WorldInitDebug(&world_ctx)
     b2.World_SetPreSolveCallback(world_ctx.world, PreSolveFcn, nil)
     create_platforms()
+    create_boxes()
     create_coins()
     create_jump_pads()
     init_actor(&player, EntityKind.player, EntityKind.enemy, EntityKind.coin, "Player")
@@ -129,6 +140,10 @@ finit :: proc(){
     for i:int=0; i < len(platforms); i += 1 {
         if b2.Shape_IsValid(platforms[i].shape){b2_odin.DestroyShape(platforms[i].shape)}
         if b2.Body_IsValid(platforms[i].body){b2_odin.DestroyBody(platforms[i].body)}
+    }
+    for i:int=0; i < len(boxes); i += 1 {
+        if b2.Shape_IsValid(boxes[i].shape){b2_odin.DestroyShape(boxes[i].shape)}
+        if b2.Body_IsValid(boxes[i].body){b2_odin.DestroyBody(boxes[i].body)}
     }
     for i:int=0; i < len(coins); i += 1 {
         if b2.Shape_IsValid(coins[i].sensor.shape){b2_odin.DestroyShape(coins[i].sensor.shape)}
@@ -160,6 +175,7 @@ update :: proc(){
     player.input.x = f32(i32(right)) - f32(i32(left))
     update_actor(&player)
 
+    update_boxes()
     update_coins()
 }
 
@@ -192,7 +208,7 @@ create_platforms :: proc() {
             platforms[i].body,
             platforms[i].size,
             u64(EntityKind.platform_static),
-            u64(EntityKind.player | EntityKind.enemy),
+            u64(EntityKind.player | EntityKind.enemy | EntityKind.prop),
             1,
             rawptr(&platforms[i].contact),
             not_sensor,
@@ -264,6 +280,33 @@ create_jump_pads :: proc() {
     }
 }
 
+create_boxes :: proc() {
+    name:cstring = "Box"
+    fixed_rotation :: false
+    not_sensor :: false
+    for i:int=0; i < len(boxes); i += 1 {
+        boxes[i].body = b2_odin.CreateBody(
+            &world_ctx,
+            boxes[i].pos,
+            boxes[i].size,
+            .dynamicBody,
+            fixed_rotation,
+            name,
+        )
+        boxes[i].shape = b2_odin.CreateShapeBox(
+            boxes[i].body,
+            boxes[i].size,
+            u64(EntityKind.prop),
+            u64(EntityKind.player | EntityKind.enemy | EntityKind.platform_static),
+            1,
+            rawptr(&boxes[i].contact),
+            not_sensor,
+        )
+        boxes[i].contact.entity = rawptr(&boxes[i])
+        boxes[i].contact.kind = EntityKind.prop
+    }
+}
+
 update_coins :: proc() {
     // Remove just triggered coin
     // TODO: use triggered buffer
@@ -274,6 +317,16 @@ update_coins :: proc() {
             if b2.Shape_IsValid(coins[i].sensor.shape){b2_odin.DestroyShape(coins[i].sensor.shape)}
             if b2.Body_IsValid(coins[i].body){b2_odin.DestroyBody(coins[i].body)}
         }
+    }
+}
+
+update_boxes :: proc() {
+    delta_time: f32 = rl.GetFrameTime()
+    for i:int = 0; i < len(boxes); i += 1 {
+        box: ^Box = &boxes[i]
+        velocity: = b2.Body_GetLinearVelocity(box.body)
+        velocity.y += GRAVITY * delta_time
+        b2.Body_SetLinearVelocity(box.body, velocity)
     }
 }
 
@@ -305,7 +358,7 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
     // TODO: use "config" values
     torso_def := b2.DefaultShapeDef()
     torso_def.filter.categoryBits = u64(kind)
-    torso_def.filter.maskBits = u64(EntityKind.platform_static)
+    torso_def.filter.maskBits = u64(EntityKind.platform_static | EntityKind.prop)
     torso_def.material.friction = 0
     torso_def.density = 1
     torso_def.enableSensorEvents = false
