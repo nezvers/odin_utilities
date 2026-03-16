@@ -6,20 +6,8 @@
 - ✅ App state `odin run app_state/demo`
 - ❎ Astar `odin run astar/demo`
     - ✅ grid 2D (4-way Manhattan, 8-way Euclidian)
+- ✅ Box2d Odin `odin run box2d_odin/demo`
 - ✅ FABRIK IK `odin run fabrik/demo`
-- ✅ Microui (raylib) `odin run microui/demo`
-- ✅ MicMeter `odin run mic_meter/demo`
-- ✅ Viewport Rect `odin run viewport_rect/demo`
-- ✅ Tilemap `odin run tilemap/demo -out:tilemap/demo.exe`
-- ✅ Spring `odin run spring/demo`
-- ✅ Sprite `odin run sprite/demo -out:sprite/demo.exe`
-- ✅ Sound Effect `odin run sound_effects/demo -out:sound_effects/demo.exe`
-- ✅ Particles `odin run particles/demo -out:particles/demo.exe`
-- ✅ Task `odin run task/demo -out:task/demo.exe`
-    - Call process with arguments
-    - Download file
-    - Extract TAR & ZIP
-    - Clone git repository
 - ❎ Geometry2D `odin run geometry2d/demo`
     - ✅ shapes [point, line, circle, rectangle, triangle, ray]
     - ✅ overlap
@@ -28,3 +16,16 @@
     - ❎ closest
     - ❎ project
     - ❎ envelope
+- ✅ MicMeter `odin run mic_meter/demo`
+- ✅ Microui (raylib) `odin run microui/demo`
+- ✅ Particles `odin run particles/demo -out:particles/demo.exe`
+- ✅ Sound Effect `odin run sound_effects/demo -out:sound_effects/demo.exe`
+- ✅ Spring `odin run spring/demo`
+- ✅ Sprite `odin run sprite/demo -out:sprite/demo.exe`
+- ✅ Task `odin run task/demo -out:task/demo.exe`
+    - Call process with arguments
+    - Download file
+    - Extract TAR & ZIP
+    - Clone git repository
+- ✅ Tilemap `odin run tilemap/demo -out:tilemap/demo.exe`
+- ✅ Viewport Rect `odin run viewport_rect/demo`
