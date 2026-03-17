@@ -33,19 +33,17 @@ Update :: proc(timer: ^Timer, delta_time: f32) {
     timer.remain -= delta_time
     if timer.remain > 0 { return}
 
-    count:int = cast(int)((timer.wait - timer.remain) / timer.wait)
-    timer.remain += timer.wait * cast(f32)count
+    diff:f32 = (timer.wait - timer.remain)
+    count:int = cast(int)(diff / timer.wait)
+    timer.remain = timer.wait - (diff - (timer.wait * cast(f32)count))
 
     if timer.mode == .single {
         count = 1
         timer.active = false
-    } else {
-        timer.remain = timer.wait + timer.remain
+        timer.remain = 0
     }
 
-    for i:int = 0; i < count; i += 1 {
-        for callback in timer.callbacks {
-            callback(timer)
-        }
+    for callback in timer.callbacks {
+        callback(timer)
     }
 }
