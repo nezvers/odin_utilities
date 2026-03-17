@@ -2,19 +2,13 @@ package quadtree
 
 /*
 Linear Morton Quadtree
-
 Nodes are implicitly stored by (depth, morton index).
 
 Depth layout:
 
-depth 0
-0
-
-depth 1
-1 2 3 4
-
-depth 2
-5..20
+depth 0: 0
+depth 1: 1 2 3 4
+depth 2: 5..20
 
 index formula:
 index = qt_depth_index(depth) + morton
@@ -93,7 +87,7 @@ qt_leaf_count :: proc(depth: u32) -> u32 {
 }
 
 qt_insert :: proc( tree: ^Quadtree, object: QTObject) {
-    node := qt_locate_parent(object.bounds, tree.root_exponent)
+    node := qt_locate_parent(tree, object.bounds)
     start, _ := qt_subtree_range(node, tree.max_depth)
     leaf_index := start
     leaf := &tree.leaf_ranges[leaf_index]
@@ -132,34 +126,37 @@ qt_subtree_range :: proc(
 }
 
 qt_locate_parent :: proc(
-    object: AABB,
-    root_exponent: u32
-)->QTNode {
-    left   := object.x - object.w
-    right  := object.x + object.w
-    top    := object.y - object.h
-    bottom := object.y + object.h
+    tree: ^Quadtree,
+    object: AABB
+) -> QTNode {
 
-    dx := cast(u32)(left ~ right)
-    dy := cast(u32)(top  ~ bottom)
+    l := object.x - object.w
+    r := object.x + object.w
+    t := object.y - object.h
+    b := object.y + object.h
+
+    gl, gt := qt_world_to_grid(l, t, tree.origin_x, tree.origin_y)
+    gr, gb := qt_world_to_grid(r, b, tree.origin_x, tree.origin_y)
+
+    dx := gl ~ gr
+    dy := gt ~ gb
 
     difference := dx > dy ? dx : dy
 
     depth: u32
     if difference == 0 {
-        depth = root_exponent
+        depth = tree.root_exponent
     } else {
-        // highest differing bit determines smallest power-of-two cell
-        depth = root_exponent - (highest_bit(difference) + 1)
+        depth = tree.root_exponent - (highest_bit(difference) + 1)
     }
 
-    cell_shift := root_exponent - depth
-
-    cx := cast(u32)object.x >> cell_shift
-    cy := cast(u32)object.y >> cell_shift
+    cell_shift := tree.root_exponent - depth
+    gx, gy := qt_world_to_grid(object.x, object.y, tree.origin_x, tree.origin_y)
+    
+    cx := gx >> cell_shift
+    cy := gy >> cell_shift
 
     morton := part1by1(cx) | (part1by1(cy) << 1)
-
     return QTNode{depth, morton}
 }
 
@@ -241,12 +238,12 @@ qt_find_collision_pairs :: proc(
     }
 }
 
-/*  */
 qt_depth_index :: proc(depth: u32) -> u32 {
     // total nodes before this depth
     return ((1 << (depth * 2)) - 1) / 3
 }
 
+/*  */
 qt_node_index :: proc(node: QTNode) -> u32 {
     return qt_depth_index(node.depth) + node.morton
 }
