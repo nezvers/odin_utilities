@@ -45,6 +45,36 @@ update :: proc() {
     if rl.IsKeyPressed(rl.KeyboardKey.BACKSPACE) || rl.IsKeyPressed(rl.KeyboardKey.DELETE) {
         input_pop()
     }
+    if rl.IsKeyPressed(rl.KeyboardKey.ZERO) || rl.IsKeyPressed(rl.KeyboardKey.KP_0) {
+        input_push(0)
+    }
+    if rl.IsKeyPressed(rl.KeyboardKey.ONE) || rl.IsKeyPressed(rl.KeyboardKey.KP_1) {
+        input_push(1)
+    }
+    if rl.IsKeyPressed(rl.KeyboardKey.TWO) || rl.IsKeyPressed(rl.KeyboardKey.KP_2) {
+        input_push(2)
+    }
+    if rl.IsKeyPressed(rl.KeyboardKey.THREE) || rl.IsKeyPressed(rl.KeyboardKey.KP_3) {
+        input_push(3)
+    }
+    if rl.IsKeyPressed(rl.KeyboardKey.FOUR) || rl.IsKeyPressed(rl.KeyboardKey.KP_4) {
+        input_push(4)
+    }
+    if rl.IsKeyPressed(rl.KeyboardKey.FIVE) || rl.IsKeyPressed(rl.KeyboardKey.KP_5) {
+        input_push(5)
+    }
+    if rl.IsKeyPressed(rl.KeyboardKey.SIX) || rl.IsKeyPressed(rl.KeyboardKey.KP_6) {
+        input_push(6)
+    }
+    if rl.IsKeyPressed(rl.KeyboardKey.SEVEN) || rl.IsKeyPressed(rl.KeyboardKey.KP_7) {
+        input_push(7)
+    }
+    if rl.IsKeyPressed(rl.KeyboardKey.EIGHT) || rl.IsKeyPressed(rl.KeyboardKey.KP_8) {
+        input_push(8)
+    }
+    if rl.IsKeyPressed(rl.KeyboardKey.NINE) || rl.IsKeyPressed(rl.KeyboardKey.KP_9) {
+        input_push(9)
+    }
 }
 
 draw :: proc() {
@@ -100,4 +130,16 @@ input_pop :: proc() {
         input_value.digits[i] = input_value.digits[i + 1]
     }
     input_value.digits[len(input_value.digits) - 1] = 0
+}
+
+input_push :: proc(value: u8) {
+    if input_value.count == len(input_value.digits) { return }
+    assert(value < 10)
+
+    last:int = len(input_value.digits) - 1
+    for i:int=0; i < last; i += 1 {
+        input_value.digits[last - i] = input_value.digits[last - i - 1]
+    }
+    input_value.digits[0] = value
+    input_value.count += 1
 }
