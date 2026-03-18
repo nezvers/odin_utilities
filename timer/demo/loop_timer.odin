@@ -41,6 +41,10 @@ finit :: proc() {}
 
 update :: proc() {
     ti.Update(&loop_timer, rl.GetFrameTime())
+
+    if rl.IsKeyPressed(rl.KeyboardKey.BACKSPACE) || rl.IsKeyPressed(rl.KeyboardKey.DELETE) {
+        input_pop()
+    }
 }
 
 draw :: proc() {
@@ -54,7 +58,7 @@ draw :: proc() {
         center_y - HEIGHT_CLOCK / 2, 
         HEIGHT_CLOCK, rl.GRAY)
     
-    
+    // Input
     input_y:i32 = center_y - HEIGHT_CLOCK
     input_right:i32 = center_x + measure_clock / 2
     OFF_INPUT :: 75
@@ -86,4 +90,14 @@ seconds_to_clock :: proc(sec:f32)->cstring {
     seconds %= 60
     minutes %= 60
     return rl.TextFormat("%02d:%02d:%02d.%03d", hours, minutes, seconds, ms)
+}
+
+input_pop :: proc() {
+    if input_value.count == 0 { return }
+    input_value.count -= 1
+
+    for i:int=0; i < len(input_value.digits) - 1; i += 1 {
+        input_value.digits[i] = input_value.digits[i + 1]
+    }
+    input_value.digits[len(input_value.digits) - 1] = 0
 }
