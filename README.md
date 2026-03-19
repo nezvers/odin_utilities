@@ -28,4 +28,5 @@
     - Extract TAR & ZIP
     - Clone git repository
 - ✅ Tilemap `odin run tilemap/demo -out:tilemap/demo.exe`
+- ✅ Timer `odin run timer/demo -out:timer/demo.exe`
 - ✅ Viewport Rect `odin run viewport_rect/demo`
