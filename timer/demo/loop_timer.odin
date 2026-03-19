@@ -91,6 +91,18 @@ draw :: proc() {
         number_x -= OFF_INPUT / 2
         rl.DrawText(":", number_x, input_y, HEIGHT_CLOCK / 2, color)
     }
+
+    percent:f32 = loop_timer.remain / loop_timer.wait
+    progress_rect:rl.Rectangle = {
+        cast(f32)(center_x - measure_clock / 2),
+        cast(f32)(center_y + HEIGHT_CLOCK / 2),
+        cast(f32)(measure_clock),
+        cast(f32)(HEIGHT_CLOCK / 2),
+    }
+
+    rl.DrawRectangleRec(progress_rect, rl.LIGHTGRAY)
+    progress_rect.width *= percent
+    rl.DrawRectangleRec(progress_rect, rl.LIME)
 }
 
 timeout :: proc( timer: ^Timer) {
