@@ -1,6 +1,7 @@
 #+private file
 package demo
 
+import "core:fmt"
 import rl "vendor:raylib"
 import ti ".."
 Timer :: ti.Timer
@@ -82,6 +83,7 @@ draw :: proc() {
 
 timeout :: proc( timer: ^Timer) {
     // TODO: play a sound & flash a screen
+    fmt.printfln("Timeout: ")
 }
 
 seconds_to_clock :: proc(sec:f32)->cstring {
