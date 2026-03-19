@@ -27,6 +27,7 @@ loop_timer: Timer = {
 }
 measure_clock:i32
 numbers: []cstring = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+alert_sound: rl.Sound
 
 init :: proc() {
     // Start input
@@ -36,10 +37,18 @@ init :: proc() {
     input_value.digits[0] = 0
     loop_timer.wait = input_to_seconds()
 
-    ti.Start(&loop_timer)
+    ti.Reset(&loop_timer)
     measure_clock = rl.MeasureText("00:00:00.000", HEIGHT_CLOCK)
+
+    rl.InitAudioDevice()
+    alert_sound = rl.LoadSound("../assets/sounds/alert_sound.wav")
+    rl.SetSoundVolume(alert_sound, 1)
 }
-finit :: proc() {}
+
+finit :: proc() {
+    rl.UnloadSound(alert_sound)
+    rl.CloseAudioDevice()
+}
 
 update :: proc() {
     ti.Update(&loop_timer, rl.GetFrameTime())
@@ -84,6 +93,7 @@ draw :: proc() {
 timeout :: proc( timer: ^Timer) {
     // TODO: play a sound & flash a screen
     fmt.printfln("Timeout: ")
+    rl.PlaySound(alert_sound)
 }
 
 seconds_to_clock :: proc(sec:f32)->cstring {
