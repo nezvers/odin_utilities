@@ -28,6 +28,7 @@ loop_timer: Timer = {
 measure_clock:i32
 numbers: []cstring = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
 alert_sound: rl.Sound
+flash_value:f32 = 0
 
 init :: proc() {
     // Start input
@@ -51,7 +52,9 @@ finit :: proc() {
 }
 
 update :: proc() {
-    ti.Update(&loop_timer, rl.GetFrameTime())
+    delta_time:f32 = rl.GetFrameTime()
+    ti.Update(&loop_timer, delta_time)
+    flash_update(delta_time)
     update_keyboard_input()
 }
 
@@ -64,7 +67,7 @@ draw :: proc() {
         text_clock, 
         center_x - measure_clock / 2, 
         center_y - HEIGHT_CLOCK / 2, 
-        HEIGHT_CLOCK, rl.GRAY)
+        HEIGHT_CLOCK, rl.BLACK)
     
     // Input
     is_valid:bool = input_is_valid()
@@ -93,6 +96,7 @@ draw :: proc() {
 timeout :: proc( timer: ^Timer) {
     // TODO: play a sound & flash a screen
     fmt.printfln("Timeout: ")
+    flash_value = 1
     rl.PlaySound(alert_sound)
 }
 
@@ -185,4 +189,12 @@ input_to_seconds :: proc()->f32 {
     seconds:u32 = cast(u32)(input_value.digits[1] * 10 + input_value.digits[0])
 
     return cast(f32)(seconds + minutes * 60 + hours * 60 * 60)
+}
+
+flash_update :: proc(delta_time:f32, mult:f32 = 2) {
+    if flash_value == 0 { return }
+    flash_value -= delta_time * mult
+    if flash_value < 0 { flash_value = 0}
+
+    background_color = rl.ColorLerp(rl.WHITE, rl.YELLOW, flash_value)
 }

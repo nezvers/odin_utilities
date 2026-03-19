@@ -30,6 +30,7 @@ screen_size:Vector2
 is_hovering_buttons:bool
 
 button_names:[StateIndex.COUNT]cstring
+background_color: = rl.WHITE
 
 state_change :: proc(index:StateIndex){
 	if state_list[state_index].exit != nil{
@@ -67,7 +68,7 @@ update :: proc() {
 
 draw :: proc() {
     rl.BeginDrawing()
-	rl.ClearBackground(rl.WHITE)
+	rl.ClearBackground(background_color)
 
 	if state_list[state_index].draw != nil{
 		state_list[state_index].draw()
