@@ -46,3 +46,14 @@ Update :: proc(timer: ^Timer, delta_time: f32) {
         callback(timer)
     }
 }
+
+seconds_to_clock :: proc(sec:f32)->(seconds:i32, minutes:i32, hours:i32, ms:i32) {
+    seconds = cast(i32)sec
+    minutes = seconds / 60
+    hours = minutes / 60
+    fract:f32 = sec - cast(f32)seconds
+    ms = cast(i32)(fract * 1000)
+    seconds %= 60
+    minutes %= 60
+    return
+}

@@ -87,13 +87,7 @@ timeout :: proc( timer: ^Timer) {
 }
 
 seconds_to_clock :: proc(sec:f32)->cstring {
-    seconds:i32 = cast(i32)sec
-    minutes:i32 = seconds / 60
-    hours:i32 = minutes / 60
-    fract:f32 = sec - cast(f32)seconds
-    ms:i32 = cast(i32)(fract * 1000)
-    seconds %= 60
-    minutes %= 60
+    seconds,minutes,hours,ms: = ti.seconds_to_clock(sec)
     return rl.TextFormat("%02d:%02d:%02d.%03d", hours, minutes, seconds, ms)
 }
 
