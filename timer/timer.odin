@@ -23,7 +23,7 @@ Start :: proc(timer: ^Timer, wait: f32 = 0) {
 }
 
 Reset :: proc(timer: ^Timer) {
-    timer.remain = 0
+    timer.remain = timer.wait
 }
 
 Update :: proc(timer: ^Timer, delta_time: f32) {
@@ -38,7 +38,6 @@ Update :: proc(timer: ^Timer, delta_time: f32) {
     timer.remain = timer.wait - (diff - (timer.wait * cast(f32)count))
 
     if timer.mode == .single {
-        count = 1
         timer.active = false
         timer.remain = 0
     }
