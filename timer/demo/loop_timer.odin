@@ -69,7 +69,7 @@ draw :: proc() {
     // Input
     is_valid:bool = input_is_valid()
     input_y:i32 = center_y - HEIGHT_CLOCK
-    input_right:i32 = center_x + measure_clock / 2
+    input_right:i32 = center_x + measure_clock / 2 - measure_clock / 5
     OFF_INPUT :: 75
     number_x:i32 = input_right
     for i:int = 0; i < len(input_value.digits); i += 1 {
