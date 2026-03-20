@@ -6,7 +6,7 @@ import "core:strings"
 
 read_file :: proc(filepath: string) {
     data, ok := os.read_entire_file(filepath, context.allocator) // context.allocator will track the memory held by this data
-    if !ok {
+    if ok != nil {
         fmt.println("Error reading file")
     }
     defer delete(data, context.allocator) // we're using the allocator to delete the memory. defer means 'execute this code when the function returns'
@@ -20,7 +20,7 @@ write_file :: proc(filepath: string) {
     data_as_string := "Odin is great!"
     data_as_bytes := transmute([]byte)(data_as_string) // 'transmute' casts our string to a byte array
     ok := os.write_entire_file(filepath, data_as_bytes)
-    if !ok {
+    if ok != nil {
         fmt.println("Error writing file")
     }
 }
