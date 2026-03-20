@@ -4,7 +4,6 @@ import "core:log"
 
 import task ".."
 import "core:os"
-import "core:os/os2"
 
 download_dir :: "download/"
 dependencies_dir :: "dependencies/"
@@ -32,29 +31,29 @@ main :: proc(){
 	logger := log.create_console_logger()
 	context.logger = logger
 
-	working_dir, err: = os2.get_working_directory(context.allocator)
+	working_dir, err: = os.get_working_directory(context.allocator)
 	defer delete(working_dir)
 	// Return user to original directory in case project change it
-	defer os2.change_directory(working_dir)
+	defer os.change_directory(working_dir)
 	if err != nil {
 		return
 	}
 
 	executable_directory:string
-	executable_directory, err = os2.get_executable_directory(context.allocator)
+	executable_directory, err = os.get_executable_directory(context.allocator)
 	defer delete(executable_directory)
 	if err != nil {
 		return
 	}
-	os2.change_directory(executable_directory)
+	os.change_directory(executable_directory)
 
 	// DOWNLOAD RAYLIB BINARIES
 	if !os.exists(download_dir){
-		err = os2.make_directory(download_dir)
+		err = os.make_directory(download_dir)
 		assert(err == nil, "Couldn't make directory - " + download_dir)
 	}
 	if !os.exists(download_dir + raylib_dir){
-		err = os2.make_directory(download_dir + raylib_dir)
+		err = os.make_directory(download_dir + raylib_dir)
 		assert(err == nil, "Couldn't make directory - " + download_dir + raylib_dir)
 	}
 
@@ -68,12 +67,12 @@ main :: proc(){
 	
 	// CLONE RAYLIB REPOSITORY
 	if !os.exists(dependencies_dir){
-		err = os2.make_directory(dependencies_dir)
+		err = os.make_directory(dependencies_dir)
 		assert(err == nil, "Couldn't make directory - " + dependencies_dir)
 	}
-	os2.change_directory(dependencies_dir)
+	os.change_directory(dependencies_dir)
 
 	if ok = clone_raylib_repo(); ok {
 	}
-	os2.change_directory(executable_directory)
+	os.change_directory(executable_directory)
 }

@@ -9,9 +9,8 @@ pi_f32 :: f32(pi_f64)
 tau_f64 :: pi_f64 * 2
 tau_f32 :: f32(tau_f64)
 
-INFINITY:: 1e5000
-INF_F32 :: f32(INFINITY)
-INF_F64 :: f64(INFINITY)
+INF_F32 :: math.INF_F32
+INF_F64 :: math.INF_F64
 
 Signf :: proc(v: f32) -> i32 {
     return i32(0 < v) - i32(v < 0)

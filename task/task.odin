@@ -2,14 +2,14 @@ package task
 
 import "core:fmt"
 import "core:strings"
-import os2 "core:os/os2"
+import os "core:os"
 import "core:log"
 
 
-exec :: proc(cmd: []string) -> (code: int, error: os2.Error) {
-	process := os2.process_start({ command = cmd, stdin = os2.stdin, stdout = os2.stdout, stderr = os2.stderr }) or_return
-	state := os2.process_wait(process) or_return
-	os2.process_close(process) or_return
+exec :: proc(cmd: []string) -> (code: int, error: os.Error) {
+	process := os.process_start({ command = cmd, stdin = os.stdin, stdout = os.stdout, stderr = os.stderr }) or_return
+	state := os.process_wait(process) or_return
+	os.process_kill(process) or_return
 	return state.exit_code, nil
 }
 
