@@ -15,12 +15,14 @@ state_save_basic:State = {
 	draw,
 }
 
+SAVE_FILE :: "save_simple.bin"
+
 test_rect: Rectangle = {400, 300, 200, 100}
 button_save_rect: Rectangle = {10, 40, 100, 25}
 button_load_rect: Rectangle = {10, 70, 100, 25}
 
 init :: proc() {
-
+	load()
 }
 
 finit :: proc() {}
@@ -29,7 +31,7 @@ update :: proc() {
 	if rl.IsKeyPressed(rl.KeyboardKey.L) {load()}
 	
 	mouse_pos: = rl.GetMousePosition()
-	if rl.CheckCollisionPointRec(mouse_pos, button_save_rect) || rl.CheckCollisionPointRec(mouse_pos, button_load_rect) {
+	if is_hovering_buttons || rl.CheckCollisionPointRec(mouse_pos, button_save_rect) || rl.CheckCollisionPointRec(mouse_pos, button_load_rect) {
 		// skip moving logic
 		return
 	}
@@ -52,7 +54,7 @@ draw :: proc() {
 }
 
 save :: proc() {
-	file_write: = save_file.create("output.bin")
+	file_write: = save_file.create(SAVE_FILE)
 	defer save_file.close(file_write)
 	if file_write != nil {
 		save_file.write_append_struct(file_write, &test_rect)
@@ -60,7 +62,7 @@ save :: proc() {
 }
 
 load :: proc() {
-	file_read: = save_file.read_open("output.bin")
+	file_read: = save_file.read_open(SAVE_FILE)
 	defer save_file.close(file_read)
 	if file_read != nil {
 		save_file.read_struct(file_read, &test_rect)

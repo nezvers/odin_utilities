@@ -18,10 +18,12 @@ State :: struct {
 
 state_list: []State = {
 	state_save_basic,
+	state_save_dynamic,
 }
 
 StateIndex :: enum {
     SAVE_BASIC,
+    SAVE_DYNAMIC,
 	COUNT,
 }
 
