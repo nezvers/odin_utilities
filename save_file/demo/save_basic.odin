@@ -1,7 +1,14 @@
 #+private file
 package demo
 
-import save ".."
+import save_file ".."
+// import "core:strings"
+// import "core:fmt"
+import rl "vendor:raylib"
+import "core:mem"
+
+Vector2 :: rl.Vector2
+Rectangle :: rl.Rectangle
 
 @(private="package")
 state_save_basic:State = {
@@ -11,22 +18,41 @@ state_save_basic:State = {
 	draw,
 }
 
-init :: proc() {
-	data_as_string := "Odin is great!\n"
-    data_as_bytes := transmute([]byte)(data_as_string) // 'transmute' casts our string to a byte array
-	data_as_string2 := "Sky is blue.\n"
-    data_as_bytes2 := transmute([]byte)(data_as_string2) // 'transmute' casts our string to a byte array
+test_rect: Rectangle = {10, 10, 200, 100}
 
-	file: = save.create("output.txt")
-	defer save.close(file)
-	if file != nil {
-		save.write_append(file, data_as_bytes[:])
-		save.write_append(file, data_as_bytes2[:])
-	}
-	// save.write_file("output.txt")
-	save.read_file("output.txt")
+init :: proc() {
+
 }
 
 finit :: proc() {}
-update :: proc() {}
-draw :: proc() {}
+update :: proc() {
+	if rl.IsKeyPressed(rl.KeyboardKey.S) {save()}
+	if rl.IsKeyPressed(rl.KeyboardKey.L) {load()}
+	if rl.IsMouseButtonDown(rl.MouseButton.LEFT) {
+		mouse: = rl.GetMousePosition()
+		test_rect.x = mouse.x
+		test_rect.y = mouse.y
+	}
+}
+
+draw :: proc() {
+	rl.DrawRectangleRec(test_rect, rl.LIME)
+}
+
+save :: proc() {
+	file_write: = save_file.create("output.bin")
+	defer save_file.close(file_write)
+	if file_write != nil {
+		data := mem.byte_slice(&test_rect, size_of(Rectangle))
+		save_file.write_append(file_write, data[:])
+	}
+}
+
+load :: proc() {
+	file_read: = save_file.read_open("output.bin")
+	defer save_file.close(file_read)
+	if file_read != nil {
+		data := mem.byte_slice(&test_rect, size_of(Rectangle))
+		save_file.read_buffer(file_read, data[:])
+	}
+}

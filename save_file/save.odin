@@ -2,10 +2,10 @@ package save_file
 
 import "core:os"
 import "core:fmt"
-import "core:strings"
 
 close :: os.close
 
+// If exists, deletes and creates a new file
 create :: proc(filepath: string)->(file: ^os.File) {
     if os.exists(filepath) {
         err: = os.remove(filepath)
@@ -23,11 +23,9 @@ create :: proc(filepath: string)->(file: ^os.File) {
     return
 }
 
+// If doesn't exists creates new
 write_open :: proc(filepath:string)->(file: ^os.File) {
-    if !os.exists(filepath) {
-        return create(filepath)
-    }
-    f, err: = os.open(filepath, {.Write, .Append}, {.Write_Other, .Write_Group, .Write_User})
+    f, err: = os.open(filepath, {.Create, .Write, .Append}, {.Write_Other, .Write_Group, .Write_User})
     if err != nil {
         fmt.println(os.error_string(err))
         return
@@ -37,6 +35,7 @@ write_open :: proc(filepath:string)->(file: ^os.File) {
 }
 
 write_append :: proc(file: ^os.File, data: []u8) {
+    assert(file != nil)
     count, err: = os.write(file, data[:])
     if err != nil {
         fmt.println(os.error_string(err))
@@ -48,14 +47,27 @@ write_append :: proc(file: ^os.File, data: []u8) {
     }
 }
 
-read_file :: proc(filepath: string) {
-    data, err := os.read_entire_file(filepath, context.allocator) // context.allocator will track the memory held by this data
+read_open :: proc(filepath: string)->(file: ^os.File) {
+    if !os.exists(filepath) {
+        return
+    }
+    f, err: = os.open(filepath, {.Read}, {.Read_Other, .Read_Group, .Read_User})
     if err != nil {
-        fmt.println("Error reading file")
+        fmt.println(os.error_string(err))
+        return
     }
-    defer delete(data, context.allocator) // we're using the allocator to delete the memory. defer means 'execute this code when the function returns'
-    it := string(data)
-    for line in strings.split_lines_iterator(&it) { // run through all the lines
-        fmt.println(line)
+    file = f
+    return
+}
+
+read_buffer :: proc(file: ^os.File, buffer: []u8)->(n: int) {
+    assert(file != nil)
+    count, err: = os.read_at_least(file, buffer, len(buffer))
+    n = count
+    // TODO: if !EOF
+    if err != nil {
+        fmt.println(os.error_string(err))
+        return
     }
+    return
 }
