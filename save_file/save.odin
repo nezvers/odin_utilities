@@ -1,7 +1,9 @@
 package save_file
 
 import "core:os"
+import "core:io"
 import "core:fmt"
+import "core:mem"
 
 close :: os.close
 
@@ -47,6 +49,11 @@ write_append :: proc(file: ^os.File, data: []u8) {
     }
 }
 
+write_append_struct :: proc(file: ^os.File, value: ^$T) {
+    data := mem.byte_slice(value, size_of(T))
+    write_append(file, data[:])
+}
+
 read_open :: proc(filepath: string)->(file: ^os.File) {
     if !os.exists(filepath) {
         return
@@ -64,10 +71,15 @@ read_buffer :: proc(file: ^os.File, buffer: []u8)->(n: int) {
     assert(file != nil)
     count, err: = os.read_at_least(file, buffer, len(buffer))
     n = count
-    // TODO: if !EOF
-    if err != nil {
+    if err != nil && err != io.Error.EOF {
         fmt.println(os.error_string(err))
         return
     }
+    return
+}
+
+read_struct :: proc(file: ^os.File, value: ^$T)->(n: int) {
+    data := mem.byte_slice(value, size_of(T))
+    read_buffer(file, data[:])
     return
 }
