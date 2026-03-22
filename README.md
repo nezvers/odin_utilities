@@ -19,6 +19,7 @@
 - ✅ MicMeter `odin run mic_meter/demo`
 - ✅ Microui (raylib) `odin run microui/demo`
 - ✅ Particles `odin run particles/demo -out:particles/demo.exe`
+- ✅ Save file `odin run save_file/demo`
 - ✅ Sound Effect `odin run sound_effects/demo -out:sound_effects/demo.exe`
 - ✅ Spring `odin run spring/demo`
 - ✅ Sprite `odin run sprite/demo -out:sprite/demo.exe`
