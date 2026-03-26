@@ -1,5 +1,6 @@
 #+private file
 package demo
+// https://github.com/raysan5/raylib/blob/master/examples/core/core_3d_camera_fps.c
 
 import rl "vendor:raylib"
 Camera :: rl.Camera3D
@@ -46,7 +47,7 @@ Player :: struct {
 }
 player : Player = {}
 
-camera:Camera = {
+player_camera:Camera = {
     fovy = 60,
     projection = .PERSPECTIVE,
 }
@@ -61,8 +62,8 @@ init :: proc() {
     player = {}
     player.head_height = STAND_HEIGHT
 
-    camera.up = {0, 1, 0}
-    camera.target = {0, 0, -1}
+    player_camera.up = {0, 1, 0}
+    player_camera.target = {0, 0, -1}
 }
 
 finit :: proc() {
@@ -70,26 +71,32 @@ finit :: proc() {
 }
 
 update :: proc() {
+    delta_time:f32 = rl.GetFrameTime()
     // INPUT
     player.input.x = cast(i8)rl.IsKeyDown(rl.KeyboardKey.D) - cast(i8)rl.IsKeyDown(rl.KeyboardKey.A)
     player.input.y = cast(i8)rl.IsKeyDown(rl.KeyboardKey.W) - cast(i8)rl.IsKeyDown(rl.KeyboardKey.S)
     player.input.crouch = rl.IsKeyDown(rl.KeyboardKey.LEFT_CONTROL)
     player.input.jump = rl.IsKeyPressed(rl.KeyboardKey.SPACE)
     mouse_delta:Vector2 = rl.GetMouseDelta()
-    player.look.x = mouse_delta.x * sensitivity.x
-    player.look.y = mouse_delta.y * sensitivity.y
+    player.look.x -= mouse_delta.x * sensitivity.x
+    player.look.y += mouse_delta.y * sensitivity.y
+    player.head_height = lerp(
+        player.head_height,
+        player.input.crouch ? CROUCH_HEIGHT : STAND_HEIGHT,
+        delta_time * 20,
+    )
 
     // CAMERA
-    camera.position = {
+    player_camera.position = {
         player.position.x,
         player.position.y + (BOTTOM_HEIGHT + player.head_height),
         player.position.z,
     }
-
+    update_camera(&player_camera, &player.look)
 }
 
 draw :: proc() {
-    rl.BeginMode3D(camera)
+    rl.BeginMode3D(player_camera)
     draw_level()
     rl.EndMode3D()
 }
@@ -139,4 +146,22 @@ draw_level :: proc() {
     rl.DrawCubeWiresV(tower_pos, TOWER_SIZE, TOWER_COLOR)
 
     rl.DrawSphere({300, 300, 0}, 100, {255, 0, 0, 255})
+}
+
+update_camera :: proc(camera: ^Camera, look: ^Vector2){
+    UP :Vector3: {0, 1, 0}
+    TARGET :Vector3: {0, 0, -1}
+    MAX_ANGLE :: 1.5706 // rl.Vector3Angle(UP, yaw) - 0.001
+
+    if -look.y > MAX_ANGLE { look.y = -MAX_ANGLE}
+    if -look.y < -MAX_ANGLE { look.y = MAX_ANGLE}
+    
+    yaw:Vector3 = rl.Vector3RotateByAxisAngle(TARGET, UP, look.x)
+    right:Vector3 = rl.Vector3Normalize(rl.Vector3CrossProduct(yaw, UP))
+
+    pitch_angle:f32 = -look.y // -lean.y
+    pitch_angle = rl.Clamp(pitch_angle, -rl.PI/2 + 0.0001, rl.PI/2 - 0.0001)
+    pitch:Vector3 = rl.Vector3RotateByAxisAngle(yaw, right, pitch_angle)
+
+    camera.target = camera.position + pitch
 }
