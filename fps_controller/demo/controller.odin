@@ -44,11 +44,11 @@ Player :: struct {
     position: Vector3,
     velocity : Vector3,
     move_dir : Vector3,
-    look : Vector2,
-    lean : Vector2,
-    head_height: f32,
-    step: Vector2,
-    walk_cycle: f32,
+    look : Vector2,     // mouse camera rotation
+    lean : Vector2,     // movement camera rotation
+    head_height: f32,   // lerp between crouch & standing
+    step: Vector2,      // head movement vertical and side
+    walk_cycle: f32,    // 0..1 animation time
     walk_blend: f32,
     recoil: f32,
     input : struct {
@@ -117,6 +117,7 @@ draw :: proc() {
     rl.EndMode3D()
 }
 
+// Some kind of visual treat and movement reference
 draw_level :: proc() {
     FLOOR_EXTENT :: 25
     TILE_SIZE :: 5
@@ -218,7 +219,7 @@ update_velocity :: proc(player: ^Player, delta_time: f32) {
     player.velocity.z = hvel.z
 }
 
-// Replace with physics engine
+// Replace with physics engine implementation
 update_collisions :: proc(player: ^Player, delta_time: f32) {
     player.position += player.velocity * delta_time
 
@@ -247,8 +248,6 @@ update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
         player.recoil = linalg.lerp(player.recoil, 0, delta_time * RECOIL_SPEED)
     }
     
-    // Head bobbing
-
     if player.input.x != 0 || player.input.y != 0 {
         player.walk_cycle += delta_time * CYCLE_MULTIPLY
         player.walk_cycle -= math.floor(player.walk_cycle)
@@ -257,6 +256,7 @@ update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
         player.walk_blend = math.max(player.walk_blend - delta_time * BLEND_SPEED, 0)
     }
 
+    // Head bobbing
     step_sin: f32 = math.sin(player.walk_cycle * math.TAU)
     player.step.x = step_sin * STEP_SIDE * player.walk_blend
 
@@ -273,7 +273,6 @@ update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
     } else {
         fov^ = linalg.lerp(fov^, 60, delta_time * BLEND_SPEED)
     }
-    // FOV walk=55 normal=60
 }
 
 update_camera :: proc(camera: ^Camera, look: ^Vector2, lean: ^Vector2, step: ^Vector2){
