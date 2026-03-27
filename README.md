@@ -15,7 +15,7 @@
 - ✅ Box2d Odin `odin run box2d_odin/demo`
 - ❎ Cool math `odin run cool_math/demo`
 - ✅ FABRIK IK `odin run fabrik/demo`
-- ✅ FPS Controller[fps_controller] `odin run fps_controller/demo -out:fps_controller/demo.exe`
+- ✅ [FPS Controller][fps_controller] `odin run fps_controller/demo -out:fps_controller/demo.exe`
 - ❎ Geometry2D `odin run geometry2d/demo`
     - ✅ shapes [point, line, circle, rectangle, triangle, ray]
     - ✅ overlap
