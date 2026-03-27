@@ -7,6 +7,7 @@
 [save_file]: ## "Simple save file system to store structs as POD or byte array"
 [task]: ## "Functionality for system automatization, like custom project build system. Clone, extract archive, download files, call processes"
 [tilemap]: ## "Purely data driven Tile map system, with capability and demo to create in-game level editors."
+[fps_controller]: ## "Camera rotation, camera animation, strafe jump velocity"
 
 - ✅ [App state][app_state] `odin run app_state/demo`
 - ❎ Astar `odin run astar/demo`
@@ -14,6 +15,7 @@
 - ✅ Box2d Odin `odin run box2d_odin/demo`
 - ❎ Cool math `odin run cool_math/demo`
 - ✅ FABRIK IK `odin run fabrik/demo`
+- ✅ FPS Controller[fps_controller] `odin run fps_controller/demo -out:fps_controller/demo.exe`
 - ❎ Geometry2D `odin run geometry2d/demo`
     - ✅ shapes [point, line, circle, rectangle, triangle, ray]
     - ✅ overlap
