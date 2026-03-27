@@ -88,7 +88,7 @@ update :: proc() {
     update_collisions(&player, delta_time)
     
     // CAMERA
-    update_camera_animations(&player, delta_time)
+    update_camera_animations(&player, &player_camera.fovy, delta_time)
     player_camera.position = {
         player.position.x,
         player.position.y + (CROUCH_HEIGHT + player.head_height), // +bobbing
@@ -213,7 +213,7 @@ update_collisions :: proc(player: ^Player, delta_time: f32) {
     }
 }
 
-update_camera_animations :: proc(player: ^Player, delta_time: f32) {
+update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
     // Crouch height
     player.head_height = lerp(
         player.head_height,
@@ -222,6 +222,7 @@ update_camera_animations :: proc(player: ^Player, delta_time: f32) {
     )
     
     // Head bobbing
+
     if player.input.x != 0 || player.input.y != 0 {
         player.walk_cycle += delta_time * CYCLE_MULTIPLY
         player.walk_cycle -= math.floor(player.walk_cycle)
@@ -239,6 +240,11 @@ update_camera_animations :: proc(player: ^Player, delta_time: f32) {
     player.lean.x = lerp(player.lean.x, cast(f32)player.input.x * STRAFE_ROTATION, delta_time * 10)
     player.lean.y = lerp(player.lean.y, cast(f32)player.input.y * FRONT_ROTATION, delta_time * 10)
     
+    if player.is_grounded && (player.input.x != 0 || player.input.y != 0) {
+        fov^ = lerp(fov^, 55, delta_time * BLEND_SPEED)
+    } else {
+        fov^ = lerp(fov^, 60, delta_time * BLEND_SPEED)
+    }
     // FOV walk=55 normal=60
 }
 
