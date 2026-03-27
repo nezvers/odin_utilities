@@ -20,6 +20,8 @@ state_controller:State = {
 
 CYCLE_MULTIPLY :: 1
 BLEND_SPEED :: 3
+RECOIL_SPEED :: 40
+RECOIL_ROTATION :: 0.03
 GRAVITY :: 32
 MAX_SPEED :: 20
 CROUCH_SPEED :: 5
@@ -48,11 +50,13 @@ Player :: struct {
     step: Vector2,
     walk_cycle: f32,
     walk_blend: f32,
+    recoil: f32,
     input : struct {
         x : i8,
         y : i8,
         crouch : bool,
         jump: bool,
+        shoot: bool,
     },
     is_grounded : bool,
 }
@@ -63,12 +67,20 @@ player_camera:Camera = {
     projection = .PERSPECTIVE,
 }
 
+sound_jump: rl.Sound
+sound_land: rl.Sound
+sound_gun: rl.Sound
+
 lerp :: proc(a,b,t: f32)->f32 {
     return a + (b - a) * t
 }
 
 init :: proc() {
     rl.DisableCursor() // Capture mouse
+    rl.InitAudioDevice()
+    sound_jump = rl.LoadSound("../assets/sounds/snd_huh_jump.wav")
+    sound_land = rl.LoadSound("../assets/sounds/snd_landing.wav")
+    sound_gun = rl.LoadSound("../assets/sounds/snd_gun_1.wav")
 
     player = {}
     player.head_height = STAND_HEIGHT
@@ -78,12 +90,18 @@ init :: proc() {
 }
 
 finit :: proc() {
-    
+    rl.UnloadSound(sound_jump)
+    rl.UnloadSound(sound_land)
+    rl.UnloadSound(sound_gun)
+    rl.CloseAudioDevice()
 }
 
 update :: proc() {
     delta_time:f32 = rl.GetFrameTime()
     update_input(&player, delta_time)
+    if player.input.shoot {
+        rl.PlaySound(sound_gun)
+    }
     update_velocity(&player, delta_time)
     update_collisions(&player, delta_time)
     
@@ -159,6 +177,8 @@ update_input :: proc(player: ^Player, delta_time: f32) {
     mouse_delta:Vector2 = rl.GetMouseDelta()
     player.look.x -= mouse_delta.x * sensitivity.x
     player.look.y += mouse_delta.y * sensitivity.y
+
+    player.input.shoot = rl.IsMouseButtonPressed(rl.MouseButton.LEFT)
 }
 
 update_velocity :: proc(player: ^Player, delta_time: f32) {
@@ -167,6 +187,7 @@ update_velocity :: proc(player: ^Player, delta_time: f32) {
     if player.is_grounded && player.input.jump {
         player.velocity.y = JUMP_FORCE
         player.is_grounded = false
+        rl.PlaySound(sound_jump)
     }
 
     // Direction
@@ -209,7 +230,10 @@ update_collisions :: proc(player: ^Player, delta_time: f32) {
     if player.position.y <= 0 {
         player.position.y = 0
         player.velocity.y = 0
-        player.is_grounded = true
+        if !player.is_grounded {
+            player.is_grounded = true
+            rl.PlaySound(sound_land)
+        }
     }
 }
 
@@ -220,6 +244,12 @@ update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
         player.input.crouch ? 0 : STAND_HEIGHT,
         delta_time * 20,
     )
+
+    if player.input.shoot {
+        player.recoil = 1
+    } else {
+        player.recoil = lerp(player.recoil, 0, delta_time * RECOIL_SPEED)
+    }
     
     // Head bobbing
 
@@ -239,6 +269,8 @@ update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
 
     player.lean.x = lerp(player.lean.x, cast(f32)player.input.x * STRAFE_ROTATION, delta_time * 10)
     player.lean.y = lerp(player.lean.y, cast(f32)player.input.y * FRONT_ROTATION, delta_time * 10)
+
+    player.lean.y -= player.recoil * RECOIL_ROTATION
     
     if player.is_grounded && (player.input.x != 0 || player.input.y != 0) {
         fov^ = lerp(fov^, 55, delta_time * BLEND_SPEED)
