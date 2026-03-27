@@ -71,10 +71,6 @@ sound_jump: rl.Sound
 sound_land: rl.Sound
 sound_gun: rl.Sound
 
-lerp :: proc(a,b,t: f32)->f32 {
-    return a + (b - a) * t
-}
-
 init :: proc() {
     rl.DisableCursor() // Capture mouse
     rl.InitAudioDevice()
@@ -239,7 +235,7 @@ update_collisions :: proc(player: ^Player, delta_time: f32) {
 
 update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
     // Crouch height
-    player.head_height = lerp(
+    player.head_height = linalg.lerp(
         player.head_height,
         player.input.crouch ? 0 : STAND_HEIGHT,
         delta_time * 20,
@@ -248,7 +244,7 @@ update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
     if player.input.shoot {
         player.recoil = 1
     } else {
-        player.recoil = lerp(player.recoil, 0, delta_time * RECOIL_SPEED)
+        player.recoil = linalg.lerp(player.recoil, 0, delta_time * RECOIL_SPEED)
     }
     
     // Head bobbing
@@ -267,15 +263,15 @@ update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
     step_cos_2: f32 = math.cos(player.walk_cycle * math.TAU * 2)
     player.step.y = step_cos_2 * STEP_HEIGHT * player.walk_blend
 
-    player.lean.x = lerp(player.lean.x, cast(f32)player.input.x * STRAFE_ROTATION, delta_time * 10)
-    player.lean.y = lerp(player.lean.y, cast(f32)player.input.y * FRONT_ROTATION, delta_time * 10)
+    player.lean.x = linalg.lerp(player.lean.x, cast(f32)player.input.x * STRAFE_ROTATION, delta_time * 10)
+    player.lean.y = linalg.lerp(player.lean.y, cast(f32)player.input.y * FRONT_ROTATION, delta_time * 10)
 
     player.lean.y -= player.recoil * RECOIL_ROTATION
     
     if player.is_grounded && (player.input.x != 0 || player.input.y != 0) {
-        fov^ = lerp(fov^, 55, delta_time * BLEND_SPEED)
+        fov^ = linalg.lerp(fov^, 55, delta_time * BLEND_SPEED)
     } else {
-        fov^ = lerp(fov^, 60, delta_time * BLEND_SPEED)
+        fov^ = linalg.lerp(fov^, 60, delta_time * BLEND_SPEED)
     }
     // FOV walk=55 normal=60
 }
@@ -292,7 +288,7 @@ update_camera :: proc(camera: ^Camera, look: ^Vector2, lean: ^Vector2, step: ^Ve
     right:Vector3 = rl.Vector3Normalize(rl.Vector3CrossProduct(yaw, UP))
 
     pitch_angle:f32 = -look.y - lean.y
-    pitch_angle = rl.Clamp(pitch_angle, -rl.PI/2 + 0.0001, rl.PI/2 - 0.0001)
+    pitch_angle = math.clamp(pitch_angle, -rl.PI/2 + 0.0001, rl.PI/2 - 0.0001)
     pitch:Vector3 = rl.Vector3RotateByAxisAngle(yaw, right, pitch_angle)
     
     step_offset:Vector3 = right * step.x
