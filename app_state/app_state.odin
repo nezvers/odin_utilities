@@ -5,6 +5,7 @@ AppState :: struct {
     exit: proc(),
     update: proc(),
     draw: proc(),
+    name: string,
 }
 
 AppStatePtr :: ^AppState

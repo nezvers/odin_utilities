@@ -14,6 +14,7 @@ state_title:as.AppState = {
     nil,
     update,
     draw,
+    "title",
 }
 
 TITLE_TEXT :: "Title"

@@ -10,6 +10,7 @@ state_game_over:as.AppState = {
     nil,
     update,
     draw,
+    "game over",
 }
 
 update::proc(){
