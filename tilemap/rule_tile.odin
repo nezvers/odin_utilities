@@ -70,6 +70,7 @@ AutotileRuleUpdateCell::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]
 
 AutotileRuleUpdateTilemap::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]AutotileRule){
     assert(tilemap_in.size == tilemap_out.size)
+    assert(len(tilemap_in.grid) >= len(tilemap_out.grid))
 
     tile_pos:vec2i
     for y:i32 = 0; y < tilemap_in.size.y; y += 1 {

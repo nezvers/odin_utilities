@@ -152,15 +152,16 @@ rules: []AutotileRule = {
     }
 
 init::proc(){
-    group_tilemap = tm.TilemapInit({100, 100}, MAP_SIZE, {16,16}, group_buffer[:])
+    // same properties as main Tilemap
+    group_tilemap = tm.TilemapInit(tilemap.position, tilemap.size, tilemap.tile_size, group_buffer[:])
 	// reset map to predictable state
 	tm.TilemapClear(&group_tilemap)
 
     // Init group tilemap
     tile_id:TileID
     tile_pos:vec2i
-    for y:i32 = 0; y < MAP_SIZE.y; y += 1 {
-        for x:i32 = 0; x < MAP_SIZE.x; x += 1 {
+    for y:i32 = 0; y < group_tilemap.size.y; y += 1 {
+        for x:i32 = 0; x < group_tilemap.size.x; x += 1 {
             tile_pos = {x, y}
             tile_id = tm.TilemapGetTile(&tilemap, tile_pos)
             if tile_id == TILE_EMPTY {
@@ -180,6 +181,6 @@ draw::proc(){
 	skip_zero:bool = true
 	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
-	rl.DrawText("Ruletile: Tilemap -> Tileset -> Tile -> TileAtlas", 10, 10, 20, rl.BLACK)
+	rl.DrawText("Rule tile: Tilemap -> Tileset -> Tile -> TileAtlas", 10, 10, 20, rl.BLACK)
 }
 

@@ -82,5 +82,5 @@ draw::proc(){
 
 	tr.DrawTilemapSelection(&tilemap, rect_state, rl.BLACK)
 
-	rl.DrawText("draw_tilemap_drag: left mouse select, right mouse drag, hold CTRL to remove source, ALT to write empty tiles", 10, 10, 20, rl.BLACK)
+	rl.DrawText("draw_tilemap_drag: left mouse select, right mouse drag,\n\thold CTRL to remove source, ALT to write empty tiles", 10, 10, 20, rl.BLACK)
 }
