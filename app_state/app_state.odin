@@ -20,6 +20,6 @@ AppStateChange :: proc(current: ^AppStatePtr, new_state: ^AppState){
     current^ = new_state
 
     if current^.enter != nil {
-        current^.exit()
+        current^.enter()
     }
 }
