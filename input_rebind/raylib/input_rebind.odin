@@ -1,14 +1,21 @@
 package input_rebind_raylib
 
 import rl "vendor:raylib"
+import "core:math"
 
 InputNone :: u8
+
+@(private)
+DEVICE_COUNT :: 4
+@(private)
+AXIS_COUNT :: 6
+@(private)
+axis_state: [DEVICE_COUNT * AXIS_COUNT]f32
 
 InputAxis :: struct {
     id: rl.GamepadAxis,
     device: i32,
     sign: f32,
-    previous: f32,
     dead_zone: f32,
 }
 
@@ -39,7 +46,7 @@ IsPressed :: proc(input_id: InputID)->bool {
     case InputButton:
         return rl.IsGamepadButtonPressed(id.device, id.id)
     case InputAxis:
-        // TODO: track values and depending on previous value determine if just pressed
+        // update_axis(id)
         return false
     case InputNone:
         return false
@@ -56,7 +63,7 @@ IsReleased :: proc(input_id: InputID)->bool {
     case InputButton:
         return rl.IsGamepadButtonReleased(id.device, id.id)
     case InputAxis:
-        // TODO: track values and depending on previous value determine if just pressed
+        // update_axis(id)
         return false
     case InputNone:
         return false
@@ -73,7 +80,7 @@ IsDown :: proc(input_id: InputID)->bool {
     case InputButton:
         return rl.IsGamepadButtonDown(id.device, id.id)
     case InputAxis:
-        // TODO: track values and depending on previous value determine if just pressed
+        // update_axis(id)
         return false
     case InputNone:
         return false
@@ -128,7 +135,6 @@ ListenRebind :: proc()->(value:InputID, ok:bool) {
                     device = cast(i32)device_index,
                     sign = 1,
                     dead_zone = DEAD_ZONE,
-                    previous = 0,
                 }
                 return
             } else
@@ -139,11 +145,28 @@ ListenRebind :: proc()->(value:InputID, ok:bool) {
                     device = cast(i32)device_index,
                     sign = -1,
                     dead_zone = DEAD_ZONE,
-                    previous = 0,
                 }
                 return
             }
         }
     }
     return
+}
+
+update_axis :: proc(id: InputAxis) {
+    value: f32 = rl.GetGamepadAxisMovement(id.device, id.id)
+    abs: = math.abs(value)
+    axis_index:i32 = id.device * cast(i32)id.id
+    sign: f32 = value > 0.5 ? 1 : value < 0.5 ? -1 : 0
+
+    value_buffer: f32 = axis_state[axis_index]
+    sign_buffer: f32 = value_buffer > 0.5 ? 1 : value_buffer < 0.5 ? -1 : 0
+    if sign != sign_buffer {
+        axis_state[axis_index] = value
+        if abs < id.dead_zone {
+            // released
+        } else {
+            // pressed
+        }
+    }
 }
