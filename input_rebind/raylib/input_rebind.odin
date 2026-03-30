@@ -10,7 +10,17 @@ DEVICE_COUNT :: 4
 @(private)
 AXIS_COUNT :: 6
 @(private)
-axis_state: [DEVICE_COUNT * AXIS_COUNT]f32
+axis_values: [DEVICE_COUNT * AXIS_COUNT]f32
+
+@(private)
+ButtonState :: enum u8 {
+    none,
+    pressed,
+    released,
+    held,
+}
+@(private)
+axis_state: [DEVICE_COUNT * AXIS_COUNT]ButtonState
 
 InputAxis :: struct {
     id: rl.GamepadAxis,
@@ -46,8 +56,11 @@ IsPressed :: proc(input_id: InputID)->bool {
     case InputButton:
         return rl.IsGamepadButtonPressed(id.device, id.id)
     case InputAxis:
-        // update_axis(id)
-        return false
+        axis_index:i32 = id.device * cast(i32)id.id
+        if axis_state[axis_index] != .pressed { return false }
+        value: f32 = axis_values[axis_index]
+        sign: f32 = value > 0.5 ? 1 : value < 0.5 ? -1 : 0
+        return sign == id.sign
     case InputNone:
         return false
     }
@@ -63,8 +76,9 @@ IsReleased :: proc(input_id: InputID)->bool {
     case InputButton:
         return rl.IsGamepadButtonReleased(id.device, id.id)
     case InputAxis:
-        // update_axis(id)
-        return false
+        axis_index:i32 = id.device * cast(i32)id.id
+        if axis_state[axis_index] != .released { return false }
+        return true
     case InputNone:
         return false
     }
@@ -80,8 +94,11 @@ IsDown :: proc(input_id: InputID)->bool {
     case InputButton:
         return rl.IsGamepadButtonDown(id.device, id.id)
     case InputAxis:
-        // update_axis(id)
-        return false
+        axis_index:i32 = id.device * cast(i32)id.id
+        if !(axis_state[axis_index] == .pressed || axis_state[axis_index] == .held) { return false }
+        value: f32 = axis_values[axis_index]
+        sign: f32 = value > 0.5 ? 1 : value < 0.5 ? -1 : 0
+        return sign == id.sign
     case InputNone:
         return false
     }
@@ -153,20 +170,43 @@ ListenRebind :: proc()->(value:InputID, ok:bool) {
     return
 }
 
-update_axis :: proc(id: InputAxis) {
+update_axis :: proc() {
+    for device:i32 = 0; device < DEVICE_COUNT; device += 1 {
+        if !rl.IsGamepadAvailable(device) { continue }
+        for axis in rl.GamepadAxis {
+            id: InputAxis = {
+                device = device,
+                dead_zone = 0.5,
+                id = axis,
+            }
+            update_axis_state(id)
+        }
+    }
+}
+
+@(private)
+update_axis_state :: proc(id: InputAxis) {
+    axis_index:i32 = id.device * cast(i32)id.id
     value: f32 = rl.GetGamepadAxisMovement(id.device, id.id)
     abs: = math.abs(value)
-    axis_index:i32 = id.device * cast(i32)id.id
     sign: f32 = value > 0.5 ? 1 : value < 0.5 ? -1 : 0
 
-    value_buffer: f32 = axis_state[axis_index]
+    value_buffer: f32 = axis_values[axis_index]
     sign_buffer: f32 = value_buffer > 0.5 ? 1 : value_buffer < 0.5 ? -1 : 0
+    axis_values[axis_index] = value
+
     if sign != sign_buffer {
-        axis_state[axis_index] = value
         if abs < id.dead_zone {
-            // released
-        } else {
-            // pressed
+            axis_state[axis_index] = .released
+        } else
+        if sign == id.sign {
+            axis_state[axis_index] = .pressed
         }
+    } else
+    if abs > id.dead_zone {
+        axis_state[axis_index] = .held
+    } else
+    if abs < id.dead_zone {
+        axis_state[axis_index] = .none
     }
 }

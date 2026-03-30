@@ -25,7 +25,7 @@ InputAction :: struct {
 }
 
 input_list: []InputAction = {
-    {id = rl.KeyboardKey.W, name = "Up"},
+    {id = InputButton{id = rl.GamepadButton.LEFT_FACE_UP, device = 0}, name = "Up"},
     {id = rl.KeyboardKey.S, name = "Down"},
     {id = rl.KeyboardKey.D, name = "Right"},
     {id = rl.KeyboardKey.A, name = "Left"},
@@ -43,6 +43,9 @@ finit::proc(){
 }
 
 update::proc(){
+    // To update pressed/ released/ down for analog inputs
+    input.update_axis()
+
     delta_time: f32 = rl.GetFrameTime()
     for &input in input_list {
         update_timers(&input, delta_time)
