@@ -3,6 +3,7 @@ package demo
 
 import "core:reflect"
 import "core:strings"
+import input "../raylib"
 
 import rl "vendor:raylib"
 
@@ -35,7 +36,9 @@ init :: proc() {
 
 finit :: proc() {}
 
-update :: proc() {}
+update :: proc() {
+    input.UpdateAxis()
+}
 
 draw :: proc() {
     X :: 250
@@ -51,6 +54,12 @@ draw :: proc() {
         id: rl.GamepadAxis = cast(rl.GamepadAxis)i
         for device:i32 = 0; device < 4; device += 1 {
             if !rl.IsGamepadAvailable(device) { continue }
+            axis_state: = input.GetAxisState(device, cast(i32)id)
+            if axis_state == .pressed || axis_state == .held {
+                rect:rl.Rectangle = {X, cast(f32)y, 50, 20}
+                rl.DrawRectangleRec(rect, rl.LIGHTGRAY)
+            }
+            
             value: f32 = rl.GetGamepadAxisMovement(device, id)
             axis_t: cstring = rl.TextFormat("%f", value)
             rl.DrawText(axis_t, X + 30 * device, y, 20, rl.BLACK)

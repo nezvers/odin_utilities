@@ -27,11 +27,11 @@ StateIndex :: enum {
 	COUNT,
 }
 
-state_index:StateIndex = StateIndex.DRAW_GAMEPAD_INPUT
+state_index:StateIndex = StateIndex.INPUT_TEST
 screen_size:Vector2
 is_hovering_buttons:bool
 
-button_names:[StateIndex.COUNT]cstring
+button_names: [StateIndex.COUNT]cstring
 
 state_change :: proc(index:StateIndex){
 	if state_list[state_index].exit != nil{

@@ -43,7 +43,7 @@ finit::proc(){
 
 update::proc(){
     // To update pressed/ released/ down for analog inputs
-    input.update_axis()
+    input.UpdateAxis()
 
     delta_time: f32 = rl.GetFrameTime()
     for &input in input_list {
