@@ -35,7 +35,6 @@ input_list: []InputAction = {
 selected_rebind: ^InputAction = nil
 
 init::proc(){
-    
 }
 
 finit::proc(){

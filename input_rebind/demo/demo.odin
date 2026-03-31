@@ -18,14 +18,16 @@ State :: struct {
 
 state_list: []State = {
 	state_input_test,
+	state_draw_gamepad_input,
 }
 
 StateIndex :: enum {
     INPUT_TEST,
+	DRAW_GAMEPAD_INPUT,
 	COUNT,
 }
 
-state_index:StateIndex = StateIndex.INPUT_TEST
+state_index:StateIndex = StateIndex.DRAW_GAMEPAD_INPUT
 screen_size:Vector2
 is_hovering_buttons:bool
 
