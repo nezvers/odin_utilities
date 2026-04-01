@@ -54,6 +54,7 @@ update::proc(){
     input_id, listen_ok: = input.ListenRebind()
     if !listen_ok { return }
     // TODO: add validation for new input
+    // TODO: you can modify default InputAxis.dead_zone
     selected_rebind.id = input_id
     selected_rebind = nil
 }

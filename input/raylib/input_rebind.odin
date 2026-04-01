@@ -1,20 +1,13 @@
-package input_rebind_raylib
+package input_raylib
 
 import rl "vendor:raylib"
 import "core:math"
 
-InputNone :: u8
-
-@(private)
-DEVICE_COUNT :: 4
-@(private)
-AXIS_COUNT :: 6
-@(private)
-DEAD_ZONE :: 0.5
-@(private)
-axis_values: [DEVICE_COUNT * AXIS_COUNT]f32
-@(private)
-axis_sign: [DEVICE_COUNT * AXIS_COUNT]i8
+@(private) DEVICE_COUNT :: 4
+@(private) AXIS_COUNT :: 6
+@(private) DEAD_ZONE :: 0.5
+@(private) axis_values: [DEVICE_COUNT * AXIS_COUNT]f32
+@(private) axis_sign: [DEVICE_COUNT * AXIS_COUNT]i8
 
 @(private)
 ButtonState :: enum u8 {
@@ -38,6 +31,7 @@ InputButton :: struct {
     device: i32,
 }
 
+InputNone :: u8
 InputID :: union {
     InputNone,
     rl.KeyboardKey,
@@ -49,15 +43,6 @@ InputID :: union {
 InputAction :: struct {
     id: InputID,
     name: cstring,
-}
-
-@(private)
-GetAxisIndex :: proc(device:i32, id: i32)->i32 {
-    // d: = device
-    // _ = d
-    // i: = id
-    // _ = i
-    return device * AXIS_COUNT + id
 }
 
 IsPressed :: proc(input_id: InputID)->bool {
@@ -109,9 +94,6 @@ IsDown :: proc(input_id: InputID)->bool {
         return rl.IsGamepadButtonDown(id.device, id.id)
     case InputAxis:
         axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
-        if axis_index == 1 {
-            _ = axis_index
-        }
         if !(axis_state[axis_index] == .pressed || axis_state[axis_index] == .held) { return false }
         value: f32 = axis_values[axis_index]
         sign: i8 = value > DEAD_ZONE ? 1 : value < -DEAD_ZONE ? -1 : 0
@@ -203,11 +185,12 @@ UpdateAxis :: proc() {
 GetAxisState :: proc(device: i32, id: i32)->ButtonState {
     assert(device < DEVICE_COUNT)
     assert(id < AXIS_COUNT)
-    // d: = device
-    // _ = d
-    // i: = id
-    // _ = i
     return axis_state[device * id]
+}
+
+@(private)
+GetAxisIndex :: proc(device:i32, id: i32)->i32 {
+    return device * AXIS_COUNT + id
 }
 
 @(private)
