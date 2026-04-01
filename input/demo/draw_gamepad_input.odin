@@ -49,33 +49,34 @@ draw :: proc() {
     }
 
     for i:int = 0; i < len(axis_names); i += 1 {
-        y: i32 = 40 + 25 * cast(i32)i
-        rl.DrawText(axis_names[i], 10, y, 20, rl.BLACK)
+        Y: i32 = 40 + 25 * cast(i32)i
+        rl.DrawText(axis_names[i], 10, Y, 20, rl.BLACK)
         id: rl.GamepadAxis = cast(rl.GamepadAxis)i
         for device:i32 = 0; device < 4; device += 1 {
             if !rl.IsGamepadAvailable(device) { continue }
+            // Draw rectangle under if axis is held (past a dead zone)
             axis_state: = input.GetAxisState(device, cast(i32)id)
             if axis_state == .pressed || axis_state == .held {
-                rect:rl.Rectangle = {X, cast(f32)y, 50, 20}
+                rect:rl.Rectangle = {X, cast(f32)Y, 70, 20}
                 rl.DrawRectangleRec(rect, rl.LIGHTGRAY)
             }
             
             value: f32 = rl.GetGamepadAxisMovement(device, id)
             axis_t: cstring = rl.TextFormat("%f", value)
-            rl.DrawText(axis_t, X + 30 * device, y, 20, rl.BLACK)
+            rl.DrawText(axis_t, X + 30 * device, Y, 20, rl.BLACK)
         }
     }
 
     
     for i:int = 0; i < len(button_names); i += 1 {
-        y: i32 = 190 + 25 * cast(i32)i
-        rl.DrawText(button_names[i], 10, y, 20, rl.BLACK)
+        Y: i32 = 190 + 25 * cast(i32)i
+        rl.DrawText(button_names[i], 10, Y, 20, rl.BLACK)
         id: rl.GamepadButton = cast(rl.GamepadButton)i
         for device:i32 = 0; device < 4; device += 1 {
             if !rl.IsGamepadAvailable(device) { continue }
             held: bool = rl.IsGamepadButtonDown(device, id)
             axis_t: cstring = held ? "1" : "0"
-            rl.DrawText(axis_t, X + 30 * device, y, 20, rl.BLACK)
+            rl.DrawText(axis_t, X + 30 * device, Y, 20, rl.BLACK)
         }
     }
 }
