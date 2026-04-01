@@ -108,6 +108,38 @@ IsDown :: proc(input_id: InputID)->bool {
     return false
 }
 
+// Read float value from inputs
+GetValue :: proc(input_id: InputID)->f32 {
+    switch id in input_id {
+    case rl.KeyboardKey:
+        return rl.IsKeyDown(id) ? 1 : 0
+    case rl.MouseButton:
+        return rl.IsMouseButtonDown(id) ? 1 : 0
+    case InputButton:
+        return rl.IsGamepadButtonDown(id.device, id.id) ? 1 : 0
+    case InputAxis:
+        axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
+        value: f32 = axis_values[axis_index]
+        abs: f32 = math.abs(value)
+        if abs < id.dead_zone { return 0 }
+
+        sign: i8 = GetAxisSign(value)
+        if sign != id.sign { return 0 }
+        
+        // TODO: improve logic
+        // lerp from dead_zone
+        return ((abs - id.dead_zone) / (1 - id.dead_zone)) * cast(f32)sign
+    case InputNone:
+        return 0
+    }
+    return 0
+}
+
+// Read float value for directions -1 to 1
+GetValueDirection :: proc(negative: InputID, positive: InputID)->f32 {
+    return GetValue(positive) - GetValue(negative)
+}
+
 // Scans every input possibility
 // Listens for first input release or axis past DEAD_ZONE
 ListenRebind :: proc()->(value:InputID, ok:bool) {
