@@ -2,6 +2,9 @@
 package demo
 
 import rl "vendor:raylib"
+Vector2 :: rl.Vector2
+Rectangle :: rl.Rectangle
+
 import input "../raylib"
 InputID :: input.InputID
 InputButton :: input.InputButton
@@ -25,7 +28,7 @@ InputAction :: struct {
 }
 
 input_list: []InputAction = {
-    {id = InputButton{id = rl.GamepadButton.LEFT_FACE_UP, device = 0}, name = "Up"},
+    {id = rl.KeyboardKey.W, name = "Up"},
     {id = rl.KeyboardKey.S, name = "Down"},
     {id = rl.KeyboardKey.D, name = "Right"},
     {id = rl.KeyboardKey.A, name = "Left"},
@@ -33,8 +36,11 @@ input_list: []InputAction = {
 }
 
 selected_rebind: ^InputAction = nil
+player_rect: Rectangle = {0, 0, 32, 32}
 
 init::proc(){
+    player_rect.x = 500
+    player_rect.y = 400
 }
 
 finit::proc(){
@@ -44,6 +50,7 @@ finit::proc(){
 update::proc(){
     // To update pressed/ released/ down for analog inputs
     input.UpdateAxis()
+    update_player()
 
     delta_time: f32 = rl.GetFrameTime()
     for &input in input_list {
@@ -60,6 +67,8 @@ update::proc(){
 }
 
 draw::proc(){
+    rl.DrawRectangleRec(player_rect, rl.GREEN)
+
     rl.DrawText("Name", 10, 10, 20, rl.BLACK)
     rl.DrawText("P", 200, 10, 20, rl.BLACK)
     rl.DrawText("D", 225, 10, 20, rl.BLACK)
@@ -113,4 +122,13 @@ update_timers :: proc(input_action: ^InputAction, delta_time: f32) {
     if input.IsDown(input_action.id) {
         input_action.hold_timer = 1
     }
+}
+
+update_player :: proc() {
+    delta_time:f32 = rl.GetFrameTime()
+    x: f32 = input.GetValueDirection(input_list[3].id, input_list[2].id)
+    y: f32 = input.GetValueDirection(input_list[0].id, input_list[1].id)
+    SPEED :: 200
+    player_rect.x += x * SPEED * delta_time
+    player_rect.y += y * SPEED * delta_time
 }
