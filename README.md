@@ -8,6 +8,7 @@
 [task]: ## "Functionality for system automatization, like custom project build system. Clone, extract archive, download files, call processes"
 [tilemap]: ## "Purely data driven Tile map system, with capability and demo to create in-game level editors."
 [fps_controller]: ## "Camera rotation, camera animation, strafe jump velocity"
+[input]: ## "Helper functions for rebinding and gamepad axis as buttons functionality"
 
 - ✅ [App state][app_state] `odin run app_state/demo`
 - ❎ Astar `odin run astar/demo`
@@ -24,6 +25,7 @@
     - ❎ closest
     - ❎ project
     - ❎ envelope
+- ✅ [Input][input] `odin run input/demo`
 - ✅ MicMeter `odin run mic_meter/demo`
 - ✅ Microui (raylib) `odin run microui/demo`
 - ✅ Particles `odin run particles/demo -out:particles/demo.exe`
