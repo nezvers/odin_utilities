@@ -1,6 +1,7 @@
 #+private file
 package demo
 // https://github.com/raysan5/raylib/blob/master/examples/core/core_3d_camera_fps.c
+import "core:math/ease"
 
 import "core:math"
 import "core:math/linalg"
@@ -49,7 +50,7 @@ Player :: struct {
     step: Vector2,      // head movement vertical and side
     walk_cycle: f32,    // 0..1 animation time
     walk_blend: f32,
-    recoil: f32,
+    recoil_timer: f32,
     input : struct {
         x : i8,
         y : i8,
@@ -242,9 +243,10 @@ update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
     )
 
     if player.input.shoot {
-        player.recoil = 1
-    } else {
-        player.recoil = linalg.lerp(player.recoil, 0, delta_time * RECOIL_SPEED)
+        player.recoil_timer = 1
+    } else if player.recoil_timer > 0 {
+        player.recoil_timer -= delta_time * RECOIL_SPEED
+        if player.recoil_timer < 0 { player.recoil_timer = 0 }
     }
     
     if player.input.x != 0 || player.input.y != 0 {
@@ -265,7 +267,7 @@ update_camera_animations :: proc(player: ^Player, fov: ^f32, delta_time: f32) {
     player.lean.x = linalg.lerp(player.lean.x, cast(f32)player.input.x * STRAFE_ROTATION, delta_time * 10)
     player.lean.y = linalg.lerp(player.lean.y, cast(f32)player.input.y * FRONT_ROTATION, delta_time * 10)
 
-    player.lean.y -= player.recoil * RECOIL_ROTATION
+    player.lean.y -= RECOIL_ROTATION * ease.cubic_in(player.recoil_timer)
     
     if player.is_grounded && (player.input.x != 0 || player.input.y != 0) {
         fov^ = linalg.lerp(fov^, 55, delta_time * BLEND_SPEED)
