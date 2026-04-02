@@ -4,6 +4,7 @@ package demo
 import rl "vendor:raylib"
 Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
+Color :: rl.Color
 
 @(private="package")
 state_simple : State = {
@@ -18,13 +19,19 @@ DragRect :: struct {
     offset: Vector2,
 }
 
-item : DragRect = {rect = {40, 40, 32, 32,}}
+Item :: struct {
+    using drag_rect: DragRect,
+    color: Color,
+}
+
+item_list : []Item = {
+    {rect = {40, 40, 32, 32,}, color = rl.LIME},
+    {rect = {80, 80, 32, 32,}, color = rl.GREEN},
+}
 dragged: ^DragRect = nil
 
 init :: proc() {
     dragged = nil
-    item.rect.x = 40
-    item.rect.y = 40
 }
 
 finit :: proc() {
@@ -34,9 +41,11 @@ finit :: proc() {
 update :: proc() {
     mouse_pos: Vector2 = rl.GetMousePosition()
     if rl.IsMouseButtonPressed(rl.MouseButton.LEFT) && dragged == nil {
-        if rl.CheckCollisionPointRec(mouse_pos, item.rect) {
-            dragged = &item
-            dragged.offset = Vector2{dragged.rect.x, dragged.rect.y} - mouse_pos
+        for i:int = 0; i < len(item_list); i += 1 {
+            if rl.CheckCollisionPointRec(mouse_pos, item_list[i].rect) {
+                dragged = &item_list[i]
+                dragged.offset = Vector2{dragged.rect.x, dragged.rect.y} - mouse_pos
+            }
         }
     }
 
@@ -50,6 +59,8 @@ update :: proc() {
 }
 
 draw :: proc() {
-    rl.DrawRectangleRec(item.rect, rl.LIME)
-    rl.DrawRectangleLinesEx(item.rect, 1, rl.GRAY)
+    for i:int = 0; i < len(item_list); i += 1 {
+        rl.DrawRectangleRec(item_list[i].rect, item_list[i].color)
+        rl.DrawRectangleLinesEx(item_list[i].rect, 1, item_list[i].color)
+    }
 }
