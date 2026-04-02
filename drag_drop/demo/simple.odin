@@ -61,6 +61,6 @@ update :: proc() {
 draw :: proc() {
     for i:int = 0; i < len(item_list); i += 1 {
         rl.DrawRectangleRec(item_list[i].rect, item_list[i].color)
-        rl.DrawRectangleLinesEx(item_list[i].rect, 1, item_list[i].color)
+        rl.DrawRectangleLinesEx(item_list[i].rect, 1, rl.GRAY)
     }
 }
