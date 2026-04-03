@@ -18,14 +18,16 @@ State :: struct {
 
 state_list: []State = {
 	state_simple,
+	state_slots,
 }
 
 StateIndex :: enum {
     SIMPLE,
+    SLOTS,
 	COUNT,
 }
 
-state_index:StateIndex = StateIndex.SIMPLE
+state_index:StateIndex = StateIndex.SLOTS
 screen_size:Vector2
 is_hovering_buttons:bool
 
