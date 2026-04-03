@@ -41,6 +41,10 @@ slot_list: []Slot = {
     {rect = {85, 40, ITEM_SIZE.x, ITEM_SIZE.y,}},
     {rect = {40, 85, ITEM_SIZE.x, ITEM_SIZE.y,}},
     {rect = {85, 85, ITEM_SIZE.x, ITEM_SIZE.y,}},
+    {rect = {200, 40, ITEM_SIZE.x, ITEM_SIZE.y,}},
+    {rect = {245, 40, ITEM_SIZE.x, ITEM_SIZE.y,}},
+    {rect = {200, 85, ITEM_SIZE.x, ITEM_SIZE.y,}},
+    {rect = {245, 85, ITEM_SIZE.x, ITEM_SIZE.y,}},
 }
 
 dragged: ^Item = nil
@@ -104,7 +108,8 @@ update :: proc() {
 
 draw :: proc() {
     for i:int = 0; i < len(slot_list); i += 1 {
-        rl.DrawRectangleRec(slot_list[i].rect, rl.BLACK)
+        rl.DrawRectangleRec(slot_list[i].rect, rl.DARKGRAY)
+        rl.DrawRectangleLinesEx(slot_list[i].rect, 1, rl.BLACK)
     }
 
     for i:int = 0; i < len(item_list); i += 1 {
