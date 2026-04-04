@@ -28,7 +28,8 @@ init :: proc() {
     local_data = local.MakeLocalizationData(csv_localization[:])
     ok:bool
     language_id, ok = local.GetLanguageId(&local_data, "en")
-    font = rl.LoadFont("../assets/fonts/pixellocale-v-1-4.ttf")
+    // TODO: load all symbols
+    font = rl.LoadFontEx("../assets/fonts/pixellocale-v-1-4.ttf", 32, nil, 0)
 }
 
 finit :: proc() {
@@ -53,19 +54,21 @@ draw :: proc() {
             cstr: = strings.unsafe_to_cstring(&sb)
             text:cstring = rl.TextFormat("%s", cstr)
             if rl.GuiButton(button_rect, text) {
-
+                ok:bool
+                language_id, ok = local.GetLanguageId(&local_data, lang_str)
             }
             button_rect.y += ROW_HEIGHT
         }
     }
 
+    FONT_SIZE :: 32
     key_y: f32 = 10
     for k, v in local_data.key_map {
         sb: = strings.builder_from_bytes(buffer[:])
         strings.write_string(&sb, k)
         cstr: = strings.unsafe_to_cstring(&sb)
         text:cstring = rl.TextFormat("%s", cstr)
-        rl.DrawTextEx(font, text, {120, key_y}, 16, 0, rl.BLACK)
+        rl.DrawTextEx(font, text, {120, key_y}, FONT_SIZE, 0, rl.BLACK)
         
         translation, ok: = local.GetTranslationId(&local_data, v, language_id)
         if ok {
@@ -73,7 +76,7 @@ draw :: proc() {
             strings.write_string(&sb, translation)
             cstr = strings.unsafe_to_cstring(&sb)
             text = rl.TextFormat("%s", cstr)
-            rl.DrawTextEx(font, text, {250, key_y}, 16, 0, rl.BLACK)
+            rl.DrawTextEx(font, text, {350, key_y}, FONT_SIZE, 0, rl.BLACK)
         }
         
         key_y += 20
