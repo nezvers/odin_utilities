@@ -28,8 +28,10 @@ init :: proc() {
     local_data = local.MakeLocalizationData(csv_localization[:])
     ok:bool
     language_id, ok = local.GetLanguageId(&local_data, "en")
-    // TODO: load all symbols
-    font = rl.LoadFontEx("../assets/fonts/pixellocale-v-1-4.ttf", 32, nil, 0)
+    // Generate UTF-8 codepoints
+    codepoints: [1024]rune
+    for i:int = 0; i < len(codepoints); i += 1 { codepoints[i] = cast(rune)i }
+    font = rl.LoadFontEx("../assets/fonts/pixellocale-v-1-4.ttf", 32, &codepoints[0], cast(i32)len(codepoints))
 }
 
 finit :: proc() {
