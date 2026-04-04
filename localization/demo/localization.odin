@@ -21,13 +21,19 @@ state_localization : State = {
 
 csv_localization: []byte = #load("../../assets/data/localization.csv")
 local_data: LocalizationData
+font: rl.Font
+language_id: u32 = 1
 
 init :: proc() {
     local_data = local.MakeLocalizationData(csv_localization[:])
+    ok:bool
+    language_id, ok = local.GetLanguageId(&local_data, "en")
+    font = rl.LoadFont("../assets/fonts/pixellocale-v-1-4.ttf")
 }
 
 finit :: proc() {
     local.DeleteLocalizationData(&local_data)
+    rl.UnloadFont(font)
 }
 
 update :: proc() {}
@@ -51,6 +57,26 @@ draw :: proc() {
             }
             button_rect.y += ROW_HEIGHT
         }
+    }
+
+    key_y: f32 = 10
+    for k, v in local_data.key_map {
+        sb: = strings.builder_from_bytes(buffer[:])
+        strings.write_string(&sb, k)
+        cstr: = strings.unsafe_to_cstring(&sb)
+        text:cstring = rl.TextFormat("%s", cstr)
+        rl.DrawTextEx(font, text, {120, key_y}, 16, 0, rl.BLACK)
+        
+        translation, ok: = local.GetTranslationId(&local_data, v, language_id)
+        if ok {
+            sb = strings.builder_from_bytes(buffer[:])
+            strings.write_string(&sb, translation)
+            cstr = strings.unsafe_to_cstring(&sb)
+            text = rl.TextFormat("%s", cstr)
+            rl.DrawTextEx(font, text, {250, key_y}, 16, 0, rl.BLACK)
+        }
+        
+        key_y += 20
     }
 }
 
