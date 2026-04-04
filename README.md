@@ -27,6 +27,7 @@
     - ❎ project
     - ❎ envelope
 - ✅ [Input][input] `odin run input/demo`
+- ✅ Localization `odin run localization/demo -out:localization/demo.exe`
 - ✅ MicMeter `odin run mic_meter/demo`
 - ✅ Microui (raylib) `odin run microui/demo`
 - ✅ Particles `odin run particles/demo -out:particles/demo.exe`
