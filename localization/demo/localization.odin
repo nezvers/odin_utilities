@@ -29,7 +29,7 @@ init :: proc() {
     ok:bool
     language_id, ok = local.GetLanguageId(&local_data, "en")
     // Generate UTF-8 codepoints
-    codepoints: [1279]rune
+    codepoints: [1280]rune
     for i:int = 0; i < len(codepoints); i += 1 { codepoints[i] = cast(rune)i }
     font = rl.LoadFontEx("../assets/fonts/pixellocale-v-1-4.ttf", 32, &codepoints[0], cast(i32)len(codepoints))
 }
