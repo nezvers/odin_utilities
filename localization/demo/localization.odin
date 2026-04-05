@@ -1,13 +1,11 @@
 #+private file
 package demo
 
-// import "core:fmt"
 import "core:strings"
 
 import rl "vendor:raylib"
 Rectangle :: rl.Rectangle
 
-// import "core:os"
 import local ".."
 LocalizationData :: local.LocalizationData
 
@@ -31,6 +29,7 @@ init :: proc() {
     // Generate UTF-8 codepoints
     codepoints: [1280]rune
     for i:int = 0; i < len(codepoints); i += 1 { codepoints[i] = cast(rune)i }
+    // Use font that supports required languages
     font = rl.LoadFontEx("../assets/fonts/pixellocale-v-1-4.ttf", 32, &codepoints[0], cast(i32)len(codepoints))
 }
 
@@ -65,14 +64,16 @@ draw :: proc() {
 
     FONT_SIZE :: 32
     key_y: f32 = 10
-    for k, v in local_data.key_map {
+    for key, text_id in local_data.key_map {
+        // Translation key
         sb: = strings.builder_from_bytes(buffer[:])
-        strings.write_string(&sb, k)
+        strings.write_string(&sb, key)
         cstr: = strings.unsafe_to_cstring(&sb)
-        text:cstring = rl.TextFormat("%s", cstr)
+        text:cstring = rl.TextFormat("%s:", cstr)
         rl.DrawTextEx(font, text, {120, key_y}, FONT_SIZE, 0, rl.BLACK)
         
-        translation, ok: = local.GetTranslationId(&local_data, v, language_id)
+        // Translation
+        translation, ok: = local.GetTranslationById(&local_data, text_id, language_id)
         if ok {
             sb = strings.builder_from_bytes(buffer[:])
             strings.write_string(&sb, translation)

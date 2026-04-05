@@ -2,14 +2,13 @@ package localization
 
 
 import "core:encoding/csv"
-// import "core:fmt"
 import "core:strings"
 
 LocalizationData :: struct {
     array: [dynamic]string,
     columns: u32,
     rows: u32,
-    lang_map: map[string] u32, // column index for languages
+    lang_map: map[string] u32,  // column index for languages
     key_map: map[string] u32,   // row index for translated text
 }
 
@@ -86,7 +85,8 @@ GetTextId :: proc(data: ^LocalizationData, key: string)->(id: u32, ok: bool) {
     return
 }
 
-GetTranslationId :: proc(data: ^LocalizationData, text_id: u32, lang_id: u32)->(translation:string, ok: bool) {
+// Get translated text using text key and language key from GetLanguageId & GetTextId
+GetTranslationById :: proc(data: ^LocalizationData, text_id: u32, lang_id: u32)->(translation:string, ok: bool) {
     if !(lang_id > 0 && lang_id < data.columns) { return }
     if !(text_id > 0 && text_id < data.rows) { return }
 
@@ -96,12 +96,14 @@ GetTranslationId :: proc(data: ^LocalizationData, text_id: u32, lang_id: u32)->(
     return
 }
 
+// Get translated text using text key and language key
+// Recommended to cache their ID with GetLanguageId & GetTextId to get directly with GetTranslationById
 GetTranslation :: proc(data: ^LocalizationData, text: string, language: string)->(translation:string, ok: bool) {
     lang_id, lang_ok: = GetLanguageId(data, language)
     if !lang_ok { return }
-    text_id, text_ok: = GetLanguageId(data, language)
+    text_id, text_ok: = GetTextId(data, language)
     if !text_ok { return }
 
-    translation, ok = GetTranslationId(data, text_id, lang_id)
+    translation, ok = GetTranslationById(data, text_id, lang_id)
     return
 }
