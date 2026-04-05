@@ -1,5 +1,5 @@
 # Input
-Helper functions to implement input rebinding or reading axis inputs as button state (pressed, released, held).    
+Helper functions to implement input rebinding and reading axis inputs as button state (pressed, released, held).    
 `odin run demo`    
     
 `UpdateAxis()` - call at update loop beginning to enable axis as button states    
