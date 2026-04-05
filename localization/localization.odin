@@ -5,9 +5,9 @@ import "core:encoding/csv"
 import "core:strings"
 
 LocalizationData :: struct {
-    array: [dynamic]string,
-    columns: u32,
-    rows: u32,
+    array: [dynamic]string,     // 1d array of strings from CSV
+    columns: u32,               // store count of CSV columns
+    rows: u32,                  // store count of CSV rows 
     lang_map: map[string] u32,  // column index for languages
     key_map: map[string] u32,   // row index for translated text
 }
