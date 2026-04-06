@@ -141,8 +141,6 @@ prepare_font_rects :: proc(font_in:^rl.Font, font_out:^rl.Font) {
 		glyphs = raw_data(glyphs),
     }
 
-
-
     letter_strings:[]string = make_slice([]string, len(letters))
     defer delete(letter_strings)
     // Raylib works with cstrings
