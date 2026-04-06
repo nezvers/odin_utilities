@@ -15,13 +15,14 @@ Glyph :: struct {
 	advance_x: int,
 }
 
+// Doesn't work yet
 GetFontRects :: proc(font_path:string, font_height:f32, letters:[]rune, rectangles:[]rectf, glyphs:[]Glyph)->(ok:bool) {
     assert(len(letters) != 0)
     assert(len(letters) == len(rectangles))
     assert(len(letters) == len(glyphs))
 
-    font_data, file_ok := os.read_entire_file(font_path)
-    if !file_ok {
+    font_data, file_ok := os.read_entire_file_from_path(font_path, context.allocator)
+    if file_ok != nil {
         return false
     }
 
