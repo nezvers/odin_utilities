@@ -46,7 +46,14 @@ pack_rectangles :: proc(rc: ^stbrp.Context, rect_list:[]rectf)->(ok:bool) {
     return true
 }
 
-prepare_font_rects :: proc(font_in:^rl.Font, font_out:^rl.Font) {
+prepare_font_rects :: proc(
+    font_in:^rl.Font, 
+    font_out:^rl.Font, 
+    baked_texture: rl.Texture,
+    letters: string,
+    letter_rects: ^[]rectf,
+    letter_cstrings: ^[]cstring,
+) {
     rune_data :: struct {
         glyph:rl.GlyphInfo,
         rect:rectf,
@@ -61,9 +68,10 @@ prepare_font_rects :: proc(font_in:^rl.Font, font_out:^rl.Font) {
     }
 
     // Collect rectangles for letters
-    letters:[]rune = utf8.string_to_runes(LETTERS_IN_FONT)
+    letters:[]rune = utf8.string_to_runes(letters)
     defer delete(letters)
-    letter_rects = make([]rectf, len(letters))
+
+    letter_rects^ = make([]rectf, len(letters))
     glyphs := make([]rl.GlyphInfo, len(letter_rects))
     
     for i:int = 0; i < len(letters); i += 1 {
@@ -81,18 +89,18 @@ prepare_font_rects :: proc(font_in:^rl.Font, font_out:^rl.Font) {
     }
 
     font_out^ = {
-        baseSize = font_source.baseSize,
+        baseSize = font_in.baseSize,
         glyphCount = i32(len(glyphs)),
 		glyphPadding = 0,
-		texture = render_texture.texture,
-		recs = raw_data(transmute([]Rectangle)letter_rects),
+		texture = baked_texture,
+		recs = raw_data(transmute([]Rectangle)letter_rects^),
 		glyphs = raw_data(glyphs),
     }
 
     letter_strings:[]string = make_slice([]string, len(letters))
     defer delete(letter_strings)
     // Raylib works with cstrings
-    letter_cstrings = make_slice([]cstring, len(letters))
+    letter_cstrings^ = make_slice([]cstring, len(letters))
 
     for i:int = 0; i < len(letters); i += 1 {
         letter_strings[i] = utf8.runes_to_string(letters[i:i+1])

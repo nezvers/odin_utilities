@@ -5,8 +5,10 @@ import "core:fmt"
 import rl "vendor:raylib"
 Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
-vec2i::[2]i32
-rectf::[4]f32
+
+import packer "../raylib"
+vec2i:: packer.vec2i
+rectf:: packer.rectf
 
 import stbrp "vendor:stb/rect_pack"
 stb_Rect:: stbrp.Rect
@@ -59,7 +61,7 @@ reset_atlas :: proc() {
 	render_texture = rl.LoadRenderTexture(ATLAS_SIZE.x, ATLAS_SIZE.y)
 }
 
-pack_rectangles :: proc(rc: ^stbrp.Context, rect_list:[]rectf)->(ok:bool) {
+_pack_rectangles :: proc(rc: ^stbrp.Context, rect_list:[]rectf)->(ok:bool) {
     // Prepare rectangle list for packing
     pack_rects:[dynamic]stb_Rect
     defer delete(pack_rects)
@@ -98,7 +100,7 @@ prepare_sprite_rects :: proc() {
     }
 }
 
-prepare_font_rects :: proc(font_in:^rl.Font, font_out:^rl.Font) {
+_prepare_font_rects :: proc(font_in:^rl.Font, font_out:^rl.Font) {
     rune_data :: struct {
         glyph:rl.GlyphInfo,
         rect:rectf,
@@ -168,7 +170,7 @@ init :: proc(){
     font_source = rl.LoadFont("../assets/fonts/font.ttf")
 
     prepare_sprite_rects()
-    prepare_font_rects(&font_source, &font_packed)
+    packer.prepare_font_rects(&font_source, &font_packed)
 
     // Init packer
     rc: stbrp.Context
@@ -176,10 +178,10 @@ init :: proc(){
     stbrp.init_target(&rc, ATLAS_SIZE.x, ATLAS_SIZE.x, raw_data(rc_nodes[:]), ATLAS_SIZE.x)
 
     // Optimally pack everything in one go
-    if !pack_rectangles(&rc, player_sprite_packed[:]) {
+    if !packer.pack_rectangles(&rc, player_sprite_packed[:]) {
         assert(false, "Failed packing")
     }
-    if !pack_rectangles(&rc, letter_rects[:]) {
+    if !packer.pack_rectangles(&rc, letter_rects[:]) {
         assert(false, "Failed packing")
     }
 
