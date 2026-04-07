@@ -117,3 +117,23 @@ prepare_font_rects :: proc(
         }
     }
 }
+
+
+
+init_packed_font :: proc (
+    font_in:^rl.Font, 
+    font_out:^rl.Font, 
+    baked_texture: rl.Texture,
+    glyphs: []rl.GlyphInfo,
+    letter_rects: []Rectangle,
+) {
+    font_out^ = {
+        baseSize = font_in.baseSize,
+        glyphCount = i32(len(glyphs)),
+		glyphPadding = 0,
+		texture = baked_texture,
+		recs = raw_data(letter_rects),
+		glyphs = raw_data(glyphs),
+    }
+}
+
