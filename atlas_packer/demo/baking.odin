@@ -25,7 +25,7 @@ baking_state :State = {
     draw,
 }
 
-ATLAS_SIZE :vec2i: {512, 512}
+ATLAS_SIZE :: 512
 Sprite :: struct {
     size: Vector2,
     tex_pos:[]Vector2,
@@ -58,7 +58,7 @@ player_sprite_packed:[]rectf
 
 reset_atlas :: proc() {
 	rl.UnloadRenderTexture(render_texture)
-	render_texture = rl.LoadRenderTexture(ATLAS_SIZE.x, ATLAS_SIZE.y)
+	render_texture = rl.LoadRenderTexture(ATLAS_SIZE, ATLAS_SIZE)
 }
 
 _pack_rectangles :: proc(rc: ^stbrp.Context, rect_list:[]rectf)->(ok:bool) {
@@ -170,12 +170,12 @@ init :: proc(){
     font_source = rl.LoadFont("../assets/fonts/font.ttf")
 
     prepare_sprite_rects()
-    packer.prepare_font_rects(&font_source, &font_packed)
+    _prepare_font_rects(&font_source, &font_packed)
 
     // Init packer
     rc: stbrp.Context
-    rc_nodes: [ATLAS_SIZE.x]stbrp.Node
-    stbrp.init_target(&rc, ATLAS_SIZE.x, ATLAS_SIZE.x, raw_data(rc_nodes[:]), ATLAS_SIZE.x)
+    rc_nodes: [ATLAS_SIZE]stbrp.Node
+    stbrp.init_target(&rc, ATLAS_SIZE, ATLAS_SIZE, raw_data(rc_nodes[:]), ATLAS_SIZE)
 
     // Optimally pack everything in one go
     if !packer.pack_rectangles(&rc, player_sprite_packed[:]) {
@@ -187,7 +187,7 @@ init :: proc(){
 
     // Raylib's render texture is flipped vertically
     // Use temporary first then draw it on target render texture
-    temp_render_texture: = rl.LoadRenderTexture(ATLAS_SIZE.x, ATLAS_SIZE.y)
+    temp_render_texture: rl.RenderTexture2D = rl.LoadRenderTexture(ATLAS_SIZE, ATLAS_SIZE)
     defer rl.UnloadRenderTexture(temp_render_texture)
 
     // Draw sprite tiles to render target
@@ -226,7 +226,7 @@ finit :: proc() {
 }
 
 draw :: proc(){
-    rect:Rectangle = {10, 10, cast(f32)ATLAS_SIZE.x, cast(f32)ATLAS_SIZE.y}
+    rect:Rectangle = {10, 10, cast(f32)ATLAS_SIZE, cast(f32)ATLAS_SIZE}
     source_rect:Rectangle = {0, 0, rect.width, rect.height}
     dest_rect:Rectangle = {10, 10, rect.width, rect.height}
 

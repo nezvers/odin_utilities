@@ -1,11 +1,14 @@
 package atlas_packer_raylib
 
 import "core:fmt"
+
 import rl "vendor:raylib"
 Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
-vec2i::[2]i32
-rectf::[4]f32
+
+import packer ".."
+vec2i:: packer.vec2i
+rectf:: packer.rectf
 
 import stbrp "vendor:stb/rect_pack"
 stb_Rect:: stbrp.Rect

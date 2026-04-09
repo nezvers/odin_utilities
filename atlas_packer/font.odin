@@ -6,9 +6,6 @@ import "core:c"
 import stbtt "vendor:stb/truetype"
 // import stbim "vendor:stb/image"
 
-rectf :: [4]f32
-vec2i :: [2]int
-
 Glyph :: struct {
 	value: rune,
 	offset: vec2i,
