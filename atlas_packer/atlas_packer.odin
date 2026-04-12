@@ -6,11 +6,11 @@ stb_Rect:: stbrp.Rect
 rectf :: [4]f32
 vec2i :: [2]int
 
-AtlasPacker :: struct($size: i32) {
+AtlasPacker :: struct($buffer_size:int , $atlas_size: i32) {
     ctx: stbrp.Context,
-    buffer: []rectf,            // accumulate rects to pack
-    stb_buffer: []stb_Rect,     // used for actual packing
-    nodes: [size]stbrp.Node,    // will determine power of 2 atlas size
+    buffer: [buffer_size]rectf,            // accumulate rects to pack
+    stb_buffer: [buffer_size]stb_Rect,     // used for actual packing
+    nodes: [atlas_size]stbrp.Node,    // will determine power of 2 atlas size
     length:int,                 // used buffer
 }
 

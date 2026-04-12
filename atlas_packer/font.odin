@@ -38,7 +38,7 @@ GetFontRects :: proc(font_path:string, font_height:f32, letters:[]rune, rectangl
 
         w, h, ox, oy: c.int
         // Is this the only way to get offsets?
-        data := stbtt.GetCodepointBitmap(&fi, scale_factor, scale_factor, r, &w, &h, &ox, &oy)
+        //data := stbtt.GetCodepointBitmap(&fi, scale_factor, scale_factor, r, &w, &h, &ox, &oy)
 
         glyphs[r_idx] = {
             value = r,
