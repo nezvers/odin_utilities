@@ -1,6 +1,6 @@
 package atlas_packer_raylib
 
-import "core:fmt"
+// import "core:fmt"
 
 import rl "vendor:raylib"
 Vector2 :: rl.Vector2
@@ -18,36 +18,7 @@ import "core:strings"
 // import "core:slice"
 
 
-pack_rectangles :: proc(rc: ^stbrp.Context, rect_list:[]rectf)->(ok:bool) {
-    // Prepare rectangle list for packing
-    pack_rects:[dynamic]stb_Rect
-    defer delete(pack_rects)
 
-    for i:int = 0; i < len(rect_list); i += 1 {
-        rect:rectf = rect_list[i]
-        append(&pack_rects, stb_Rect {
-            id = cast(i32)i,
-            w = stbrp.Coord(rect.z),
-            h = stbrp.Coord(rect.w),
-        })
-    }
-
-    // Packing
-    rect_pack_res := stbrp.pack_rects(rc, raw_data(pack_rects), i32(len(pack_rects)))
-    if rect_pack_res != 1 {
-        fmt.printf("Failed packing \n")
-        return false
-    }
-
-    // Read packed positions
-    for i:int = 0; i < len(pack_rects); i += 1 {
-        rect:^stb_Rect = &pack_rects[i]
-        id:i32 = rect.id
-        tex_pos:[2]f32 = {cast(f32)rect.x, cast(f32)rect.y}
-        rect_list[id].xy = tex_pos
-    }
-    return true
-}
 
 prepare_font_rects :: proc(
     font_in:^rl.Font, 
@@ -140,3 +111,12 @@ init_packed_font :: proc (
     }
 }
 
+BakeTextureRects :: proc(temp_render_texture: rl.RenderTexture, source_texture:rl.Texture2D, source_rects: []rectf, target_rects: []rectf) {
+    rl.BeginTextureMode(temp_render_texture)
+
+    for i:int = 0; i < len(source_rects); i += 1 {
+        rl.DrawTextureRec(source_texture, transmute(Rectangle)source_rects[i], target_rects[i].xy, rl.WHITE)
+    }
+
+    rl.EndTextureMode()
+}

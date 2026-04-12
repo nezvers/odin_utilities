@@ -18,8 +18,7 @@ AtlasPacker :: struct($buffer_size:int , $atlas_size: i32) {
 Init :: proc(
     packer: ^AtlasPacker($B, $A),
 ){
-    packer.ctx = {}
-    packer.length = 0
+    packer^ = {}
     atlas_size: = cast(i32)len(packer.nodes)
     stbrp.init_target(&packer.ctx, atlas_size, atlas_size, raw_data(packer.nodes[:]), atlas_size)
 }

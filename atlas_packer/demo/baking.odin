@@ -6,6 +6,7 @@ Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
 
 import packer ".."
+import packer_rl "../raylib"
 vec2i:: packer.vec2i
 rectf:: packer.rectf
 
@@ -62,7 +63,6 @@ reset_atlas :: proc() {
 
 init :: proc() {
     // 0. Init packer
-    atlas_packer = {}
     packer.Init(&atlas_packer)
 
     // 1. Load assets
@@ -82,7 +82,22 @@ init :: proc() {
     // 4. Init sizes for target rectf
     packer.CopySizes(player_sprite_source[:], player_sprite_packed[:])
 
+    // 5. Pack
     packer.Pack(&atlas_packer)
+
+    // 6. Transfer to render texture
+    // Raylib need temporary texture because, render textures are vertically flipped
+    temp_render_texture: rl.RenderTexture2D = rl.LoadRenderTexture(ATLAS_SIZE, ATLAS_SIZE)
+    defer rl.UnloadRenderTexture(temp_render_texture)
+
+    // Recommended to do manualy. Each call does separate draw call.
+    // Function is more like an example, but for 
+    packer_rl.BakeTextureRects(temp_render_texture, player_texture, player_sprite_source, player_sprite_packed)
+
+    // Transfer to target render_texture to flip it correclty
+    rl.BeginTextureMode(render_texture)
+    rl.DrawTexture(temp_render_texture.texture, 0, 0, rl.WHITE)
+    rl.EndTextureMode()
 }
 
 finit :: proc() {

@@ -167,17 +167,6 @@ _prepare_font_rects :: proc(font_in:^rl.Font, font_out:^rl.Font) {
 }
 
 init :: proc() {
-    // 1. Load assets
-    player_texture = rl.LoadTexture("../assets/textures/player_sheet.png")
-    font_source = rl.LoadFont("../assets/fonts/font.ttf")
-
-    // 2. Prepare target texture / atlas
-    reset_atlas()
-
-    
-}
-
-backup_init :: proc() {
     reset_atlas()
     player_texture = rl.LoadTexture("../assets/textures/player_sheet.png")
     font_source = rl.LoadFont("../assets/fonts/font.ttf")
@@ -191,12 +180,14 @@ backup_init :: proc() {
     stbrp.init_target(&rc, ATLAS_SIZE, ATLAS_SIZE, raw_data(rc_nodes[:]), ATLAS_SIZE)
 
     // Optimally pack everything in one go
+    /*
     if !packer.pack_rectangles(&rc, player_sprite_packed[:]) {
         assert(false, "Failed packing")
     }
     if !packer.pack_rectangles(&rc, letter_rects[:]) {
         assert(false, "Failed packing")
     }
+    */
 
     // Raylib's render texture is flipped vertically
     // Use temporary first then draw it on target render texture
