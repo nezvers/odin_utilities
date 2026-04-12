@@ -1,5 +1,6 @@
 package atlas_packer
 
+import "core:fmt"
 import stbrp "vendor:stb/rect_pack"
 stb_Rect:: stbrp.Rect
 
@@ -15,25 +16,20 @@ AtlasPacker :: struct($buffer_size:int , $atlas_size: i32) {
 }
 
 Init :: proc(
-    packer: ^AtlasPacker,
-    buffer: []rectf,
-    stb_buffer: []stb_Rect,
+    packer: ^AtlasPacker($B, $A),
 ){
-    assert(len(stb_buffer) >= len(buffer))
-    packer.buffer = buffer
-    packer.stb_buffer = stb_buffer
+    packer.ctx = {}
     packer.length = 0
-    atlas_size: = cast(i32)len(packer.rc_nodes)
-    stbrp.init_target(&packer.ctx, atlas_size, atlas_size, raw_data(packer.rc_nodes[:]), atlas_size)
+    atlas_size: = cast(i32)len(packer.nodes)
+    stbrp.init_target(&packer.ctx, atlas_size, atlas_size, raw_data(packer.nodes[:]), atlas_size)
 }
 
-
-GetRects :: proc(packer: ^AtlasPacker, count: int)->(result:[]rectf, ok:bool) {
+GetRects :: proc(packer: ^AtlasPacker($B, $A), count: int)->(result:[]rectf, ok:bool) {
     if packer.length + count > len(packer.buffer) - 1 {
         // TODO: maybe support partial return. Or have itteratable function one by one
         return
     }
-    result: []rectf = packer.buffer[packer.length:min(packer.length+count, len(packer.buffer))]
+    result = packer.buffer[packer.length:min(packer.length+count, len(packer.buffer))]
     packer.length += count
     ok = true
     return
@@ -47,7 +43,7 @@ CopySizes :: proc(original_rects: []rectf, packed_rects: []rectf) {
     }
 }
 
-Pack :: proc(packer: ^AtlasPacker)->(ok:bool) {
+Pack :: proc(packer: ^AtlasPacker($B, $A))->(ok:bool) {
     for i:int = 0; i < packer.length; i += 1 {
         rect: ^rectf = &packer.buffer[i]
         packer.stb_buffer[i] = {
@@ -58,7 +54,7 @@ Pack :: proc(packer: ^AtlasPacker)->(ok:bool) {
     }
 
     // Packing
-    rect_pack_res := stbrp.pack_rects(packer.ctx, raw_data(packer.stb_buffer[:packer.length]), i32(packer.length))
+    rect_pack_res := stbrp.pack_rects(&packer.ctx, raw_data(packer.stb_buffer[:packer.length]), i32(packer.length))
     if rect_pack_res != 1 {
         fmt.printf("Failed packing \n")
         // TODO: add support for overflowing into multiple textures

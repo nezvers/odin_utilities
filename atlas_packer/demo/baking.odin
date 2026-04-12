@@ -52,7 +52,7 @@ atlas_packer: AtlasPacker
 render_texture:rl.RenderTexture
 
 // Holds data about generated atlas texture, assigned to spawned instances
-player_sprite_packed:[]rectf
+player_sprite_packed: []rectf
 
 
 reset_atlas :: proc() {
@@ -61,8 +61,10 @@ reset_atlas :: proc() {
 }
 
 init :: proc() {
+    // 0. Init packer
     atlas_packer = {}
-    
+    packer.Init(&atlas_packer)
+
     // 1. Load assets
     player_texture: rl.Texture2D = rl.LoadTexture("../assets/textures/player_sheet.png")
     defer rl.UnloadTexture(player_texture)
@@ -73,6 +75,14 @@ init :: proc() {
     // 2. Prepare target texture / atlas
     reset_atlas()
 
+    // 3. Fetch target rectf slices
+    player_sprite_ok:bool
+    player_sprite_packed, player_sprite_ok = packer.GetRects(&atlas_packer, len(player_sprite_source))
+
+    // 4. Init sizes for target rectf
+    packer.CopySizes(player_sprite_source[:], player_sprite_packed[:])
+
+    packer.Pack(&atlas_packer)
 }
 
 finit :: proc() {
