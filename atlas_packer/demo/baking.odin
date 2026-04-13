@@ -17,7 +17,7 @@ stb_Rect:: stbrp.Rect
 baking_state :State = {
     init,
     finit,
-    nil,
+    update,
     draw,
 }
 
@@ -54,6 +54,7 @@ render_texture:rl.RenderTexture
 
 // Holds data about generated atlas texture, assigned to spawned instances
 player_sprite_packed: []rectf
+player_timer: f32
 
 
 reset_atlas :: proc() {
@@ -104,6 +105,14 @@ finit :: proc() {
 	rl.UnloadRenderTexture(render_texture)
 }
 
+update :: proc() {
+    delta_time: f32 = rl.GetFrameTime()
+    player_timer += delta_time * 12
+    if int(player_timer) > len(player_sprite_packed)-1 {
+        player_timer -= f32(int(player_timer))
+    }
+}
+
 draw :: proc(){
     rect:Rectangle = {10, 10, cast(f32)ATLAS_SIZE, cast(f32)ATLAS_SIZE}
     source_rect:Rectangle = {0, 0, rect.width, rect.height}
@@ -115,7 +124,7 @@ draw :: proc(){
 
     // Test player tex_pos
     // Spawned instance
-    // rect_player:Rectangle = transmute(Rectangle)player_sprite_packed[0]
-    // rl.DrawRectangleLinesEx({530, 10, rect_player.width, rect_player.height}, 1, rl.BLACK)
-    // rl.DrawTextureRec(render_texture.texture, rect_player, {530, 10}, rl.WHITE)
+    rect_player:Rectangle = transmute(Rectangle)player_sprite_packed[int(player_timer)]
+    rl.DrawRectangleLinesEx({530, 10, rect_player.width, rect_player.height}, 1, rl.BLACK)
+    rl.DrawTextureRec(render_texture.texture, rect_player, {530, 10}, rl.WHITE)
 }
