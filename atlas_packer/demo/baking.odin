@@ -98,8 +98,7 @@ init :: proc() {
     temp_render_texture: rl.RenderTexture2D = rl.LoadRenderTexture(ATLAS_SIZE, ATLAS_SIZE)
     defer rl.UnloadRenderTexture(temp_render_texture)
 
-    // Recommended to do manualy. Each call does separate draw call.
-    // Function is more like an example, but for 
+    // Recommended to do manualy in one draw call. Each call does separate draw call.
     packer_rl.BakeTextureRects(temp_render_texture, player_texture, player_sprite_source, player_sprite_packed)
     packer_rl.BakeFontRects(temp_render_texture, &font_source, &font_packed)
 
@@ -135,4 +134,6 @@ draw :: proc(){
     rect_player:Rectangle = transmute(Rectangle)player_sprite_packed[int(player_timer)]
     rl.DrawRectangleLinesEx({530, 10, rect_player.width, rect_player.height}, 1, rl.BLACK)
     rl.DrawTextureRec(render_texture.texture, rect_player, {530, 10}, rl.WHITE)
+
+    rl.DrawTextEx(font_packed, "Hello, baked font!", {550, 10}, cast(f32)font_packed.baseSize, 0, rl.BLACK)
 }
