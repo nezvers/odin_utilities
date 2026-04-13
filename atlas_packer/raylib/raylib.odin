@@ -20,7 +20,7 @@ import "core:strings"
 
 
 
-prepare_font_rects :: proc(
+bak :: proc (
     font_in:^rl.Font, 
     font_out:^rl.Font, 
     baked_texture: rl.Texture,
@@ -95,27 +95,55 @@ prepare_font_rects :: proc(
 
 
 init_packed_font :: proc (
-    font_in:^rl.Font, 
-    font_out:^rl.Font, 
+    font_source:^rl.Font,
+    font_packed:^rl.Font,
     baked_texture: rl.Texture,
     glyphs: []rl.GlyphInfo,
-    letter_rects: []Rectangle,
+    letter_rects: []rectf,
 ) {
-    font_out^ = {
-        baseSize = font_in.baseSize,
+    for i:i32 = 0; i < font_source.glyphCount; i += 1 {
+        glyphs[i] = font_source.glyphs[i]
+        letter_rects[i] = transmute(rectf)font_source.recs[i]
+    }
+
+    font_packed^ = {
+        baseSize = font_source.baseSize,
         glyphCount = i32(len(glyphs)),
-		glyphPadding = 0,
+		glyphPadding = font_source.glyphPadding,
 		texture = baked_texture,
-		recs = raw_data(letter_rects),
+		recs = raw_data(transmute([]Rectangle)letter_rects),
 		glyphs = raw_data(glyphs),
     }
 }
 
-BakeTextureRects :: proc(temp_render_texture: rl.RenderTexture, source_texture:rl.Texture2D, source_rects: []rectf, target_rects: []rectf) {
+BakeTextureRects :: proc(
+    temp_render_texture: rl.RenderTexture,
+    source_texture:rl.Texture2D,
+    source_rects: []rectf,
+    target_rects: []rectf,
+) {
     rl.BeginTextureMode(temp_render_texture)
 
     for i:int = 0; i < len(source_rects); i += 1 {
         rl.DrawTextureRec(source_texture, transmute(Rectangle)source_rects[i], target_rects[i].xy, rl.WHITE)
+    }
+
+    rl.EndTextureMode()
+}
+
+BakeFontRects :: proc(
+    temp_render_texture: rl.RenderTexture,
+    font_source:^rl.Font,
+    font_packed:^rl.Font,
+) {
+    rl.BeginTextureMode(temp_render_texture)
+
+    source_tex: rl.Texture2D = font_source.texture
+
+    for i:i32 = 0; i < font_source.glyphCount; i += 1 {
+        rect_source:Rectangle = font_source.recs[i]
+        rect_dest:Rectangle = font_packed.recs[i]
+        rl.DrawTextureRec(source_tex, rect_source, {rect_dest.x, rect_dest.y}, rl.WHITE)
     }
 
     rl.EndTextureMode()

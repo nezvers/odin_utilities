@@ -49,13 +49,15 @@ player_sprite_source: []rectf = {
 
 atlas_packer: AtlasPacker
 
-// Used as dynamic atlas
+// Used as target atlas
 render_texture:rl.RenderTexture
 
-// Holds data about generated atlas texture, assigned to spawned instances
 player_sprite_packed: []rectf
-player_timer: f32
+player_timer: f32 // for animation
 
+font_packed: rl.Font
+font_rect_packed: []rectf
+font_glyph_buffer: [LETTER_COUNT]rl.GlyphInfo
 
 reset_atlas :: proc() {
 	rl.UnloadRenderTexture(render_texture)
@@ -70,7 +72,8 @@ init :: proc() {
     player_texture: rl.Texture2D = rl.LoadTexture("../assets/textures/player_sheet.png")
     defer rl.UnloadTexture(player_texture)
 
-    font_source:rl.Font = rl.LoadFont("../assets/fonts/font.ttf")
+    codepoints: [LETTER_COUNT]rune = LETTERS_IN_FONT
+    font_source:rl.Font = rl.LoadFontEx("../assets/fonts/font.ttf", 32, &codepoints[0], cast(i32)LETTER_COUNT)
     defer rl.UnloadFont(font_source)
 
     // 2. Prepare target texture / atlas
@@ -80,9 +83,13 @@ init :: proc() {
     player_sprite_ok:bool
     player_sprite_packed, player_sprite_ok = packer.GetRects(&atlas_packer, len(player_sprite_source))
 
-    // 4. Init sizes for target rectf
+    font_ok:bool
+    font_rect_packed, font_ok = packer.GetRects(&atlas_packer, LETTER_COUNT)
+    
+    // 4. Init sizes & stuff
     packer.CopySizes(player_sprite_source[:], player_sprite_packed[:])
-
+    packer_rl.init_packed_font(&font_source, &font_packed, render_texture.texture, font_glyph_buffer[:], font_rect_packed)
+    
     // 5. Pack
     packer.Pack(&atlas_packer)
 
@@ -94,6 +101,7 @@ init :: proc() {
     // Recommended to do manualy. Each call does separate draw call.
     // Function is more like an example, but for 
     packer_rl.BakeTextureRects(temp_render_texture, player_texture, player_sprite_source, player_sprite_packed)
+    packer_rl.BakeFontRects(temp_render_texture, &font_source, &font_packed)
 
     // Transfer to target render_texture to flip it correclty
     rl.BeginTextureMode(render_texture)
