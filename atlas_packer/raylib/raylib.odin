@@ -93,36 +93,38 @@ bak :: proc (
 }
 
 
-
+// Add 
 init_packed_font :: proc (
     font_source:^rl.Font,
     font_packed:^rl.Font,
-    baked_texture: rl.Texture,
     glyphs: []rl.GlyphInfo,
     letter_rects: []rectf,
+    padding: f32 = 0,
 ) {
     for i:i32 = 0; i < font_source.glyphCount; i += 1 {
         glyphs[i] = font_source.glyphs[i]
         letter_rects[i] = transmute(rectf)font_source.recs[i]
+        // Add extra padding
+        letter_rects[i].zw += {padding * 2, padding * 2}
     }
 
     font_packed^ = {
         baseSize = font_source.baseSize,
         glyphCount = i32(len(glyphs)),
 		glyphPadding = font_source.glyphPadding,
-		texture = baked_texture,
 		recs = raw_data(transmute([]Rectangle)letter_rects),
 		glyphs = raw_data(glyphs),
     }
 }
 
+// Raylib Rendertexture is vertically flipped, so recommended to use temporary RenderTexture then transfer that to target RenderTexture
 BakeTextureRects :: proc(
-    temp_render_texture: rl.RenderTexture,
+    render_texture: rl.RenderTexture,
     source_texture:rl.Texture2D,
     source_rects: []rectf,
     target_rects: []rectf,
 ) {
-    rl.BeginTextureMode(temp_render_texture)
+    rl.BeginTextureMode(render_texture)
 
     for i:int = 0; i < len(source_rects); i += 1 {
         rl.DrawTextureRec(source_texture, transmute(Rectangle)source_rects[i], target_rects[i].xy, rl.WHITE)
@@ -131,20 +133,21 @@ BakeTextureRects :: proc(
     rl.EndTextureMode()
 }
 
-BakeFontRects :: proc(
-    temp_render_texture: rl.RenderTexture,
-    font_source:^rl.Font,
-    font_packed:^rl.Font,
+BakeImageRects :: proc(
+    source_img: ^rl.Image,
+    target_img: ^rl.Image,
+    source_rects: []rectf,
+    target_rects: []rectf,
+    padding: f32 = 0,
 ) {
-    rl.BeginTextureMode(temp_render_texture)
-
-    source_tex: rl.Texture2D = font_source.texture
-
-    for i:i32 = 0; i < font_source.glyphCount; i += 1 {
-        rect_source:Rectangle = font_source.recs[i]
-        rect_dest:Rectangle = font_packed.recs[i]
-        rl.DrawTextureRec(source_tex, rect_source, {rect_dest.x, rect_dest.y}, rl.WHITE)
+    for i:int = 0; i < len(source_rects); i += 1 {
+        rect_source: ^rectf = &source_rects[i]
+        rect_dest: ^rectf = &target_rects[i]
+        for y:i32 = 0; y < cast(i32)rect_source.w; y += 1 {
+            for x:i32 = 0; x < cast(i32)rect_source.z; x += 1 {
+                col:rl.Color = rl.GetImageColor(source_img^, x + cast(i32)rect_source.x, y + cast(i32)rect_source.y)
+                rl.ImageDrawPixelV(target_img, {rect_dest.x + cast(f32)x + padding, rect_dest.y + cast(f32)y + padding}, col)
+            }
+        }
     }
-
-    rl.EndTextureMode()
 }
