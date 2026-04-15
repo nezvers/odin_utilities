@@ -4,6 +4,7 @@
  Each one comes with demo example and if needed glue code at least for Raylib.    
 
 [app_state]: ## "Simple showcase how to manage multi state application. Uses struct with callback functions."
+[atlas_packer]: ## "Runtime 2D asset packing"
 [save_file]: ## "Simple save file system to store structs as POD or byte array"
 [task]: ## "Functionality for system automatization, like custom project build system. Clone, extract archive, download files, call processes"
 [tilemap]: ## "Purely data driven Tile map system, with capability and demo to create in-game level editors."
@@ -13,6 +14,7 @@
 - ✅ [App state][app_state] `odin run app_state/demo`
 - ❎ Astar `odin run astar/demo`
     - ✅ grid 2D (4-way Manhattan, 8-way Euclidian)
+- ✅ [Atlas Packer][atlas_packer] `odin run atlas_packer/demo -out:atlas_packer/demo.exe`
 - ✅ Box2d Odin `odin run box2d_odin/demo`
 - ❎ Cool math `odin run cool_math/demo`
 - ✅ Drag'n'Drop `odin run drag_drop/demo`
