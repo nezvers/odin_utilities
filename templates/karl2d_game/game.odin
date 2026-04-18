@@ -8,11 +8,12 @@ window_scale:f32 = 1
 background_color: karl2d.Color = karl2d.BLACK
 game_rect: karl2d.Rect = {0,0,1280,720}
 game_texture: karl2d.Render_Texture
+use_game_texture :bool: #config(GAME_TEXTURE, true)
 
 init :: proc() {
 	karl2d.init(window_width, window_height, "Greetings from Karl2D!", options = { window_mode = .Windowed_Resizable})
 	window_scale = karl2d.get_window_scale()
-	when ODIN_OS != .JS {
+	when ODIN_OS != .JS && use_game_texture  {
 		update_scale()
 	}
 	update_game_center()
@@ -25,6 +26,7 @@ init :: proc() {
 
 shutdown :: proc() {
     if current_state.finit != nil { current_state.finit() }
+	karl2d.destroy_render_texture(game_texture)
 	karl2d.shutdown()
 }
 
@@ -44,17 +46,21 @@ step :: proc() -> bool {
 }
 
 draw :: proc() {
-	karl2d.set_render_texture(game_texture)
-	if current_state.draw != nil { current_state.draw() }
-	karl2d.set_render_texture(nil)
-	
-	karl2d.clear(background_color)
-
-	karl2d.draw_texture(game_texture.texture, {game_rect.x, game_rect.y})
-	if current_state.gui != nil { current_state.gui() }
-	
-	// Nothing you drew this frame is shown until you call this.
-	karl2d.present()
+	if use_game_texture {
+		karl2d.set_render_texture(game_texture)
+		if current_state.draw != nil { current_state.draw() }
+		karl2d.set_render_texture(nil)
+		
+		karl2d.clear(background_color)
+		karl2d.draw_texture(game_texture.texture, {game_rect.x, game_rect.y})
+		if current_state.gui != nil { current_state.gui() }
+		karl2d.present()
+	} else {
+		karl2d.clear(background_color)
+		if current_state.draw != nil { current_state.draw() }
+		if current_state.gui != nil { current_state.gui() }
+		karl2d.present()
+	}
 }
 
 process_events :: proc() {
@@ -63,7 +69,7 @@ process_events :: proc() {
 	for event in events {
 		#partial switch e in event {
 		case karl2d.Event_Window_Scale_Changed:
-			when ODIN_OS != .JS {
+			when ODIN_OS != .JS && use_game_texture  {
 				window_scale = e.scale
 				update_scale()
 			}
@@ -80,6 +86,11 @@ process_events :: proc() {
 // Get actual window size with scaling
 get_window_size :: proc()->[2]f32 {
 	return {(cast(f32)window_width * window_scale), (cast(f32)window_height * window_scale)}
+}
+
+get_local_mouse_position :: proc()->[2]f32 {
+	mouse_pos: = karl2d.get_mouse_position()
+	return {mouse_pos.x - game_rect.x, mouse_pos.y - game_rect.y}
 }
 
 update_scale :: proc() {

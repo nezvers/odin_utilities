@@ -1,0 +1,1 @@
+python -m http.server -d ./demo/game/bin/web -b 127.0.0.1
