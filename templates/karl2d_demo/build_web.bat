@@ -1,1 +1,0 @@
-odin run ../karl2d/build_web -- demo/game -debug

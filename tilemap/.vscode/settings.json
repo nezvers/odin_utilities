@@ -1,3 +1,4 @@
 { 
     "debug.allowBreakpointsEverywhere": true,
+    "project_name": "demo",
 }
