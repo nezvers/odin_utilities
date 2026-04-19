@@ -2,8 +2,13 @@
 package tilemap_raylib
 
 import rl "vendor:raylib"
-import tm ".."
+Vector2 :: rl.Vector2
+Rectangle :: rl.Rectangle
+Color :: rl.Color
+Font :: rl.Font
+Texture2D :: rl.Texture2D
 
+import tm ".."
 vec2i :: tm.vec2i
 recti :: tm.recti
 rectf :: tm.rectf
@@ -16,11 +21,6 @@ TileRandType :: tm.TileRandType
 TILE_EMPTY :: tm.TILE_EMPTY
 TILE_INVALID :: tm.TILE_INVALID
 
-Vector2 :: rl.Vector2
-Rectangle :: rl.Rectangle
-Color :: rl.Color
-Font :: rl.Font
-Texture2D :: rl.Texture2D
 
 // Draw 2D grid lines
 DrawTilemapGrid :: proc(tilemap: ^Tilemap, color:Color){

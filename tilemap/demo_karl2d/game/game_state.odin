@@ -10,18 +10,19 @@ GameState :: struct {
     finit: proc(),
     update: proc(),
     draw: proc(),
-    gui: proc(),
 }
 
 state_list: []GameState = {
     placeholder_state,
+    atlas_state,
 }
 
 StateIndex :: enum {
     Placeholder,
+    Draw_Atlas,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.Placeholder
+state_index:StateIndex = StateIndex.Draw_Atlas
 button_names: [StateIndex.COUNT]string
 is_hovering_buttons: bool = false
 

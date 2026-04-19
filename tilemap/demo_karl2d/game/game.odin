@@ -14,11 +14,16 @@ init :: proc() {
 		update_scale()
 	}
     init_game_states()
+
+	load_assets()
+	create_tiles()
+	create_tilemap()
     if state_list[state_index].init != nil { state_list[state_index].init() }
 }
 
 shutdown :: proc() {
     if state_list[state_index].finit != nil { state_list[state_index].finit() }
+	unload_assets()
 	karl2d.shutdown()
 }
 
@@ -40,7 +45,6 @@ step :: proc() -> bool {
 draw :: proc() {
 		karl2d.clear(background_color)
 		if state_list[state_index].draw != nil { state_list[state_index].draw() }
-		if state_list[state_index].gui != nil { state_list[state_index].gui() }
 		draw_state_menu()
 		karl2d.present()
 }
