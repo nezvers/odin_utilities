@@ -7,4 +7,4 @@ log.txt
 *.a
 *.dll
 *.pdb
-./karl2d/
+/karl2d/
