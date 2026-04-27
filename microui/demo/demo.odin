@@ -3,7 +3,7 @@ package demo
 import "core:fmt"
 import rl "vendor:raylib"
 import mu "vendor:microui"
-import mui ".."
+import mui "../raylib"
 
 bg_colors:mu.Color = {90, 95, 100, 255}
 ctx: ^mu.Context

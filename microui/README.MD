@@ -1,4 +1,4 @@
-# MicroUi implementation for Raylib
+# MicroUi implementation
 
-for example how to use:
+### Raylib example
 `odin run demo`
