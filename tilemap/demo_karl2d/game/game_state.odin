@@ -13,20 +13,22 @@ GameState :: struct {
 }
 
 state_list: []GameState = {
-    placeholder_state,
     atlas_state,
+    tile_state,
+    tileset_state,
 }
 
 StateIndex :: enum {
-    Placeholder,
     Draw_Atlas,
+    Draw_Tiles,
+    Draw_Tileset,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.Draw_Atlas
+state_index:StateIndex = StateIndex.Draw_Tileset
 button_names: [StateIndex.COUNT]string
 is_hovering_buttons: bool = false
 
-current_state: GameState = placeholder_state
+current_state: GameState = tileset_state
 
 change_game_state :: proc(index:StateIndex) {
     if state_list[state_index].finit != nil{

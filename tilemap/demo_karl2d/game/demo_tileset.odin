@@ -2,12 +2,13 @@
 package game
 
 // import "core:fmt"
+import tm "../.."
 import "../../../karl2d"
 import "core:math"
 import tk "../../karl2d"
 
 @(private="package")
-atlas_state: GameState = {
+tileset_state: GameState = {
     init,
     finit,
     process,
@@ -30,8 +31,11 @@ draw :: proc() {
 	for y:i32 = 0; y < ATLAS_SIZE.y; y += 1 {
 		for x:i32 = 0; x < ATLAS_SIZE.x; x += 1 {
 			i:i32 = x + y * ATLAS_SIZE.x + id_offset
+			
+			// get a tile ID from tileset
+			tile:TileID = tm.TilesetGetId(&tileset, cast(TileID)i)
 
-			atlas_id:TileID = cast(TileID)i
+			atlas_id:TileID = tm.TileGetId(&tile_list[tile])
 			draw_pos:Vec2 = {
 				root_position.x + cast(f32)(x * (TILE_SIZE.x + padding)), 
 				root_position.y + cast(f32)(y * (TILE_SIZE.y + padding)),
@@ -40,5 +44,5 @@ draw :: proc() {
 		}
 	}
 
-	karl2d.draw_text("Draw from atlas", {10, 10}, 20, karl2d.BLACK)
+	karl2d.draw_text("Draw from tileset", {10, 10}, 20, karl2d.BLACK)
 }

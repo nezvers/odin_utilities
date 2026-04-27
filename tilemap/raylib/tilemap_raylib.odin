@@ -22,8 +22,34 @@ TILE_EMPTY :: tm.TILE_EMPTY
 TILE_INVALID :: tm.TILE_INVALID
 
 
+// Drawing a tile from atlas directly
+DrawTileAtlas :: proc(tile_atlas: ^TileAtlas, tile_id:TileID, draw_pos:Vector2, texture: ^Texture2D) {
+	tex_pos:Vector2 = tile_atlas.data[tile_id]
+	tex_rect:Rectangle = {tex_pos.x,tex_pos.y, tile_atlas.tile_size.x, tile_atlas.tile_size.y}
+
+	rl.DrawTextureRec(texture^, tex_rect, draw_pos, rl.WHITE)
+}
+
+DrawTile :: proc(tile: ^Tile, tile_atlas: ^TileAtlas, draw_pos:Vector2, texture: ^Texture2D, subtile: TileID = 0) {
+    tile_id:TileID = tile.data[subtile]
+    DrawTileAtlas(tile_atlas, tile_id, draw_pos, texture)
+}
+
+DrawTileRand :: proc(tile: ^Tile, tile_atlas: ^TileAtlas, draw_pos:Vector2, rand_type:TileRandType, seed: ^u32, texture: ^Texture2D) {
+    tile_id:TileID
+    switch(rand_type){
+    case TileRandType.NONE:
+        tile_id = tm.TileGetId(tile)
+    case TileRandType.SEED:
+        tile_id = tm.TileGetRandomSeed(tile, seed)
+    case TileRandType.XY:
+        tile_id = tm.TileGetRandomXY(tile, seed^, cast(int)draw_pos.x, cast(int)draw_pos.y)
+    }
+    DrawTileAtlas(tile_atlas, tile_id, draw_pos, texture)
+}
+
 // Draw 2D grid lines
-DrawTilemapGrid :: proc(tilemap: ^Tilemap, color:Color){
+DrawTilemapGrid :: proc(tilemap: ^Tilemap, color:Color) {
     map_width:i32 = tilemap.size.x * tilemap.tile_size.x
     map_height:i32 = tilemap.size.y * tilemap.tile_size.y
 
@@ -41,7 +67,7 @@ DrawTilemapGrid :: proc(tilemap: ^Tilemap, color:Color){
 }
 
 // Draw ID on tile positions for whole tilemap
-DrawTilemapTileId :: proc(tilemap: ^Tilemap, font:Font, font_size:i32, color:Color){
+DrawTilemapTileId :: proc(tilemap: ^Tilemap, font:Font, font_size:i32, color:Color) {
     text_offset_y:i32 = (tilemap.tile_size.y - font_size) / 2
 
     for y:i32 = 0; y < tilemap.size.y; y += 1 {
@@ -65,7 +91,7 @@ DrawTilemapTileId :: proc(tilemap: ^Tilemap, font:Font, font_size:i32, color:Col
 }
 
 // Draw rectangle around tile and draw provided ID
-DrawTilemapCellRect :: proc(tilemap: ^Tilemap, world_pos:vec2i, tile_id:TileID, font:Font, font_size:i32, color:Color){
+DrawTilemapCellRect :: proc(tilemap: ^Tilemap, world_pos:vec2i, tile_id:TileID, font:Font, font_size:i32, color:Color) {
     tile_pos:vec2i = tm.TilemapGetWorld2Tile(tilemap, world_pos)
     tile_x:i32 = tilemap.position.x + tile_pos.x * tilemap.tile_size.x
     tile_y:i32 = tilemap.position.y + tile_pos.y * tilemap.tile_size.y
@@ -80,7 +106,7 @@ DrawTilemapCellRect :: proc(tilemap: ^Tilemap, world_pos:vec2i, tile_id:TileID, 
 }
 
 // Draw lines around selection
-DrawTilemapSelection :: proc(tilemap: ^Tilemap, rect:recti, color:Color){
+DrawTilemapSelection :: proc(tilemap: ^Tilemap, rect:recti, color:Color) {
     rectangle:Rectangle = {
         cast(f32)(tilemap.position.x + rect.x * tilemap.tile_size.x),
         cast(f32)(tilemap.position.y + rect.y * tilemap.tile_size.y),
@@ -99,7 +125,7 @@ DrawTilemap :: proc(
     skip_zero:bool, 
     rand_type:TileRandType,
     texture: ^Texture2D,
-){
+) {
     tex_rect:rectf = {0.0, 0.0, tile_atlas.tile_size.x, tile_atlas.tile_size.y}
     seed:u32 = tileset.random_seed
 
@@ -142,7 +168,7 @@ DrawTilemapRecti :: proc(
     rand_type:TileRandType, 
     region_rect:recti,
     texture: ^Texture2D,
-){
+) {
     rect:recti = region_rect
     if rect.x < 0 {
         rect.w += rect.x
@@ -192,30 +218,4 @@ DrawTilemapRecti :: proc(
             rl.DrawTextureRec(texture^, transmute(Rectangle)tex_rect, cell_pos, rl.WHITE)
         }
     }
-}
-
-// Drawing a tile from atlas directly
-DrawTileAtlas :: proc(tile_atlas: ^TileAtlas, tile_id:TileID, draw_pos:Vector2, texture: ^Texture2D){
-	tex_pos:Vector2 = tile_atlas.data[tile_id]
-	tex_rect:Rectangle = {tex_pos.x,tex_pos.y, tile_atlas.tile_size.x, tile_atlas.tile_size.y}
-
-	rl.DrawTextureRec(texture^, tex_rect, draw_pos, rl.WHITE)
-}
-
-DrawTile :: proc(tile: ^Tile, tile_atlas: ^TileAtlas, draw_pos:Vector2, texture: ^Texture2D){
-    tile_id:TileID = tile.data[0]
-    DrawTileAtlas(tile_atlas, tile_id, draw_pos, texture)
-}
-
-DrawTileRand :: proc(tile: ^Tile, tile_atlas: ^TileAtlas, draw_pos:Vector2, rand_type:TileRandType, seed: ^u32, texture: ^Texture2D){
-    tile_id:TileID
-    switch(rand_type){
-    case TileRandType.NONE:
-        tile_id = tm.TileGetId(tile)
-    case TileRandType.SEED:
-        tile_id = tm.TileGetRandomSeed(tile, seed)
-    case TileRandType.XY:
-        tile_id = tm.TileGetRandomXY(tile, seed^, cast(int)draw_pos.x, cast(int)draw_pos.y)
-    }
-    DrawTileAtlas(tile_atlas, tile_id, draw_pos, texture)
 }

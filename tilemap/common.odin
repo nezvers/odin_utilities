@@ -33,14 +33,6 @@ TileAtlas :: struct {
     tile_size:vec2f,
 }
 
-// Grid map of IDs. Tilemap->Tile
-Tilemap :: struct {
-    position:vec2i,
-    size:vec2i,
-    tile_size:vec2i,
-    grid: []TileID,
-}
-
 // Array of atlas position IDs. Tile->TileAtlas.data
 // Can hold IDs for alternative tiles
 Tile :: struct {
@@ -56,6 +48,14 @@ Tileset :: struct {
     length: u32,
     capacity: u32,
     random_seed: u32,
+}
+
+// Grid map of IDs. Tilemap->Tile
+Tilemap :: struct {
+    position:vec2i,
+    size:vec2i,
+    tile_size:vec2i,
+    grid: []TileID,
 }
 
 // Auto tiling rule
