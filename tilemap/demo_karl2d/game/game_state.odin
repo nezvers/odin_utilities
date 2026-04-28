@@ -20,6 +20,7 @@ state_list: []GameState = {
     tilemap_grid_state,
     tilemap_region_state,
     tilemap_resize_state,
+    tilemap_drag_state,
 }
 
 StateIndex :: enum {
@@ -30,9 +31,10 @@ StateIndex :: enum {
     Draw_Tilemap_Grid,
     Draw_Tilemap_Region,
     Draw_Tilemap_Resize,
+    Draw_Tilemap_Drag,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.Draw_Tilemap_Resize
+state_index:StateIndex = StateIndex.Draw_Tilemap_Drag
 button_names: [StateIndex.COUNT]string
 is_hovering_buttons: bool = false
 
