@@ -22,6 +22,7 @@ state_list: []GameState = {
     tilemap_resize_state,
     tilemap_drag_state,
     tilemap_paint_state,
+    tilemap_ruletile_state,
 }
 
 StateIndex :: enum {
@@ -34,9 +35,10 @@ StateIndex :: enum {
     Draw_Tilemap_Resize,
     Draw_Tilemap_Drag,
     Draw_Tilemap_Paint,
+    Draw_Tilemap_Ruletile,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.Draw_Tilemap_Paint
+state_index:StateIndex = StateIndex.Draw_Tilemap_Ruletile
 button_names: [StateIndex.COUNT]string
 is_hovering_buttons: bool = false
 
@@ -80,6 +82,16 @@ draw_state_menu :: proc() {
 		}
 		button_rect.y += BUTTON_SIZE.y + BUTTON_PADDING
 	}
+
+    // Reset button
+    karl2d.draw_rect(button_rect, karl2d.LIGHT_GRAY)
+    karl2d.draw_text("RESET", {button_rect.x + 10, button_rect.y + 3}, FONT_SIZE, karl2d.BLACK)
+    if (check_hover(mouse_position, button_rect)){
+        if karl2d.mouse_button_went_down(.Left) {
+            create_tilemap()
+        }
+        is_hovering_buttons = true
+    }
 }
 
 check_hover :: proc(p:Vec2, r:Rect)->bool {

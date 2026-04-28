@@ -58,7 +58,7 @@ draw::proc(){
 
 	tr.DrawTilemapSelection(&tilemap, rect_state, rl.BLACK)
 
-	rl.DrawText("draw_tilemap_resize: left mouse select, ENTER to resize", 10, 10, 20, rl.BLACK)
+	rl.DrawText("draw_tilemap_resize: left mouse select, release to resize", 10, 10, 20, rl.BLACK)
 
 	if size_error {
 		text:cstring = rl.TextFormat("ERROR: tilemap grid buffer overflow (%d > %d)", rect_area, len(tilemap.grid))

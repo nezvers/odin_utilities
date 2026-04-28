@@ -66,7 +66,7 @@ draw :: proc() {
 
 	tk.DrawTilemapSelection(&tilemap, rect_state, karl2d.BLACK)
 
-	karl2d.draw_text("left mouse select, ENTER to resize", {10, 10}, 20, karl2d.BLACK)
+	karl2d.draw_text("left mouse select, release to resize", {10, 10}, 20, karl2d.BLACK)
 	if size_error {
 		text:string = fmt.tprintf("ERROR: tilemap grid buffer overflow (%v > %v)", rect_area, len(tilemap.grid))
 		karl2d.draw_text(text, {10, 30}, 20, karl2d.RED)

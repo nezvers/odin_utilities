@@ -31,3 +31,7 @@ Random number generator functions that give some control over generation and if 
 ## Raylib
 Library itself is framework agnostic. Since Odin comes with Raylib the demo comes with several separate functionality examples using raylib.    
 Library comes with Raylib implementation for drawing that are easily reproducible in your favorite framework.    
+
+## Karl2D
+Implemented glue code for `karl2d` and demo examples. It expects for Karl2D repository to be next to other libraries, like this Tilemap library.     
+`odin run demo_karl2d` 

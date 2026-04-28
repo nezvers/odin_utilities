@@ -95,6 +95,10 @@ draw :: proc() {
 		button_rect.y += BUTTON_SIZE.y + BUTTON_PADDING
 	}
 
+	// Reset button
+	if (rl.CheckCollisionPointRec(mouse_position, button_rect)){
+		is_hovering_buttons = true
+	}
 	if (rl.GuiButton(button_rect, "RESET")){
 		create_tilemap()
 	}
