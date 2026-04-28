@@ -39,7 +39,7 @@ TilesetRemoveIndex :: proc(tileset: ^Tileset, index:u32){
 
 TilesetGetId :: proc(tileset: ^Tileset, tile_id:TileID)->TileID {
     assert(tile_id != TILE_INVALID)
-    if (tile_id > cast(u8)(tileset.length - 1)){
+    if (tile_id > cast(TileID)(tileset.length - 1)){
         return TILE_EMPTY
     }
     result:TileID = tileset.data[tile_id].data[0]
@@ -48,7 +48,7 @@ TilesetGetId :: proc(tileset: ^Tileset, tile_id:TileID)->TileID {
 
 TilesetGetTile :: proc(tileset: ^Tileset, tile_id:TileID)->Tile {
     assert(tile_id != TILE_INVALID)
-    if (tile_id > cast(u8)(tileset.length - 1)){
+    if (tile_id > cast(TileID)(tileset.length - 1)){
         return {}
     }
     result:Tile = tileset.data[tile_id]
@@ -65,7 +65,7 @@ rnd_int :: proc(seed: ^u32, min:int, max:int)->int{
 // Use copy of tileset.random_seed before each batch of fetching to get repeatable results
 TilesetGetTileAltRandom :: proc(tileset: ^Tileset, tile_id:TileID, seed: ^u32)->TileID {
     assert(tile_id != TILE_INVALID)
-    if (tile_id > cast(u8)(tileset.length - 1)){
+    if (tile_id > cast(TileID)(tileset.length - 1)){
         return TILE_EMPTY
     }
     tile:Tile = tileset.data[tile_id]
@@ -76,7 +76,7 @@ TilesetGetTileAltRandom :: proc(tileset: ^Tileset, tile_id:TileID, seed: ^u32)->
 
 TilesetGetTileAltDeterministic :: proc(tileset: ^Tileset, tile_id:TileID, seed_x:i32, seed_y:i32)->TileID {
     assert(tile_id != TILE_INVALID)
-    if (tile_id > cast(u8)(tileset.length - 1)){
+    if (tile_id > cast(TileID)(tileset.length - 1)){
         return TILE_EMPTY
     }
     tile:Tile = tileset.data[tile_id]

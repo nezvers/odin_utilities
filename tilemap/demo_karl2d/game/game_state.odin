@@ -16,19 +16,21 @@ state_list: []GameState = {
     atlas_state,
     tile_state,
     tileset_state,
+    tilemap_state,
 }
 
 StateIndex :: enum {
     Draw_Atlas,
     Draw_Tiles,
     Draw_Tileset,
+    Draw_Tilemap,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.Draw_Tileset
+state_index:StateIndex = StateIndex.Draw_Tilemap
 button_names: [StateIndex.COUNT]string
 is_hovering_buttons: bool = false
 
-current_state: GameState = tileset_state
+// current_state: GameState = tileset_state
 
 change_game_state :: proc(index:StateIndex) {
     if state_list[state_index].finit != nil{
