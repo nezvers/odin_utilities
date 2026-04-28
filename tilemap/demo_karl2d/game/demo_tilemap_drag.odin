@@ -75,7 +75,7 @@ draw :: proc() {
 		}
 	}
 
-	if (input_selection != InputState.NONE){
+	if (input_selection != InputState.NONE && !is_hovering_buttons){
 		tm.CreateSelection(&tilemap, mouse_position_i, &selection_state, &rect_state, input_selection)
 	}
 

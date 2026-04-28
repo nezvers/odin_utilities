@@ -38,7 +38,7 @@ StateIndex :: enum {
     Draw_Tilemap_Ruletile,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.Draw_Tilemap_Ruletile
+state_index:StateIndex = StateIndex.Draw_Atlas
 button_names: [StateIndex.COUNT]string
 is_hovering_buttons: bool = false
 
@@ -72,8 +72,12 @@ draw_state_menu :: proc() {
     is_hovering_buttons = false
     button_rect:Rect = {window_size.x - BUTTON_SIZE.x - 10, 10, BUTTON_SIZE.x, BUTTON_SIZE.y}
     for i:int; i < cast(int)StateIndex.COUNT; i += 1{
-        karl2d.draw_rect(button_rect, karl2d.LIGHT_GRAY)
+        is_current:bool = i == cast(int)state_index
+        karl2d.draw_rect(button_rect, is_current ? karl2d.LIGHT_BLUE : karl2d.LIGHT_GRAY)
 		karl2d.draw_text(button_names[i], {button_rect.x + 10, button_rect.y + 3}, FONT_SIZE, karl2d.BLACK)
+        if is_current {
+            karl2d.draw_rect_outline(button_rect, 1, karl2d.GRAY)
+        }
 		if (check_hover(mouse_position, button_rect)){
             if karl2d.mouse_button_went_down(.Left) {
                 change_game_state(cast(StateIndex)i)
