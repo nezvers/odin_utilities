@@ -17,6 +17,8 @@ state_list: []GameState = {
     tile_state,
     tileset_state,
     tilemap_state,
+    tilemap_grid_state,
+    tilemap_region_state,
 }
 
 StateIndex :: enum {
@@ -24,13 +26,14 @@ StateIndex :: enum {
     Draw_Tiles,
     Draw_Tileset,
     Draw_Tilemap,
+    Draw_Tilemap_Grid,
+    Draw_Tilemap_Region,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.Draw_Tilemap
+state_index:StateIndex = StateIndex.Draw_Tilemap_Region
 button_names: [StateIndex.COUNT]string
 is_hovering_buttons: bool = false
 
-// current_state: GameState = tileset_state
 
 change_game_state :: proc(index:StateIndex) {
     if state_list[state_index].finit != nil{
@@ -53,7 +56,7 @@ init_game_states :: proc() {
 draw_state_menu :: proc() {
     // GUI BUTTONS
     FONT_SIZE :: 20
-	BUTTON_SIZE :Vec2: {150, 25}
+	BUTTON_SIZE :Vec2: {200, 25}
 	BUTTON_PADDING :f32: 2
     window_size: = get_window_size()
     mouse_position: = get_local_mouse_position()
@@ -62,7 +65,7 @@ draw_state_menu :: proc() {
     button_rect:Rect = {window_size.x - BUTTON_SIZE.x - 10, 10, BUTTON_SIZE.x, BUTTON_SIZE.y}
     for i:int; i < cast(int)StateIndex.COUNT; i += 1{
         karl2d.draw_rect(button_rect, karl2d.LIGHT_GRAY)
-		karl2d.draw_text(button_names[i], {button_rect.x, button_rect.y}, FONT_SIZE, karl2d.BLACK)
+		karl2d.draw_text(button_names[i], {button_rect.x + 10, button_rect.y + 3}, FONT_SIZE, karl2d.BLACK)
 		if (check_hover(mouse_position, button_rect)){
             if karl2d.mouse_button_went_down(.Left) {
                 change_game_state(cast(StateIndex)i)
