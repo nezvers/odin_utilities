@@ -188,5 +188,5 @@ draw :: proc() {
     skip_zero:bool = true
 	tk.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
-	karl2d.draw_text("Rule tile: Tilemap -> Tileset -> Tile -> TileAtlas", {10, 10}, 20, karl2d.BLACK)
+	karl2d.draw_text("Rule tile: Tilemap -> Tileset -> Tile -> TileAtlas\nIncomplete rule set", {10, 10}, 20, karl2d.BLACK)
 }

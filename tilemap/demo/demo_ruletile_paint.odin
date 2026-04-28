@@ -181,6 +181,6 @@ draw::proc(){
 	skip_zero:bool = true
 	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
-	rl.DrawText("Rule tile: Tilemap -> Tileset -> Tile -> TileAtlas", 10, 10, 20, rl.BLACK)
+	rl.DrawText("Rule tile: Tilemap -> Tileset -> Tile -> TileAtlas\nIncomplete rule set", 10, 10, 20, rl.BLACK)
 }
 
