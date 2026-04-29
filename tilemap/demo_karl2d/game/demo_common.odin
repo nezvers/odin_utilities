@@ -41,7 +41,8 @@ tilemap: Tilemap
 tilemap_buffer: [MAP_SIZE.x * MAP_SIZE.y]TileID
 
 load_assets :: proc() {
-    tileset_texture = karl2d.load_texture_from_file("../assets/textures/tileset_template.png")
+    // tileset_texture = karl2d.load_texture_from_file("../assets/textures/tileset_template.png")
+    tileset_texture = karl2d.load_texture_from_bytes(#load("../../../assets/textures/tileset_template.png"))
 }
 
 unload_assets :: proc() {
