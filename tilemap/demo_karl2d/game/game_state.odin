@@ -30,12 +30,12 @@ StateIndex :: enum {
     Draw_Tiles,
     Draw_Tileset,
     Draw_Tilemap,
-    Draw_Tilemap_Grid,
-    Draw_Tilemap_Region,
-    Draw_Tilemap_Resize,
-    Draw_Tilemap_Drag,
-    Draw_Tilemap_Paint,
-    Draw_Tilemap_Ruletile,
+    Tilemap_Grid,
+    Tilemap_Region,
+    Tilemap_Resize,
+    Tilemap_Drag,
+    Tilemap_Paint,
+    Tilemap_Ruletile,
 	COUNT,
 }
 state_index:StateIndex = StateIndex.Draw_Atlas

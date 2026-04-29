@@ -18,19 +18,19 @@ state_list: []State = {
 }
 
 Example :: enum {
-	ATLAS,
-	TILE,
-	TILESET,
-	TILEMAP,
-	TILEMAP_GRID,
-	TILEMAP_REGION,
-	TILEMAP_PAINT,
-	TILEMAP_DRAG,
-	TILEMAP_RESIZE,
-	RULETILE_PAINT,
+	Draw_Atlas,
+	Draw_Tile,
+	Draw_Tileset,
+	Draw_Tilemap,
+	Tilemap_Grid,
+	Tilemap_Region,
+	Tilemap_Paint,
+	Tilemap_Drag,
+	Tilemap_Resize,
+	Tilemap_Ruletile,
 	COUNT,
 }
-current_example:Example = Example.ATLAS
+current_example:Example = Example.Draw_Atlas
 
 example_names:[]cstring = {
 	"Atlas",
