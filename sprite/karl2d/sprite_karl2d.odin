@@ -37,13 +37,4 @@ DrawSprite::proc(sprite:^sp.Sprite, texture:^karl2d.Texture, tint:karl2d.Color){
         sprite.rotation,
         tint,
     )
-
-    // rl.DrawTexturePro(
-    //     texture^, 
-    //     transmute(rl.Rectangle)source_rect, 
-    //     transmute(rl.Rectangle)target_rect,
-    //     origin,
-    //     sprite.rotation,
-    //     tint,
-    // )
 }
