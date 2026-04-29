@@ -1,0 +1,93 @@
+#+private file
+package game
+
+// import "core:fmt"
+import "../../../karl2d"
+Rect :: karl2d.Rect
+
+import sp "../.."
+import glue "../../karl2d"
+
+@(private="package")
+sprite_state: GameState = {
+    init,
+    finit,
+    process,
+    draw,
+}
+
+player_texture: karl2d.Texture
+
+PlayerStates::enum {
+    idle,
+    walk,
+    jump_up,
+    jump_down,
+}
+
+SPRITE_SIZE :sp.vec2: {16, 16}
+// All positions on texture
+tex_pos:[]sp.vec2 = {{0,0}, {16,0}, {32,0}, {48,0}, {64,0}, {80,0}, {96,0}}
+anim_idle:sp.Frames = {tex_pos[0:1], SPRITE_SIZE}
+anim_walk:sp.Frames = {tex_pos[1:7], SPRITE_SIZE}
+anim_up:sp.Frames = {tex_pos[5:6], SPRITE_SIZE}
+anim_down:sp.Frames = {tex_pos[6:7], SPRITE_SIZE}
+
+player_animations:sp.AnimationSet = { 
+    {&anim_idle, &anim_walk, &anim_up, &anim_down}, 
+    cast(u32)PlayerStates.idle, 0, 12, 0,
+}
+
+player_sprite:sp.Sprite = {
+    player_animations,
+    {18, 100},
+    {-8, -16},
+    {1, 1},
+    0.0,
+}
+
+init :: proc() {
+    background_color = karl2d.WHITE
+    player_texture = karl2d.load_texture_from_bytes(#load("../../../assets/textures/player_sheet.png"))
+    sp.ChangeAnimation(&player_sprite.animation_set, cast(u32)PlayerStates.walk)
+}
+
+finit :: proc() {
+    karl2d.destroy_texture(player_texture)
+}
+
+process :: proc() {
+    sp.UpdateSprite(&player_sprite, karl2d.get_frame_time())
+}
+
+draw :: proc() {
+	// Draw current frame as preview
+    frame_rect:Rect = transmute(Rect)sp.GetAnimationFrame(&player_sprite.animation_set)
+    karl2d.draw_texture_section(player_texture, frame_rect, {10, 10})
+
+    // PLAYER SPRITE
+    karl2d.draw_line(
+        {player_sprite.position.x - 8,
+        player_sprite.position.y},
+        {player_sprite.position.x + 8,
+        player_sprite.position.y},
+        1,
+        karl2d.BLACK,
+    )
+    karl2d.draw_line(
+        {player_sprite.position.x,
+        player_sprite.position.y - 8},
+        {player_sprite.position.x,
+        player_sprite.position.y + 8},
+        1,
+        karl2d.BLACK,
+    )
+    karl2d.draw_line(
+        {(player_sprite.position.x + player_sprite.offset.x),
+        (player_sprite.position.y + player_sprite.offset.y)},
+        {16, 16},
+        1,
+        karl2d.DARK_GRAY,
+    )
+    glue.DrawSprite(&player_sprite, &player_texture, karl2d.WHITE)
+}

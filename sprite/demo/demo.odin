@@ -2,7 +2,7 @@ package demo
 
 import rl "vendor:raylib"
 import sp ".."
-import sr "../raylib"
+import glue "../raylib"
 
 
 Vector2 :: rl.Vector2
@@ -87,7 +87,7 @@ draw :: proc() {
         16, 16,
         rl.DARKGRAY,
     )
-    sr.DrawSprite(&player_sprite, &player_texture, rl.WHITE)
+    glue.DrawSprite(&player_sprite, &player_texture, rl.WHITE)
     
 
     rl.EndMode2D()

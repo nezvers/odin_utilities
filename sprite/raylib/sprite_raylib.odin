@@ -5,9 +5,9 @@ import sp ".."
 
 // Optional struct
 SpriteRaylib::struct{
-    sprite:sp.Sprite,
-    texture:^rl.Texture2D,
-    tint:rl.Color,
+    sprite: sp.Sprite,
+    texture: ^rl.Texture2D,
+    tint: rl.Color,
 }
 
 DrawSpriteRaylib::proc(raylib_sprite:^SpriteRaylib){
