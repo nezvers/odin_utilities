@@ -4,7 +4,7 @@ package game
 // import "core:fmt"
 import tm "../.."
 import "../../../karl2d"
-import tk "../../karl2d"
+import tm_glue "../../karl2d"
 
 @(private="package")
 tilemap_drag_state: GameState = {
@@ -79,16 +79,16 @@ draw :: proc() {
 		tm.CreateSelection(&tilemap, mouse_position_i, &selection_state, &rect_state, input_selection)
 	}
 
-	tk.DrawTilemapGrid(&tilemap, karl2d.LIGHT_GRAY)
+	tm_glue.DrawTilemapGrid(&tilemap, karl2d.LIGHT_GRAY)
 	skip_zero:bool = true
-	tk.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+	tm_glue.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 	if(temp_tilemap.size.x != 0 && rect_state.w != 0){
 		temp_rect:recti = tm.TilemapRecti(&temp_tilemap)
-		tk.DrawTilemapSelection(&temp_tilemap, temp_rect, karl2d.GRAY)
-		tk.DrawTilemap(&temp_tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+		tm_glue.DrawTilemapSelection(&temp_tilemap, temp_rect, karl2d.GRAY)
+		tm_glue.DrawTilemap(&temp_tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 	}
 
-	tk.DrawTilemapSelection(&tilemap, rect_state, karl2d.BLACK)
+	tm_glue.DrawTilemapSelection(&tilemap, rect_state, karl2d.BLACK)
 
 	karl2d.draw_text("left mouse select, right mouse drag,\n\thold CTRL to remove source, ALT to write empty tiles", {10, 10}, 20, karl2d.BLACK)
 }

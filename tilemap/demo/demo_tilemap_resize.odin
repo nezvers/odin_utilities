@@ -2,7 +2,7 @@
 package demo
 
 import tm ".."
-import tr "../raylib"
+import tm_glue "../raylib"
 import rl "vendor:raylib"
 
 @(private="package")
@@ -52,11 +52,11 @@ draw::proc(){
 		rect_state.h = 0
 	}
 
-	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
+	tm_glue.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
 	skip_zero:bool = true
-	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+	tm_glue.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
-	tr.DrawTilemapSelection(&tilemap, rect_state, rl.BLACK)
+	tm_glue.DrawTilemapSelection(&tilemap, rect_state, rl.BLACK)
 
 	rl.DrawText("draw_tilemap_resize: left mouse select, release to resize", 10, 10, 20, rl.BLACK)
 

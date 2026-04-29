@@ -2,7 +2,7 @@
 package demo
 
 import tm ".."
-import tr "../raylib"
+import tm_glue "../raylib"
 import rl "vendor:raylib"
 
 @(private="package")
@@ -50,12 +50,12 @@ draw::proc(){
 		
 	// Don't draw TILE_EMPTY ID
 	skip_zero:bool = true
-	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
-	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+	tm_glue.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
+	tm_glue.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
 	if mouse_id != TILE_INVALID {
 		// Draw a cell aligned to grid and ID under mouse
-		tr.DrawTilemapCellRect(&tilemap, mouse_position_i, tile_id, rl.GetFontDefault(), 10, rl.GRAY)
+		tm_glue.DrawTilemapCellRect(&tilemap, mouse_position_i, tile_id, rl.GetFontDefault(), 10, rl.GRAY)
 
 	}
 

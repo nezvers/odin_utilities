@@ -2,7 +2,7 @@
 package demo
 
 import tm ".."
-import tr "../raylib"
+import tm_glue "../raylib"
 import rl "vendor:raylib"
 
 @(private="package")
@@ -71,16 +71,16 @@ draw::proc(){
 		tm.CreateSelection(&tilemap, mouse_position_i, &selection_state, &rect_state, input_selection)
 	}
 
-	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
+	tm_glue.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
 	skip_zero:bool = true
-	tr.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+	tm_glue.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 	if(temp_tilemap.size.x != 0 && rect_state.w != 0){
 		temp_rect:recti = tm.TilemapRecti(&temp_tilemap)
-		tr.DrawTilemapSelection(&temp_tilemap, temp_rect, rl.GRAY)
-		tr.DrawTilemap(&temp_tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+		tm_glue.DrawTilemapSelection(&temp_tilemap, temp_rect, rl.GRAY)
+		tm_glue.DrawTilemap(&temp_tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 	}
 
-	tr.DrawTilemapSelection(&tilemap, rect_state, rl.BLACK)
+	tm_glue.DrawTilemapSelection(&tilemap, rect_state, rl.BLACK)
 
 	rl.DrawText("draw_tilemap_drag: left mouse select, right mouse drag,\n\thold CTRL to remove source, ALT to write empty tiles", 10, 10, 20, rl.BLACK)
 }

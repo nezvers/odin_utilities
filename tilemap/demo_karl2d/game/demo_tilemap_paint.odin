@@ -4,7 +4,7 @@ package game
 // import "core:fmt"
 import tm "../.."
 import "../../../karl2d"
-import tk "../../karl2d"
+import tm_glue "../../karl2d"
 
 @(private="package")
 tilemap_paint_state: GameState = {
@@ -58,12 +58,12 @@ draw :: proc() {
 		
 	// Don't draw TILE_EMPTY ID
 	skip_zero:bool = true
-	tk.DrawTilemapGrid(&tilemap, karl2d.LIGHT_GRAY)
-	tk.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+	tm_glue.DrawTilemapGrid(&tilemap, karl2d.LIGHT_GRAY)
+	tm_glue.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
 	if mouse_id != TILE_INVALID {
 		// Draw a cell aligned to grid and ID under mouse
-		tk.DrawTilemapCellRect(&tilemap, mouse_position_i, tile_id, karl2d.FONT_DEFAULT, 10, karl2d.GRAY)
+		tm_glue.DrawTilemapCellRect(&tilemap, mouse_position_i, tile_id, karl2d.FONT_DEFAULT, 10, karl2d.GRAY)
 
 	}
 

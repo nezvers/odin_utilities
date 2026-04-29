@@ -1,7 +1,7 @@
 #+private file
 package demo
 
-import tr "../raylib"
+import tm_glue "../raylib"
 import rl "vendor:raylib"
 import "core:math"
 
@@ -28,7 +28,7 @@ draw::proc(){
 				root_position.x + cast(f32)(x * (TILE_SIZE.x + padding)), 
 				root_position.y + cast(f32)(y * (TILE_SIZE.y + padding)),
 			}
-			tr.DrawTileAtlas(&tile_atlas, atlas_id, draw_pos, &tileset_texture)
+			tm_glue.DrawTileAtlas(&tile_atlas, atlas_id, draw_pos, &tileset_texture)
 		}
 	}
 

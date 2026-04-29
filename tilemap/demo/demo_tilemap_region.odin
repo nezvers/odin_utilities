@@ -2,7 +2,7 @@
 package demo
 
 import tm ".."
-import tr "../raylib"
+import tm_glue "../raylib"
 import rl "vendor:raylib"
 
 @(private="package")
@@ -23,11 +23,11 @@ draw::proc(){
 	// Don't draw TILE_EMPTY ID
 	skip_zero:bool = true
 
-	tr.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
+	tm_glue.DrawTilemapGrid(&tilemap, rl.LIGHTGRAY)
 	// Draw only tiles inside region
-	tr.DrawTilemapRecti(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, region, &tileset_texture)
+	tm_glue.DrawTilemapRecti(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, region, &tileset_texture)
 	// Draw rectangle around tiles
-	tr.DrawTilemapSelection(&tilemap, region, rl.GRAY)
+	tm_glue.DrawTilemapSelection(&tilemap, region, rl.GRAY)
 
 	rl.DrawText("draw_tilemap_region: reveal tiles with rectangle", 10, 10, 20, rl.BLACK)
 }

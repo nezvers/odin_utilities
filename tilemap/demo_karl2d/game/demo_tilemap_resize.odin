@@ -4,7 +4,7 @@ package game
 import "core:fmt"
 import tm "../.."
 import "../../../karl2d"
-import tk "../../karl2d"
+import tm_glue "../../karl2d"
 
 @(private="package")
 tilemap_resize_state: GameState = {
@@ -60,11 +60,11 @@ draw :: proc() {
 		rect_state.h = 0
 	}
 
-	tk.DrawTilemapGrid(&tilemap, karl2d.LIGHT_GRAY)
+	tm_glue.DrawTilemapGrid(&tilemap, karl2d.LIGHT_GRAY)
 	skip_zero:bool = true
-	tk.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+	tm_glue.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
-	tk.DrawTilemapSelection(&tilemap, rect_state, karl2d.BLACK)
+	tm_glue.DrawTilemapSelection(&tilemap, rect_state, karl2d.BLACK)
 
 	karl2d.draw_text("left mouse select, release to resize", {10, 10}, 20, karl2d.BLACK)
 	if size_error {

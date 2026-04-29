@@ -12,7 +12,7 @@ UPi::tm.UPi
 DOWNi::tm.DOWNi
 ZEROi::tm.ZEROi
 
-import tk "../../karl2d"
+import tm_glue "../../karl2d"
 import "../../../karl2d"
 
 @(private="package")
@@ -186,7 +186,7 @@ draw :: proc() {
     karl2d.clear(karl2d.WHITE)
 	
     skip_zero:bool = true
-	tk.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
+	tm_glue.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
 
 	karl2d.draw_text("Rule tile: Tilemap -> Tileset -> Tile -> TileAtlas\nIncomplete rule set", {10, 10}, 20, karl2d.BLACK)
 }

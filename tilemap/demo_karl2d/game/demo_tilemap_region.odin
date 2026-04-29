@@ -4,7 +4,7 @@ package game
 // import "core:fmt"
 import tm "../.."
 import "../../../karl2d"
-import tk "../../karl2d"
+import tm_glue "../../karl2d"
 
 @(private="package")
 tilemap_region_state: GameState = {
@@ -31,11 +31,11 @@ draw :: proc() {
 	// Don't draw TILE_EMPTY ID
 	skip_zero:bool = true
 
-	tk.DrawTilemapGrid(&tilemap, karl2d.LIGHT_GRAY)
+	tm_glue.DrawTilemapGrid(&tilemap, karl2d.LIGHT_GRAY)
 	// Draw only tiles inside region
-	tk.DrawTilemapRecti(&tilemap, &tileset, &tile_atlas, skip_zero, tk.TileRandType.NONE, region, &tileset_texture)
+	tm_glue.DrawTilemapRecti(&tilemap, &tileset, &tile_atlas, skip_zero, tm_glue.TileRandType.NONE, region, &tileset_texture)
 	// Draw rectangle around tiles
-	tk.DrawTilemapSelection(&tilemap, region, karl2d.GRAY)
+	tm_glue.DrawTilemapSelection(&tilemap, region, karl2d.GRAY)
 
 	karl2d.draw_text("Reveal tiles with rectangle", {10, 10}, 20, karl2d.BLACK)
 }

@@ -4,7 +4,7 @@ package game
 // import "core:fmt"
 import "../../../karl2d"
 import "core:math"
-import tk "../../karl2d"
+import tm_glue "../../karl2d"
 
 @(private="package")
 atlas_state: GameState = {
@@ -36,7 +36,7 @@ draw :: proc() {
 				root_position.x + cast(f32)(x * (TILE_SIZE.x + padding)), 
 				root_position.y + cast(f32)(y * (TILE_SIZE.y + padding)),
 			}
-			tk.DrawTileAtlas(&tile_atlas, atlas_id, draw_pos, &tileset_texture)
+			tm_glue.DrawTileAtlas(&tile_atlas, atlas_id, draw_pos, &tileset_texture)
 		}
 	}
 
