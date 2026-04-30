@@ -8,6 +8,9 @@ Rect :: karl2d.Rect
 import sp "../.."
 import glue "../../karl2d"
 
+import "core:math"
+PI :: math.PI
+
 @(private="package")
 sprite_state: GameState = {
     init,
@@ -82,12 +85,62 @@ draw :: proc() {
         1,
         karl2d.BLACK,
     )
-    karl2d.draw_line(
+    karl2d.draw_rect_outline(
         {(player_sprite.position.x + player_sprite.offset.x),
-        (player_sprite.position.y + player_sprite.offset.y)},
-        {16, 16},
+        (player_sprite.position.y + player_sprite.offset.y),
+        16, 16},
         1,
         karl2d.DARK_GRAY,
     )
     glue.DrawSprite(&player_sprite, &player_texture, karl2d.WHITE)
+
+    mouse: = get_local_mouse_position()
+    is_held:bool = karl2d.mouse_button_is_held(.Left)
+    slider_rect:Rect = {300, 10, 100, 25}
+
+    @(static) scale_x:f32
+    if Slider(&scale_x, &player_sprite.scale.x, -1, 1, slider_rect, mouse, is_held) {
+    }
+    slider_rect.y += 30
+
+    @(static) scale_y:f32
+    if Slider(&scale_y, &player_sprite.scale.y, -1, 1, slider_rect, mouse, is_held) {
+    }
+    slider_rect.y += 30
+
+    @(static) rotation:f32
+    if Slider(&rotation, &player_sprite.rotation, -PI, PI, slider_rect, mouse, is_held) {
+    }
+}
+
+Slider :: proc(state: ^f32, value: ^f32, from:f32, to:f32, rect:Rect, pos:Vec2, active:bool)->(hover:bool) {
+    state^ = NormalizeRange(value^, from, to)
+    hover = IsHovering(pos, rect)
+    if (hover){
+        if karl2d.mouse_button_is_held(.Left) {
+            state^ = (pos.x - rect.x) / rect.w
+            value^ = Lerpf(from, to, state^)
+        }
+    }
+    karl2d.draw_rect_outline(
+        rect,
+        1,
+        karl2d.GRAY,
+    )
+    slider_val:Rect = rect
+    slider_val.w *= state^
+    karl2d.draw_rect(slider_val, karl2d.LIGHT_GRAY)
+    return
+}
+
+NormalizeRange :: proc(value:f32, from:f32, to:f32)->f32 {
+    return math.abs(value - from) / math.abs(to - from)
+}
+
+Lerpf :: proc(a:f32, b:f32, t:f32)->f32 {
+    return a + (b - a) * t
+}
+
+IsHovering :: proc(p:Vec2, r:Rect)->bool {
+    return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
 }

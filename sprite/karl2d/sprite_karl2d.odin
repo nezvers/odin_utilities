@@ -28,13 +28,13 @@ DrawSprite::proc(sprite:^sp.Sprite, texture:^karl2d.Texture, tint:karl2d.Color){
         source_rect.w *= -1
         origin.y += -sprite.offset.y * sprite.scale.y
     }
-
-    karl2d.draw_texture_section(
-        texture^,
-        transmute(karl2d.Rect)source_rect,
-        target_rect.xy,
-        origin,
-        sprite.rotation,
+    
+    karl2d.draw_texture_fit(
+		texture^,
+		transmute(karl2d.Rect)source_rect,
+		transmute(karl2d.Rect)target_rect,
+		origin,
+		sprite.rotation,
         tint,
-    )
+	)
 }
