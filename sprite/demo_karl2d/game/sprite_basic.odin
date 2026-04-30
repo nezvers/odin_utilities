@@ -116,7 +116,7 @@ draw :: proc() {
 Slider :: proc(state: ^f32, value: ^f32, from:f32, to:f32, rect:Rect, pos:Vec2, active:bool)->(hover:bool) {
     state^ = NormalizeRange(value^, from, to)
     hover = IsHovering(pos, rect)
-    if (hover){
+    if (hover && active){
         if karl2d.mouse_button_is_held(.Left) {
             state^ = (pos.x - rect.x) / rect.w
             value^ = Lerpf(from, to, state^)
