@@ -10,20 +10,17 @@ placeholder_state: GameState = {
     finit,
     process,
     draw,
-    gui,
 }
 
-init :: proc() {}
+init :: proc() {
+    background_color = karl2d.LIGHT_BLUE
+}
 
 finit :: proc() {}
 
 process :: proc() {}
 
 draw :: proc() {
-    karl2d.clear(karl2d.LIGHT_BLUE)
-}
-
-gui :: proc() {
 	karl2d.draw_text("Hellope!", {50, 50}, 100, karl2d.DARK_BLUE)
     
     stats_text:string = fmt.tprintf("window = (%v, %v), scale = %v, %v", window_width, window_height, window_scale, get_window_size())

@@ -10,7 +10,6 @@ GameState :: struct {
     finit: proc(),
     update: proc(),
     draw: proc(),
-    gui: proc(),
 }
 
 state_list: []GameState = {
@@ -25,7 +24,6 @@ state_index:StateIndex = StateIndex.Placeholder
 button_names: [StateIndex.COUNT]string
 is_hovering_buttons: bool = false
 
-current_state: GameState = placeholder_state
 
 change_game_state :: proc(index:StateIndex) {
     if state_list[state_index].finit != nil{

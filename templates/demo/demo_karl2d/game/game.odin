@@ -39,7 +39,6 @@ step :: proc() -> bool {
 
 draw :: proc() {
 		karl2d.clear(background_color)
-		if state_list[state_index].draw != nil { state_list[state_index].draw() }
 		if state_list[state_index].gui != nil { state_list[state_index].gui() }
 		draw_state_menu()
 		karl2d.present()
