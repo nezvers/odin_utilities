@@ -69,7 +69,6 @@ draw :: proc() {
     camera.zoom = ZOOM
     karl2d.set_camera(camera)
 
-	// Fetch frame manually without animation logic
     frame_rect:Rect = transmute(Rect)sp.GetAnimationFrame(&player_sprite.animation_set)
     karl2d.draw_texture_section(player_texture, frame_rect, {10, 10})
 
@@ -100,6 +99,8 @@ draw :: proc() {
     glue.DrawSprite(&player_sprite, &player_texture, karl2d.WHITE)
     karl2d.set_camera(nil)
 
+    karl2d.draw_text("Fetch frame manually without transforming", {30, 5 * ZOOM}, 20, karl2d.BLACK)
+    karl2d.draw_text("Draw frame with modification", {30, 30 * ZOOM}, 20, karl2d.BLACK)
     karl2d.draw_text("Hold CTRL: default values", {300, 30 * ZOOM}, 20, karl2d.BLACK)
 
     mouse: = get_local_mouse_position()
