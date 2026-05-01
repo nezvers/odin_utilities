@@ -63,7 +63,7 @@ ViewportKeepAspect :: proc(original: ^Rect, scaled: ^Rect, view_size:Vector2i, w
 ViewportKeepHeightPixel :: proc(original: ^Rect, scaled: ^Rect, view_size:Vector2i, window_size:Vector2i){
     ratio: = ViewportGetAspectratioPixel(view_size, window_size)
     original.w = cast(f32)(window_size.x / ratio)
-    original.h = cast(f32)window_size.y
+    original.h = cast(f32)view_size.y
     original.x = 0.0
     original.y = 0.0
 
@@ -76,7 +76,7 @@ ViewportKeepHeightPixel :: proc(original: ^Rect, scaled: ^Rect, view_size:Vector
 ViewportKeepHeight :: proc(original: ^Rect, scaled: ^Rect, view_size:Vector2i, window_size:Vector2i){
     ratio: = ViewportGetAspectratio(view_size, window_size)
     original.w = (cast(f32)window_size.x / ratio)
-    original.h = cast(f32)window_size.y
+    original.h = cast(f32)view_size.y
     original.x = 0.0
     original.y = 0.0
 
