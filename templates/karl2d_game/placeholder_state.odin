@@ -13,25 +13,36 @@ placeholder_state: GameState = {
     gui,
 }
 
-init :: proc() {}
+init :: proc() {
+    background_color = karl2d.LIGHT_BLUE
+}
 
 finit :: proc() {}
 
 process :: proc() {}
 
 draw :: proc() {
-    karl2d.clear(karl2d.LIGHT_BLUE)
+    karl2d.clear(karl2d.RL_LIME)
+    karl2d.draw_rect({0,0,16,16}, karl2d.LIGHT_GRAY)
+	karl2d.draw_text("Hellope!", {10, 10}, 20, karl2d.DARK_BLUE)
+    
+    stats_text:string = fmt.tprintf("game = (%v, %v), window = (%v, %v)", view_rect.w, view_rect.h, window_width, window_height, )
+	karl2d.draw_text(
+        stats_text, 
+        {10, 35}, 
+        20, 
+        karl2d.DARK_GRAY,
+    )
+    
+    stats_text = fmt.tprintf("scale = %v, %v", window_scale, get_window_size())
+	karl2d.draw_text(
+        stats_text, 
+        {10, 60}, 
+        20, 
+        karl2d.DARK_GRAY,
+    )
 }
 
 gui :: proc() {
-	karl2d.draw_text("Hellope!", {game_rect.x + 50, game_rect.y + 50}, 100, karl2d.DARK_BLUE)
-    
-    stats_text:string = fmt.tprintf("game = (%v, %v), window = (%v, %v), scale = %v, %v", game_rect.w, game_rect.h, window_width, window_height, window_scale, get_window_size())
-	karl2d.draw_text(
-        stats_text, 
-        {game_rect.x + 50, game_rect.y + 150}, 
-        30, 
-        karl2d.DARK_GRAY,
-    )
-    karl2d.draw_text( fmt.tprintf("mouse %v", get_local_mouse_position()), {game_rect.x + 50, game_rect.y + 190},30, karl2d.DARK_GRAY)
+
 }

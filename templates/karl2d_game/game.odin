@@ -1,12 +1,19 @@
 package game
 
 import karl2d "../karl2d"
+Rect :: karl2d.Rect
+Vec2 :: karl2d.Vec2
 
-window_width := 1280
-window_height := 720
+import viewport "../viewport_rect"
+
+window_width:int = 1280
+window_height:int = 720
+game_width:int = 480
+game_height:int = 270
 window_scale:f32 = 1
 background_color: karl2d.Color = karl2d.BLACK
-game_rect: karl2d.Rect = {0,0,1280,720}
+view_rect: Rect
+projected_rect: Rect
 game_texture: karl2d.Render_Texture
 use_game_texture :bool: #config(GAME_TEXTURE, true)
 
@@ -18,9 +25,8 @@ init :: proc() {
 	}
 	update_game_center()
 
-	game_texture = karl2d.create_render_texture(cast(int)game_rect.w, cast(int)game_rect.h)
     
-	current_state = placeholder_state
+	current_state = screen_title_state
     if current_state.init != nil { current_state.init() }
 }
 
@@ -52,7 +58,8 @@ draw :: proc() {
 		karl2d.set_render_texture(nil)
 		
 		karl2d.clear(background_color)
-		karl2d.draw_texture(game_texture.texture, {game_rect.x, game_rect.y})
+		// karl2d.draw_texture(game_texture.texture, {view_rect.x, view_rect.y})
+		karl2d.draw_texture_fit(game_texture.texture, view_rect, projected_rect)
 		if current_state.gui != nil { current_state.gui() }
 		karl2d.present()
 	} else {
@@ -90,7 +97,7 @@ get_window_size :: proc()->[2]f32 {
 
 get_local_mouse_position :: proc()->[2]f32 {
 	mouse_pos: = karl2d.get_mouse_position()
-	return {mouse_pos.x - game_rect.x, mouse_pos.y - game_rect.y}
+	return {mouse_pos.x - view_rect.x, mouse_pos.y - view_rect.y}
 }
 
 update_scale :: proc() {
@@ -99,8 +106,17 @@ update_scale :: proc() {
 
 update_game_center :: proc() {
 	window_size: = get_window_size()
-	game_rect.x = (window_size.x - game_rect.w) * 0.5
-	game_rect.y = (window_size.y - game_rect.h) * 0.5
+	// view_rect.x = (window_size.x - view_rect.w) * 0.5
+	// view_rect.y = (window_size.y - view_rect.h) * 0.5
+	viewport.ViewportKeepHeightPixel(
+		cast(^viewport.Rect)&view_rect, 
+		cast(^viewport.Rect)&projected_rect, 
+		{cast(i32)game_width, cast(i32)game_height}, 
+		{cast(i32)window_size.x, cast(i32)window_size.y},
+	)
+
+	karl2d.destroy_render_texture(game_texture)
+	game_texture = karl2d.create_render_texture(cast(int)view_rect.w, cast(int)view_rect.h)
 }
 
 // Called in main.odin inside for step() loop
