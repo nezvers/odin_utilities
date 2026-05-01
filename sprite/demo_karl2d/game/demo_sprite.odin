@@ -1,7 +1,7 @@
 #+private file
 package game
 
-// import "core:fmt"
+import "core:fmt"
 import "../../../karl2d"
 Rect :: karl2d.Rect
 
@@ -30,11 +30,11 @@ PlayerStates::enum {
 
 SPRITE_SIZE :sp.vec2: {16, 16}
 // All positions on texture
-tex_pos:[]sp.vec2 = {{0,0}, {16,0}, {32,0}, {48,0}, {64,0}, {80,0}, {96,0}}
-anim_idle:sp.Frames = {tex_pos[0:1], SPRITE_SIZE}
-anim_walk:sp.Frames = {tex_pos[1:7], SPRITE_SIZE}
-anim_up:sp.Frames = {tex_pos[5:6], SPRITE_SIZE}
-anim_down:sp.Frames = {tex_pos[6:7], SPRITE_SIZE}
+tex_pos: []sp.vec2 = {{0,0}, {16,0}, {32,0}, {48,0}, {64,0}, {80,0}, {96,0}}
+anim_idle: sp.Frames = {tex_pos[0:1], SPRITE_SIZE}
+anim_walk: sp.Frames = {tex_pos[1:7], SPRITE_SIZE}
+anim_up: sp.Frames = {tex_pos[5:6], SPRITE_SIZE}
+anim_down: sp.Frames = {tex_pos[6:7], SPRITE_SIZE}
 
 player_animations:sp.AnimationSet = { 
     {&anim_idle, &anim_walk, &anim_up, &anim_down}, 
@@ -43,7 +43,7 @@ player_animations:sp.AnimationSet = {
 
 player_sprite:sp.Sprite = {
     player_animations,
-    {18, 100},
+    {18, 50},
     {-8, -16},
     {1, 1},
     0.0,
@@ -64,7 +64,12 @@ process :: proc() {
 }
 
 draw :: proc() {
-	// Draw current frame as preview
+    ZOOM :: 8
+    camera:karl2d.Camera
+    camera.zoom = ZOOM
+    karl2d.set_camera(camera)
+
+	// Fetch frame manually without animation logic
     frame_rect:Rect = transmute(Rect)sp.GetAnimationFrame(&player_sprite.animation_set)
     karl2d.draw_texture_section(player_texture, frame_rect, {10, 10})
 
@@ -93,22 +98,32 @@ draw :: proc() {
         karl2d.DARK_GRAY,
     )
     glue.DrawSprite(&player_sprite, &player_texture, karl2d.WHITE)
+    karl2d.set_camera(nil)
 
     mouse: = get_local_mouse_position()
     is_held:bool = karl2d.mouse_button_is_held(.Left)
-    slider_rect:Rect = {300, 10, 100, 25}
+    slider_rect:Rect = {300, 34 * ZOOM, 300, 25}
 
     @(static) scale_x:f32
-    if Slider(&scale_x, &player_sprite.scale.x, -1, 1, slider_rect, mouse, is_held) {
+    if Slider(&scale_x, &player_sprite.scale.x, -2, 2, slider_rect, mouse, is_held, fmt.tprintf("scale.x = %.2v", player_sprite.scale.x)) {
+        if karl2d.key_is_held(.Left_Control) {
+            player_sprite.scale.x = 1
+        }
     }
     slider_rect.y += 30
 
     @(static) scale_y:f32
-    if Slider(&scale_y, &player_sprite.scale.y, -1, 1, slider_rect, mouse, is_held) {
+    if Slider(&scale_y, &player_sprite.scale.y, -2, 2, slider_rect, mouse, is_held, fmt.tprintf("scale.y = %.2v", player_sprite.scale.y)) {
+        if karl2d.key_is_held(.Left_Control) {
+            player_sprite.scale.y = 1
+        }
     }
     slider_rect.y += 30
 
     @(static) rotation:f32
-    if Slider(&rotation, &player_sprite.rotation, -PI, PI, slider_rect, mouse, is_held) {
+    if Slider(&rotation, &player_sprite.rotation, -PI, PI, slider_rect, mouse, is_held, fmt.tprintf("rotation = %.2v", player_sprite.rotation)) {
+        if karl2d.key_is_held(.Left_Control) {
+            player_sprite.rotation = 0
+        }
     }
 }

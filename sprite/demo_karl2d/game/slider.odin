@@ -6,12 +6,23 @@ import "../../../karl2d"
 import "core:math"
 PI :: math.PI
 
-Slider :: proc(state: ^f32, value: ^f32, from:f32, to:f32, rect:Rect, pos:Vec2, active:bool)->(hover:bool) {
+// TODO: Handle hold & release outside Rect
+Slider :: proc(
+    state: ^f32, 
+    value: ^f32, 
+    from:f32, 
+    to:f32, 
+    rect:Rect, 
+    input_pos:Vec2={}, 
+    active:bool=false, 
+    text:string="", 
+    font:karl2d.Font = karl2d.FONT_DEFAULT,
+)->(hover:bool) {
     state^ = NormalizeRange(value^, from, to)
-    hover = IsHovering(pos, rect)
+    hover = IsHovering(input_pos, rect)
     if (hover && active){
         if karl2d.mouse_button_is_held(.Left) {
-            state^ = (pos.x - rect.x) / rect.w
+            state^ = (input_pos.x - rect.x) / rect.w
             value^ = Lerpf(from, to, state^)
         }
     }
@@ -23,6 +34,15 @@ Slider :: proc(state: ^f32, value: ^f32, from:f32, to:f32, rect:Rect, pos:Vec2, 
     slider_val:Rect = rect
     slider_val.w *= state^
     karl2d.draw_rect(slider_val, karl2d.LIGHT_GRAY)
+
+    if (len(text) > 0) {
+        // TODO: auto font sizing?
+        FONT_SIZE :: 20
+        FONT_COLOR :: karl2d.BLACK
+        measure:Vec2 = karl2d.measure_text(text, FONT_SIZE, font)
+        label_pos:Vec2 = ({rect.w, rect.h} - measure) * 0.5 + {rect.x, rect.y}
+        karl2d.draw_text(text, label_pos, FONT_SIZE, FONT_COLOR, font)
+    }
     return
 }
 

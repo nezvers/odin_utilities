@@ -1,6 +1,7 @@
 package game
 
 import "../../../karl2d"
+Font :: karl2d.Font
 
 window_width := 1280
 window_height := 720
