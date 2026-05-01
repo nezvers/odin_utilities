@@ -70,8 +70,8 @@ draw :: proc() {
 	BUTTON_SIZE :Vec2: {150, 25}
 	BUTTON_PADDING :f32: 2
     mouse_position: = get_local_mouse_position()
-    current_time:f64 = karl2d.get_time()
-    button_rect:Rect = {10, 10, BUTTON_SIZE.x, BUTTON_SIZE.y}
+    current_time: f64 = karl2d.get_time()
+    button_rect: Rect = {10, 10, BUTTON_SIZE.x, BUTTON_SIZE.y}
 
     karl2d.draw_rect(button_rect, karl2d.LIGHT_GRAY)
     karl2d.draw_text("Button", {button_rect.x + 5, button_rect.y + 3}, FONT_SIZE, karl2d.BLACK)
