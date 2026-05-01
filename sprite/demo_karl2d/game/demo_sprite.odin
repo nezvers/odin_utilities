@@ -100,6 +100,8 @@ draw :: proc() {
     glue.DrawSprite(&player_sprite, &player_texture, karl2d.WHITE)
     karl2d.set_camera(nil)
 
+    karl2d.draw_text("Hold CTRL: default values", {300, 30 * ZOOM}, 20, karl2d.BLACK)
+
     mouse: = get_local_mouse_position()
     is_held:bool = karl2d.mouse_button_is_held(.Left)
     slider_rect:Rect = {300, 34 * ZOOM, 300, 25}

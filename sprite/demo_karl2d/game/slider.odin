@@ -16,6 +16,7 @@ Slider :: proc(
     input_pos:Vec2={}, 
     active:bool=false, 
     text:string="", 
+    text_size: f32 = 20,
     font:karl2d.Font = karl2d.FONT_DEFAULT,
 )->(hover:bool) {
     state^ = NormalizeRange(value^, from, to)
@@ -37,11 +38,10 @@ Slider :: proc(
 
     if (len(text) > 0) {
         // TODO: auto font sizing?
-        FONT_SIZE :: 20
         FONT_COLOR :: karl2d.BLACK
-        measure:Vec2 = karl2d.measure_text(text, FONT_SIZE, font)
+        measure:Vec2 = karl2d.measure_text(text, text_size, font)
         label_pos:Vec2 = ({rect.w, rect.h} - measure) * 0.5 + {rect.x, rect.y}
-        karl2d.draw_text(text, label_pos, FONT_SIZE, FONT_COLOR, font)
+        karl2d.draw_text(text, label_pos, text_size, FONT_COLOR, font)
     }
     return
 }
