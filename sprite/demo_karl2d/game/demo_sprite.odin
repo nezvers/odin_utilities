@@ -107,6 +107,22 @@ draw :: proc() {
     is_held:bool = karl2d.mouse_button_is_held(.Left)
     slider_rect:Rect = {300, 34 * ZOOM, 300, 25}
 
+    @(static) off_x:f32
+    if Slider(&off_x, &player_sprite.offset.x, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("offset.x = %.2v", player_sprite.offset.x)) {
+        if karl2d.key_is_held(.Left_Control) {
+            player_sprite.offset.x = -8
+        }
+    }
+    slider_rect.y += 30
+
+    @(static) off_y:f32
+    if Slider(&off_y, &player_sprite.offset.y, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("offset.y = %.2v", player_sprite.offset.y)) {
+        if karl2d.key_is_held(.Left_Control) {
+            player_sprite.offset.y = -16
+        }
+    }
+    slider_rect.y += 30
+
     @(static) scale_x:f32
     if Slider(&scale_x, &player_sprite.scale.x, -2, 2, slider_rect, mouse, is_held, fmt.tprintf("scale.x = %.2v", player_sprite.scale.x)) {
         if karl2d.key_is_held(.Left_Control) {
