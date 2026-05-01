@@ -27,14 +27,14 @@ Slider :: proc(
             value^ = Lerpf(from, to, state^)
         }
     }
+    slider_val:Rect = rect
+    slider_val.w *= state^
+    karl2d.draw_rect(slider_val, karl2d.LIGHT_GRAY)
     karl2d.draw_rect_outline(
         rect,
         1,
         karl2d.GRAY,
     )
-    slider_val:Rect = rect
-    slider_val.w *= state^
-    karl2d.draw_rect(slider_val, karl2d.LIGHT_GRAY)
 
     if (len(text) > 0) {
         // TODO: auto font sizing?
