@@ -30,11 +30,11 @@ PlayerStates::enum {
 
 SPRITE_SIZE :sp.vec2: {16, 16}
 // All positions on texture
-tex_pos: []sp.vec2 = {{0,0}, {16,0}, {32,0}, {48,0}, {64,0}, {80,0}, {96,0}}
+tex_pos: []sp.vec2 = {{0,0}, {16,0}, {32,0}, {48,0}, {64,0}, {80,0}, {96,0}, {112, 0}}
 anim_idle: sp.Frames = {tex_pos[0:1], SPRITE_SIZE}
-anim_walk: sp.Frames = {tex_pos[1:7], SPRITE_SIZE}
+anim_walk: sp.Frames = {tex_pos[1:8], SPRITE_SIZE}
 anim_up: sp.Frames = {tex_pos[5:6], SPRITE_SIZE}
-anim_down: sp.Frames = {tex_pos[6:7], SPRITE_SIZE}
+anim_down: sp.Frames = {tex_pos[7:8], SPRITE_SIZE}
 
 player_animations:sp.AnimationSet = { 
     {&anim_idle, &anim_walk, &anim_up, &anim_down}, 

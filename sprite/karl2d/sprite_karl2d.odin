@@ -10,7 +10,7 @@ SpriteKarl2d::struct{
     tint: karl2d.Color,
 }
 
-DrawSpriteRaylib::proc(karl_sprite: ^SpriteKarl2d){
+DrawSpriteKarl2d::proc(karl_sprite: ^SpriteKarl2d){
     DrawSprite(&karl_sprite.sprite, karl_sprite.texture, karl_sprite.tint)
 }
 
