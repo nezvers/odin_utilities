@@ -101,7 +101,7 @@ where intrinsics.type_is_float(T)
 {
     result:T = math.atan2(
         Vec2Cross(a,b),
-        Vec2Dot(a, b)
+        Vec2Dot(a, b),
     )
     return result
 }
@@ -179,7 +179,7 @@ where intrinsics.type_is_numeric(T)
 Vec2Lerp :: proc(from:[2]$T, to:[2]T, t:T) -> [2]T
 where intrinsics.type_is_float(T)
 {
-    result:[2]T = from + {to - from, to - from} * {t, t}
+    result:[2]T = from + (to.xy - from.xy) * {t, t}
     return result
 }
 
