@@ -1,10 +1,10 @@
 #+ private file
 package game
 
-// import "core:fmt"
+import "core:fmt"
 import "core:math"
 import "../karl2d"
-// import "ui"
+import "ui"
 
 // import "assets"
 import "actor"
@@ -34,7 +34,11 @@ npc_actor: ^actor.Actor
 npc_shotgun: weapon.Weapon
 music:karl2d.Audio_Stream
 
+@(private="package")
+kill_count:u64
+
 init :: proc() {
+    kill_count = 0
     background_color.r = 0xcf
     background_color.g = 0x96
     background_color.b = 0x8c
@@ -105,6 +109,7 @@ process :: proc() {
                         change_game_state(screen_menu_state)
                     } else {
                         actor.Remove(act)
+                        kill_count += 1
                     }
                     // TODO: death VFX
                 } else {
@@ -116,6 +121,9 @@ process :: proc() {
                 if proj.vfx_impact != nil {
                     pos:Vec2 = proj.position - proj.height
                     _, _ = vfx.NewInstance(proj.vfx_impact^, pos)
+                }
+                if proj.sfx_impact != nil {
+                    sfx.Play(proj.sfx_impact)
                 }
                 // TODO: impact VFX
                 if !proj.stay{
@@ -149,12 +157,13 @@ draw :: proc() {
 }
 
 gui :: proc() {
-    // window_size: = get_window_size()
-    // title_size:f32 = window_size.y * 0.1
-    // measure_title:Vec2 = karl2d.measure_text(TITLE, title_size, karl2d.FONT_DEFAULT)
-    // title_position:Vec2 = ui.GetElementPosition(transmute(ui.Rect)projected_rect, measure_title, {0.5, 0.3})
+    window_size: = get_window_size()
+    score_size:f32 = window_size.y * 0.07
+    score_text:string = fmt.tprintf("KILL COUNT: %v", kill_count)
+    score_measure:Vec2 = karl2d.measure_text(score_text, score_size, karl2d.FONT_DEFAULT)
+    score_position:Vec2 = ui.GetElementPosition({0,0,window_size.x, window_size.y}, score_measure, {0.001, 0.001}, {0,0})
+	karl2d.draw_text(score_text, score_position, score_size, karl2d.DARK_BLUE)
 
-	// karl2d.draw_text(TITLE, {projected_rect.x, projected_rect.y} + title_position, title_size, karl2d.DARK_BLUE)
 }
 
 update_player :: proc() {

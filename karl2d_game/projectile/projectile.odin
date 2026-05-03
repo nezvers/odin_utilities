@@ -6,6 +6,7 @@ import karl2d "../../karl2d"
 import "core:math/rand"
 import "../../cool_math"
 import "../vfx"
+import "../sfx"
 // import "core:math"
 
 vec2 :: [2]f32
@@ -32,6 +33,7 @@ Projectile :: struct {
     using visual: spr_glue.SpriteKarl2d,
     using properties: Properties,
     vfx_impact: ^vfx.Vfx,
+    sfx_impact: ^sfx.SfxKarl2D,
     id:int,
 }
 

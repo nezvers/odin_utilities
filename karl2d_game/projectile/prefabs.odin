@@ -3,6 +3,7 @@ package projectile
 import karl2d "../../karl2d"
 import spr "../../sprite"
 import "../vfx"
+import "../sfx"
 // import spr_glue "../../sprite/karl2d"
 
 
@@ -33,6 +34,7 @@ prefab_bullet1: Projectile = {
     visible = true,
     tint = karl2d.WHITE,
     vfx_impact = &vfx.prefab_impact,
+    sfx_impact = &sfx.impact,
 }
 
 prefab_bite: Projectile = {

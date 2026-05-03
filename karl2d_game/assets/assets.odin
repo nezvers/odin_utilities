@@ -33,6 +33,7 @@ texture_vfx_impact :: #load(VFX_DIR + "explosion_0_strip6.png")
 // SOUNDS
 sound_gun1 :: #load(SOUNDS_DIR + "snd_gun_1_mono.wav")
 sound_damage :: #load(SOUNDS_DIR + "damage_sound.wav")
+sound_impact :: #load(SOUNDS_DIR + "bullet_impact.wav")
 
 // music
 music_lost_hope :: #load(MUSIC_DIR + "Lost Hope.ogg")
