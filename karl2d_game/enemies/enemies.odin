@@ -13,10 +13,10 @@ import "../weapon"
 
 vec2 :: [2]f32
 
-MAX_ENEMIES :: 30
-START_ENEMY_COUNT :: 10
+// MAX_ENEMIES :: 30
+START_ENEMY_COUNT :: 20
+active_trshold:int
 weapon_bite: weapon.Weapon
-active_trshold:int = START_ENEMY_COUNT
 
 Reset :: proc() {
     active_trshold = START_ENEMY_COUNT
@@ -32,7 +32,11 @@ Start :: proc() {
 
 GetSpawnPoint :: proc()->vec2 {
     RANGE :: 200
-    return {-RANGE + rand.float32()*2*RANGE, -RANGE + rand.float32()*2*RANGE}
+    center:vec2 = actor.actor_buffer[0].position
+    range:f32 = 100 + rand.float32() * RANGE
+    angle:f32 = math.TAU * rand.float32()
+    result:vec2 = center + cool_math.Vec2Rotate(vec2{1,0} * range, angle)
+    return result
 }
 
 Update :: proc(delta_time:f32) {
@@ -46,14 +50,22 @@ UpdateZombie :: proc(zombie: ^actor.Actor, delta_time: f32) {
     nearest:^actor.Actor = &actor.actor_buffer[0]
     distance:vec2 = nearest.position - zombie.position
     distance2:vec2 = actor.actor_buffer[1].position - zombie.position
-    if cool_math.Vec2Mag2(distance) > cool_math.Vec2Mag2(distance2) {
+    mag2: = cool_math.Vec2Mag2(distance)
+
+    if mag2 > (300 * 300){
+        actor.Remove(zombie)
+        return
+    }
+
+    if mag2 > cool_math.Vec2Mag2(distance2) {
         nearest = &actor.actor_buffer[1]
         distance = distance2
+        mag2 = cool_math.Vec2Mag2(distance)
     }
 
     zombie.move_dir = cool_math.Vec2Norm(distance)
 
-    mag2: = cool_math.Vec2Mag2(distance)
+    
     if mag2 > (50 * 50) {
         // Little spreading help at distance
         angle:f32 = cool_math.Vec2Angle(zombie.move_dir)

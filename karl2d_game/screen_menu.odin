@@ -65,6 +65,4 @@ gui :: proc() {
     measure_hint:Vec2 = karl2d.measure_text(HINT, hint_size, karl2d.FONT_DEFAULT)
     hint_position:Vec2 = ui.GetElementPosition({0,0,window_size.x, window_size.y}, measure_hint, {0.5, 0.7})
 	karl2d.draw_text(HINT, hint_position, hint_size, karl2d.DARK_BLUE)
-
-
 }

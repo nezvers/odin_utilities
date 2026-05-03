@@ -111,7 +111,7 @@ NewInstance :: proc(preset:Actor, pos:vec2)->(actor:^Actor, ok:bool) {
 Update :: proc(delta_time: f32) {
     actor:^Actor
 
-    for i:int = 0; i < actor_count; i += 1 {
+    for i:int = actor_count -1; i > -1; i -= 1 {
         actor = &actor_buffer[i]
         if actor.update_callback != nil {
             actor.update_callback(actor, delta_time)
