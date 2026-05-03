@@ -6,7 +6,7 @@ import "core:math"
 import "../karl2d"
 // import "ui"
 
-import "assets"
+// import "assets"
 import "actor"
 import "weapon"
 import "projectile"
@@ -24,11 +24,6 @@ screen_game_state: GameState = {
     gui,
 }
 
-texture_plumber: karl2d.Texture
-texture_electrician: karl2d.Texture
-texture_shotgun: karl2d.Texture
-texture_bullet1: karl2d.Texture
-
 player_actor: ^actor.Actor
 npc_actor: ^actor.Actor
 
@@ -38,55 +33,30 @@ npc_shotgun: weapon.Weapon
 init :: proc() {
     background_color = karl2d.WHITE
     // Resets Actor pool
+    actor.Load()
     actor.Reset()
+    projectile.Load()
+    projectile.Reset()
+    weapon.Load()
 
-    texture_plumber = karl2d.load_texture_from_bytes(assets.texture_char_plumber, {.Premultiply_Alpha})
-    texture_electrician = karl2d.load_texture_from_bytes(assets.texture_char_electrician, {.Premultiply_Alpha})
-
-    texture_shotgun = karl2d.load_texture_from_bytes(assets.texture_weapon_shotgun, {.Premultiply_Alpha})
-    weapon.shotgun.texture = texture_shotgun
     npc_shotgun = weapon.shotgun
 
-    texture_bullet1 = karl2d.load_texture_from_bytes(assets.texture_projectile_bullet1, {.Premultiply_Alpha})
-    projectile.bullet1.texture = texture_bullet1
-
-    character_sprite_tmp: = actor.character_sprite
-    actor_new, ok: = actor.GetNew()
+    // character_sprite_tmp: = actor.character_sprite
+    actor_new, ok: = actor.NewInstance(actor.prefab_plumber, {})
     if ok {
         player_actor = actor_new
-        character_sprite_tmp.texture = texture_plumber
-        actor.Init(actor_new, character_sprite_tmp, cast(u32)actor.ActorAnimations.char_idle)
-        actor_new.properties.acceleration = 3.0
-        actor_new.properties.deacceleration = 3.0
-        actor_new.properties.max_speed = 120.0
-        actor_new.draw_callback = draw_actor_callback
-        actor_new.update_callback = actor.UpdateCharacter
-        actor_new.type = actor.ActorType.Player
     }
-
-    actor_new, ok = actor.GetNew()
+    actor_new, ok = actor.NewInstance(actor.prefab_electrician, {30,30})
     if ok {
         npc_actor = actor_new
-        character_sprite_tmp.position = {30,30}
-        character_sprite_tmp.texture = texture_electrician
-        actor.Init(actor_new, character_sprite_tmp, cast(u32)actor.ActorAnimations.char_idle)
-        actor_new.properties.acceleration = 3.0
-        actor_new.properties.deacceleration = 3.0
-        actor_new.properties.max_speed = 120.0
-        actor_new.draw_callback = draw_actor_callback
-        actor_new.update_callback = actor.UpdateCharacter
-        actor_new.type = actor.ActorType.NPC
         actor_new.weapon = &npc_shotgun
     }
 }
 
 finit :: proc() {
-    karl2d.destroy_texture(texture_plumber)
-    karl2d.destroy_texture(texture_electrician)
-    weapon.shotgun.texture = {}
-    karl2d.destroy_texture(texture_shotgun)
-    projectile.bullet1.texture = {}
-    karl2d.destroy_texture(texture_bullet1)
+    actor.Destroy()
+    weapon.Destroy()
+    projectile.Destroy()
 }
 
 process :: proc() {

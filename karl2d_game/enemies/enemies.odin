@@ -9,3 +9,8 @@ import "../../cool_math"
 // import "core:math"
 
 vec2 :: [2]f32
+
+MAX_ENEMIES :: 30
+
+
+

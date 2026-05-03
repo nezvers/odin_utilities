@@ -29,66 +29,42 @@ Projectile :: struct {
     id:int,
 }
 
-// Default projectile "Animation"
-tex_pos_projectile: []spr.vec2 = {{0,0}}
-anim_projectile: spr.Frames = {tex_pos_projectile[:], {16, 16}}
-
 MAX_PROJECTILES :: 512
 projectile_pool: [MAX_PROJECTILES]Projectile
-count:int
+projectile_count:int
 
-// Templates - require assigned texture
-bullet1: Projectile = {
-    state = {
-        lifetime = 0.5,
-    },
-    properties = {
-        kickback = 2000,
-        speed = 240,
-        height = 7,
-        damping = 0.05,
-    },
-    sprite = {
-        animation_set = {
-            frames = {&anim_projectile},
-        },
-        offset = {-8, -8},
-        scale = {1, 1},
-    },
-    visible = true,
-    tint = karl2d.WHITE,
-}
+
 
 Reset :: proc() {
-    count = 0
+    projectile_count = 0
 }
 
 GetNew :: proc(preset: Projectile)->(projectile: ^Projectile, ok:bool) {
-    if count == MAX_PROJECTILES { return }
-    projectile = &projectile_pool[count]
+    if projectile_count == MAX_PROJECTILES { return }
+    projectile = &projectile_pool[projectile_count]
     projectile^ = preset
-    projectile.id = count
+    projectile.id = projectile_count
     ok = true
-    count += 1
+    projectile_count += 1
     return
 }
 
 Remove :: proc(projectile: ^Projectile) {
-    if projectile.id >= count { return }
+    if projectile.id >= projectile_count { return }
     if projectile.id != projectile_pool[projectile.id].id { return }
-    if count == 0 { return }
-    if projectile.id == count - 1 {
-        count -= 1
+    if projectile_count == 0 { return }
+    if projectile.id == projectile_count - 1 {
+        projectile_count -= 1
         return
     }
-    new_projectile: ^Projectile = &projectile_pool[count - 1]
+    new_projectile: ^Projectile = &projectile_pool[projectile_count - 1]
     new_projectile.id = projectile.id
     projectile_pool[projectile.id] = new_projectile^
-    count -= 1
+    projectile_count -= 1
 }
 
 Update :: proc(delta_time: f32) {
-    for i:int = count - 1; i > -1; i -= 1 {
+    for i:int = projectile_count - 1; i > -1; i -= 1 {
         UpdateInstance(&projectile_pool[i], delta_time)
     }
 }
@@ -105,7 +81,7 @@ UpdateInstance :: proc(projectile: ^Projectile, delta_time: f32) {
 }
 
 Draw :: proc() {
-    active_pool: = projectile_pool[:count]
+    active_pool: = projectile_pool[:projectile_count]
     for &projectile in active_pool {
         DrawInstance(&projectile)
     }

@@ -5,8 +5,6 @@ import spr_glue "../../sprite/karl2d"
 import karl2d "../../karl2d"
 import "../weapon"
 import "core:sort"
-import "../../cool_math"
-import "../projectile"
 // import "core:math/rand"
 
 vec2 :: [2]f32
@@ -55,29 +53,8 @@ Actor :: struct {
 
 
 
-CHAR_SIZE :spr.vec2: {16, 16}
-// All positions on texture
-tex_pos_char: []spr.vec2 = {{0,0}, {16,0}, {32,0}, {48,0}, {64,0}, {80,0}, {96,0}, {112,0}}
-anim_char_idle: spr.Frames = {tex_pos_char[0:2], CHAR_SIZE}
-anim_char_walk: spr.Frames = {tex_pos_char[2:8], CHAR_SIZE}
-anim_char_up: spr.Frames = {tex_pos_char[5:6], CHAR_SIZE}
-anim_char_down: spr.Frames = {tex_pos_char[7:8], CHAR_SIZE}
-
-character_animations: spr.AnimationSet = { 
-    {&anim_char_idle, &anim_char_walk, &anim_char_up, &anim_char_down}, 
-    cast(u32)ActorAnimations.char_idle, 0, 12, 0,
-}
-
-character_sprite: spr_glue.SpriteKarl2d = {
-    animation_set = character_animations,
-    position = {0, 0},
-    offset = {-8, -16},
-    scale = {1, 1},
-    rotation = 0.0,
-}
-
 // Actor Pool
-MAX_ACTORS :: 16
+MAX_ACTORS :: 32
 actor_buffer: [MAX_ACTORS]Actor
 actor_count: int
 // For Y sorting
@@ -96,6 +73,29 @@ GetNew :: proc()->(actor:^Actor, ok:bool) {
     actor.id = actor_count
     actor_count += 1
     ok = true
+    return
+}
+
+Remove :: proc(actor:^Actor) {
+    if actor.id >= actor_count { return }
+    if actor.id != actor_buffer[actor.id].id { return }
+    if actor_count == 0 { return }
+    if actor.id == actor_count - 1 {
+        actor_count -= 1
+        return
+    }
+    new_actor: ^Actor = &actor_buffer[actor_count - 1]
+    new_actor.id = actor.id
+    actor_buffer[actor.id] = new_actor^
+    actor_count -= 1
+}
+
+NewInstance :: proc(preset:Actor, pos:vec2)->(actor:^Actor, ok:bool) {
+    actor,ok = GetNew()
+    if !ok { return }
+    actor^ = preset
+    actor.position = pos
+    // TODO: on spawn event - vfx, sound
     return
 }
 
@@ -118,39 +118,6 @@ Update :: proc(delta_time: f32) {
     }
 }
 
-UpdateCharacter :: proc(actor: ^Actor, delta_time:f32) {
-    is_moving:bool = (actor.move_dir.x * actor.move_dir.x) + (actor.move_dir.y * actor.move_dir.y) > 0.01
-    if is_moving {
-        actor.velocity = LerpVelocity(actor.velocity, actor.move_dir * actor.max_speed, actor.acceleration * delta_time)
-    } else {
-        actor.velocity = LerpVelocity(actor.velocity, 0, actor.deacceleration * delta_time)
-    }
-
-    // Flip
-    if actor.aim_dir.x > 0.01 {
-        actor.scale.x = 1
-    } else if actor.aim_dir.x < -0.01 {
-        actor.scale.x = -1
-    }
-    UpdateAnimation(&actor.sprite.animation_set, is_moving)
-    spr.UpdateSprite(&actor.sprite, delta_time)
-
-    actor.position += actor.velocity * delta_time
-
-    if actor.weapon != nil { UpdateActorWeapon(actor, delta_time) }
-}
-
-UpdateAnimation :: proc(anim_set: ^spr.AnimationSet, is_walking: bool) {
-    if is_walking == (anim_set.animation_index == cast(u32)ActorAnimations.char_walk) {
-        return
-    }
-    if is_walking{
-        spr.ChangeAnimation(anim_set, cast(u32)ActorAnimations.char_walk)
-    } else {
-        spr.ChangeAnimation(anim_set, cast(u32)ActorAnimations.char_idle)
-    }
-}
-
 LerpVelocity :: proc(from, to: vec2, t:f32)->vec2 {
     return from + (to - from) * t
 }
@@ -168,28 +135,4 @@ Draw :: proc() {
 
 Ysort :: proc(a: ^Actor, b: ^Actor)->int {
     return (a.position.y > b.position.y) ? 1 : (a.position.y < b.position.y) ? -1 : 0
-}
-
-UpdateActorWeapon :: proc(actor: ^Actor, delta_time: f32) {
-    if !actor.attack {
-        actor.attack_timer += actor.weapon.fire_rate * delta_time
-        if actor.attack_timer > 1 { 
-            actor.attack_timer = 1
-        }
-        return
-    }
-    actor.attack_timer += actor.weapon.fire_rate * delta_time
-    if actor.attack_timer < 1 { return }
-
-    count:i32 = i32(actor.attack_timer)
-    actor.attack_timer -= f32(count)
-    for i:i32 = 0; i < count; i += 1 {
-        actor.velocity += delta_time * actor.weapon.kickback * -actor.aim_dir
-        for angle in actor.weapon.angles {
-            projectile.SpawnProjectile(projectile.bullet1, actor.position + actor.aim_dir * 8, cool_math.Vec2Rotate(actor.aim_dir, angle), actor.weapon.spread)
-        }
-        // TODO: spawn spread
-        if i < 1 { continue }
-        // TODO: pre-heat projectile update by fire_rate
-    }
 }
