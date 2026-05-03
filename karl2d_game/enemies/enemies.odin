@@ -1,16 +1,70 @@
 package enemies
 
 import "../actor"
-import karl2d "../../karl2d"
-import spr "../../sprite"
-import spr_glue "../../sprite/karl2d"
 import "core:math/rand"
 import "../../cool_math"
-// import "core:math"
+import "core:math"
+// import "../projectile"
+import "../weapon"
+
+// import karl2d "../../karl2d"
+// import spr "../../sprite"
+// import spr_glue "../../sprite/karl2d"
 
 vec2 :: [2]f32
 
 MAX_ENEMIES :: 30
+START_ENEMY_COUNT :: 10
+weapon_bite: weapon.Weapon
+active_trshold:int = START_ENEMY_COUNT
 
+Reset :: proc() {
+    active_trshold = START_ENEMY_COUNT
+    // Store enemy prefab
+    weapon_bite = weapon.prefab_bite
+    actor.prefab_zombie.update_callback = UpdateZombie
+    actor.prefab_zombie.weapon = &weapon_bite
+}
 
+Start :: proc() {
+    Reset()
+}
 
+GetSpawnPoint :: proc()->vec2 {
+    RANGE :: 200
+    return {-RANGE + rand.float32()*2*RANGE, -RANGE + rand.float32()*2*RANGE}
+}
+
+Update :: proc(delta_time:f32) {
+    for i:int = actor.actor_count; i < (active_trshold + 2); i += 1 {
+        _, ok: = actor.NewInstance(actor.prefab_zombie, GetSpawnPoint())
+        if !ok { continue }
+    }
+}
+
+UpdateZombie :: proc(zombie: ^actor.Actor, delta_time: f32) {
+    nearest:^actor.Actor = &actor.actor_buffer[0]
+    distance:vec2 = nearest.position - zombie.position
+    distance2:vec2 = actor.actor_buffer[1].position - zombie.position
+    if cool_math.Vec2Mag2(distance) > cool_math.Vec2Mag2(distance2) {
+        nearest = &actor.actor_buffer[1]
+        distance = distance2
+    }
+
+    zombie.move_dir = cool_math.Vec2Norm(distance)
+
+    mag2: = cool_math.Vec2Mag2(distance)
+    if mag2 > (50 * 50) {
+        // Little spreading help at distance
+        angle:f32 = cool_math.Vec2Angle(zombie.move_dir)
+        sector_angle:f32 = math.round(angle/ (math.PI * 0.25))
+        quantized_angle:f32 = sector_angle * (math.PI * 0.25)
+        zombie.move_dir = cool_math.Vec2Rotate(vec2{1,0}, quantized_angle)
+    }
+    zombie.aim_dir = zombie.move_dir
+
+    // attack range
+    zombie.attack = mag2 < (25)
+
+    actor.UpdateCharacter(zombie, delta_time)
+}

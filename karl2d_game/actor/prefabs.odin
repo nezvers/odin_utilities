@@ -3,6 +3,7 @@ package actor
 
 import karl2d "../../karl2d"
 import spr "../../sprite"
+import "../sfx"
 // import spr_glue "../../sprite/karl2d"
 
 CHAR_SIZE :spr.vec2: {16, 16}
@@ -34,7 +35,12 @@ prefab_plumber: Actor = {
         deacceleration = 3.0,
         max_speed = 120.0,
     },
-    draw_callback = DrawActorCallback,
+    health = {
+        value = 100,
+    },
+    damage_sound = &sfx.damage,
+    spawn_callback = nil,
+    draw_callback = nil,
     update_callback = UpdateCharacter, // TODO: each character its specialized update
     type = .Player,
 }
@@ -54,9 +60,14 @@ prefab_electrician: Actor = {
         deacceleration = 3.0,
         max_speed = 120.0,
     },
-    draw_callback = DrawActorCallback,
+    health = {
+        value = 100,
+    },
+    damage_sound = &sfx.damage,
+    spawn_callback = nil,
+    draw_callback = DrawElectricianCallback,
     update_callback = UpdateCharacter, // TODO: each character its specialized update
-    type = .NPC,
+    type = .Player,
 }
 
 prefab_zombie: Actor = {
@@ -70,11 +81,16 @@ prefab_zombie: Actor = {
         tint = karl2d.WHITE,
     },
     properties = {
-        acceleration = 2.0,
-        deacceleration = 2.0,
-        max_speed = 70.0,
+        acceleration = 3.0,
+        deacceleration = 1.0,
+        max_speed = 20.0,
     },
-    draw_callback = DrawActorCallback,
-    update_callback = UpdateCharacter, // TODO: zombie ai update
-    type = .Zombie,
+    health = {
+        value = 100,
+    },
+    // damage_sound = &sfx.damage,
+    draw_callback = nil,
+    spawn_callback = nil,
+    update_callback = UpdateCharacter, // Overriden in enemies.odin Reset()
+    type = .Enemy,
 }

@@ -1,11 +1,13 @@
 package weapon
 
 import spr "../../sprite"
+import projectile "../projectile"
 import spr_glue "../../sprite/karl2d"
 import karl2d "../../karl2d"
+import "../sfx"
 // import "core:math"
 
-WeaponProperties :: struct {
+Properties :: struct {
     spread: f32,
     fire_rate: f32,
     count: u32,
@@ -15,10 +17,13 @@ WeaponProperties :: struct {
 
 Weapon :: struct {
     using visual: spr_glue.SpriteKarl2d,
-    using properties: WeaponProperties,
+    using properties: Properties,
+    bullet: ^projectile.Projectile, 
+    sound: ^sfx.SfxKarl2D,
+    name: string,
 }
 
-Draw::proc(weapon: ^Weapon){
+DrawInstance::proc(weapon: ^Weapon){
     sprite:^spr.Sprite = &weapon.sprite
     texture:karl2d.Texture = weapon.texture
     tint:karl2d.Color = weapon.tint

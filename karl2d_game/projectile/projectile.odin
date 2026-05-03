@@ -5,6 +5,7 @@ import spr_glue "../../sprite/karl2d"
 import karl2d "../../karl2d"
 import "core:math/rand"
 import "../../cool_math"
+import "../vfx"
 // import "core:math"
 
 vec2 :: [2]f32
@@ -14,6 +15,10 @@ Properties :: struct {
     kickback: f32,
     height: f32,
     damping: f32,
+    collide: u32,
+    damage: f32,
+    stay:bool,
+    dont_rotate: bool,
 }
 
 State :: struct {
@@ -26,13 +31,13 @@ Projectile :: struct {
     using state: State,
     using visual: spr_glue.SpriteKarl2d,
     using properties: Properties,
+    vfx_impact: ^vfx.Vfx,
     id:int,
 }
 
 MAX_PROJECTILES :: 512
 projectile_pool: [MAX_PROJECTILES]Projectile
 projectile_count:int
-
 
 
 Reset :: proc() {
@@ -74,6 +79,7 @@ UpdateInstance :: proc(projectile: ^Projectile, delta_time: f32) {
         Remove(projectile)
         return
     }
+    spr.UpdateAnimation(&projectile.animation_set, delta_time)
     projectile.lifetime -= delta_time
     projectile.position += projectile.velocity * delta_time
     projectile.velocity -= projectile.velocity * projectile.damping
@@ -117,11 +123,14 @@ DrawInstance::proc(projectile: ^Projectile){
 	)
 }
 
-SpawnProjectile :: proc(preset:Projectile, position:vec2, dir:vec2, spread:f32) {
-    inst, ok: = GetNew(preset)
+SpawnProjectile :: proc(preset:Projectile, position:vec2, dir:vec2, spread:f32)->(inst: ^Projectile, ok:bool) {
+    inst, ok = GetNew(preset)
     if !ok { return }
     inst.position = position
     inst.move_dir = cool_math.Vec2Rotate(dir, -spread + rand.float32() * spread * 2)
     inst.velocity = inst.move_dir * inst.speed
-    inst.rotation = cool_math.Vec2Angle(inst.move_dir)
+    if !preset.dont_rotate{
+        inst.rotation = cool_math.Vec2Angle(inst.move_dir)
+    }
+    return
 }

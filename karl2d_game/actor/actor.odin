@@ -1,9 +1,10 @@
 package actor
 
-import spr "../../sprite"
+// import spr "../../sprite"
 import spr_glue "../../sprite/karl2d"
-import karl2d "../../karl2d"
+// import karl2d "../../karl2d"
 import "../weapon"
+import "../sfx"
 import "core:sort"
 // import "core:math/rand"
 
@@ -16,39 +17,46 @@ ActorAnimations :: enum {
 }
 
 ActorType :: enum {
-    Player,
-    NPC,
-    Zombie,
-    Zombie_crawl,
+    Player =    1 << 0,
+    Enemy =     1 << 2,
 }
 
-ActorInput :: struct {
+Input :: struct {
     move_dir:vec2,
     aim_dir:vec2,
     attack:bool,
 }
 
-ActorProperties :: struct {
+Properties :: struct {
     acceleration: f32,
     deacceleration: f32,
     max_speed: f32,
 }
 
-ActorState :: struct {
+State :: struct {
     velocity: vec2,
     attack_timer: f32,
 }
 
+Health :: struct {
+    value: f32,
+    timer: f32,
+    damage_callback: proc(^Actor),
+}
+
 Actor :: struct {
     using visuals: spr_glue.SpriteKarl2d,
-    using input: ActorInput,
-    using properties: ActorProperties,
-    using state: ActorState,
+    using input: Input,
+    using properties: Properties,
+    using state: State,
+    health: Health,
+    spawn_callback: proc(^Actor),
     draw_callback: proc(^Actor),
     update_callback: proc(^Actor, f32),
     type:ActorType,
     id:int,
     weapon: ^weapon.Weapon,
+    damage_sound: ^sfx.SfxKarl2D,
 }
 
 
@@ -64,12 +72,13 @@ Reset :: proc() {
     actor_count = 0
 }
 
-GetNew :: proc()->(actor:^Actor, ok:bool) {
+GetNew :: proc(preset:Actor)->(actor:^Actor, ok:bool) {
     if actor_count >= len(actor_buffer) {
         return
     }
     actor = &actor_buffer[actor_count]
-    sorted_list[actor_count] = actor
+    // sorted_list[actor_count] = actor
+    actor^ = preset
     actor.id = actor_count
     actor_count += 1
     ok = true
@@ -86,25 +95,17 @@ Remove :: proc(actor:^Actor) {
     }
     new_actor: ^Actor = &actor_buffer[actor_count - 1]
     new_actor.id = actor.id
-    actor_buffer[actor.id] = new_actor^
+    actor^ = new_actor^
     actor_count -= 1
 }
 
 NewInstance :: proc(preset:Actor, pos:vec2)->(actor:^Actor, ok:bool) {
-    actor,ok = GetNew()
+    actor,ok = GetNew(preset)
     if !ok { return }
-    actor^ = preset
     actor.position = pos
-    // TODO: on spawn event - vfx, sound
+    if actor.spawn_callback != nil {actor.spawn_callback(actor)}
+    // TODO: spawn effect callback in actor
     return
-}
-
-Init :: proc(actor: ^Actor, visuals: spr_glue.SpriteKarl2d, anim: u32) {
-    assert(actor != nil)
-    actor.visuals = visuals
-    actor.visible = true
-    actor.tint = karl2d.WHITE
-    spr.ChangeAnimation(&actor.sprite.animation_set, anim)
 }
 
 Update :: proc(delta_time: f32) {
@@ -118,16 +119,16 @@ Update :: proc(delta_time: f32) {
     }
 }
 
-LerpVelocity :: proc(from, to: vec2, t:f32)->vec2 {
-    return from + (to - from) * t
-}
-
 Draw :: proc() {
+    // TODO: optimize with removal
+    for i:int = 0; i < actor_count; i += 1 {
+        sorted_list[i] = &actor_buffer[i]
+    }
     sort.quick_sort_proc(sorted_list[:actor_count], Ysort)
 
     for i:int = 0; i < actor_count; i += 1 {
         actor:^Actor = sorted_list[i]
-        spr_glue.DrawSpriteKarl2d(actor)
+        spr_glue.DrawSpriteKarl2d(&actor.visuals)
         if actor.draw_callback == nil { continue }
         actor.draw_callback(actor)
     }

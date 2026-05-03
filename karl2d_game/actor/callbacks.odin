@@ -3,8 +3,13 @@ package actor
 
 import spr "../../sprite"
 import "../weapon"
+import "../sfx"
 import "../../cool_math"
 import "../projectile"
+
+LerpVelocity :: proc(from, to: vec2, t:f32)->vec2 {
+    return from + (to - from) * t
+}
 
 UpdateCharacter :: proc(actor: ^Actor, delta_time:f32) {
     is_moving:bool = (actor.move_dir.x * actor.move_dir.x) + (actor.move_dir.y * actor.move_dir.y) > 0.01
@@ -28,6 +33,7 @@ UpdateCharacter :: proc(actor: ^Actor, delta_time:f32) {
     if actor.weapon != nil { UpdateActorWeapon(actor, delta_time) }
 }
 
+
 UpdateActorWeapon :: proc(actor: ^Actor, delta_time: f32) {
     if !actor.attack {
         actor.attack_timer += actor.weapon.fire_rate * delta_time
@@ -44,10 +50,18 @@ UpdateActorWeapon :: proc(actor: ^Actor, delta_time: f32) {
     for i:i32 = 0; i < count; i += 1 {
         actor.velocity += delta_time * actor.weapon.kickback * -actor.aim_dir
         for angle in actor.weapon.angles {
-            projectile.SpawnProjectile(projectile.prefab_bullet1, actor.position + actor.aim_dir * 8, cool_math.Vec2Rotate(actor.aim_dir, angle), actor.weapon.spread)
+            SPAWN_DIST :: 5
+            pos: vec2 = actor.position + actor.aim_dir * SPAWN_DIST
+            dir:vec2 = cool_math.Vec2Rotate(actor.aim_dir, angle)
+            bullet_preset: = actor.weapon.bullet
+            inst, ok: = projectile.SpawnProjectile(bullet_preset^, pos, dir, actor.weapon.spread)
+            if !ok { continue }
+            inst.collide = ~cast(u32)actor.type
         }
-        // TODO: spawn spread
-        if i < 1 { continue }
+        if actor.weapon.sound != nil {
+            sfx.Play(actor.weapon.sound)
+        }
+        // if i < 1 { continue }
         // TODO: pre-heat projectile update by fire_rate
     }
 }
@@ -63,22 +77,17 @@ UpdateAnimation :: proc(anim_set: ^spr.AnimationSet, is_walking: bool) {
     }
 }
 
-// TODO: remove gameplay logic
-DrawActorCallback :: proc(actor_ptr: ^Actor) {
-    #partial switch actor_ptr.type {
-    case .Player :
-
-    case .NPC :
-        shotgun: = actor_ptr.weapon^
-        shotgun.position = actor_ptr.position + {0, -5}
-        shotgun.rotation = cool_math.Vec2Angle(actor_ptr.aim_dir)
-        
-        if actor_ptr.aim_dir.x < 0 {
-            shotgun.scale.y = -1
-            // shotgun.offset.y = -shotgun.offset.y + 16
-        }
-        weapon.Draw(&shotgun)
-        
-        // karl2d.draw_circle_outline(mouse_position, 3, 1, karl2d.LIGHT_GRAY)
+DrawElectricianCallback :: proc(actor_ptr: ^Actor) {
+    // Keep assigned weapon as reference data.
+    weapon_copy: = actor_ptr.weapon^
+    weapon_copy.position = actor_ptr.position + {0, -5}
+    weapon_copy.rotation = cool_math.Vec2Angle(actor_ptr.aim_dir)
+    
+    if actor_ptr.aim_dir.x < 0 {
+        weapon_copy.scale.y = -1
+        // weapon_copy.offset.y = -weapon_copy.offset.y + 16
     }
+    weapon.DrawInstance(&weapon_copy)
+    
+    // karl2d.draw_circle_outline(mouse_position, 3, 1, karl2d.LIGHT_GRAY)
 }

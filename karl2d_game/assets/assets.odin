@@ -26,3 +26,14 @@ texture_weapon_shotgun :: #load(WEAPON_DIR + "gun_1.png")
 // texture_weapon_asault :: #load(WEAPON_DIR + "gun_3.png")
 // texture_weapon_sword :: #load(WEAPON_DIR + "sword_0.png")
 texture_projectile_bullet1 :: #load(PROJECTILE_DIR + "bullet_1.png")
+texture_projectile_bite :: #load(VFX_DIR + "slash_2_strip5.png")
+
+texture_vfx_impact :: #load(VFX_DIR + "explosion_0_strip6.png")
+
+// SOUNDS
+sound_gun1 :: #load(SOUNDS_DIR + "snd_gun_1_mono.wav")
+sound_damage :: #load(SOUNDS_DIR + "damage_sound.wav")
+
+// music
+music_lost_hope :: #load(MUSIC_DIR + "Lost Hope.ogg")
+music_deeper_dungeon :: #load(MUSIC_DIR + "Deeper Into the Dungeon.ogg")
