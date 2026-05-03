@@ -1,0 +1,1 @@
+odin run ../karl2d/build_web -- . -debug

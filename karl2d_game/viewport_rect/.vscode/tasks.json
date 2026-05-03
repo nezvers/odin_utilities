@@ -1,0 +1,19 @@
+{
+    "version": "2.0.0",
+    "command": "",
+    "args": [],
+    "tasks": [
+        {
+            "label": "Build Debug",
+            "type": "shell",
+            "command": "odin build demo -strict-style -vet -debug",
+            "group": "build"
+        },
+        {
+            "label": "Build Release",
+            "type": "shell",
+            "command": "odin build demo -strict-style -vet -no-bounds-check -o:speed",
+            "group": "build"
+        }
+    ]
+}

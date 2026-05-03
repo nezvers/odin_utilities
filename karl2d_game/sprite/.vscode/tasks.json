@@ -1,0 +1,55 @@
+{
+    "version": "2.0.0",
+    "command": "",
+    "args": [],
+    "tasks": [
+        {
+            "label": "Build Debug",
+            "type": "shell",
+            "command": "odin build demo -strict-style -vet -out:${config:project_name}.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build demo -strict-style -vet -out:${config:project_name}.bin -debug"
+            },
+            "osx": {
+                "command": "odin build demo -strict-style -vet -out:${config:project_name}.bin -debug"
+            }
+        },
+        {
+            "label": "Build Release",
+            "type": "shell",
+            "command": "odin build demo -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.exe",
+            "group": "build",
+            "linux": {
+                "command": "odin build demo -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.bin"
+            },
+            "osx": {
+                "command": "odin build demo -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.bin"
+            }
+        },
+        {
+            "label": "Build Debug Karl2D",
+            "type": "shell",
+            "command": "odin build demo_karl2d -strict-style -vet -out:${config:project_name}.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build demo_karl2d -strict-style -vet -out:${config:project_name}.bin -debug"
+            },
+            "osx": {
+                "command": "odin build demo_karl2d -strict-style -vet -out:${config:project_name}.bin -debug"
+            }
+        },
+        {
+            "label": "Build Release Karl2D",
+            "type": "shell",
+            "command": "odin build demo_karl2d -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.exe",
+            "group": "build",
+            "linux": {
+                "command": "odin build demo_karl2d -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.bin"
+            },
+            "osx": {
+                "command": "odin build demo_karl2d -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.bin"
+            }
+        }
+    ]
+}
