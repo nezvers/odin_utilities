@@ -24,6 +24,7 @@ AnimationSet :: struct {
 Sprite::struct{
     animation_set:AnimationSet,
     position:vec2,
+    origin:vec2, // pivot point
     offset:vec2,
     scale:vec2,
     rotation:f32,

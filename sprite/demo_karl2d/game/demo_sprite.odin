@@ -44,7 +44,8 @@ player_animations:sp.AnimationSet = {
 player_sprite:sp.Sprite = {
     player_animations,
     {18, 50},
-    {-8, -16},
+    {8, 16},
+    {0, 0},
     {1, 1},
     0.0,
 }
@@ -90,13 +91,20 @@ draw :: proc() {
         karl2d.BLACK,
     )
     karl2d.draw_rect_outline(
-        {(player_sprite.position.x + player_sprite.offset.x),
-        (player_sprite.position.y + player_sprite.offset.y),
+        {(player_sprite.position.x + player_sprite.offset.x - player_sprite.origin.x),
+        (player_sprite.position.y + player_sprite.offset.y - player_sprite.origin.y),
         16, 16},
         1,
         karl2d.DARK_GRAY,
     )
     glue.DrawSprite(&player_sprite, player_texture, karl2d.WHITE)
+    karl2d.draw_circle_outline(
+        {(player_sprite.position.x + player_sprite.offset.x),
+        (player_sprite.position.y + player_sprite.offset.y)},
+        1, 
+        1,
+        karl2d.LIGHT_GRAY,
+    )
     karl2d.set_camera(nil)
 
     karl2d.draw_text("Fetch frame manually without transforming", {30, 5 * ZOOM}, 20, karl2d.BLACK)
@@ -112,7 +120,7 @@ draw :: proc() {
     @(static) off_x:f32
     if Slider(&off_x, &player_sprite.offset.x, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("offset.x = %.2v", player_sprite.offset.x)) {
         if karl2d.key_is_held(.Left_Control) {
-            player_sprite.offset.x = -8
+            player_sprite.offset.x = 0
         }
     }
     slider_rect.y += 30
@@ -120,7 +128,23 @@ draw :: proc() {
     @(static) off_y:f32
     if Slider(&off_y, &player_sprite.offset.y, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("offset.y = %.2v", player_sprite.offset.y)) {
         if karl2d.key_is_held(.Left_Control) {
-            player_sprite.offset.y = -16
+            player_sprite.offset.y = 0
+        }
+    }
+    slider_rect.y += 30
+
+    @(static) origin_x:f32
+    if Slider(&origin_x, &player_sprite.origin.x, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("origin.x = %.2v", player_sprite.origin.x)) {
+        if karl2d.key_is_held(.Left_Control) {
+            player_sprite.origin.x = 8
+        }
+    }
+    slider_rect.y += 30
+
+    @(static) origin_y:f32
+    if Slider(&origin_y, &player_sprite.origin.y, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("origin.y = %.2v", player_sprite.origin.y)) {
+        if karl2d.key_is_held(.Left_Control) {
+            player_sprite.origin.y = 16
         }
     }
     slider_rect.y += 30

@@ -36,8 +36,9 @@ player_animations:sp.AnimationSet = {
 
 player_sprite:sp.Sprite = {
     player_animations,
-    {18, 100},
-    {-8, -16},
+    {18, 60},
+    {8, 16},
+    {0, 0},
     {1, 1},
     0.0,
 }
@@ -82,8 +83,8 @@ draw :: proc() {
         rl.BLACK,
     )
     rl.DrawRectangleLines(
-        cast(i32)(player_sprite.position.x + player_sprite.offset.x),
-        cast(i32)(player_sprite.position.y + player_sprite.offset.y),
+        cast(i32)(player_sprite.position.x + player_sprite.offset.x - player_sprite.origin.x),
+        cast(i32)(player_sprite.position.y + player_sprite.offset.y - player_sprite.origin.y),
         16, 16,
         rl.DARKGRAY,
     )
@@ -93,9 +94,17 @@ draw :: proc() {
     rl.EndMode2D()
     
     slider_rect:rl.Rectangle = {screen_size.x - 110, 10, 100, 25}
-    rl.GuiSlider(slider_rect, "scale X", "", &player_sprite.scale.x, -1, 1)
+    rl.GuiSlider(slider_rect, "offset.x", "", &player_sprite.offset.x, -16, 16)
     slider_rect.y += 30
-    rl.GuiSlider(slider_rect, "scale Y", "", &player_sprite.scale.y, -1, 1)
+    rl.GuiSlider(slider_rect, "offset.y", "", &player_sprite.offset.y, -16, 16)
+    slider_rect.y += 30
+    rl.GuiSlider(slider_rect, "origin.x", "", &player_sprite.origin.x, -16, 16)
+    slider_rect.y += 30
+    rl.GuiSlider(slider_rect, "origin.y", "", &player_sprite.origin.y, -16, 16)
+    slider_rect.y += 30
+    rl.GuiSlider(slider_rect, "scale.x", "", &player_sprite.scale.x, -1, 1)
+    slider_rect.y += 30
+    rl.GuiSlider(slider_rect, "scale.y", "", &player_sprite.scale.y, -1, 1)
     slider_rect.y += 30
     rl.GuiSlider(slider_rect, "rotate", "", &player_sprite.rotation, -180, 180)
     

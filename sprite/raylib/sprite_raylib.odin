@@ -16,18 +16,19 @@ DrawSpriteRaylib::proc(raylib_sprite:^SpriteRaylib){
 
 DrawSprite::proc(sprite:^sp.Sprite, texture:^rl.Texture, tint:rl.Color){
     target_rect, source_rect: = sp.GetSpriteFrame(sprite)
+    target_rect.xy += sprite.offset.xy
 
-    target_rect.zw *= sprite.scale
-    origin:rl.Vector2 = -sprite.offset * {abs(sprite.scale.x), abs(sprite.scale.y)}
+    origin:rl.Vector2 = sprite.origin * {abs(sprite.scale.x), abs(sprite.scale.y)}
 
     if sprite.scale.x < 0 {
         source_rect.z *= -1
     }
 
     if sprite.scale.y < 0 {
+        origin.y = sprite.origin.y * sprite.scale.y - target_rect.w * sprite.scale.y
         source_rect.w *= -1
-        origin.y += -sprite.offset.y * sprite.scale.y
     }
+    target_rect.zw *= sprite.scale
 
     rl.DrawTexturePro(
         texture^, 
