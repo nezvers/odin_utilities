@@ -66,7 +66,7 @@ draw :: proc() {
 SpawnDustParticle::proc(particle:^Particle){
     particle.tex_pos = tex_pos[:]
     particle.size = {2,2}
-    particle.offset = {0,0}
+    particle.origin = {0,0}
     particle.scale = {4,4}
 
     particle.position = {

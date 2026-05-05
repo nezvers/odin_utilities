@@ -13,7 +13,7 @@ DrawParticle::proc(particle:^pa.Particle, texture:^rl.Texture, tint:rl.Color){
     target_rect:rectf
     target_rect.xy = particle.position
     target_rect.zw = source_rect.zw * particle.scale
-    origin:rl.Vector2 = -particle.offset * {abs(particle.scale.x), abs(particle.scale.y)}
+    origin:rl.Vector2 = -particle.origin * {abs(particle.scale.x), abs(particle.scale.y)}
 
     if particle.scale.x < 0 {
         source_rect.z *= -1
@@ -21,7 +21,7 @@ DrawParticle::proc(particle:^pa.Particle, texture:^rl.Texture, tint:rl.Color){
 
     if particle.scale.y < 0 {
         source_rect.w *= -1
-        origin.y += -particle.offset.y * particle.scale.y
+        origin.y += -particle.origin.y * particle.scale.y
     }
 
     rl.DrawTexturePro(

@@ -7,6 +7,7 @@ Particle::struct{
     tex_pos:[]vec2,
     size:vec2, // texture region size
     position:vec2,
+    origin:vec2,
     offset:vec2,
     scale:vec2,
     velocity:vec2,

@@ -59,7 +59,7 @@ draw :: proc() {
 SpawnDustParticle::proc(particle:^Particle){
     particle.tex_pos = frame_pos[:]
     particle.size = {2,2}
-    particle.offset = {0,0}
+    particle.origin = {0,0}
     particle.scale = {4,4}
 
     window_size:Vec2 = get_window_size()
