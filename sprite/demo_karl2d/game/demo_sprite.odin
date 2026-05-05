@@ -30,9 +30,9 @@ PlayerStates::enum {
 
 SPRITE_SIZE :sp.vec2: {16, 16}
 // All positions on texture
-tex_pos: []sp.vec2 = {{0,0}, {16,0}, {32,0}, {48,0}, {64,0}, {80,0}, {96,0}, {112, 0}}
-anim_idle: sp.Frames = {tex_pos[0:1], SPRITE_SIZE}
-anim_walk: sp.Frames = {tex_pos[1:8], SPRITE_SIZE}
+tex_pos: []sp.vec2 = {{0,0}, {16,0}, {32,0}, {48,0}, {64,0}, {80,0}, {96,0}, {112,0}}
+anim_idle: sp.Frames = {tex_pos[0:2], SPRITE_SIZE}
+anim_walk: sp.Frames = {tex_pos[2:8], SPRITE_SIZE}
 anim_up: sp.Frames = {tex_pos[5:6], SPRITE_SIZE}
 anim_down: sp.Frames = {tex_pos[7:8], SPRITE_SIZE}
 
@@ -70,7 +70,7 @@ draw :: proc() {
     karl2d.set_camera(camera)
 
     frame_rect:Rect = transmute(Rect)sp.GetAnimationFrame(&player_sprite.animation_set)
-    karl2d.draw_texture_section(player_texture, frame_rect, {10, 10})
+    karl2d.draw_texture_rect(player_texture, frame_rect, {10, 10})
 
     // PLAYER SPRITE
     karl2d.draw_line(
@@ -96,12 +96,14 @@ draw :: proc() {
         1,
         karl2d.DARK_GRAY,
     )
-    glue.DrawSprite(&player_sprite, &player_texture, karl2d.WHITE)
+    glue.DrawSprite(&player_sprite, player_texture, karl2d.WHITE)
     karl2d.set_camera(nil)
 
     karl2d.draw_text("Fetch frame manually without transforming", {30, 5 * ZOOM}, 20, karl2d.BLACK)
     karl2d.draw_text("Draw frame with modification", {30, 30 * ZOOM}, 20, karl2d.BLACK)
     karl2d.draw_text("Hold CTRL: default values", {300, 30 * ZOOM}, 20, karl2d.BLACK)
+    img_index:u32 = player_sprite.animation_set.image_index
+    karl2d.draw_text(fmt.tprintf("image_index: %v", img_index), {300, 20 * ZOOM}, 20, karl2d.BLACK)
 
     mouse: = get_local_mouse_position()
     is_held:bool = karl2d.mouse_button_is_held(.Left)

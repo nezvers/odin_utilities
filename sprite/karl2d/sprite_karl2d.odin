@@ -5,16 +5,18 @@ import "../../karl2d"
 
 // Optional struct
 SpriteKarl2d::struct{
-    sprite: sp.Sprite,
-    texture: ^karl2d.Texture,
+    using sprite: sp.Sprite,
+    texture: karl2d.Texture,
     tint: karl2d.Color,
+    visible:bool,
 }
 
 DrawSpriteKarl2d::proc(karl_sprite: ^SpriteKarl2d){
+    if !karl_sprite.visible { return }
     DrawSprite(&karl_sprite.sprite, karl_sprite.texture, karl_sprite.tint)
 }
 
-DrawSprite::proc(sprite:^sp.Sprite, texture:^karl2d.Texture, tint:karl2d.Color){
+DrawSprite::proc(sprite:^sp.Sprite, texture:karl2d.Texture, tint:karl2d.Color){
     target_rect, source_rect: = sp.GetSpriteFrame(sprite)
 
     target_rect.zw *= sprite.scale
@@ -25,12 +27,12 @@ DrawSprite::proc(sprite:^sp.Sprite, texture:^karl2d.Texture, tint:karl2d.Color){
     }
 
     if sprite.scale.y < 0 {
-        source_rect.w *= -1
         origin.y += -sprite.offset.y * sprite.scale.y
+        source_rect.w *= -1
     }
     
     karl2d.draw_texture_fit(
-		texture^,
+		texture,
 		transmute(karl2d.Rect)source_rect,
 		transmute(karl2d.Rect)target_rect,
 		origin,
