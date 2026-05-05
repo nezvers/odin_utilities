@@ -1,1 +1,0 @@
-python -m http.server -d ./bin/web -b 127.0.0.1
