@@ -13,14 +13,15 @@ GameState :: struct {
 }
 
 state_list: []GameState = {
-    placeholder_state,
+    baking_state,
 }
 
 StateIndex :: enum {
-    Placeholder,
+    Baking,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.Placeholder
+
+state_index:StateIndex = StateIndex.Baking
 button_names: [StateIndex.COUNT]string
 is_hovering_buttons: bool = false
 

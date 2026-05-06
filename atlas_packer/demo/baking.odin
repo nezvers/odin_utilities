@@ -23,10 +23,10 @@ baking_state :State = {
     draw,
 }
 
-// Vector2{ATLAS_SIZE, ATLAS_SIZE}
+
 ATLAS_SIZE :: 512
-BUFFER_SIZE :: 256
-AtlasPacker :: packer.AtlasPacker(BUFFER_SIZE, ATLAS_SIZE)
+RECTF_BUFFER_SIZE :: 256
+AtlasPacker :: packer.AtlasPacker(RECTF_BUFFER_SIZE, ATLAS_SIZE)
 
 // The letters to extract from the font
 LETTERS_IN_FONT :: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
@@ -40,13 +40,14 @@ Sprite :: struct {
 
 // Holds data about source/original sprite frames
 player_sprite_source: []rectf = {
-    {0, 0,16,16},
-    {16,0,16,16},
-    {32,0,16,16},
-    {48,0,16,16},
-    {64,0,16,16},
-    {80,0,16,16},
-    {96,0,16,16},
+    {0,   0, 16, 16},
+    {16,  0, 16, 16},
+    {32,  0, 16, 16},
+    {48,  0, 16, 16},
+    {64,  0, 16, 16},
+    {80,  0, 16, 16},
+    {96,  0, 16, 16},
+    {112, 0, 16, 16},
 }
 
 atlas_packer: AtlasPacker
@@ -93,10 +94,7 @@ init :: proc() {
     font_source:rl.Font = rl.LoadFontEx("../assets/fonts/font.ttf", 32, &codepoints[0], cast(i32)LETTER_COUNT)
     defer rl.UnloadFont(font_source)
 
-    // 2. Prepare target atlas
-    atlas_image = rl.GenImageColor(ATLAS_SIZE, ATLAS_SIZE, {})
-
-    // 3. Fetch target rectf slices
+    // 2. Fetch target rectf slices
     player_sprite_ok:bool
     player_sprite_packed, player_sprite_ok = packer.GetRects(&atlas_packer, len(player_sprite_source))
 
@@ -106,14 +104,17 @@ init :: proc() {
     font_ok:bool
     font_rect_packed, font_ok = packer.GetRects(&atlas_packer, LETTER_COUNT)
     
-    // 4. Init sizes & stuff
+    // 3. Init sizes & stuff
     packer.CopySizes(player_sprite_source[:], player_sprite_packed[:])
     packer.CopySizes(tileset_rects[:], tileset_packed[:])
     packer_rl.init_packed_font(&font_source, &font_packed, font_glyph_buffer[:], font_rect_packed, FONT_PADDING)
     
-    // 5. Pack
+    // 4. Pack
     packer.Pack(&atlas_packer)
-
+    
+    // 5. Prepare target atlas
+    atlas_image = rl.GenImageColor(ATLAS_SIZE, ATLAS_SIZE, {})
+    
     // 6. Transfer to atlas image
     player_image: rl.Image = rl.LoadImageFromTexture(player_texture)
     defer rl.UnloadImage(player_image)
