@@ -8,7 +8,7 @@ Vector2 :: rl.Vector2
 Rectangle :: rl.Rectangle
 
 import packer ".."
-import packer_rl "../raylib"
+import glue "../raylib"
 vec2i:: packer.vec2i
 rectf:: packer.rectf
 
@@ -107,7 +107,7 @@ init :: proc() {
     // 3. Init sizes & stuff
     packer.CopySizes(player_sprite_source[:], player_sprite_packed[:])
     packer.CopySizes(tileset_rects[:], tileset_packed[:])
-    packer_rl.init_packed_font(&font_source, &font_packed, font_glyph_buffer[:], font_rect_packed, FONT_PADDING)
+    glue.init_packed_font(&font_source, &font_packed, font_glyph_buffer[:], font_rect_packed, FONT_PADDING)
     
     // 4. Pack
     packer.Pack(&atlas_packer)
@@ -118,16 +118,16 @@ init :: proc() {
     // 6. Transfer to atlas image
     player_image: rl.Image = rl.LoadImageFromTexture(player_texture)
     defer rl.UnloadImage(player_image)
-    packer_rl.BakeImageRects(&player_image, &atlas_image, player_sprite_source, player_sprite_packed)
+    glue.BakeImageRects(&player_image, &atlas_image, player_sprite_source, player_sprite_packed)
 
     tileset_image: rl.Image = rl.LoadImageFromTexture(tileset_texture)
     defer rl.UnloadImage(tileset_image)
-    packer_rl.BakeImageRects(&tileset_image, &atlas_image, tileset_rects[:], tileset_packed[:])
+    glue.BakeImageRects(&tileset_image, &atlas_image, tileset_rects[:], tileset_packed[:])
 
     font_image: rl.Image = rl.LoadImageFromTexture(font_source.texture)
     defer rl.UnloadImage(font_image)
     font_source_rects: []rectf = slice.from_ptr(cast([^]rectf)font_source.recs, cast(int)font_source.glyphCount)
-    packer_rl.BakeImageRects(&font_image, &atlas_image, font_source_rects, font_rect_packed, FONT_PADDING)
+    glue.BakeImageRects(&font_image, &atlas_image, font_source_rects, font_rect_packed, FONT_PADDING)
 
     // Shrink rects to original size in center of baked rectangle
     for i:int = 0; i < len(font_rect_packed); i += 1 {
