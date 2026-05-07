@@ -31,11 +31,6 @@ ATLAS_SIZE :: 512
 RECTF_BUFFER_SIZE :: 256
 AtlasPacker :: packer.AtlasPacker(RECTF_BUFFER_SIZE, ATLAS_SIZE)
 
-// The letters to extract from the font
-LETTERS_IN_FONT :: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
-LETTER_COUNT :: len(LETTERS_IN_FONT)
-// FONT_HEIGHT :: 16
-
 Sprite :: struct {
     size: Vec2,
     tex_pos:[]Vec2,
@@ -71,11 +66,15 @@ TILE_COLUMNS :: 10
 TILE_ROWS :: 5
 
 // TODO: font baking
+// The letters to extract from the font
+LETTERS_IN_FONT :: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
+LETTER_COUNT :: len(LETTERS_IN_FONT)
+// Font draws outside Glyphs rectangle, so need to pack inside a bigger rectangle
+FONT_PADDING :: 4
+
 font_packed: karl2d.Font
 font_rect_packed: []rectf
 font_glyph_buffer: [LETTER_COUNT]karl2d.Font_Data
-// Font draws outside Glyphs rectangle, so need to pack inside a bigger rectangle
-FONT_PADDING :: 4
 
 init :: proc() {
     background_color = karl2d.LIGHT_BLUE
@@ -99,6 +98,8 @@ init :: proc() {
     }
 
     // TODO: load font
+    // codepoints: [LETTER_COUNT]rune = LETTERS_IN_FONT
+    // karl2d.load_font_from_bytes(#load("../../../assets/fonts/font.ttf"), {.premultiply_alpha})
 
     // 2. Fetch target rectf slices
     player_sprite_ok:bool

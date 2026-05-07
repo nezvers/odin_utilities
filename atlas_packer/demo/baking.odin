@@ -28,11 +28,6 @@ ATLAS_SIZE :: 512
 RECTF_BUFFER_SIZE :: 256
 AtlasPacker :: packer.AtlasPacker(RECTF_BUFFER_SIZE, ATLAS_SIZE)
 
-// The letters to extract from the font
-LETTERS_IN_FONT :: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
-LETTER_COUNT :: len(LETTERS_IN_FONT)
-// FONT_HEIGHT :: 16
-
 Sprite :: struct {
     size: Vector2,
     tex_pos:[]Vector2,
@@ -65,11 +60,15 @@ TILE_SIZE :: 16
 TILE_COLUMNS :: 10
 TILE_ROWS :: 5
 
+
+// The letters to extract from the font
+LETTERS_IN_FONT :: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
+LETTER_COUNT :: len(LETTERS_IN_FONT)
+// Maybe Raylib specific, font draws outside Glyphs rectangle, so need to pack inside bigger rectangle
+FONT_PADDING :: 4
 font_packed: rl.Font
 font_rect_packed: []rectf
 font_glyph_buffer: [LETTER_COUNT]rl.GlyphInfo
-// Maybe Raylib specific, font draws outside Glyphs rectangle, so need to pack inside bigger rectangle
-FONT_PADDING :: 4
 
 
 init :: proc() {
