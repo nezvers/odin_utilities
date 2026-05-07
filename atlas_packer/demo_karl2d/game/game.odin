@@ -6,9 +6,10 @@ window_width := 1280
 window_height := 720
 window_scale:f32 = 1
 background_color: karl2d.Color = karl2d.BLACK
+karl_state: ^karl2d.State
 
 init :: proc() {
-	karl2d.init(window_width, window_height, "Greetings from Karl2D!", options = { window_mode = .Windowed_Resizable})
+	karl_state = karl2d.init(window_width, window_height, "Greetings from Karl2D!", options = { window_mode = .Windowed_Resizable})
 	window_scale = karl2d.get_window_scale()
 	when ODIN_OS != .JS {
 		update_scale()

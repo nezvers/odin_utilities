@@ -1,7 +1,7 @@
 #+private file
 package game
 
-import "core:fmt"
+// import "core:fmt"
 import "../../../karl2d"
 Vec2 :: karl2d.Vec2
 Rect :: karl2d.Rect
@@ -56,7 +56,8 @@ player_sprite_source: []rectf = {
 atlas_packer: AtlasPacker
 
 // Used as target atlas
-atlas_buffer: glue.AtlasBuffer(512)
+// WIDTH * HEIGHT
+atlas_buffer: [ATLAS_SIZE * ATLAS_SIZE]glue.Color
 atlas_image: Image
 atlas_texture: Texture
 
@@ -83,11 +84,12 @@ init :: proc() {
     packer.Init(&atlas_packer)
 
     // 1. Load assets
-    player_image, _: = glue.load_image_from_bytes(#load("../../../assets/textures/player_sheet.png"), {.alpha_premultiply}, context.allocator)
-    // defer karl2d.destroy_texture(player_texture)
+    player_image, _: = glue.LoadImageFromBytes(#load("../../../assets/textures/player_sheet.png"), {.alpha_premultiply}, karl_state.frame_allocator)
+    // defer glue.DestroyImage(player_image)
 
-    tileset_image, _: = glue.load_image_from_bytes(#load("../../../assets/textures/tileset_template.png"), {.alpha_premultiply}, context.allocator)
-    // defer karl2d.destroy_texture(tileset_texture)
+    tileset_image, _: = glue.LoadImageFromBytes(#load("../../../assets/textures/tileset_template.png"), {.alpha_premultiply}, karl_state.frame_allocator)
+    // defer glue.DestroyImage(tileset_image)
+    
     tileset_rects: [TILESET_SIZE]rectf
     for y:int = 0; y < TILE_ROWS; y += 1 {
         for x:int = 0; x < TILE_COLUMNS; x += 1 {
@@ -98,26 +100,58 @@ init :: proc() {
 
     // TODO: load font
 
-    // 2. Prepare target atlas
+    // 2. Fetch target rectf slices
+    player_sprite_ok:bool
+    player_sprite_packed, player_sprite_ok = packer.GetRects(&atlas_packer, len(player_sprite_source))
+
+    tileset_ok:bool
+    tileset_packed, tileset_ok = packer.GetRects(&atlas_packer, TILESET_SIZE)
+
+    // TODO: 
+    /*
+    font_ok:bool
+    font_rect_packed, font_ok = packer.GetRects(&atlas_packer, LETTER_COUNT)
+    */
+
+    // 3. Init sizes & stuff
+    packer.CopySizes(player_sprite_source[:], player_sprite_packed[:])
+    packer.CopySizes(tileset_rects[:], tileset_packed[:])
+    // packer_rl.init_packed_font(&font_source, &font_packed, font_glyph_buffer[:], font_rect_packed, FONT_PADDING)
+
+    // 4. Pack
+    packer.Pack(&atlas_packer)
+
+    // 5. Prepare target atlas
     atlas_ok:bool
-    atlas_image, atlas_ok = glue.generate_image_from_bytes(atlas_buffer)
-    
-    
+    atlas_image, atlas_ok = glue.GenerateImageFromBuffer(atlas_buffer[:], ATLAS_SIZE)
+
+    // 6. Transfer to atlas image
+    glue.BakeImageRects(player_image, &atlas_image, player_sprite_source, player_sprite_packed)
+    glue.BakeImageRects(tileset_image, &atlas_image, tileset_rects[:], tileset_packed[:])
+
+    // Make Texture from Image
+    atlas_texture = glue.LoadTextureFromImage(&atlas_image)
 }
 
 finit :: proc() {}
 
-process :: proc() {}
+process :: proc() {
+    // animate using packed rectangles
+    delta_time: f32 = karl2d.get_frame_time()
+    player_timer += delta_time * 12
+    if int(player_timer) > len(player_sprite_packed)-1 {
+        player_timer -= f32(int(player_timer))
+    }
+}
 
 draw :: proc() {
-	karl2d.draw_text("Hellope!", {50, 50}, 100, karl2d.DARK_BLUE)
-    
-    stats_text:string = fmt.tprintf("window = (%v, %v), scale = %v, %v", window_width, window_height, window_scale, get_window_size())
-	karl2d.draw_text(
-        stats_text, 
-        {50, 150}, 
-        30, 
-        karl2d.DARK_GRAY,
-    )
-    karl2d.draw_text( fmt.tprintf("mouse %v", get_local_mouse_position()), {50, 190},30, karl2d.DARK_GRAY)
+    rect:Rect = {10, 10, cast(f32)ATLAS_SIZE, cast(f32)ATLAS_SIZE}
+    karl2d.draw_rect(rect, karl2d.LIGHT_GRAY)
+
+	karl2d.draw_texture(atlas_texture, {10,10})
+
+    // Player sprite
+    player_frame:int = int(player_timer)
+    rect_player:Rect = transmute(Rect)player_sprite_packed[player_frame]
+    karl2d.draw_texture_rect(atlas_texture, rect_player, {530, 10})
 }
