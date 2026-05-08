@@ -97,7 +97,10 @@ draw :: proc() {
         1,
         karl2d.DARK_GRAY,
     )
-    glue.DrawSprite(&player_sprite, player_texture, karl2d.WHITE)
+
+    // SPRITE
+    // glue.DrawSprite(&player_sprite, player_texture, karl2d.WHITE)
+    glue.DrawSpriteOscillate(&player_sprite, player_texture, karl2d.WHITE, &oscillator, karl2d.get_frame_time())
     karl2d.draw_circle_outline(
         {(player_sprite.position.x + player_sprite.offset.x),
         (player_sprite.position.y + player_sprite.offset.y)},
@@ -109,17 +112,21 @@ draw :: proc() {
 
     karl2d.draw_text("Fetch frame manually without transforming", {30, 5 * ZOOM}, 20, karl2d.BLACK)
     karl2d.draw_text("Draw frame with modification", {30, 30 * ZOOM}, 20, karl2d.BLACK)
-    karl2d.draw_text("Hold CTRL: default values", {300, 30 * ZOOM}, 20, karl2d.BLACK)
+    karl2d.draw_text("Hover & CTRL: reset default value", {300, 30 * ZOOM}, 20, karl2d.BLACK)
     img_index:u32 = player_sprite.animation_set.image_index
     karl2d.draw_text(fmt.tprintf("image_index: %v", img_index), {300, 20 * ZOOM}, 20, karl2d.BLACK)
 
     mouse: = get_local_mouse_position()
     is_held:bool = karl2d.mouse_button_is_held(.Left)
-    slider_rect:Rect = {300, 34 * ZOOM, 300, 25}
+    SLIDER_X :: 300
+    SLIDER_y :: 34
+    SLIDER_W :: 300
+    SLIDER_H :: 25
+    slider_rect:Rect = {SLIDER_X, SLIDER_y * ZOOM, SLIDER_W, SLIDER_H}
 
     @(static) off_x:f32
     if Slider(&off_x, &player_sprite.offset.x, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("offset.x = %.2v", player_sprite.offset.x)) {
-        if karl2d.key_is_held(.Left_Control) {
+        if karl2d.key_went_down(.Left_Control) {
             player_sprite.offset.x = 0
         }
     }
@@ -127,7 +134,7 @@ draw :: proc() {
 
     @(static) off_y:f32
     if Slider(&off_y, &player_sprite.offset.y, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("offset.y = %.2v", player_sprite.offset.y)) {
-        if karl2d.key_is_held(.Left_Control) {
+        if karl2d.key_went_down(.Left_Control) {
             player_sprite.offset.y = 0
         }
     }
@@ -135,7 +142,7 @@ draw :: proc() {
 
     @(static) origin_x:f32
     if Slider(&origin_x, &player_sprite.origin.x, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("origin.x = %.2v", player_sprite.origin.x)) {
-        if karl2d.key_is_held(.Left_Control) {
+        if karl2d.key_went_down(.Left_Control) {
             player_sprite.origin.x = 8
         }
     }
@@ -143,7 +150,7 @@ draw :: proc() {
 
     @(static) origin_y:f32
     if Slider(&origin_y, &player_sprite.origin.y, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("origin.y = %.2v", player_sprite.origin.y)) {
-        if karl2d.key_is_held(.Left_Control) {
+        if karl2d.key_went_down(.Left_Control) {
             player_sprite.origin.y = 16
         }
     }
@@ -151,7 +158,7 @@ draw :: proc() {
 
     @(static) scale_x:f32
     if Slider(&scale_x, &player_sprite.scale.x, -2, 2, slider_rect, mouse, is_held, fmt.tprintf("scale.x = %.2v", player_sprite.scale.x)) {
-        if karl2d.key_is_held(.Left_Control) {
+        if karl2d.key_went_down(.Left_Control) {
             player_sprite.scale.x = 1
         }
     }
@@ -159,7 +166,7 @@ draw :: proc() {
 
     @(static) scale_y:f32
     if Slider(&scale_y, &player_sprite.scale.y, -2, 2, slider_rect, mouse, is_held, fmt.tprintf("scale.y = %.2v", player_sprite.scale.y)) {
-        if karl2d.key_is_held(.Left_Control) {
+        if karl2d.key_went_down(.Left_Control) {
             player_sprite.scale.y = 1
         }
     }

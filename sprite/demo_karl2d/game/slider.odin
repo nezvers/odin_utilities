@@ -14,7 +14,7 @@ Slider :: proc(
     to:f32, 
     rect:Rect, 
     input_pos:Vec2={}, 
-    active:bool=false, 
+    active:bool=false, // like mouse button is held
     text:string="", 
     text_size: f32 = 20,
     font:karl2d.Font = karl2d.FONT_DEFAULT,
