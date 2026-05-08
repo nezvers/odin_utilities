@@ -99,8 +99,7 @@ draw :: proc() {
     )
 
     // SPRITE
-    // glue.DrawSprite(&player_sprite, player_texture, karl2d.WHITE)
-    glue.DrawSpriteOscillate(&player_sprite, player_texture, karl2d.WHITE, &oscillator, karl2d.get_frame_time())
+    glue.DrawSprite(&player_sprite, player_texture, karl2d.WHITE)
     karl2d.draw_circle_outline(
         {(player_sprite.position.x + player_sprite.offset.x),
         (player_sprite.position.y + player_sprite.offset.y)},
