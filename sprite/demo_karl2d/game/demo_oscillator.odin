@@ -56,6 +56,7 @@ draw :: proc() {
     SLIDER_INC_Y :: SLIDER_H + 2
     slider_rect:Rect = {SLIDER_X * ZOOM, SLIDER_Y * ZOOM, SLIDER_W * ZOOM, SLIDER_H * ZOOM}
 
+    // 2D Oscillator use only first t & time_scale
     if Slider(&osc_slider_state[0].time_scale, &osc[0].time_scale, 0, 6, slider_rect, mouse, is_held, fmt.tprintf("time scale = %.2v", osc[0].time_scale)) {
         osc[0].time_scale = math.round(osc[0].time_scale * 10) * 0.1
         if is_held {reset_oscillator(&osc)}
@@ -65,7 +66,7 @@ draw :: proc() {
     }
     slider_rect.y += SLIDER_INC_Y * ZOOM
 
-    if Slider(&osc_slider_state[0].amplitude, &osc[0].amplitude, 0, 16, slider_rect, mouse, is_held, fmt.tprintf("amplitude = %.2v", osc[0].amplitude)) {
+    if Slider(&osc_slider_state[0].amplitude, &osc[0].amplitude, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("amplitude = %.2v", osc[0].amplitude)) {
         if is_held {reset_oscillator(&osc)}
         if karl2d.key_went_down(.Left_Control) {
             osc[0].amplitude = 0
@@ -73,7 +74,8 @@ draw :: proc() {
     }
     slider_rect.y += SLIDER_INC_Y * ZOOM
 
-    if Slider(&osc_slider_state[0].phase, &osc[0].phase, -math.PI, math.PI, slider_rect, mouse, is_held, fmt.tprintf("phase = %.2v", osc[0].phase)) {
+    if Slider(&osc_slider_state[0].phase, &osc[0].phase, -0.5, 0.5, slider_rect, mouse, is_held, fmt.tprintf("phase = %v", osc[0].phase * 360)) {
+        osc[0].phase = math.round(osc[0].phase * 8) * (1.0 / 8.0)
         if is_held {reset_oscillator(&osc)}
         if karl2d.key_went_down(.Left_Control) {
             osc[0].phase = 0
@@ -91,18 +93,9 @@ draw :: proc() {
 
     // SECOND COLUMN
     slider_rect.x += (SLIDER_INC_X) * ZOOM
-    slider_rect.y = (SLIDER_Y) * ZOOM
+    slider_rect.y = (SLIDER_Y + SLIDER_INC_Y) * ZOOM
 
-    if Slider(&osc_slider_state[1].time_scale, &osc[1].time_scale, 0, 6, slider_rect, mouse, is_held, fmt.tprintf("time scale = %.2v", osc[1].time_scale)) {
-        osc[1].time_scale = math.round(osc[0].time_scale * 10) * 0.1
-        if is_held {reset_oscillator(&osc)}
-        if karl2d.key_went_down(.Left_Control) {
-            osc[1].time_scale = 0
-        }
-    }
-    slider_rect.y += SLIDER_INC_Y * ZOOM
-
-    if Slider(&osc_slider_state[1].amplitude, &osc[1].amplitude, 0, 16, slider_rect, mouse, is_held, fmt.tprintf("amplitude = %.2v", osc[1].amplitude)) {
+    if Slider(&osc_slider_state[1].amplitude, &osc[1].amplitude, -16, 16, slider_rect, mouse, is_held, fmt.tprintf("amplitude = %.2v", osc[1].amplitude)) {
         if is_held {reset_oscillator(&osc)}
         if karl2d.key_went_down(.Left_Control) {
             osc[1].amplitude = 0
@@ -110,7 +103,8 @@ draw :: proc() {
     }
     slider_rect.y += SLIDER_INC_Y * ZOOM
 
-    if Slider(&osc_slider_state[1].phase, &osc[1].phase, -math.PI, math.PI, slider_rect, mouse, is_held, fmt.tprintf("phase = %.2v", osc[1].phase)) {
+    if Slider(&osc_slider_state[1].phase, &osc[1].phase, -0.5, 0.5, slider_rect, mouse, is_held, fmt.tprintf("phase = %v", osc[1].phase * 360)) {
+        osc[1].phase = math.round(osc[1].phase * 8) * (1.0 / 8.0)
         if is_held {reset_oscillator(&osc)}
         if karl2d.key_went_down(.Left_Control) {
             osc[1].phase = 0
