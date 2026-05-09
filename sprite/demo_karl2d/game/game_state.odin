@@ -14,13 +14,15 @@ GameState :: struct {
 
 state_list: []GameState = {
     sprite_state,
+    oscillator_state,
 }
 
 StateIndex :: enum {
     Sprite_Basic,
+    Oscilator_Basic,
 	COUNT,
 }
-state_index:StateIndex = StateIndex.Sprite_Basic
+state_index:StateIndex = StateIndex.Oscilator_Basic
 button_names: [StateIndex.COUNT]string
 is_hovering_buttons: bool = false
 
