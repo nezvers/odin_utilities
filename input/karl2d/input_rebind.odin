@@ -1,6 +1,6 @@
-package input_raylib
+package input_karl2d
 
-import rl "vendor:raylib"
+import "../../karl2d"
 import "core:math"
 
 @(private)
@@ -19,7 +19,7 @@ ButtonState :: enum u8 {
 
 // Gamepad axis inputs
 InputAxis :: struct {
-    id: rl.GamepadAxis,
+    id: karl2d.Gamepad_Axis,
     device: i32,
     dead_zone: f32,
     sign: i8,
@@ -27,7 +27,7 @@ InputAxis :: struct {
 
 // Gamepad button inputs
 InputButton :: struct {
-    id: rl.GamepadButton,
+    id: karl2d.Gamepad_Button,
     device: i32,
 }
 
@@ -35,26 +35,26 @@ InputNone :: u8
 // Union of different input types and can be used for rebinding
 InputID :: union {
     InputNone,
-    rl.KeyboardKey,
-    rl.MouseButton,
+    karl2d.Keyboard_Key,
+    karl2d.Mouse_Button,
     InputButton,
     InputAxis,
 }
 
 InputAction :: struct {
     id: InputID,
-    name: cstring,
+    name: string,
 }
 
 // Check if input is just pressed
-IsPressed :: proc(input_id: InputID)->bool {
+WentDown :: proc(input_id: InputID)->bool {
     switch id in input_id {
-    case rl.KeyboardKey:
-        return rl.IsKeyPressed(id)
-    case rl.MouseButton:
-        return rl.IsMouseButtonPressed(id)
+    case karl2d.Keyboard_Key:
+        return karl2d.key_went_down(id)
+    case karl2d.Mouse_Button:
+        return karl2d.mouse_button_went_down(id)
     case InputButton:
-        return rl.IsGamepadButtonPressed(id.device, id.id)
+        return karl2d.gamepad_button_went_down(cast(int)id.device, id.id)
     case InputAxis:
         if GetAxisState(id.device, cast(i32)id.id) != .pressed { return false }
         axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
@@ -68,14 +68,14 @@ IsPressed :: proc(input_id: InputID)->bool {
 }
 
 // Check if input is just released
-IsReleased :: proc(input_id: InputID)->bool {
+WentUp :: proc(input_id: InputID)->bool {
     switch id in input_id {
-    case rl.KeyboardKey:
-        return rl.IsKeyReleased(id)
-    case rl.MouseButton:
-        return rl.IsMouseButtonReleased(id)
+    case karl2d.Keyboard_Key:
+        return karl2d.key_went_up(id)
+    case karl2d.Mouse_Button:
+        return karl2d.mouse_button_went_up(id)
     case InputButton:
-        return rl.IsGamepadButtonReleased(id.device, id.id)
+        return karl2d.gamepad_button_went_up(cast(int)id.device, id.id)
     case InputAxis:
         axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
         if GetAxisState(id.device, cast(i32)id.id) != .released { return false }
@@ -88,14 +88,14 @@ IsReleased :: proc(input_id: InputID)->bool {
 }
 
 // Check if input is just pressed or held
-IsDown :: proc(input_id: InputID)->bool {
+IsHeld :: proc(input_id: InputID)->bool {
     switch id in input_id {
-    case rl.KeyboardKey:
-        return rl.IsKeyDown(id)
-    case rl.MouseButton:
-        return rl.IsMouseButtonDown(id)
+    case karl2d.Keyboard_Key:
+        return karl2d.key_is_held(id)
+    case karl2d.Mouse_Button:
+        return karl2d.mouse_button_is_held(id)
     case InputButton:
-        return rl.IsGamepadButtonDown(id.device, id.id)
+        return karl2d.gamepad_button_is_held(cast(int)id.device, id.id)
     case InputAxis:
         if !(GetAxisState(id.device, cast(i32)id.id) == .pressed || GetAxisState(id.device, cast(i32)id.id) == .held) { return false }
         axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
@@ -111,12 +111,12 @@ IsDown :: proc(input_id: InputID)->bool {
 // Read float value from inputs
 GetValue :: proc(input_id: InputID)->f32 {
     switch id in input_id {
-    case rl.KeyboardKey:
-        return rl.IsKeyDown(id) ? 1 : 0
-    case rl.MouseButton:
-        return rl.IsMouseButtonDown(id) ? 1 : 0
+    case karl2d.Keyboard_Key:
+        return karl2d.key_is_held(id) ? 1 : 0
+    case karl2d.Mouse_Button:
+        return karl2d.mouse_button_is_held(id) ? 1 : 0
     case InputButton:
-        return rl.IsGamepadButtonDown(id.device, id.id) ? 1 : 0
+        return karl2d.gamepad_button_is_held(cast(int)id.device, id.id) ? 1 : 0
     case InputAxis:
         axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
         value: f32 = axis_values[axis_index]
@@ -143,16 +143,16 @@ GetValueAxis :: proc(negative: InputID, positive: InputID)->f32 {
 // Scans every input possibility
 // Listens for first input release or axis past DEAD_ZONE
 ListenRebind :: proc()->(value:InputID, ok:bool) {
-    for id in rl.KeyboardKey {
-        if rl.IsKeyReleased(id) {
+    for id in karl2d.Keyboard_Key {
+        if karl2d.key_went_up(id) {
             ok = true
             value = id
             return
         }
     }
 
-    for id in rl.MouseButton {
-        if rl.IsMouseButtonReleased(id) {
+    for id in karl2d.Mouse_Button {
+        if karl2d.mouse_button_went_up(id) {
             ok = true
             value = id
             return
@@ -160,9 +160,9 @@ ListenRebind :: proc()->(value:InputID, ok:bool) {
     }
 
     for device_index in cast(i32)0..<4 {
-        if !rl.IsGamepadAvailable(device_index) { continue }
-        for id in rl.GamepadButton {
-            if rl.IsGamepadButtonReleased(device_index, id) {
+        if !karl2d.is_gamepad_active(cast(int)device_index) { continue }
+        for id in karl2d.Gamepad_Button {
+            if karl2d.gamepad_button_went_up(cast(int)device_index, id) {
                 ok = true
                 value = InputButton {
                     id = id,
@@ -172,7 +172,7 @@ ListenRebind :: proc()->(value:InputID, ok:bool) {
             }
         }
 
-        for id in rl.GamepadAxis {
+        for id in karl2d.Gamepad_Axis {
             axis_index: i32 = GetAxisIndex(device_index, cast(i32)id)
             if axis_state[axis_index] != .released { continue }
 
@@ -205,8 +205,8 @@ ListenRebind :: proc()->(value:InputID, ok:bool) {
 // Update axis state to read them also as button state
 UpdateAxis :: proc() {
     for device:i32 = 0; device < DEVICE_COUNT; device += 1 {
-        if !rl.IsGamepadAvailable(device) { continue }
-        for axis in rl.GamepadAxis {
+        if !karl2d.is_gamepad_active(cast(int)device) { continue }
+        for axis in karl2d.Gamepad_Axis {
             id: InputAxis = {
                 device = device,
                 dead_zone = DEAD_ZONE,
@@ -239,7 +239,7 @@ GetAxisIndex :: proc(device:i32, id: i32)->i32 {
 // Logic for comparing axis previous value to determine its button state
 @(private) UpdateAxisState :: proc(id: InputAxis) {
     axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
-    value: f32 = rl.GetGamepadAxisMovement(id.device, id.id)
+    value: f32 = karl2d.get_gamepad_axis(cast(int)id.device, id.id)
     abs: = math.abs(value)
     sign: i8 = GetAxisSign(value)
 

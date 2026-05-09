@@ -9,4 +9,4 @@ Helper functions to implement input rebinding and reading axis inputs as button 
 `IsReleased(input_id: InputID)` - check if input is just released    
 `IsDown(input_id: InputID)` - check if input is held down    
 `GetValue(input_id: InputID)` - Read float value from inputs    
-`GetValueDirection(negative: InputID, positive: InputID)` - Read float value for directions -1 to 1    
+`GetValueAxis(negative: InputID, positive: InputID)` - Read float value for directions -1 to 1    

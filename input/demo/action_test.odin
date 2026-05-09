@@ -126,8 +126,8 @@ update_timers :: proc(input_action: ^InputAction, delta_time: f32) {
 
 update_player :: proc() {
     delta_time:f32 = rl.GetFrameTime()
-    x: f32 = input.GetValueDirection(input_list[3].id, input_list[2].id)
-    y: f32 = input.GetValueDirection(input_list[0].id, input_list[1].id)
+    x: f32 = input.GetValueAxis(input_list[3].id, input_list[2].id)
+    y: f32 = input.GetValueAxis(input_list[0].id, input_list[1].id)
     SPEED :: 200
     player_rect.x += x * SPEED * delta_time
     player_rect.y += y * SPEED * delta_time
