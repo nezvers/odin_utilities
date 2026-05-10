@@ -40,8 +40,17 @@ init :: proc() {
     menu_elements[2].text = "Options"
     menu_elements[3].text = "Exit"
 
-    // Default slection
-    menu_ctx.selected = &menu_elements[0]
+    // Default selection
+    selected_set(&menu_ctx, &menu_elements[0])
+
+    menu_elements[0].neighbours.next = &menu_elements[1]
+    menu_elements[0].neighbours.previous = &menu_elements[3]
+    menu_elements[1].neighbours.next = &menu_elements[2]
+    menu_elements[1].neighbours.previous = &menu_elements[0]
+    menu_elements[2].neighbours.next = &menu_elements[3]
+    menu_elements[2].neighbours.previous = &menu_elements[1]
+    menu_elements[3].neighbours.next = &menu_elements[0]
+    menu_elements[3].neighbours.previous = &menu_elements[2]
 }
 
 finit :: proc() {}
@@ -53,8 +62,10 @@ process :: proc() {
     menu_ctx.released = nil
     // menu_ctx.selected = nil
     // menu_ctx.held = nil
-    menu_ctx.cursor = karl2d.get_mouse_position()
-    menu_ctx.input_down = karl2d.mouse_button_is_held(.Left)
+
+    update_navigation()
+
+    // TODO: skip when transitioning
     root: ^ui.Element = &menu_elements[0]
     ui.Update(root, menu_elements[:], 0)
 }
@@ -62,4 +73,24 @@ process :: proc() {
 draw :: proc() {
     root: ^ui.Element = &menu_elements[0]
     ui.Draw(root, menu_elements[:], 0)
+}
+
+update_navigation :: proc() {
+    menu_ctx.cursor = karl2d.get_mouse_position()
+    menu_ctx.input_down = karl2d.mouse_button_is_held(.Left)
+
+    if karl2d.key_went_down(.S) || karl2d.key_went_down(.Down) {
+        if menu_ctx.selected != nil {
+            selected_next(&menu_ctx)
+        }
+    }
+    if karl2d.key_went_down(.W) || karl2d.key_went_down(.Up) {
+        if menu_ctx.selected != nil {
+            selected_previous(&menu_ctx)
+        }
+    }
+
+    if karl2d.key_is_held(.Space) || karl2d.key_is_held(.Enter) {
+        selected_hold(&menu_ctx)
+    }
 }

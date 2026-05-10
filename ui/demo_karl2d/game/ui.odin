@@ -147,3 +147,69 @@ button_draw :: proc(element: ^Element) {
         karl2d.draw_text(element.text, text_position, font_size, text_color, karl2d.FONT_DEFAULT)
     }
 }
+
+selected_set :: proc(ctx: ^ElementContext, element: ^Element) {
+    assert(element != nil)
+    if ctx.selected == nil {
+        ctx.selected = element
+        element.state += {.Selected}
+        return
+    }
+    
+    from: ^Element = ctx.selected
+    to: ^Element = element
+    from.state -= {.Selected}
+    to.state += {.Selected}
+    ctx.selected = to
+}
+
+selected_hold :: proc(ctx: ^ElementContext) {
+    if ctx.selected == nil {return}
+    ctx.cursor = ctx.selected.rect.xy + ctx.selected.rect.zw * 0.5
+    ctx.input_down = true
+}
+
+selected_next :: proc(ctx: ^ElementContext) {
+    if ctx.selected == nil { return }
+    if ctx.selected.neighbours.next == nil { return }
+    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.next)
+}
+
+selected_previous :: proc(ctx: ^ElementContext) {
+    if ctx.selected == nil { return }
+    if ctx.selected.neighbours.previous == nil { return }
+    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.previous)
+}
+
+selected_right :: proc(ctx: ^ElementContext) {
+    if ctx.selected == nil { return }
+    if ctx.selected.neighbours.right == nil { return }
+    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.right)
+}
+
+selected_left :: proc(ctx: ^ElementContext) {
+    if ctx.selected == nil { return }
+    if ctx.selected.neighbours.left == nil { return }
+    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.left)
+}
+
+selected_up :: proc(ctx: ^ElementContext) {
+    if ctx.selected == nil { return }
+    if ctx.selected.neighbours.up == nil { return }
+    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.up)
+}
+
+selected_down :: proc(ctx: ^ElementContext) {
+    if ctx.selected == nil { return }
+    if ctx.selected.neighbours.down == nil { return }
+    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.down)
+}
+
+selected_transfer :: proc(ctx: ^ElementContext, from: ^Element, to: ^Element) {
+    assert(ctx != nil)
+    assert(from != nil)
+    assert(to != nil)
+    from.state -= {.Selected}
+    to.state += {.Selected}
+    ctx.selected = to
+}

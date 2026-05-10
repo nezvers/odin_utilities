@@ -9,6 +9,15 @@ ElementStates :: enum {
 }
 ElementStatesSet :: bit_set[ElementStates]
 
+ElementNeighbor :: struct {
+    next: ^Element,
+    previous: ^Element,
+    right: ^Element,
+    left: ^Element,
+    up: ^Element,
+    down: ^Element,
+}
+
 Element :: struct {
     rect: rectf,
     type: int,
@@ -17,6 +26,7 @@ Element :: struct {
     text: string,
     t: f32, // useful for animations since state transition
     children: []Element,
+    neighbours: ElementNeighbor,
     ctx: rawptr, 
     update: proc(^Element), // Return new state
     draw: proc(^Element),
@@ -74,4 +84,3 @@ Draw :: proc(element: ^Element, sibilings: []Element, index:int) {
         Draw(&sibilings[i], sibilings, i)
     }
 }
-
