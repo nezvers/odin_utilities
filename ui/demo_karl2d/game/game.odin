@@ -1,6 +1,7 @@
 package game
 
 import "../../../karl2d"
+import "core:log"
 
 window_width := 1280
 window_height := 720
@@ -8,6 +9,8 @@ window_scale:f32 = 1
 background_color: karl2d.Color = karl2d.BLACK
 
 init :: proc() {
+	context.logger = log.create_console_logger()
+	
 	karl2d.init(window_width, window_height, "Greetings from Karl2D!", options = { window_mode = .Windowed_Resizable})
 	window_scale = karl2d.get_window_scale()
 	when ODIN_OS != .JS {

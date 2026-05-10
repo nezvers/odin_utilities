@@ -2,8 +2,6 @@ package game
 
 import "core:reflect"
 import "../../../karl2d"
-Vec2 :: karl2d.Vec2
-Rect :: karl2d.Rect
 
 GameState :: struct {
     init: proc(),
