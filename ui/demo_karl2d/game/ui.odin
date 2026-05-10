@@ -24,6 +24,9 @@ button_update_events :: proc(element: ^Element) {
     if .Pressed in changes {
         log.debug("pressed")
     }
+    if .Down in changes {
+        log.debug("down")
+    }
     if .Released in changes {
         log.debug("released")
     }
@@ -114,7 +117,6 @@ button_update :: proc(element: ^Element) {
             }
         }
     }
-
 }
 
 button_draw :: proc(element: ^Element) {
