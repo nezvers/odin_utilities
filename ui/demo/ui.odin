@@ -1,12 +1,13 @@
-package game
+package demo
 
 import "core:log"
-import "../../../karl2d"
-import ui "../../"
+import "vendor:raylib"
+import ui "../"
 Element :: ui.Element
+import "core:strings"
 
 ElementContext :: struct {
-    cursor: Vec2,
+    cursor: Vector2,
     input_down: bool,
     delta_time: f32,
     down: ^Element, // like slider drag outside it's rect or not released button press
@@ -122,29 +123,30 @@ button_update :: proc(element: ^Element) {
 button_draw :: proc(element: ^Element) {
     assert(element.ctx != nil)
 
-    bg_color: Color = karl2d.LIGHT_GRAY
+    bg_color: Color = raylib.LIGHTGRAY
     if .Down in element.state {
         bg_color -= {20, 20, 20, 0}
     }
-    karl2d.draw_rect(transmute(Rect)element.rect, bg_color)
+    raylib.DrawRectangleRec(transmute(Rectangle)element.rect, bg_color)
 
     if .Selected in element.state {
         selection: ui.rectf = element.rect
         selection.xy += selection.ww * 0.1
         selection.zw -= selection.ww * (0.1 * 2)
-        karl2d.draw_rect_outline(transmute(Rect)selection, 1, karl2d.GRAY)
+        raylib.DrawRectangleLinesEx(transmute(Rectangle)selection, 1, raylib.GRAY)
     }
 
     if len(element.text) > 0 {
-        font_size: f32 = element.rect.w * 0.8
-        text_size:Vec2 = karl2d.measure_text(element.text, font_size, karl2d.FONT_DEFAULT)
-        text_position:Vec2 = element.rect.xy + (element.rect.zw - text_size) * 0.5
+        font_size: i32 = cast(i32)(element.rect.w * 0.8)
+        text:cstring = strings.unsafe_string_to_cstring(element.text)
+        text_size:i32 = raylib.MeasureText(text, font_size)
+        text_position:Vector2 = element.rect.xy + (element.rect.zw - {cast(f32)text_size, cast(f32)font_size}) * 0.5
 
-        text_color: Color = karl2d.BLACK
+        text_color: Color = raylib.BLACK
         if ui.ElementStatesSet.Hover in element.state {
-            text_color = karl2d.WHITE
+            text_color = raylib.WHITE
         }
-        karl2d.draw_text(element.text, text_position, font_size, text_color, karl2d.FONT_DEFAULT)
+        raylib.DrawText(text, cast(i32)text_position.x, cast(i32)text_position.y, font_size, text_color)
     }
 }
 

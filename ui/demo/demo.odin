@@ -16,17 +16,16 @@ State :: struct {
 	draw : proc(),
 }
 
-state_placeholder:State
 state_list: []State = {
-	state_placeholder,
+	main_menu_state,
 }
 
 StateIndex :: enum {
-    PLACEHOLDER,
+    Main_Menu,
 	COUNT,
 }
 
-state_index:StateIndex = StateIndex.PLACEHOLDER
+state_index:StateIndex = StateIndex.Main_Menu
 screen_size:Vector2
 is_hovering_buttons:bool
 
