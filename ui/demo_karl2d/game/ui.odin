@@ -1,37 +1,38 @@
 package game
 
-import "core:log"
 import "../../../karl2d"
 import ui "../../"
 Element :: ui.Element
 GroupComponent :: ui.GroupComponent
 NeighborsComponent :: ui.NeighborsComponent
-
+CallbackComponent :: ui.CallbackComponent
 
 ElementContext :: struct {
     // shared
     group: ^GroupComponent,
     // individual
     neighbours: NeighborsComponent,
-    // TODO: callbacks
+    callbacks: CallbackComponent,
 }
 
+// Extended button update that calls callbacks on state change
 button_update_events :: proc(element: ^Element) {
     button_update(element)
     changes: ui.ElementStatesSet = element.state - element.previous_state
 
     if changes == {} {return}
-    if .Pressed in changes {
-        log.debug("pressed")
+    ctx: ^ElementContext = get_element_context(element)
+    if .Pressed in changes && ctx.callbacks.pressed != nil {
+        ctx.callbacks.pressed(element)
     }
-    if .Down in changes {
-        log.debug("down")
+    if .Down in changes && ctx.callbacks.down != nil {
+        ctx.callbacks.down(element)
     }
-    if .Released in changes {
-        log.debug("released")
+    if .Released in changes && ctx.callbacks.released != nil {
+        ctx.callbacks.released(element)
     }
-    if .Selected in changes {
-        log.debug("selected")
+    if .Selected in changes && ctx.callbacks.selected != nil {
+        ctx.callbacks.selected(element)
     }
 }
 
