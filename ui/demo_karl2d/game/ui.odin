@@ -169,11 +169,15 @@ selected_hold :: proc(ctx: ^GroupComponent) {
     ctx.input_down = true
 }
 
+// Dereference pointer
+get_element_context :: proc(element: ^Element)-> ^ElementContext {
+    return cast(^ElementContext)element.ctx
+}
+
 selected_next :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
     if ctx.selected.ctx == nil { return }
-    _ctx: ^ElementContext = cast(^ElementContext)ctx.selected.ctx
-    neighbours: ^NeighborsComponent = &_ctx.neighbours
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
     if neighbours.next == nil { return }
     selected_transfer(ctx, ctx.selected, neighbours.next)
 }
@@ -181,8 +185,7 @@ selected_next :: proc(ctx: ^GroupComponent) {
 selected_previous :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
     if ctx.selected.ctx == nil { return }
-    _ctx: ^ElementContext = cast(^ElementContext)ctx.selected.ctx
-    neighbours: ^NeighborsComponent = &_ctx.neighbours
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
     if neighbours.previous == nil { return }
     selected_transfer(ctx, ctx.selected, neighbours.previous)
 }
@@ -190,8 +193,7 @@ selected_previous :: proc(ctx: ^GroupComponent) {
 selected_right :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
     if ctx.selected.ctx == nil { return }
-    _ctx: ^ElementContext = cast(^ElementContext)ctx.selected.ctx
-    neighbours: ^NeighborsComponent = &_ctx.neighbours
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
     if neighbours.right == nil { return }
     selected_transfer(ctx, ctx.selected, neighbours.right)
 }
@@ -199,8 +201,7 @@ selected_right :: proc(ctx: ^GroupComponent) {
 selected_left :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
     if ctx.selected.ctx == nil { return }
-    _ctx: ^ElementContext = cast(^ElementContext)ctx.selected.ctx
-    neighbours: ^NeighborsComponent = &_ctx.neighbours
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
     if neighbours.left == nil { return }
     selected_transfer(ctx, ctx.selected, neighbours.left)
 }
@@ -208,8 +209,7 @@ selected_left :: proc(ctx: ^GroupComponent) {
 selected_up :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
     if ctx.selected.ctx == nil { return }
-    _ctx: ^ElementContext = cast(^ElementContext)ctx.selected.ctx
-    neighbours: ^NeighborsComponent = &_ctx.neighbours
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
     if neighbours.up == nil { return }
     selected_transfer(ctx, ctx.selected, neighbours.up)
 }
@@ -217,8 +217,7 @@ selected_up :: proc(ctx: ^GroupComponent) {
 selected_down :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
     if ctx.selected.ctx == nil { return }
-    _ctx: ^ElementContext = cast(^ElementContext)ctx.selected.ctx
-    neighbours: ^NeighborsComponent = &_ctx.neighbours
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
 
     if neighbours.down == nil { return }
     selected_transfer(ctx, ctx.selected, neighbours.down)
