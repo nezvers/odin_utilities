@@ -14,9 +14,11 @@ main_menu_state: GameState = {
     draw,
 }
 
-menu_buffer: ui.ElementBuffer(4)
-menu_ctx: ElementContext
-menu_elements: []ui.Element
+MENU_BTN_COUNT :: 4
+menu_buffer: ui.ElementBuffer(MENU_BTN_COUNT)
+menu_elements: []ui.Element // hold popped slice
+menu_btn_data: [MENU_BTN_COUNT]ElementContext
+menu_ctx: ui.GroupComponent
 
 init :: proc() {
     background_color = karl2d.LIGHT_BLUE
@@ -31,10 +33,15 @@ init :: proc() {
         // Callbacks defined in ui.odin
         elem.update = button_update_events
         elem.draw = button_draw
-        elem.ctx = &menu_ctx
+        elem.ctx = &menu_btn_data[i]
+        // Cleanup
+        menu_btn_data[i] = {}
+        menu_btn_data[i].group = &menu_ctx
+        // Update position for next button
         button_rect.y += button_rect.h + 5
     }
 
+    // TODO: translation/localization
     menu_elements[0].text = "New Game"
     menu_elements[1].text = "Continue"
     menu_elements[2].text = "Options"
@@ -43,14 +50,16 @@ init :: proc() {
     // Default selection
     selected_set(&menu_ctx, &menu_elements[0])
 
-    menu_elements[0].neighbours.next = &menu_elements[1]
-    menu_elements[0].neighbours.previous = &menu_elements[3]
-    menu_elements[1].neighbours.next = &menu_elements[2]
-    menu_elements[1].neighbours.previous = &menu_elements[0]
-    menu_elements[2].neighbours.next = &menu_elements[3]
-    menu_elements[2].neighbours.previous = &menu_elements[1]
-    menu_elements[3].neighbours.next = &menu_elements[0]
-    menu_elements[3].neighbours.previous = &menu_elements[2]
+    // Generate neighbours
+    for i:int = 0; i < MENU_BTN_COUNT; i += 1 {
+        ctx: ^ElementContext = cast(^ElementContext)menu_elements[i].ctx
+        neighbours: ^NeighborsComponent = &ctx.neighbours
+
+        next:int = (i + 1) % MENU_BTN_COUNT
+        previous:int = (i + MENU_BTN_COUNT - 1) % MENU_BTN_COUNT
+        neighbours.next = &menu_elements[next]
+        neighbours.previous = &menu_elements[previous]
+    }
 }
 
 finit :: proc() {}

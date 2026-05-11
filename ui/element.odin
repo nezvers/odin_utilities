@@ -9,25 +9,14 @@ ElementStates :: enum {
 }
 ElementStatesSet :: bit_set[ElementStates]
 
-ElementNeighbor :: struct {
-    next: ^Element,
-    previous: ^Element,
-    right: ^Element,
-    left: ^Element,
-    up: ^Element,
-    down: ^Element,
-}
-
 Element :: struct {
     rect: rectf,
     type: int,
     state: ElementStatesSet,
     previous_state: ElementStatesSet,
     text: string,
-    t: f32, // useful for animations since state transition
     children: []Element,
-    neighbours: ElementNeighbor,
-    ctx: rawptr, 
+    ctx: rawptr, // Add your own data, plug in your element component system :D
     update: proc(^Element), // Return new state
     draw: proc(^Element),
 }
