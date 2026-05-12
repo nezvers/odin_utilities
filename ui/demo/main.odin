@@ -3,6 +3,7 @@ package demo
 import rl "vendor:raylib"
 import "core:os"
 
+window_exit: bool
 
 main :: proc() {
 	working_dir, err: = os.get_working_directory(context.allocator)
@@ -22,7 +23,7 @@ main :: proc() {
 	game_init_window()
 	game_init()
 
-	main_loop: for game_should_run() {
+	main_loop: for (game_should_run() && !window_exit) {
 		update()
 		draw()
 	}

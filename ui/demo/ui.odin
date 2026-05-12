@@ -1,40 +1,48 @@
 package demo
 
-import "core:log"
 import "vendor:raylib"
+import "core:strings"
 import ui "../"
 Element :: ui.Element
-import "core:strings"
+GroupComponent :: ui.GroupComponent
+NeighborsComponent :: ui.NeighborsComponent
+CallbackComponent :: ui.CallbackComponent
+TextComponent :: ui.TextComponent
 
 ElementContext :: struct {
-    cursor: Vector2,
-    input_down: bool,
-    delta_time: f32,
-    down: ^Element, // like slider drag outside it's rect or not released button press
-    hover: ^Element,
-    pressed: ^Element,
-    released: ^Element,
-    selected: ^Element,
+    // shared
+    group: ^GroupComponent,
+    // individual
+    neighbours: NeighborsComponent,
+    callbacks: CallbackComponent,
+    label: TextComponent,
 }
 
 
 
+// Extended button update that calls callbacks on state change
 button_update_events :: proc(element: ^Element) {
     button_update(element)
     changes: ui.ElementStatesSet = element.state - element.previous_state
 
     if changes == {} {return}
-    if .Pressed in changes {
-        log.debug("pressed")
+    ctx: ^ElementContext = get_element_context(element)
+
+    if .Pressed in changes && ctx.callbacks.pressed != nil {
+        ctx.callbacks.pressed(element)
     }
-    if .Down in changes {
-        log.debug("down")
+    if .Down in changes && ctx.callbacks.down != nil {
+        ctx.callbacks.down(element)
     }
     if .Released in changes {
-        log.debug("released")
+        if ctx.callbacks.released != nil {
+            if .Hover in element.state {
+                ctx.callbacks.released(element)
+            }
+        }
     }
-    if .Selected in changes {
-        log.debug("selected")
+    if .Selected in changes && ctx.callbacks.selected != nil {
+        ctx.callbacks.selected(element)
     }
 }
 
@@ -42,11 +50,12 @@ button_update_events :: proc(element: ^Element) {
 button_update :: proc(element: ^Element) {
     assert(element.ctx != nil)
     ctx: ^ElementContext = cast(^ElementContext)element.ctx
+    group: ^GroupComponent = ctx.group
 
-    if ui.IsHover(ctx.cursor, element.rect) {
-        if ctx.hover == nil {
+    if ui.IsHover(group.cursor, element.rect) {
+        if group.hover == nil {
             // First one to claim hover
-            ctx.hover = element
+            group.hover = element
         }
         if .Hover not_in element.state {
             element.state += {.Hover}
@@ -58,59 +67,60 @@ button_update :: proc(element: ^Element) {
         }
     }
 
+    if .Pressed in element.state {
+        element.state -= {.Pressed}
+    }
+    if .Released in element.state {
+        element.state -= {.Released}
+    }
+
     if .Hover in element.state {
-        if ctx.input_down {
-            if ctx.down == nil && (.Down not_in element.state) {
+        if group.input_down {
+            if group.down == nil && (.Down not_in element.state) {
                 assert(.Pressed not_in element.state)
                 element.state += {.Pressed, .Down}
-                ctx.down = element
-                ctx.pressed = element
+                group.down = element
+                group.pressed = element
                 // TODO: Trigger events
 
-                if ctx.selected != element {
+                if group.selected != element {
                     element.state += {.Selected}
-                    if ctx.selected != nil {
-                        ctx.selected.state -= {.Selected}
+                    if group.selected != nil {
+                        group.selected.state -= {.Selected}
                     }
-                    ctx.selected = element
+                    group.selected = element
                     // TODO: Trigger events
                 }
             } else {
                 // Not possible to start new pressed & down
-                if .Pressed in element.state {
-                    element.state -= {.Pressed}
-                }
-                if ctx.down == element {
-                    // TODO: Continued hold timer
+                if group.down == element {
+                    // TODO: Continued hold timer or check the group.down
                 }
             }
         } else {
             // Not input_down
             // TODO: Release on button
-            if ctx.down == element {
+            if group.down == element {
                 element.state -= {.Down}
                 element.state += {.Released}
-                ctx.down = nil
+                group.down = nil
                 // TODO: Release on-button
             } else 
             if .Down in element.state {
                 element.state -= {.Down}
                 element.state += {.Released}
-                // TODO: Multi-button selection from ctx.down to one under cursor
+                // TODO: Multi-button selection from group.down to one under cursor
             }
         }
     } else {
         // Not hovering
-        if .Pressed in element.state {
-            element.state -= {.Pressed}
-        }
         if .Down in element.state {
-            if ctx.down == element {
+            if group.down == element {
                 // TODO: handle held outside
-                if !ctx.input_down {
+                if !group.input_down {
                     element.state -= {.Down}
                     element.state += {.Released}
-                    ctx.down = nil
+                    group.down = nil
                     // TODO: Release off-button 
                 }
             } else {
@@ -138,9 +148,10 @@ button_draw :: proc(element: ^Element) {
         raylib.DrawRectangleLinesEx(transmute(Rectangle)selection, 1, raylib.GRAY)
     }
 
-    if len(element.text) > 0 {
+    ctx: ^ElementContext = get_element_context(element)
+    if len(ctx.label.text) > 0 {
         font_size: i32 = cast(i32)(element.rect.w * 0.8)
-        text:cstring = strings.unsafe_string_to_cstring(element.text)
+        text:cstring = strings.unsafe_string_to_cstring(ctx.label.text)
         text_size:i32 = raylib.MeasureText(text, font_size)
         text_position:Vector2 = element.rect.xy + (element.rect.zw - {cast(f32)text_size, cast(f32)font_size}) * 0.5
 
@@ -152,7 +163,7 @@ button_draw :: proc(element: ^Element) {
     }
 }
 
-selected_set :: proc(ctx: ^ElementContext, element: ^Element) {
+selected_set :: proc(ctx: ^GroupComponent, element: ^Element) {
     assert(element != nil)
     if ctx.selected == nil {
         ctx.selected = element
@@ -167,49 +178,67 @@ selected_set :: proc(ctx: ^ElementContext, element: ^Element) {
     ctx.selected = to
 }
 
-selected_hold :: proc(ctx: ^ElementContext) {
+selected_hold :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil {return}
     ctx.cursor = ctx.selected.rect.xy + ctx.selected.rect.zw * 0.5
     ctx.input_down = true
 }
 
-selected_next :: proc(ctx: ^ElementContext) {
-    if ctx.selected == nil { return }
-    if ctx.selected.neighbours.next == nil { return }
-    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.next)
+// Dereference pointer
+get_element_context :: proc(element: ^Element)-> ^ElementContext {
+    return cast(^ElementContext)element.ctx
 }
 
-selected_previous :: proc(ctx: ^ElementContext) {
+selected_next :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
-    if ctx.selected.neighbours.previous == nil { return }
-    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.previous)
+    if ctx.selected.ctx == nil { return }
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
+    if neighbours.next == nil { return }
+    selected_transfer(ctx, ctx.selected, neighbours.next)
 }
 
-selected_right :: proc(ctx: ^ElementContext) {
+selected_previous :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
-    if ctx.selected.neighbours.right == nil { return }
-    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.right)
+    if ctx.selected.ctx == nil { return }
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
+    if neighbours.previous == nil { return }
+    selected_transfer(ctx, ctx.selected, neighbours.previous)
 }
 
-selected_left :: proc(ctx: ^ElementContext) {
+selected_right :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
-    if ctx.selected.neighbours.left == nil { return }
-    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.left)
+    if ctx.selected.ctx == nil { return }
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
+    if neighbours.right == nil { return }
+    selected_transfer(ctx, ctx.selected, neighbours.right)
 }
 
-selected_up :: proc(ctx: ^ElementContext) {
+selected_left :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
-    if ctx.selected.neighbours.up == nil { return }
-    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.up)
+    if ctx.selected.ctx == nil { return }
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
+    if neighbours.left == nil { return }
+    selected_transfer(ctx, ctx.selected, neighbours.left)
 }
 
-selected_down :: proc(ctx: ^ElementContext) {
+selected_up :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil { return }
-    if ctx.selected.neighbours.down == nil { return }
-    selected_transfer(ctx, ctx.selected, ctx.selected.neighbours.down)
+    if ctx.selected.ctx == nil { return }
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
+    if neighbours.up == nil { return }
+    selected_transfer(ctx, ctx.selected, neighbours.up)
 }
 
-selected_transfer :: proc(ctx: ^ElementContext, from: ^Element, to: ^Element) {
+selected_down :: proc(ctx: ^GroupComponent) {
+    if ctx.selected == nil { return }
+    if ctx.selected.ctx == nil { return }
+    neighbours: ^NeighborsComponent = &get_element_context(ctx.selected).neighbours
+
+    if neighbours.down == nil { return }
+    selected_transfer(ctx, ctx.selected, neighbours.down)
+}
+
+selected_transfer :: proc(ctx: ^GroupComponent, from: ^Element, to: ^Element) {
     assert(ctx != nil)
     assert(from != nil)
     assert(to != nil)
