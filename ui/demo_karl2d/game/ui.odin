@@ -138,10 +138,10 @@ button_draw :: proc(element: ^Element) {
     karl2d.draw_rect(transmute(Rect)element.rect, bg_color)
 
     if .Selected in element.state {
-        selection: ui.rectf = element.rect
-        selection.xy += selection.ww * 0.1
-        selection.zw -= selection.ww * (0.1 * 2)
-        karl2d.draw_rect_outline(transmute(Rect)selection, 1, karl2d.GRAY)
+        bg_rect: ui.rectf = element.rect
+        bg_rect.xy += bg_rect.ww * 0.1
+        bg_rect.zw -= bg_rect.ww * (0.1 * 2)
+        karl2d.draw_rect_outline(transmute(Rect)bg_rect, 1, karl2d.GRAY)
     }
 
     ctx: ^ElementContext = get_element_context(element)

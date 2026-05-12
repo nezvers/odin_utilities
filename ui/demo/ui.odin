@@ -142,23 +142,22 @@ button_draw :: proc(element: ^Element) {
     raylib.DrawRectangleRec(transmute(Rectangle)element.rect, bg_color)
 
     if .Selected in element.state {
-        selection: ui.rectf = element.rect
-        selection.xy += selection.ww * 0.1
-        selection.zw -= selection.ww * (0.1 * 2)
-        raylib.DrawRectangleLinesEx(transmute(Rectangle)selection, 1, raylib.GRAY)
+        bg_rect: ui.rectf = element.rect
+        bg_rect.xy += bg_rect.ww * 0.1
+        bg_rect.zw -= bg_rect.ww * (0.1 * 2)
+        raylib.DrawRectangleLinesEx(transmute(Rectangle)bg_rect, 1, raylib.GRAY)
     }
 
     ctx: ^ElementContext = get_element_context(element)
     if len(ctx.label.text) > 0 {
-        font_size: i32 = cast(i32)(element.rect.w * 0.8)
-        text:cstring = strings.unsafe_string_to_cstring(ctx.label.text)
-        text_size:i32 = raylib.MeasureText(text, font_size)
-        text_position:Vector2 = element.rect.xy + (element.rect.zw - {cast(f32)text_size, cast(f32)font_size}) * 0.5
-
+        font_size: i32 = cast(i32)ctx.label.size.y
+        text_position:Vector2 = element.rect.xy + (element.rect.zw - ctx.label.size) * 0.5
+        
         text_color: Color = raylib.BLACK
         if ui.ElementStatesSet.Hover in element.state {
             text_color = raylib.WHITE
         }
+        text:cstring = strings.unsafe_string_to_cstring(ctx.label.text)
         raylib.DrawText(text, cast(i32)text_position.x, cast(i32)text_position.y, font_size, text_color)
     }
 }

@@ -14,6 +14,7 @@ State :: struct {
 	exit : proc(),
 	update : proc(),
 	draw : proc(),
+	layout : proc(),
 }
 
 state_list: []State = {
@@ -59,6 +60,9 @@ game_shutdown :: proc() {
 update :: proc() {
 	if rl.IsWindowResized() {
 		screen_size = {cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight()}
+		if state_list[state_index].layout != nil{
+			state_list[state_index].layout()
+		}
 	}
 	if state_list[state_index].update != nil{
 		state_list[state_index].update()

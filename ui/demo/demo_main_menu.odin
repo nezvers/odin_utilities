@@ -13,6 +13,7 @@ main_menu_state: State = {
     finit,
     update,
     draw,
+    update_layout,
 }
 
 MENU_BTN_COUNT :: 4
@@ -122,7 +123,7 @@ update_layout :: proc() {
 
     window_size:Vector2 = screen_size
     window_rect: ui.rectf = {0, 0, window_size.x, window_size.y}
-    button_size:Vector2 = window_size * {0.2, 0.5 * 0.2}
+    button_size:Vector2 = window_size * {0.5, 0.5 * 0.2}
     font_size: f32 = button_size.y * 0.8
     text_size:i32
     button_position: Vector2

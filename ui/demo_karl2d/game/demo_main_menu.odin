@@ -125,7 +125,7 @@ update_layout :: proc() {
 
     window_size:Vec2 = get_window_size()
     window_rect: ui.rectf = {0, 0, window_size.x, window_size.y}
-    button_size:Vec2 = window_size * {0.2, 0.5 * 0.2}
+    button_size:Vec2 = window_size * {0.4, 0.5 * 0.2}
     font_size: f32 = button_size.y * 0.8
     text_size:Vec2
     button_position: Vec2
