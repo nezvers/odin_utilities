@@ -7,7 +7,7 @@ import ui "../../"
 Element :: ui.Element
 
 @(private="package")
-main_menu_state: GameState = {
+options_state: GameState = {
     init,
     finit,
     process,
@@ -19,10 +19,6 @@ menu_buffer: ui.ElementBuffer(MENU_BTN_COUNT)
 menu_elements: []ui.Element // hold popped slice
 menu_btn_data: [MENU_BTN_COUNT]ElementContext
 menu_ctx: ui.GroupComponent
-
-change_to_options :: proc(element: ^Element) {
-    change_game_state(.Options)
-}
 
 init :: proc() {
     background_color = karl2d.LIGHT_BLUE
@@ -46,13 +42,10 @@ init :: proc() {
     }
 
     // TODO: translation/localization
-    menu_elements[0].text = "New Game"
-    menu_elements[1].text = "Continue"
-    menu_elements[2].text = "Options"
-    menu_elements[3].text = "Exit"
-
-    // button callbacks
-    get_element_context(&menu_elements[2]).callbacks.released = change_to_options
+    menu_elements[0].text = "Graphics"
+    menu_elements[1].text = "Audio"
+    menu_elements[2].text = "Controls"
+    menu_elements[3].text = "Back"
 
     // Default selection
     selected_set(&menu_ctx, &menu_elements[0])

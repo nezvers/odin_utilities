@@ -22,14 +22,19 @@ button_update_events :: proc(element: ^Element) {
 
     if changes == {} {return}
     ctx: ^ElementContext = get_element_context(element)
+
     if .Pressed in changes && ctx.callbacks.pressed != nil {
         ctx.callbacks.pressed(element)
     }
     if .Down in changes && ctx.callbacks.down != nil {
         ctx.callbacks.down(element)
     }
-    if .Released in changes && ctx.callbacks.released != nil {
-        ctx.callbacks.released(element)
+    if .Released in changes {
+        if ctx.callbacks.released != nil {
+            if .Hover in element.state {
+                ctx.callbacks.released(element)
+            }
+        }
     }
     if .Selected in changes && ctx.callbacks.selected != nil {
         ctx.callbacks.selected(element)
@@ -57,6 +62,13 @@ button_update :: proc(element: ^Element) {
         }
     }
 
+    if .Pressed in element.state {
+        element.state -= {.Pressed}
+    }
+    if .Released in element.state {
+        element.state -= {.Released}
+    }
+
     if .Hover in element.state {
         if group.input_down {
             if group.down == nil && (.Down not_in element.state) {
@@ -76,11 +88,8 @@ button_update :: proc(element: ^Element) {
                 }
             } else {
                 // Not possible to start new pressed & down
-                if .Pressed in element.state {
-                    element.state -= {.Pressed}
-                }
                 if group.down == element {
-                    // TODO: Continued hold timer
+                    // TODO: Continued hold timer or check the group.down
                 }
             }
         } else {
@@ -100,9 +109,6 @@ button_update :: proc(element: ^Element) {
         }
     } else {
         // Not hovering
-        if .Pressed in element.state {
-            element.state -= {.Pressed}
-        }
         if .Down in element.state {
             if group.down == element {
                 // TODO: handle held outside
