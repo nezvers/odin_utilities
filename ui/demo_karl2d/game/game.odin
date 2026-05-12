@@ -7,6 +7,7 @@ window_width := 1280
 window_height := 720
 window_scale:f32 = 1
 background_color: karl2d.Color = karl2d.BLACK
+window_exit:bool
 
 init :: proc() {
 	context.logger = log.create_console_logger()
@@ -26,7 +27,7 @@ shutdown :: proc() {
 }
 
 step :: proc() -> bool {
-	if !karl2d.update() {
+	if !karl2d.update() || window_exit {
 		return false
 	}
 
@@ -59,9 +60,14 @@ process_events :: proc() {
 			}
 
 		case karl2d.Event_Screen_Resize:
+			// RESIZED
 			window_scale = karl2d.get_window_scale()
 			window_width = int(f32(e.width) / window_scale)
 			window_height = int(f32(e.height) / window_scale)
+	
+			if state_list[state_index].layout != nil{
+				state_list[state_index].layout()
+			}
 		}
 	}
 }

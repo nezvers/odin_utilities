@@ -30,3 +30,8 @@ CallbackComponent :: struct {
     released: proc(^Element),
     selected: proc(^Element),
 }
+
+TextComponent :: struct {
+    text: string,
+    size: vec2,
+}

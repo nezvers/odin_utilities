@@ -6,6 +6,7 @@ Element :: ui.Element
 GroupComponent :: ui.GroupComponent
 NeighborsComponent :: ui.NeighborsComponent
 CallbackComponent :: ui.CallbackComponent
+TextComponent :: ui.TextComponent
 
 ElementContext :: struct {
     // shared
@@ -13,6 +14,7 @@ ElementContext :: struct {
     // individual
     neighbours: NeighborsComponent,
     callbacks: CallbackComponent,
+    label: TextComponent,
 }
 
 // Extended button update that calls callbacks on state change
@@ -142,16 +144,14 @@ button_draw :: proc(element: ^Element) {
         karl2d.draw_rect_outline(transmute(Rect)selection, 1, karl2d.GRAY)
     }
 
-    if len(element.text) > 0 {
-        font_size: f32 = element.rect.w * 0.8
-        text_size:Vec2 = karl2d.measure_text(element.text, font_size, karl2d.FONT_DEFAULT)
-        text_position:Vec2 = element.rect.xy + (element.rect.zw - text_size) * 0.5
-
+    ctx: ^ElementContext = get_element_context(element)
+    if len(ctx.label.text) > 0 {
+        text_position:Vec2 = element.rect.xy + (element.rect.zw - ctx.label.size) * 0.5
         text_color: Color = karl2d.BLACK
         if ui.ElementStatesSet.Hover in element.state {
             text_color = karl2d.WHITE
         }
-        karl2d.draw_text(element.text, text_position, font_size, text_color, karl2d.FONT_DEFAULT)
+        karl2d.draw_text(ctx.label.text, text_position, ctx.label.size.y, text_color, karl2d.FONT_DEFAULT)
     }
 }
 

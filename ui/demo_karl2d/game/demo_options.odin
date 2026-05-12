@@ -12,6 +12,7 @@ options_state: GameState = {
     finit,
     process,
     draw,
+    update_layout,
 }
 
 MENU_BTN_COUNT :: 4
@@ -19,6 +20,11 @@ menu_buffer: ui.ElementBuffer(MENU_BTN_COUNT)
 menu_elements: []ui.Element // hold popped slice
 menu_btn_data: [MENU_BTN_COUNT]ElementContext
 menu_ctx: ui.GroupComponent
+
+
+change_to_main_menu :: proc(element: ^Element) {
+    change_game_state(.Main_Menu)
+}
 
 init :: proc() {
     background_color = karl2d.LIGHT_BLUE
@@ -42,13 +48,16 @@ init :: proc() {
     }
 
     // TODO: translation/localization
-    menu_elements[0].text = "Graphics"
-    menu_elements[1].text = "Audio"
-    menu_elements[2].text = "Controls"
-    menu_elements[3].text = "Back"
+    get_element_context(&menu_elements[0]).label.text = "Graphics"
+    get_element_context(&menu_elements[1]).label.text = "Audio"
+    get_element_context(&menu_elements[2]).label.text = "Controls"
+    get_element_context(&menu_elements[3]).label.text = "Back"
 
     // Default selection
     selected_set(&menu_ctx, &menu_elements[0])
+
+    // Callbacks
+    get_element_context(&menu_elements[3]).callbacks.released = change_to_main_menu
 
     // Generate neighbours
     for i:int = 0; i < MENU_BTN_COUNT; i += 1 {
@@ -60,6 +69,8 @@ init :: proc() {
         neighbours.next = &menu_elements[next]
         neighbours.previous = &menu_elements[previous]
     }
+
+    update_layout()
 }
 
 finit :: proc() {}
@@ -102,4 +113,46 @@ update_navigation :: proc() {
     if karl2d.key_is_held(.Space) || karl2d.key_is_held(.Enter) {
         selected_hold(&menu_ctx)
     }
+}
+
+update_layout :: proc() {
+    if len(menu_elements) != MENU_BTN_COUNT { return }
+    
+    window_size:Vec2 = get_window_size()
+    window_rect: ui.rectf = {0, 0, window_size.x, window_size.y}
+    button_size:Vec2 = window_size * {0.2, 0.5 * 0.2}
+    font_size: f32 = button_size.y * 0.8
+    text_size:Vec2
+    button_position: Vec2
+    element: ^Element
+    ctx: ^ElementContext
+
+
+    element = &menu_elements[0]
+    button_position = ui.LerpPosition(window_rect, button_size, {0.5, 0.5})
+    element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
+    ctx = get_element_context(element)
+    text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
+    ctx.label.size = text_size
+
+    element = &menu_elements[1]
+    button_position.y += button_size.y + 5
+    element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
+    ctx = get_element_context(element)
+    text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
+    ctx.label.size = text_size
+
+    element = &menu_elements[2]
+    button_position.y += button_size.y + 5
+    element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
+    ctx = get_element_context(element)
+    text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
+    ctx.label.size = text_size
+
+    element = &menu_elements[3]
+    button_position.y += button_size.y + 5
+    element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
+    ctx = get_element_context(element)
+    text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
+    ctx.label.size = text_size
 }

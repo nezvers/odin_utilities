@@ -14,7 +14,6 @@ Element :: struct {
     type: int,
     state: ElementStatesSet,
     previous_state: ElementStatesSet,
-    text: string,
     children: []Element,
     ctx: rawptr, // Add your own data, plug in your element component system :D
     update: proc(^Element), // Return new state

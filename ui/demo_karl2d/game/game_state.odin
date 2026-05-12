@@ -8,6 +8,7 @@ GameState :: struct {
     finit: proc(),
     update: proc(),
     draw: proc(),
+    layout: proc(),
 }
 
 state_list: []GameState = {
