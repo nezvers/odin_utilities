@@ -123,38 +123,40 @@ update_navigation :: proc() {
 update_layout :: proc() {
     if len(menu_elements) != MENU_BTN_COUNT { return }
 
+    BTN_PAD :: 5
     window_size:Vec2 = get_window_size()
     window_rect: ui.rectf = {0, 0, window_size.x, window_size.y}
     button_size:Vec2 = window_size * {0.4, 0.5 * 0.2}
     font_size: f32 = button_size.y * 0.8
     text_size:Vec2
-    button_position: Vec2
     element: ^Element
     ctx: ^ElementContext
+    button_origin: Vec2 = ui.LerpPosition(window_rect, button_size, {0.5, 0.5})
+    button_position: Vec2 = button_origin
 
     element = &menu_elements[0]
-    button_position = ui.LerpPosition(window_rect, button_size, {0.5, 0.5})
+    button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 0
     element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
     ctx = get_element_context(element)
     text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
     ctx.label.size = text_size
 
     element = &menu_elements[1]
-    button_position.y += button_size.y + 5
+    button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 1
     element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
     ctx = get_element_context(element)
     text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
     ctx.label.size = text_size
 
     element = &menu_elements[2]
-    button_position.y += button_size.y + 5
+    button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 2
     element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
     ctx = get_element_context(element)
     text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
     ctx.label.size = text_size
 
     element = &menu_elements[3]
-    button_position.y += button_size.y + 5
+    button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 3
     element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
     ctx = get_element_context(element)
     text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)

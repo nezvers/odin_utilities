@@ -14,11 +14,13 @@ GameState :: struct {
 state_list: []GameState = {
     main_menu_state,
     options_state,
+    graphics_state,
 }
 
 StateIndex :: enum {
     Main_Menu,
     Options,
+    Graphics,
 	COUNT,
 }
 state_index:StateIndex = StateIndex.Main_Menu

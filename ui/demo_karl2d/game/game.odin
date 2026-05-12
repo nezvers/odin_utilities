@@ -5,14 +5,20 @@ import "core:log"
 
 window_width := 1280
 window_height := 720
-window_scale:f32 = 1
+window_scale: f32 = 1
 background_color: karl2d.Color = karl2d.BLACK
-window_exit:bool
+window_exit: bool
+window_mode: karl2d.Window_Mode = .Windowed_Resizable
 
 init :: proc() {
 	context.logger = log.create_console_logger()
 	
-	karl2d.init(window_width, window_height, "Greetings from Karl2D!", options = { window_mode = .Windowed_Resizable})
+	karl2d.init(
+		window_width, 
+		window_height, 
+		"Greetings from Karl2D!", 
+		options = { window_mode = window_mode},
+	)
 	window_scale = karl2d.get_window_scale()
 	when ODIN_OS != .JS {
 		update_scale()

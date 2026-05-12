@@ -7,7 +7,7 @@ import ui "../../"
 Element :: ui.Element
 
 @(private="package")
-options_state: GameState = {
+graphics_state: GameState = {
     init,
     finit,
     process,
@@ -15,19 +15,36 @@ options_state: GameState = {
     update_layout,
 }
 
-MENU_BTN_COUNT :: 4
+MENU_BTN_COUNT :: 2
 menu_buffer: ui.ElementBuffer(MENU_BTN_COUNT)
 menu_elements: []ui.Element // hold popped slice
 menu_btn_data: [MENU_BTN_COUNT]ElementContext
 menu_ctx: ui.GroupComponent
 
 
-change_to_main_menu :: proc(element: ^Element) {
-    change_game_state(.Main_Menu)
+change_to_options :: proc(element: ^Element) {
+    change_game_state(.Options)
 }
 
-change_to_graphics :: proc(element: ^Element) {
-    change_game_state(.Graphics)
+// TODO: better state dependent text
+get_fullscreen_text :: proc()->string {
+    switch (window_mode) {
+    case .Windowed:
+        return "Windowed"
+    case .Windowed_Resizable: 
+        return "Windowed Resizable"
+    case .Borderless_Fullscreen: 
+        return "Borderless Fullscreen"
+    }
+    return ""
+}
+
+toggle_fullscreen :: proc(element: ^Element) {
+    window_mode = cast(karl2d.Window_Mode)((cast(int)window_mode + 1) % 3)
+    karl2d.set_window_mode(window_mode)
+    get_element_context(&menu_elements[0]).label.text = get_fullscreen_text()
+    
+    update_layout()
 }
 
 init :: proc() {
@@ -52,17 +69,15 @@ init :: proc() {
     }
 
     // TODO: translation/localization
-    get_element_context(&menu_elements[0]).label.text = "Graphics"
-    get_element_context(&menu_elements[1]).label.text = "Audio"
-    get_element_context(&menu_elements[2]).label.text = "Controls"
-    get_element_context(&menu_elements[3]).label.text = "Back"
+    get_element_context(&menu_elements[0]).label.text = get_fullscreen_text()
+    get_element_context(&menu_elements[1]).label.text = "Back"
+
+    // button callbacks
+    get_element_context(&menu_elements[0]).callbacks.released = toggle_fullscreen
+    get_element_context(&menu_elements[1]).callbacks.released = change_to_options
 
     // Default selection
     selected_set(&menu_ctx, &menu_elements[0])
-
-    // Callbacks
-    get_element_context(&menu_elements[0]).callbacks.released = change_to_graphics
-    get_element_context(&menu_elements[3]).callbacks.released = change_to_main_menu
 
     // Generate neighbours
     for i:int = 0; i < MENU_BTN_COUNT; i += 1 {
@@ -135,27 +150,13 @@ update_layout :: proc() {
     button_position: Vec2 = button_origin
 
     element = &menu_elements[0]
-    button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 0
-    element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
-    ctx = get_element_context(element)
-    text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
-    ctx.label.size = text_size
-
-    element = &menu_elements[1]
-    button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 1
-    element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
-    ctx = get_element_context(element)
-    text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
-    ctx.label.size = text_size
-
-    element = &menu_elements[2]
     button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 2
     element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
     ctx = get_element_context(element)
     text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
     ctx.label.size = text_size
 
-    element = &menu_elements[3]
+    element = &menu_elements[1]
     button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 3
     element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
     ctx = get_element_context(element)
