@@ -170,6 +170,11 @@ selected_set :: proc(ctx: ^GroupComponent, element: ^Element) {
     ctx.selected = to
 }
 
+selected_cursor :: proc(ctx: ^GroupComponent) {
+    if ctx.selected == nil {return}
+    ctx.cursor = ctx.selected.rect.xy + ctx.selected.rect.zw * 0.5
+}
+
 selected_hold :: proc(ctx: ^GroupComponent) {
     if ctx.selected == nil {return}
     ctx.cursor = ctx.selected.rect.xy + ctx.selected.rect.zw * 0.5
@@ -238,4 +243,31 @@ selected_transfer :: proc(ctx: ^GroupComponent, from: ^Element, to: ^Element) {
     to.state += {.Selected}
     ctx.selected = to
     // TODO: Trigger event
+}
+
+// Generic menu traversal
+update_navigation :: proc(ctx: ^GroupComponent) {
+    // TODO: use rebindable inputs
+    ctx.cursor = karl2d.get_mouse_position()
+    ctx.input_down = karl2d.mouse_button_is_held(.Left)
+
+    if karl2d.key_went_down(.S) || karl2d.key_went_down(.Down) {
+        if ctx.selected != nil {
+            selected_next(ctx)
+        }
+    }
+    if karl2d.key_went_down(.W) || karl2d.key_went_down(.Up) {
+        if ctx.selected != nil {
+            selected_previous(ctx)
+        }
+    }
+
+    if karl2d.key_is_held(.Space) || karl2d.key_is_held(.Enter) {
+        selected_hold(ctx)
+    }
+
+    if karl2d.key_went_up(.Space) || karl2d.key_went_up(.Enter) {
+        // Override on release
+        selected_cursor(ctx)
+    }
 }

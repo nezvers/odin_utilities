@@ -88,7 +88,7 @@ process :: proc() {
     // menu_ctx.selected = nil
     // menu_ctx.held = nil
 
-    update_navigation()
+    update_navigation(&menu_ctx)
 
     // TODO: skip when transitioning
     root: ^ui.Element = &menu_elements[0]
@@ -100,30 +100,10 @@ draw :: proc() {
     ui.Draw(root, menu_elements[:], 0)
 }
 
-update_navigation :: proc() {
-    menu_ctx.cursor = karl2d.get_mouse_position()
-    menu_ctx.input_down = karl2d.mouse_button_is_held(.Left)
-
-    if karl2d.key_went_down(.S) || karl2d.key_went_down(.Down) {
-        if menu_ctx.selected != nil {
-            selected_next(&menu_ctx)
-        }
-    }
-    if karl2d.key_went_down(.W) || karl2d.key_went_down(.Up) {
-        if menu_ctx.selected != nil {
-            selected_previous(&menu_ctx)
-        }
-    }
-
-    if karl2d.key_is_held(.Space) || karl2d.key_is_held(.Enter) {
-        selected_hold(&menu_ctx)
-    }
-}
-
 update_layout :: proc() {
     if len(menu_elements) != MENU_BTN_COUNT { return }
 
-    BTN_PAD :: 5
+    BTN_OFFSET :: 1.1
     window_size:Vec2 = get_window_size()
     window_rect: ui.rectf = {0, 0, window_size.x, window_size.y}
     button_size:Vec2 = window_size * {0.4, 0.5 * 0.2}
@@ -135,28 +115,28 @@ update_layout :: proc() {
     button_position: Vec2 = button_origin
 
     element = &menu_elements[0]
-    button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 0
+    button_position.y = button_origin.y + (button_size.y * BTN_OFFSET) * 0
     element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
     ctx = get_element_context(element)
     text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
     ctx.label.size = text_size
 
     element = &menu_elements[1]
-    button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 1
+    button_position.y = button_origin.y + (button_size.y * BTN_OFFSET) * 1
     element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
     ctx = get_element_context(element)
     text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
     ctx.label.size = text_size
 
     element = &menu_elements[2]
-    button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 2
+    button_position.y = button_origin.y + (button_size.y * BTN_OFFSET) * 2
     element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
     ctx = get_element_context(element)
     text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
     ctx.label.size = text_size
 
     element = &menu_elements[3]
-    button_position.y = button_origin.y + (button_size.y + BTN_PAD) * 3
+    button_position.y = button_origin.y + (button_size.y * BTN_OFFSET) * 3
     element.rect = {button_position.x, button_position.y, button_size.x, button_size.y}
     ctx = get_element_context(element)
     text_size = karl2d.measure_text(ctx.label.text, font_size, karl2d.FONT_DEFAULT)
