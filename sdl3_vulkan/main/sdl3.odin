@@ -2,9 +2,9 @@ package main
 
 // IMPORTANT: SDL3.dll must be next to executable or in PATH
 import sdl "vendor:sdl3"
-// import "core:strings"
 import "core:log"
 // import "core:fmt"
+// import "core:strings"
 
 // current_surface : ^sdl.Surface
 // screen_surface : ^sdl.Surface

@@ -11,6 +11,8 @@ import "core:mem"
 // import "core:math/linalg"
 // import glm "core:math/linalg/glsl"
 
+// used in vulkan
+ENGINE_NAME :: "No Enigne"
 // used in sdl3.odin
 TITLE: cstring : "Odin + Vulkan + SDL3"
 window_width: i32 = 640
