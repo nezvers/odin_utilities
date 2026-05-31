@@ -11,9 +11,10 @@ import "core:mem"
 // import "core:math/linalg"
 // import glm "core:math/linalg/glsl"
 
+// used in sdl3.odin
 TITLE: cstring : "Odin + Vulkan + SDL3"
-WIDTH :: 640
-HEIGHT :: 480
+window_width: i32 = 640
+window_height: i32 =  480
 
 
 main :: proc() {
@@ -32,9 +33,20 @@ main :: proc() {
     defer exit()
 
     for !should_close {
-        update_input_sdl3()
+        update_events_sdl3()
         draw_sdl3()
     }
+}
+
+init :: proc() -> bool {
+    if !init_sdl3() { return false }
+    if !init_vulkan() { return false }
+    return true
+}
+
+exit :: proc() {
+    finit_sdl3()
+    finit_vulkan()
 }
 
 reset_tracking_allocator :: proc() -> bool {
@@ -50,13 +62,4 @@ reset_tracking_allocator :: proc() -> bool {
 
 	mem.tracking_allocator_clear(a)
 	return err
-}
-
-init :: proc() -> bool {
-    if !init_sdl3() { return false }
-    return true
-}
-
-exit :: proc() {
-    finit_sdl3()
 }
