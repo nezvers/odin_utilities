@@ -13,11 +13,12 @@ import "core:mem"
 
 // used in vulkan
 ENGINE_NAME :: "No Enigne"
+current_frame: int
+
 // used in sdl3.odin
 TITLE: cstring : "Odin + Vulkan + SDL3"
 window_width: i32 = 640
 window_height: i32 =  480
-
 
 main :: proc() {
     // LOG
@@ -36,7 +37,8 @@ main :: proc() {
 
     for !should_close {
         update_events_sdl3()
-        draw_sdl3()
+        // draw_sdl3()
+        draw_vulkan()
     }
 }
 

@@ -15,6 +15,7 @@ instance: vk.Instance
 surface: vk.SurfaceKHR
 debug_messenger: vk.DebugUtilsMessengerEXT
 physical_device: vk.PhysicalDevice
+graphics_queue: vk.Queue
 
 graphics_queue_family_index: u32
 device: vk.Device
@@ -127,6 +128,21 @@ SyncObjects :: struct {
     sdl.Vulkan_UnloadLibrary()
 }
 
+@(private="package") draw_vulkan :: proc() {
+    draw_frame(
+        device,
+        graphics_queue,
+        graphics_queue, // We use the same queue for both
+        &swapchain,
+        &sync_objects,
+        command_buffers,
+        render_pass,
+        framebuffers,
+        &current_frame,
+        pipeline,
+    )
+}
+
 create_instance :: proc()->bool {
     // Define the Debug Info (chained to Instance Creation)
 	debug_create_info := vk.DebugUtilsMessengerCreateInfoEXT {
@@ -199,7 +215,6 @@ create_device :: proc()->bool {
 	log.infof("Selected GPU: %s", props.deviceName)
 
     // --- Create Logical Device ---
-	graphics_queue: vk.Queue
 	device_ok: bool
     device, graphics_queue, graphics_queue_family_index, device_ok = init_logical_device( physical_device, surface)
 	if !device_ok { return false }
@@ -211,7 +226,6 @@ create_device :: proc()->bool {
 }
 
 create_swapchain :: proc()->bool {
-    swapchain: SwapchainBundle
 	swapchain_ok: bool
 
 	swapchain, swapchain_ok = init_swapchain(
@@ -406,16 +420,16 @@ init_logical_device :: proc(physical_device: vk.PhysicalDevice, surface: vk.Surf
 		ppEnabledExtensionNames = raw_data(device_extensions),
 	}
 
-	device: vk.Device
-	if res := vk.CreateDevice(physical_device, &create_info, nil, &device); res != .SUCCESS {
+	_device: vk.Device
+	if res := vk.CreateDevice(physical_device, &create_info, nil, &_device); res != .SUCCESS {
 		log.errorf("Failed to create Logical Device: %v", res)
 		return nil, nil, 0, false
 	}
 
 	// retrieve queue handle
-	graphics_queue: vk.Queue
-	vk.GetDeviceQueue(device, u32(graphics_family_index), 0, &graphics_queue)
-	return device, graphics_queue, u32(graphics_family_index), true
+	_graphics_queue: vk.Queue
+	vk.GetDeviceQueue(_device, u32(graphics_family_index), 0, &_graphics_queue)
+	return _device, _graphics_queue, u32(graphics_family_index), true
 
 }
 
@@ -648,14 +662,14 @@ init_render_pass :: proc(
 		pDependencies   = &dependency,
 	}
 
-	render_pass: vk.RenderPass
-	if res := vk.CreateRenderPass(device, &render_pass_info, nil, &render_pass); res != .SUCCESS {
+	_render_pass: vk.RenderPass
+	if res := vk.CreateRenderPass(device, &render_pass_info, nil, &_render_pass); res != .SUCCESS {
 		log.errorf("Failed to create Render Pass: %v", res)
 		return {}, false
 	}
 
 	log.info("Render Pass Created Successfully")
-	return render_pass, true
+	return _render_pass, true
 }
 
 init_graphics_pipeline :: proc(
@@ -760,8 +774,8 @@ init_graphics_pipeline :: proc(
 		sType = .PIPELINE_LAYOUT_CREATE_INFO,
 	}
 
-	pipeline_layout: vk.PipelineLayout
-	if res := vk.CreatePipelineLayout(device, &pipeline_layout_info, nil, &pipeline_layout);
+	_pipeline_layout: vk.PipelineLayout
+	if res := vk.CreatePipelineLayout(device, &pipeline_layout_info, nil, &_pipeline_layout);
 	   res != .SUCCESS {
 		log.errorf("Failed to create pipeline layout: %v", res)
 		return {}, {}, false
@@ -779,20 +793,20 @@ init_graphics_pipeline :: proc(
 		pMultisampleState   = &multisampling,
 		pColorBlendState    = &color_blending,
 		pDynamicState       = &dynamic_state_info,
-		layout              = pipeline_layout,
+		layout              = _pipeline_layout,
 		renderPass          = render_pass,
 		subpass             = 0,
 	}
 
-	graphics_pipeline: vk.Pipeline
-	if res := vk.CreateGraphicsPipelines(device, {}, 1, &pipeline_info, nil, &graphics_pipeline);
+	_pipeline: vk.Pipeline
+	if res := vk.CreateGraphicsPipelines(device, {}, 1, &pipeline_info, nil, &_pipeline);
 	   res != .SUCCESS {
 		log.errorf("Failed to create graphics pipeline: %v", res)
 		return {}, {}, false
 	}
 
 	log.info("Graphics Pipeline Created Successfully!")
-	return graphics_pipeline, pipeline_layout, true
+	return _pipeline, _pipeline_layout, true
 }
 
 load_shader_module :: proc(device: vk.Device, filename: string) -> (vk.ShaderModule, bool) {
@@ -941,4 +955,177 @@ init_sync_objects :: proc(device: vk.Device) -> (SyncObjects, bool) {
 
 	log.infof("Synchronization Objects Created Successfully")
 	return sync, true
+}
+
+draw_frame :: proc(
+	device: vk.Device,
+	graphics_queue: vk.Queue,
+	present_queue: vk.Queue, // this is the same as graphics_queue
+	swapchain: ^SwapchainBundle,
+	sync: ^SyncObjects,
+	command_buffers: []vk.CommandBuffer,
+	render_pass: vk.RenderPass,
+	framebuffers: []vk.Framebuffer,
+	current_frame: ^int,
+	pipeline: vk.Pipeline,
+) {
+	// wait previous frame to finish
+	vk.WaitForFences(device, 1, &sync.in_flight_fences[current_frame^], true, max(u64))
+
+	// Acquire an Image from the swapchain
+	image_index: u32
+	result := vk.AcquireNextImageKHR(
+		device,
+		swapchain.handle,
+		max(u64),
+		sync.image_available_semaphores[current_frame^],
+		{},
+		&image_index,
+	)
+
+	// Handle window resizing (OUT_OF_DATE) later. For now, just exit if failed.
+	// if result != .SUCCESS && result != .SUBOPTIMAL_KHR {
+	// 	log.error("Failed to acquire swapchain image!")
+	// 	return
+	// }
+	if result == .ERROR_OUT_OF_DATE_KHR || result == .SUBOPTIMAL_KHR {
+		return
+	} else if result != .SUCCESS {
+		log.error("Failed to acquire swapchain image!")
+		return
+	}
+
+
+	// Reset the Fence
+	// Only reset AFTER sure submitting work, otherwise might deadlock.
+	vk.ResetFences(device, 1, &sync.in_flight_fences[current_frame^])
+
+	// record the command buffers
+	vk.ResetCommandBuffer(command_buffers[current_frame^], {})
+
+	record_command_buffer(
+		command_buffers[current_frame^],
+		image_index,
+		render_pass,
+		framebuffers,
+		swapchain.extent,
+		pipeline,
+	)
+
+	// Submit command buffer
+	submit_info := vk.SubmitInfo {
+		sType = .SUBMIT_INFO,
+	}
+
+	// Wait for the image to be available before writing colors
+	wait_semaphores := []vk.Semaphore{sync.image_available_semaphores[current_frame^]}
+	wait_stages := []vk.PipelineStageFlags{{.COLOR_ATTACHMENT_OUTPUT}}
+	submit_info.waitSemaphoreCount = 1
+	submit_info.pWaitSemaphores = raw_data(wait_semaphores)
+	submit_info.pWaitDstStageMask = raw_data(wait_stages)
+
+	// Which buffer to execute
+	cmd_bufs := []vk.CommandBuffer{command_buffers[current_frame^]}
+	submit_info.commandBufferCount = 1
+	submit_info.pCommandBuffers = raw_data(cmd_bufs)
+
+	// Signal this semaphore when drawing is done
+	signal_semaphores := []vk.Semaphore{sync.render_finished_semaphores[current_frame^]}
+	submit_info.signalSemaphoreCount = 1
+	submit_info.pSignalSemaphores = raw_data(signal_semaphores)
+
+	// Submit! (And signal the Fence when the GPU is totally done)
+	if vk.QueueSubmit(graphics_queue, 1, &submit_info, sync.in_flight_fences[current_frame^]) !=
+	   .SUCCESS {
+		log.error("Failed to submit draw command buffer!")
+		return
+	}
+
+	// Present the image to the screen
+	present_info := vk.PresentInfoKHR {
+		sType              = .PRESENT_INFO_KHR,
+		waitSemaphoreCount = 1,
+		pWaitSemaphores    = raw_data(signal_semaphores), // Wait for drawing to finish
+		swapchainCount     = 1,
+		pSwapchains        = &swapchain.handle,
+		pImageIndices      = &image_index,
+	}
+
+	vk.QueuePresentKHR(present_queue, &present_info)
+
+	// Advance to the next frame (0 -> 1 -> 0 -> 1...)
+	current_frame^ = (current_frame^ + 1) % MAX_FRAMES_IN_FLIGHT
+}
+
+record_command_buffer :: proc(
+	buffer: vk.CommandBuffer,
+	image_index: u32,
+	render_pass: vk.RenderPass,
+	framebuffers: []vk.Framebuffer,
+	extent: vk.Extent2D,
+	pipeline: vk.Pipeline,
+) {
+	// Begin Recording
+	begin_info := vk.CommandBufferBeginInfo {
+		sType = .COMMAND_BUFFER_BEGIN_INFO,
+		flags = {}, // Optional
+	}
+
+	if vk.BeginCommandBuffer(buffer, &begin_info) != .SUCCESS {
+		log.errorf("Failed to begin recording command buffer!")
+		return
+	}
+
+	// Define the clear color
+	clear_color := vk.ClearValue{}
+	clear_color.color.float32 = {0.5, 0.0, 0.5, 1.0}
+
+	// start render pass
+	render_pass_info := vk.RenderPassBeginInfo {
+		sType = .RENDER_PASS_BEGIN_INFO,
+		renderPass = render_pass,
+		framebuffer = framebuffers[image_index],
+		renderArea = {offset = {0.0, 0.0}, extent = extent},
+		clearValueCount = 1,
+		pClearValues = &clear_color,
+	}
+
+	vk.CmdBeginRenderPass(buffer, &render_pass_info, .INLINE)
+
+	// Drawing commands go here
+
+	// vk.CmdBindPipeline(...)
+	// vk.CmdDraw(...)
+
+	// Bind the pipeline
+	vk.CmdBindPipeline(buffer, .GRAPHICS, pipeline)
+
+	// set dynamic viewport
+	viewport := vk.Viewport {
+		x        = 0.0,
+		y        = 0.0,
+		width    = f32(extent.width),
+		height   = f32(extent.height),
+		minDepth = 0.0,
+		maxDepth = 1.0,
+	}
+	vk.CmdSetViewport(buffer, 0, 1, &viewport)
+
+	// set the scissor
+	scissor := vk.Rect2D {
+		offset = {0.0, 0.0},
+		extent = extent,
+	}
+	vk.CmdSetScissor(buffer, 0, 1, &scissor)
+
+	// Draw Triangle
+	vk.CmdDraw(buffer, 3, 1, 0, 0)
+
+
+	// End Drawing
+	vk.CmdEndRenderPass(buffer)
+	if vk.EndCommandBuffer(buffer) != .SUCCESS {
+		log.error("Failed to record command buffers!")
+	}
+
 }
