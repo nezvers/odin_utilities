@@ -15,12 +15,14 @@ state_list: []GameState = {
     main_menu_state,
     options_state,
     graphics_state,
+    controls_state,
 }
 
 StateIndex :: enum {
     Main_Menu,
     Options,
     Graphics,
+    Controls,
 	COUNT,
 }
 state_index:StateIndex = StateIndex.Main_Menu
