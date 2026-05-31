@@ -9,6 +9,7 @@ import "base:runtime"
 import "core:os"
 
 VALIDATION_LAYERS := []cstring{"VK_LAYER_KHRONOS_validation"}
+current_frame: int
 
 all_extensions: [dynamic]cstring
 instance: vk.Instance
@@ -81,6 +82,9 @@ SyncObjects :: struct {
 }
 
 @(private="package") finit_vulkan :: proc() {
+    // Wait for GPU to finish before cleaning up
+    vk.DeviceWaitIdle(device)
+
     {
 		// Destroy Sync Objects
 		for i in 0 ..< MAX_FRAMES_IN_FLIGHT {
@@ -974,7 +978,8 @@ draw_frame :: proc(
 
 	// Acquire an Image from the swapchain
 	image_index: u32
-	result := vk.AcquireNextImageKHR(
+	result :vk.Result
+    result = vk.AcquireNextImageKHR(
 		device,
 		swapchain.handle,
 		max(u64),
@@ -998,10 +1003,13 @@ draw_frame :: proc(
 
 	// Reset the Fence
 	// Only reset AFTER sure submitting work, otherwise might deadlock.
-	vk.ResetFences(device, 1, &sync.in_flight_fences[current_frame^])
+	result = vk.ResetFences(device, 1, &sync.in_flight_fences[current_frame^])
 
 	// record the command buffers
-	vk.ResetCommandBuffer(command_buffers[current_frame^], {})
+    result = vk.ResetCommandBuffer(command_buffers[current_frame^], {})
+    if result != .SUCCESS {
+        log.error("Failed to ResetCommandBuffer")
+    }
 
 	record_command_buffer(
 		command_buffers[current_frame^],
@@ -1035,8 +1043,8 @@ draw_frame :: proc(
 	submit_info.pSignalSemaphores = raw_data(signal_semaphores)
 
 	// Submit! (And signal the Fence when the GPU is totally done)
-	if vk.QueueSubmit(graphics_queue, 1, &submit_info, sync.in_flight_fences[current_frame^]) !=
-	   .SUCCESS {
+    result = vk.QueueSubmit(graphics_queue, 1, &submit_info, sync.in_flight_fences[current_frame^])
+	if result != .SUCCESS {
 		log.error("Failed to submit draw command buffer!")
 		return
 	}
@@ -1051,7 +1059,7 @@ draw_frame :: proc(
 		pImageIndices      = &image_index,
 	}
 
-	vk.QueuePresentKHR(present_queue, &present_info)
+	result = vk.QueuePresentKHR(present_queue, &present_info)
 
 	// Advance to the next frame (0 -> 1 -> 0 -> 1...)
 	current_frame^ = (current_frame^ + 1) % MAX_FRAMES_IN_FLIGHT

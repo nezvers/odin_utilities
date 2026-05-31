@@ -13,7 +13,6 @@ import "core:mem"
 
 // used in vulkan
 ENGINE_NAME :: "No Enigne"
-current_frame: int
 
 // used in sdl3.odin
 TITLE: cstring : "Odin + Vulkan + SDL3"
