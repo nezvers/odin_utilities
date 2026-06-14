@@ -53,9 +53,8 @@ process :: proc() {
 }
 
 draw :: proc() {
-    rect:Rect = {10, 10, 200, 200}
     color:Color = karl2d.RL_SKYBLUE
-    karl2d.draw_rect(rect, color, {}, 0)
+    karl2d.draw_rect(animated_rect, color, {}, 0)
 
     stats_text:string = fmt.tprintf("window = (%v, %v), scale = %v, %v", window_width, window_height, window_scale, get_window_size())
 	karl2d.draw_text(

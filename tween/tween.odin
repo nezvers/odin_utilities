@@ -16,6 +16,8 @@ Tween :: struct {
 TweenQueue :: struct {
     time_left:f32,
     tween: Tween,
+    id: int,
+    pool: ^TweenPool,
 }
 
 
@@ -89,6 +91,8 @@ PoolRemove :: proc(pool: ^TweenPool, index:int)->(ok:bool) {
     pool.active_count -= 1
     if remove != last {
         mem.copy_non_overlapping(remove, last, size_of(TweenQueue))
+        // last is at this address, update it's id
+        remove.id = index
     }
     return
 }
@@ -98,8 +102,18 @@ PoolAppend :: proc(pool: ^TweenPool, new_item: ^TweenQueue)->(item: ^TweenQueue,
 
     ok = true
     item = &pool.list[pool.active_count]
-    pool.active_count += 1
-
     mem.copy_non_overlapping(item, new_item, size_of(TweenQueue))
+    item.id = pool.active_count
+    pool.active_count += 1
+    return
+}
+
+PoolNew :: proc(pool: ^TweenPool)->(item: ^TweenQueue, ok:bool) {
+    if !(pool.active_count < len(pool.list)) { return }
+    ok = true
+    item = &pool.list[pool.active_count]
+    item.pool = pool
+    item.id = pool.active_count
+    pool.active_count += 1
     return
 }
