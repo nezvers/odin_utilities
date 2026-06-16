@@ -1,16 +1,14 @@
 package tween
 
-import "core:mem"
-
-
 import hm "core:container/handle_map"
 Handle :: hm.Handle32
 HandleNone :Handle: {}
+HandleMap :: hm.Static_Handle_Map(512, Tween, Handle)
 
 // Tweens are created by user and removed when finished
 // Queues 
 TweenSystem :: struct($TWEEN_SIZE: int, $QUEUE_SIZE: int) {
-    tweens: hm.Static_Handle_Map(TWEEN_SIZE, Tween, Handle),
+    tweens: HandleMap,
     waiting: [dynamic; QUEUE_SIZE]TweenQueue,
     active: [dynamic; QUEUE_SIZE]TweenQueue,
 }
@@ -60,11 +58,11 @@ TweenQueue :: struct {
 // 
 TweenNew :: proc(tween_system: ^TweenSystem($T, $Q)) -> (result:^Tween, ok:bool) {
     handle := hm.add(&tween_system.tweens, Tween{})
-    return hm.get(&tween_system.tweens, handle)
+    return hm.static_get(&tween_system.tweens, handle)
 }
 
 TweenGet :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle) -> (result:^Tween, ok:bool) {
-    return hm.get(&tween_system.tweens, handle)
+    return hm.static_get(&tween_system.tweens, handle)
 }
 
 TweenRemove :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle)->(ok:bool) {
@@ -102,28 +100,30 @@ UpdateSystem :: proc(tween_system: ^TweenSystem($T, $Q), delta_time:f32, next_ov
 
         tween: ^Tween
         handle_ok: bool
-        tween, handle_ok = hm.get(tween_system, item.handle)
+        tween, handle_ok = hm.static_get(tween_system, item.handle)
         if !handle_ok {
             unordered_remove(&tween_system.waiting, i)
             continue
         }
 
         num_appended, err: = append(active, item)
-        if !err {
+        if err != nil {
             if tween.started != nil { tween.started(tween) }
         }
 
         overflow:f32 = -delta_time
         if next_overflow {
-            overflow += item.delay_sec
+            overflow -= item.delay_sec
         }
         tween.t = overflow
         unordered_remove(&tween_system.waiting, i)
     }
 
     for i:int = len(active) -1; i > 0; i -= 1 {
-        tween, tw_ok: = hm.get(&tween_system.tweens, active[i].handle)
-        if !tw_ok {
+        tween: ^Tween
+        handle_ok: bool
+        tween, handle_ok = hm.get(&tween_system.tweens, active[i].handle)
+        if !handle_ok {
             unordered_remove(&tween_system.active, i)
             continue
         }
@@ -132,7 +132,9 @@ UpdateSystem :: proc(tween_system: ^TweenSystem($T, $Q), delta_time:f32, next_ov
         if is_finished {
             // replace with tween.next
             if tween.next != HandleNone {
-                next, next_ok: = hm.get(&tween_system.tweens, tween.next)
+                next: ^Tween
+                next_ok:bool
+                next, next_ok = hm.get(&tween_system.tweens, tween.next)
                 if next_ok {
                     active[i].handle = next.handle
                     if next.started != nil { next.started(next) }
