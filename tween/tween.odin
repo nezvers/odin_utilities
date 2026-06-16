@@ -5,18 +5,19 @@ import "core:mem"
 
 import hm "core:container/handle_map"
 Handle :: hm.Handle32
+HandleNone :Handle: {}
 
 // Tweens are created by user and removed when finished
 // Queues 
 TweenSystem :: struct($TWEEN_SIZE: int, $QUEUE_SIZE: int) {
     tweens: hm.Static_Handle_Map(TWEEN_SIZE, Tween, Handle),
-    waiting: [QUEUE_SIZE]TweenQueue,
-    active: [QUEUE_SIZE]TweenQueue,
+    waiting: [dynamic; QUEUE_SIZE]TweenQueue,
+    active: [dynamic; QUEUE_SIZE]TweenQueue,
 }
 
 Tween :: struct {
     handle: Handle,
-    next: ^Tween,   // TODO: replace with handle
+    next: Handle,   // TODO: replace with handle
     t: f32,         // Timer value
     length: f32,    // Value carrying tweening length, useful for interpolation t/length
     user_data:rawptr,
@@ -27,108 +28,9 @@ Tween :: struct {
 
 // Tweens not yet started
 TweenQueue :: struct {
-    delay_remaining:f32,
-    tween: Tween,
-    id: int,
-    pool: ^TweenPool,
-}
-
-
-TweenPool :: struct {
-    list: []TweenQueue,
-    active_count: int,
-}
-
-UpdateSystem :: proc(waiting: ^TweenPool, active: ^TweenPool, delta_time:f32, next_overflow:bool = true) {
-    for i:int = 0; i < waiting.active_count; i += 1 {
-        item: ^TweenQueue = &waiting.list[i]
-        item.delay_remaining -= delta_time
-        if item.delay_remaining > 0 { continue }
-
-        tween_queue, append_ok: = PoolAppend(active, item)
-        if append_ok {
-            tween: ^Tween = &tween_queue.tween
-            if tween.started != nil { tween.started(tween) }
-        }
-        if !PoolRemove(waiting, i) {
-            // TODO: error
-        }
-    }
-
-    for i:int = 0; i < active.active_count; i += 1 {
-        tween: ^Tween = &active.list[i].tween
-        is_finished:bool = UpdateTween(tween, delta_time)
-        if is_finished {
-            // replace with tween.next
-            if tween.next != nil {
-                next: ^Tween = tween.next
-                if next_overflow {
-                    overflow:f32 = tween.t - tween.length - delta_time
-                    next.t = overflow
-                }
-                mem.copy_non_overlapping(tween, next, size_of(Tween))
-                if tween.started != nil { tween.started(tween) }
-                // repeat in place
-                i -= 1
-            } else {
-                if !PoolRemove(active, i) {
-                    // TODO: error
-                }
-            }
-        }
-    }
-}
-
-UpdateTween :: proc(tween: ^Tween, delta_time:f32)->(done:bool) {
-    tween.t += delta_time
-    if tween.t < tween.length {
-        t: = tween.t/tween.length
-        // Leave easing to user
-        if tween.update != nil { tween.update(tween, t) }
-        return
-    }
-
-    done = true
-    if tween.update != nil { tween.update(tween, 1) }
-    if tween.finished != nil { tween.finished(tween) }
-    return
-}
-
-PoolRemove :: proc(pool: ^TweenPool, index:int)->(ok:bool) {
-    assert(pool.active_count > index)
-    if pool.active_count < 1 { return }
-
-    ok = true
-    remove: ^TweenQueue = &pool.list[index]
-    last: ^TweenQueue = &pool.list[pool.active_count -1]
-    pool.active_count -= 1
-    if remove != last {
-        mem.copy_non_overlapping(remove, last, size_of(TweenQueue))
-        // last is at this address, update it's id
-        remove.id = index
-    }
-    return
-}
-
-PoolAppend :: proc(pool: ^TweenPool, new_item: ^TweenQueue)->(item: ^TweenQueue, ok:bool) {
-    if !(pool.active_count < len(pool.list)) { return }
-
-    ok = true
-    item = &pool.list[pool.active_count]
-    mem.copy_non_overlapping(item, new_item, size_of(TweenQueue))
-    item.id = pool.active_count
-    pool.active_count += 1
-    return
-}
-
-PoolNew :: proc(pool: ^TweenPool)->(item: ^TweenQueue, ok:bool) {
-    if !(pool.active_count < len(pool.list)) { return }
-    ok = true
-    item = &pool.list[pool.active_count]
-    item.pool = pool
-    item.id = pool.active_count
-    pool.active_count += 1
-    return
+    delay_sec:f32,
+    handle: Handle,
+    id: int,        // index of array it is in
 }
 
 /* handle example
@@ -154,3 +56,111 @@ PoolNew :: proc(pool: ^TweenPool)->(item: ^TweenQueue, ok:bool) {
 	}
 }
 */
+
+// 
+TweenNew :: proc(tween_system: ^TweenSystem($T, $Q)) -> (result:^Tween, ok:bool) {
+    handle := hm.add(&tween_system.tweens, Tween{})
+    return hm.get(&tween_system.tweens, handle)
+}
+
+TweenGet :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle) -> (result:^Tween, ok:bool) {
+    return hm.get(&tween_system.tweens, handle)
+}
+
+TweenRemove :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle)->(ok:bool) {
+    return hm.remove(&entities, handle)
+}
+
+TweenStart :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle, delay_sec:f32 = 0)->(ok:bool) {
+    if (len(tween_system.waiting) < cap(tween_system.waiting)) {
+        i:int = len(tween_system.waiting)
+        queue: TweenQueue = {
+            delay_sec = delay_sec,
+            handle = handle,
+        }
+        id, err: = append(&tween_system.waiting, queue)
+        if err { return }
+        tween_system.waiting[i].id = id
+    }
+    return
+}
+
+// Next time system is updated the tween will be removed from waiting or active queue
+TweenStop :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle)->(ok:bool) {
+    return hm.remove(&tween_system.tweens, handle)
+}
+
+UpdateSystem :: proc(tween_system: ^TweenSystem($T, $Q), delta_time:f32, next_overflow:bool = true) {
+    waiting: []TweenQueue = tween_system.waiting[:]
+    active: []TweenQueue = tween_system.active[:]
+
+    for i:int = len(waiting) -1; i > 0; i -= 1 {
+        // itterate from end to be able remove by swapping with last
+        item: ^TweenQueue = &waiting[i]
+        item.delay_sec -= delta_time
+        if item.delay_sec > 0 { continue }
+
+        tween: ^Tween
+        handle_ok: bool
+        tween, handle_ok = hm.get(tween_system, item.handle)
+        if !handle_ok {
+            unordered_remove(&tween_system.waiting, i)
+            continue
+        }
+
+        num_appended, err: = append(active, item)
+        if !err {
+            if tween.started != nil { tween.started(tween) }
+        }
+
+        overflow:f32 = -delta_time
+        if next_overflow {
+            overflow += item.delay_sec
+        }
+        tween.t = overflow
+        unordered_remove(&tween_system.waiting, i)
+    }
+
+    for i:int = len(active) -1; i > 0; i -= 1 {
+        tween, tw_ok: = hm.get(&tween_system.tweens, active[i].handle)
+        if !tw_ok {
+            unordered_remove(&tween_system.active, i)
+            continue
+        }
+        
+        is_finished:bool = UpdateTween(tween, delta_time)
+        if is_finished {
+            // replace with tween.next
+            if tween.next != HandleNone {
+                next, next_ok: = hm.get(&tween_system.tweens, tween.next)
+                if next_ok {
+                    active[i].handle = next.handle
+                    if next.started != nil { next.started(next) }
+                    if next_overflow {
+                        overflow:f32 = tween.t - tween.length - delta_time
+                        next.t = overflow
+                    }
+                    // repeat in place
+                    i -= 1
+                    continue
+                }
+            }
+            unordered_remove(&tween_system.active, i)
+        }
+    }
+}
+
+UpdateTween :: proc(tween: ^Tween, delta_time:f32)->(done:bool) {
+    tween.t += delta_time
+    if tween.t < tween.length {
+        t: = tween.t/tween.length
+        // Leave easing to user
+        if tween.update != nil { tween.update(tween, t) }
+        return
+    }
+
+    done = true
+    if tween.update != nil { tween.update(tween, 1) }
+    if tween.finished != nil { tween.finished(tween) }
+    return
+}

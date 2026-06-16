@@ -7,9 +7,8 @@ import "core:math/ease"
 
 import tw "../../"
 Tween :: tw.Tween
-TweenQueue :: tw.TweenQueue
-TweenPool :: tw.TweenPool
-
+Handle :: tw.Handle
+handleNone :: tw.HandleNone
 
 @(private="package")
 tween_state: GameState = {
@@ -19,25 +18,19 @@ tween_state: GameState = {
     draw,
 }
 
-waiting_buffer: [128]TweenQueue
-active_buffer: [128]TweenQueue
-waiting_tween_pool: TweenPool = {list = waiting_buffer[:]}
-active_tween_pool: TweenPool = {list = active_buffer[:]}
+tween_system: tw.TweenSystem(512, 128)
 
 animated_rect:Rect = {10, 10, 200, 200}
 
 init :: proc() {
     background_color = karl2d.LIGHT_BLUE
 
-    temp_queue:TweenQueue = {}
-    item: ^TweenQueue
-    append_ok:bool
-    temp_queue.tween = {
-        length = 30.0,
-        user_data = &animated_rect,
-        update = rect_width_anim,
+    if tween, ok: = tw.TweenNew(&tween_system); ok {
+        tween.length = 30.0
+        tween.user_data = &animated_rect
+        tween.update = rect_width_anim
+        tw.TweenStart(&tween_system, tween.handle)
     }
-    item, append_ok = tw.PoolAppend(&waiting_tween_pool, &temp_queue)
 }
 
 rect_width_anim :: proc(tween: ^Tween, t:f32) {
@@ -50,7 +43,7 @@ finit :: proc() {}
 
 process :: proc() {
     delta_time:f32 = karl2d.get_frame_time()
-    tw.UpdateSystem(&waiting_tween_pool, &active_tween_pool, delta_time, true)
+    tw.UpdateSystem(&tween_system, delta_time, true)
 }
 
 draw :: proc() {
