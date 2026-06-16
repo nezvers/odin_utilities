@@ -2,10 +2,23 @@ package tween
 
 import "core:mem"
 
+
+import hm "core:container/handle_map"
+Handle :: hm.Handle32
+
+// Tweens are created by user and removed when finished
+// Queues 
+TweenSystem :: struct($TWEEN_SIZE: int, $QUEUE_SIZE: int) {
+    tweens: hm.Static_Handle_Map(TWEEN_SIZE, Tween, Handle),
+    waiting: [QUEUE_SIZE]TweenQueue,
+    active: [QUEUE_SIZE]TweenQueue,
+}
+
 Tween :: struct {
+    handle: Handle,
+    next: ^Tween,   // TODO: replace with handle
     t: f32,         // Timer value
-    length: f32,    // Value carrying full length, useful for interpolation t/length
-    next: ^Tween,
+    length: f32,    // Value carrying tweening length, useful for interpolation t/length
     user_data:rawptr,
     started: proc(tween: ^Tween),
     finished: proc(tween: ^Tween),
@@ -14,7 +27,7 @@ Tween :: struct {
 
 // Tweens not yet started
 TweenQueue :: struct {
-    time_left:f32,
+    delay_remaining:f32,
     tween: Tween,
     id: int,
     pool: ^TweenPool,
@@ -29,8 +42,8 @@ TweenPool :: struct {
 UpdateSystem :: proc(waiting: ^TweenPool, active: ^TweenPool, delta_time:f32, next_overflow:bool = true) {
     for i:int = 0; i < waiting.active_count; i += 1 {
         item: ^TweenQueue = &waiting.list[i]
-        item.time_left -= delta_time
-        if item.time_left > 0 { continue }
+        item.delay_remaining -= delta_time
+        if item.delay_remaining > 0 { continue }
 
         tween_queue, append_ok: = PoolAppend(active, item)
         if append_ok {
@@ -117,3 +130,27 @@ PoolNew :: proc(pool: ^TweenPool)->(item: ^TweenQueue, ok:bool) {
     pool.active_count += 1
     return
 }
+
+/* handle example
+{ // static map
+	entities: hm.Static_Handle_Map(1024, Entity, Handle)
+
+	h1 := hm.add(&entities, Entity{pos = {1,  4}})
+	h2 := hm.add(&entities, Entity{pos = {9, 16}})
+
+	if e, ok := hm.get(&entities, h2); ok {
+		e.pos.x += 32
+	}
+
+	hm.remove(&entities, h1)
+
+	h3 := hm.add(&entities, Entity{pos = {6, 7}})
+	assert(hm.is_valid(entities, h3))
+
+	it := hm.iterator_make(&entities)
+	for e, h in hm.iterate(&it) {
+		assert(hm.is_valid(entities, h))
+		e.pos += {1, 2}
+	}
+}
+*/

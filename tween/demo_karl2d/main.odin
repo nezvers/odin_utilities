@@ -24,14 +24,13 @@ main :: proc() {
 
 	// MAIN LOOP
 	main_init()
+	defer main_shutdown()
 	game.init()
+	defer game.shutdown()
 
 	for game.step() {
 		game.update_desktop()
 	}
-
-	game.shutdown()
-    main_shutdown()
 }
 
 main_init :: proc() {
