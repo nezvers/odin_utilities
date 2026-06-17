@@ -6,6 +6,7 @@ window_width := 1280
 window_height := 720
 window_scale:f32 = 1
 background_color: karl2d.Color = karl2d.BLACK
+exit_key: = karl2d.Keyboard_Key.Escape
 
 init :: proc() {
 	karl2d.init(window_width, window_height, "Greetings from Karl2D!", options = { window_mode = .Windowed_Resizable})
@@ -17,18 +18,22 @@ init :: proc() {
 }
 
 shutdown :: proc() {
-    if state_list[state_index].finit != nil { state_list[state_index].finit() }
+	if state_list[state_index].finit != nil { 
+		state_list[state_index].finit()
+	}
 	karl2d.shutdown()
 }
 
 step :: proc() -> bool {
-	if !karl2d.update() {
+	if !karl2d.update() || karl2d.key_went_down(exit_key) {
 		return false
 	}
 
 	process_events()
 
-	if state_list[state_index].update != nil { state_list[state_index].update() }
+	if state_list[state_index].update != nil { 
+		state_list[state_index].update()
+	}
 
 	draw()
 
@@ -38,7 +43,9 @@ step :: proc() -> bool {
 
 draw :: proc() {
 		karl2d.clear(background_color)
-		if state_list[state_index].draw != nil { state_list[state_index].draw() }
+		if state_list[state_index].draw != nil {
+			state_list[state_index].draw()
+		}
 		draw_state_menu()
 		karl2d.present()
 }

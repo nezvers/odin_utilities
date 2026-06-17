@@ -28,7 +28,7 @@ init :: proc() {
     if tween, ok: = tw.TweenNew(&tween_system); ok {
         tween.length = 30.0
         tween.user_data = &animated_rect
-        tween.update = rect_width_anim
+        tween.on_update = rect_width_anim
         tw.TweenStart(&tween_system, tween.handle)
     }
 }
