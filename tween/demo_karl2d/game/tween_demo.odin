@@ -20,15 +20,23 @@ tween_state: GameState = {
 
 tween_system: tw.TweenSystem(512, 128)
 
-animated_rect:Rect = {10, 10, 200, 200}
+animated_rect:Rect = {}
 
 init :: proc() {
     background_color = karl2d.LIGHT_BLUE
 
     if tween, ok: = tw.TweenNew(&tween_system); ok {
-        tween.length = 30.0
+        tween.length = 20.0
         tween.user_data = &animated_rect
-        tween.on_update = rect_width_anim
+        tween.on_update = proc(tween: ^Tween, t:f32) {
+            // Animate rectangle
+            rect:^Rect = cast(^Rect)tween.user_data
+            _t:f32 = ease.quadratic_in(t)
+            rect.x = 200.0 * _t
+            rect.y = 200.0 * _t
+            rect.w = 200.0 * _t
+            rect.h = 200.0 * _t
+        }
         tw.TweenStart(&tween_system, tween.handle)
     }
 }
