@@ -35,6 +35,9 @@ TweenNew :: proc(tween_system: ^TweenSystem($T, $Q), tween: Tween = {}) -> (resu
     return hm.get(&tween_system.tweens, handle)
 }
 
+// Returns pointer for first Tween in the chain    
+// Sets handles for Tweens in list to allow referencing inserted Tweens    
+// In case of a failure all insertions are aborted - removing already inserted chain Tweens
 TweenNewChain :: proc(tween_system: ^TweenSystem($T, $Q), list: []Tween) -> (first: ^Tween, ok:bool) {
     next_handle: = HandleNone
     tween: ^Tween
@@ -61,6 +64,7 @@ TweenGet :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle) -> (result:
     return hm.get(&tween_system.tweens, handle)
 }
 
+// Next time system is updated the tween will be removed from waiting or active queue
 TweenRemove :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle)->(ok:bool) {
     return hm.remove(&tween_system.tweens, handle)
 }
@@ -84,7 +88,19 @@ TweenStart :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle, delay_sec
 
 // Next time system is updated the tween will be removed from waiting or active queue
 TweenStop :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle)->(ok:bool) {
-    return hm.remove(&tween_system.tweens, handle)
+    if !hm.is_valid(handle) { return }
+    tween, tw_ok: = hm.get(handle)
+
+    next:Handle
+    for tw_ok {
+        next = tween.next
+        hm.remove(&tween_system.tweens, tween.handle)
+        if !hm.is_valid(next) { break }
+        tween, tw_ok = hm.get(next)
+    }
+
+    ok = true
+    return 
 }
 
 UpdateSystem :: proc(tween_system: ^TweenSystem($T, $Q), delta_time:f32, next_overflow:bool = true) {
