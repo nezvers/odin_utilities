@@ -64,7 +64,8 @@ TweenGet :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle) -> (result:
     return hm.get(&tween_system.tweens, handle)
 }
 
-// Next time system is updated the tween will be removed from waiting or active queue
+// Next time system is updated the tween will be removed from waiting or active queue    
+// This removes single Tween, for handling possible chains use TweenStop
 TweenRemove :: proc(tween_system: ^TweenSystem($T, $Q), handle: Handle)->(ok:bool) {
     return hm.remove(&tween_system.tweens, handle)
 }
