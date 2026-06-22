@@ -21,7 +21,7 @@ Tween :: struct {
     user_data:rawptr, // Generic way to carry user facing data
     on_start: proc(tween: ^Tween),
     on_finish: proc(tween: ^Tween),
-    on_update: proc(tween: ^Tween, delta_time: f32),
+    on_update: proc(tween: ^Tween, lifetime: f32), // lifetime = 0..1
 }
 
 TweenQueue :: struct {
