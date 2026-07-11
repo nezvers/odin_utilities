@@ -23,7 +23,7 @@ CreateBody :: proc(
     return body
 }
 
-BodyLinearVelocity :: proc(body:b2.BodyId, velocity: Vec2){
+BodyLinearVelocity :: proc(body:b2.BodyId, velocity: Vec2) {
     b2.Body_SetLinearVelocity(body, {velocity.x, -velocity.y})
 }
 

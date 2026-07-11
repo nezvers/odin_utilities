@@ -39,24 +39,24 @@ ChangeAnimation::proc(animation_set:^AnimationSet, new_animation:u32){
 
 UpdateAnimation::proc(animation_set:^AnimationSet, delta_time:f32){
     animation_set.time += delta_time * animation_set.frame_rate
-    if animation_set.time < 1 {
-        return
-    }
+    if animation_set.time < 1 { return }
+
     image_count:int = len(animation_set.frames[animation_set.animation_index].data)
     increment:u32 = cast(u32)animation_set.time
     animation_set.time -= cast(f32)increment
     animation_set.image_index = (animation_set.image_index + increment) % cast(u32)image_count
 }
 
-UpdateSprite::proc(sprite:^Sprite, dt:f32){
-    UpdateAnimation(&sprite.animation_set, dt)
+UpdateSprite::proc(sprite:^Sprite, delta_time:f32){
+    UpdateAnimation(&sprite.animation_set, delta_time)
 }
 
 GetAnimationFrame::proc(animation_set:^AnimationSet)->rectf {
     frame:^Frames = animation_set.frames[animation_set.animation_index]
     pos:vec2 = frame.data[animation_set.image_index]
     size:vec2 = frame.size
-    return {pos.x, pos.y, size.x, size.y}
+    result:rectf = {pos.x, pos.y, size.x, size.y}
+    return result
 }
 
 GetSpriteFrame::proc(sprite:^Sprite)->(sprite_rect:rectf, texture_rect:rectf) {
