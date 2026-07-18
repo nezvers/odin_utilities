@@ -114,7 +114,7 @@ DragTiles :: proc(
         }
         TilemapSetRegionData(tilemap, data_rect, temp_buffer, write_empty)
 
-        temp_tilemap_out.size = {0.0, 0.0}
+        temp_tilemap_out.size = {0, 0}
         selection_rect.w = 0.0
         selection_rect.h = 0.0
     }
