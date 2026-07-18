@@ -59,7 +59,7 @@ IsPressed :: proc(input_id: InputID)->bool {
         if GetAxisState(id.device, cast(i32)id.id) != .pressed { return false }
         axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
         value: f32 = axis_values[axis_index]
-        sign: i8 = GetAxisSign(value)
+        sign: i8 = CalculateAxisSign(value)
         return sign == id.sign
     case InputNone:
         return false
@@ -79,8 +79,7 @@ IsReleased :: proc(input_id: InputID)->bool {
     case InputAxis:
         axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
         if GetAxisState(id.device, cast(i32)id.id) != .released { return false }
-        id_sign: = id.sign
-        return axis_sign[axis_index] == id_sign
+        return axis_sign[axis_index] == id.sign
     case InputNone:
         return false
     }
@@ -100,7 +99,7 @@ IsDown :: proc(input_id: InputID)->bool {
         if !(GetAxisState(id.device, cast(i32)id.id) == .pressed || GetAxisState(id.device, cast(i32)id.id) == .held) { return false }
         axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
         value: f32 = axis_values[axis_index]
-        sign: i8 = GetAxisSign(value)
+        sign: i8 = CalculateAxisSign(value)
         return sign == id.sign
     case InputNone:
         return false
@@ -123,7 +122,7 @@ GetValue :: proc(input_id: InputID)->f32 {
         abs: f32 = math.abs(value)
         if abs < id.dead_zone { return 0 }
 
-        sign: i8 = GetAxisSign(value)
+        sign: i8 = CalculateAxisSign(value)
         if sign != id.sign { return 0 }
         
         // TODO: improve logic
@@ -187,7 +186,7 @@ ListenRebind :: proc()->(value:InputID, ok:bool) {
                     dead_zone = DEAD_ZONE,
                 }
                 return
-            } else {
+            } else if sign < 0 {
                 ok = true
                 value = InputAxis {
                     id = id,
@@ -231,7 +230,7 @@ GetAxisIndex :: proc(device:i32, id: i32)->i32 {
 }
 
 
-@(private) GetAxisSign :: proc(value: f32)->i8 {
+@(private) CalculateAxisSign :: proc(value: f32)->i8 {
     sign: i8 = value > DEAD_ZONE ? 1 : value < -DEAD_ZONE ? -1 : 0
     return sign
 }
@@ -241,15 +240,12 @@ GetAxisIndex :: proc(device:i32, id: i32)->i32 {
     axis_index:i32 = GetAxisIndex(id.device, cast(i32)id.id)
     value: f32 = rl.GetGamepadAxisMovement(id.device, id.id)
     abs: = math.abs(value)
-    sign: i8 = GetAxisSign(value)
+    sign: i8 = CalculateAxisSign(value)
 
     value_buffer: f32 = axis_values[axis_index]
-    sign_buffer: i8 = GetAxisSign(value_buffer)
+    sign_buffer: i8 = CalculateAxisSign(value_buffer)
 
     if sign != sign_buffer {
-        if axis_index == 1 {
-            _ = axis_index
-        }
         if abs < id.dead_zone {
             axis_state[axis_index] = .released
         } else {
@@ -258,9 +254,6 @@ GetAxisIndex :: proc(device:i32, id: i32)->i32 {
         }
     } else
     if abs > id.dead_zone {
-        if axis_index == 1 {
-            _ = axis_index
-        }
         axis_state[axis_index] = .held
         axis_sign[axis_index] = sign
     } else
