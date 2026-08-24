@@ -1,32 +1,85 @@
 {
     "version": "0.2.0",
     "configurations": [
-        // Windows configs (only difference from linux/mac is "type" and "program")
         {
-            "type": "cppvsdbg",
+            "name": "Run Debug",
             "request": "launch",
             "preLaunchTask": "Build Debug",
-            "name": "Run Debug",
-            "program": "${workspaceFolder}/demo.exe",
             "args": [],
             "cwd": "${workspaceFolder}",
-            "linux" : {
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+
+            "linux": {
                 "type": "lldb",
-                "program": "${workspaceFolder}/demo.bin"
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
             }
         },
         {
-            "type": "cppvsdbg",
+            "name": "Run Release",
             "request": "launch",
             "preLaunchTask": "Build Release",
-            "name": "Run Release",
-            "program": "${workspaceFolder}/demo.exe",
             "args": [],
             "cwd": "${workspaceFolder}",
-            "linux" : {
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+
+            "linux": {
                 "type": "lldb",
-                "program": "${workspaceFolder}/demo.bin"
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
             }
         },
+        {
+            "name": "Run Debug Karl2D",
+            "request": "launch",
+            "preLaunchTask": "Build Debug Karl2D",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        },
+        {
+            "name": "Run Release Karl2D",
+            "request": "launch",
+            "preLaunchTask": "Build Release Karl2D",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        }
     ]
 }
