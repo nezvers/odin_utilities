@@ -31,6 +31,7 @@ tile_buffer:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]TileID
 tileset_buffer:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]TileID
 
 tileset_texture: Texture
+tileset_dualgrid_texture: Texture
 tile_atlas: tm.TileAtlas
 
 // Allocated Tile array
@@ -43,6 +44,7 @@ tilemap_buffer: [MAP_SIZE.x * MAP_SIZE.y]TileID
 load_assets :: proc() {
     // tileset_texture = karl2d.load_texture_from_file("../assets/textures/tileset_template.png")
     tileset_texture = karl2d.load_texture_from_bytes(#load("../../../assets/textures/tileset_template.png"))
+	tileset_dualgrid_texture = karl2d.load_texture_from_bytes(#load("../../../assets/textures/tileset_template_dualgrid.png"))
 }
 
 unload_assets :: proc() {
