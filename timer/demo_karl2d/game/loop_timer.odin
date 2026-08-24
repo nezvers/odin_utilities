@@ -25,9 +25,9 @@ loop_timer: Timer = {
     mode = .loop,
     callbacks = {timeout},
 }
-measure_clock:i32
-numbers: []cstring = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
-alert_sound: karl2d.Sound
+measure_clock:Vec2
+numbers: []string = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+alert_clip: karl2d.Audio_Clip
 flash_value:f32 = 0
 
 init :: proc() {
@@ -41,24 +41,66 @@ init :: proc() {
     loop_timer.wait = input_to_seconds()
 
     timerPackage.Reset(&loop_timer)
-    measure_clock = rl.MeasureText("00:00:00.000", HEIGHT_CLOCK)
+    measure_clock = karl2d.measure_text("00:00:00.000", HEIGHT_CLOCK)
+    alert_clip = karl2d.load_audio_clip_from_bytes(#load("../../../assets/sounds/alert_sound.wav"))
 }
 
 finit :: proc() {}
 
-process :: proc() {}
+process :: proc() {
+    delta_time:f32 = karl2d.get_frame_time()
+    timerPackage.Update(&loop_timer, delta_time)
+    flash_update(delta_time)
+    update_keyboard_input()
+}
 
 draw :: proc() {
-	karl2d.draw_text("Hellope!", {50, 50}, 100, karl2d.DARK_BLUE)
-    
-    stats_text:string = fmt.tprintf("window = (%v, %v), scale = %v, %v", window_width, window_height, window_scale, get_window_size())
-	karl2d.draw_text(
-        stats_text, 
-        {50, 150}, 
-        30, 
-        karl2d.DARK_GRAY,
+    window_size: = get_window_size()
+	center_x:f32 = (window_size.x / 2)
+    center_y:f32 = (window_size.y / 2)
+    // Clock
+    text_clock:string = seconds_to_clock(loop_timer.remain)
+    karl2d.draw_text(
+        text_clock,
+        {center_x - measure_clock.x / 2, center_y - measure_clock.y / 2},
+        HEIGHT_CLOCK,
+        karl2d.BLACK,
     )
-    karl2d.draw_text( fmt.tprintf("mouse %v", get_local_mouse_position()), {50, 190},30, karl2d.DARK_GRAY)
+    
+    // Input
+    is_valid:bool = input_is_valid()
+    input_y:f32 = center_y - HEIGHT_CLOCK
+    input_right:f32 = center_x + measure_clock.x / 2 - measure_clock.x / 5
+    OFF_INPUT :: 75
+    number_x:f32 = input_right
+    for i:int = 0; i < len(input_value.digits); i += 1 {
+        color:karl2d.Color = karl2d.LIGHT_GRAY
+        number_x -= OFF_INPUT
+        if cast(u8)i < input_value.count {
+            if is_valid {
+                color = karl2d.GRAY
+            } else {
+                color = karl2d.RED
+            }
+        }
+        karl2d.draw_text(numbers[input_value.digits[i]], {number_x, input_y}, HEIGHT_CLOCK / 2, color)
+
+        if i != 1 && i != 3 { continue }
+        number_x -= OFF_INPUT / 2
+        karl2d.draw_text(":", {number_x, input_y}, HEIGHT_CLOCK / 2, color)
+    }
+
+    percent:f32 = loop_timer.remain / loop_timer.wait
+    progress_rect:Rect = {
+        (center_x - measure_clock.x / 2),
+        (center_y + HEIGHT_CLOCK / 2),
+        (measure_clock.x),
+        (HEIGHT_CLOCK / 2),
+    }
+
+    karl2d.draw_rect_outline(progress_rect, 5, karl2d.LIGHT_GRAY)
+    progress_rect.w *= percent
+    karl2d.draw_rect(progress_rect, karl2d.RL_LIME)
 }
 
 
@@ -67,12 +109,12 @@ timeout :: proc( timer: ^Timer) {
     // TODO: play a sound & flash a screen
     fmt.printfln("Timeout: ")
     flash_value = 1
-    rl.PlaySound(alert_sound)
+    karl2d.play_audio_clip(alert_clip)
 }
 
-seconds_to_clock :: proc(sec:f32)->cstring {
+seconds_to_clock :: proc(sec:f32)->string {
     seconds,minutes,hours,ms: = timerPackage.seconds_to_clock(sec)
-    return rl.TextFormat("%02d:%02d:%02d.%03d", hours, minutes, seconds, ms)
+    return fmt.tprintf("%02d:%02d:%02d.%03d", hours, minutes, seconds, ms)
 }
 
 input_pop :: proc() {
