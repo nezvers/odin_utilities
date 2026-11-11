@@ -60,7 +60,6 @@ DragTiles :: proc(
     temp_tilemap_out: ^Tilemap,
     input_position:vec2i,
     drag_start_position: ^vec2i,
-    map_start_position: ^vec2i, // TODO: not needed
     selection_rect: ^recti,
     input_state: InputState,
     remove_from_source:bool,

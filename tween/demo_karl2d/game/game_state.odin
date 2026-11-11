@@ -12,10 +12,12 @@ GameState :: struct {
 
 state_list: []GameState = {
     tween_state,
+    tween_ease_state,
 }
 
 StateIndex :: enum {
     Tween,
+    Ease,
 	COUNT,
 }
 state_index:StateIndex = StateIndex.Tween

@@ -26,7 +26,6 @@ draw :: proc() {
     // Persistent variables to hold state
 	@(static) selection_state:vec2i
 	@(static) drag_pos_state:vec2i
-	@(static) map_pos_state:vec2i
 	@(static) rect_state:recti
 	@(static) temp_tilemap:Tilemap = {}
 	@(static) temp_buffer:[MAP_SIZE.x * MAP_SIZE.y]TileID
@@ -61,7 +60,6 @@ draw :: proc() {
 			&temp_tilemap,
 			mouse_position_i,
 			&drag_pos_state,
-			&map_pos_state,
 			&rect_state,
 			input_drag,
 			remove_source,
