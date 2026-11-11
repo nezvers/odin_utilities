@@ -28,7 +28,7 @@ DrawTileAtlas :: proc(tile_atlas: ^TileAtlas, tile_id:TileID, draw_pos:Vec2, tex
 	tex_rect:Rect = {tex_pos.x,tex_pos.y, tile_atlas.tile_size.x, tile_atlas.tile_size.y}
 
 	// karl2d.DrawTextureRec(texture^, tex_rect, draw_pos, karl2d.WHITE)
-    karl2d.draw_texture_section(texture^, tex_rect, draw_pos)
+    karl2d.draw_texture_rect(texture^, tex_rect, draw_pos)
 }
 
 DrawTile :: proc(tile: ^Tile, tile_atlas: ^TileAtlas, draw_pos:Vec2, texture: ^Texture, subtile: TileID = 0) {
@@ -162,7 +162,7 @@ DrawTilemap :: proc(
             tex_pos:Vec2 = tile_atlas.data[tile_id]
             tex_rect.x = tex_pos.x
             tex_rect.y = tex_pos.y
-			karl2d.draw_texture_section(texture^, cast(Rect)tex_rect, cell_pos)
+			karl2d.draw_texture_rect(texture^, cast(Rect)tex_rect, cell_pos)
         }
     }
 }
@@ -223,7 +223,7 @@ DrawTilemapRecti :: proc(
             tex_pos:Vec2 = tile_atlas.data[tile_id]
             tex_rect.x = tex_pos.x
             tex_rect.y = tex_pos.y
-			karl2d.draw_texture_section(texture^, cast(Rect)tex_rect, cell_pos)
+			karl2d.draw_texture_rect(texture^, cast(Rect)tex_rect, cell_pos)
         }
     }
 }

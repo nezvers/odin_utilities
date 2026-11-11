@@ -14,15 +14,15 @@ tilemap_grid_state: GameState = {
     draw,
 }
 
-init :: proc() {}
+init :: proc() {
+	background_color = karl2d.WHITE
+}
 
 finit :: proc() {}
 
 process :: proc() {}
 
 draw :: proc() {
-    karl2d.clear(karl2d.WHITE)
-	
     tm_glue.DrawTilemapGrid(&tilemap, karl2d.LIGHT_GRAY)
 	tm_glue.DrawTilemapTileId(&tilemap, karl2d.FONT_DEFAULT, 10, karl2d.LIGHT_GRAY)
 
