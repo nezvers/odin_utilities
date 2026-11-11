@@ -2,6 +2,7 @@
 package game
 
 // import "core:fmt"
+import "core:mem"
 import "../../../karl2d"
 Vec2 :: karl2d.Vec2
 Rect :: karl2d.Rect
@@ -14,10 +15,6 @@ rectf:: packer.rectf
 import glue "../../karl2d"
 Image :: glue.Image
 
-import stbrp "vendor:stb/rect_pack"
-stb_Rect:: stbrp.Rect
-
-
 @(private="package")
 baking_state: GameState = {
     init,
@@ -26,15 +23,14 @@ baking_state: GameState = {
     draw,
 }
 
-
 ATLAS_SIZE :: 512
 RECTF_BUFFER_SIZE :: 256
-AtlasPacker :: packer.AtlasPacker(RECTF_BUFFER_SIZE, ATLAS_SIZE)
 
-Sprite :: struct {
-    size: Vec2,
-    tex_pos:[]Vec2,
-}
+// Pre-allocated memory of the state. Packer, atlas pixels and rectangle slices are taken from the arena and live until finit.
+// Source images are decoded into the same arena inside of a temporary section that is rolled back after baking.
+ARENA_SIZE :: 4 * mem.Megabyte
+arena_buffer: [ARENA_SIZE]byte
+arena: mem.Arena
 
 // Holds data about source/original sprite frames
 player_sprite_source: []rectf = {
@@ -48,11 +44,9 @@ player_sprite_source: []rectf = {
     {112, 0, 16, 16},
 }
 
-atlas_packer: AtlasPacker
+atlas_packer: packer.AtlasPacker
 
-// Used as target atlas
-// WIDTH * HEIGHT
-atlas_buffer: [ATLAS_SIZE * ATLAS_SIZE]glue.Color
+// Target atlas, pixels live in the arena
 atlas_image: Image
 atlas_texture: Texture
 
@@ -65,30 +59,37 @@ TILE_SIZE :: 16
 TILE_COLUMNS :: 10
 TILE_ROWS :: 5
 
-// TODO: font baking
 // The letters to extract from the font
-LETTERS_IN_FONT :: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
+LETTERS_IN_FONT :: " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
 LETTER_COUNT :: len(LETTERS_IN_FONT)
-// Font draws outside Glyphs rectangle, so need to pack inside a bigger rectangle
-FONT_PADDING :: 4
+FONT_HEIGHT :: 32
+// Extra pixels around each glyph, so scaled/filtered text doesn't pick neighbour glyphs
+FONT_PADDING :: 2
 
-font_packed: karl2d.Font
+font: packer.Font
+font_glyphs: []packer.Glyph
 font_rect_packed: []rectf
-font_glyph_buffer: [LETTER_COUNT]karl2d.Font_Data
+packed_font: karl2d.Font
+is_font_registered: bool
 
 init :: proc() {
     background_color = karl2d.LIGHT_BLUE
 
-    // 0. Init packer
-    packer.Init(&atlas_packer)
+    mem.arena_init(&arena, arena_buffer[:])
+    scene: mem.Allocator = mem.arena_allocator(&arena)
+
+    // 0. Persistent memory: packer buffers, target atlas, glyph list
+    packer.Init(&atlas_packer, ATLAS_SIZE, RECTF_BUFFER_SIZE, scene)
+    atlas_image, _ = glue.CreateImage(ATLAS_SIZE, scene)
+    font_glyphs = make([]packer.Glyph, LETTER_COUNT, scene)
+
+    // Everything allocated until end_arena_temp_memory is released
+    temp: mem.Arena_Temp_Memory = mem.begin_arena_temp_memory(&arena)
 
     // 1. Load assets
-    player_image, _: = glue.LoadImageFromBytes(#load("../../../assets/textures/player_sheet.png"), {.alpha_premultiply}, karl_state.frame_allocator)
-    // defer glue.DestroyImage(player_image)
+    player_image, _: = glue.LoadImageFromBytes(#load("../../../assets/textures/player_sheet.png"), {.alpha_premultiply}, scene)
+    tileset_image, _: = glue.LoadImageFromBytes(#load("../../../assets/textures/tileset_template.png"), {.alpha_premultiply}, scene)
 
-    tileset_image, _: = glue.LoadImageFromBytes(#load("../../../assets/textures/tileset_template.png"), {.alpha_premultiply}, karl_state.frame_allocator)
-    // defer glue.DestroyImage(tileset_image)
-    
     tileset_rects: [TILESET_SIZE]rectf
     for y:int = 0; y < TILE_ROWS; y += 1 {
         for x:int = 0; x < TILE_COLUMNS; x += 1 {
@@ -97,9 +98,13 @@ init :: proc() {
         }
     }
 
-    // TODO: load font
-    // codepoints: [LETTER_COUNT]rune = LETTERS_IN_FONT
-    // karl2d.load_font_from_bytes(#load("../../../assets/fonts/font.ttf"), {.premultiply_alpha})
+    // Measure letters, characters missing in the font are skipped
+    font_ok: bool = packer.FontInit(&font, #load("../../../assets/fonts/font.ttf"), FONT_HEIGHT)
+    assert(font_ok)
+    codepoints: [LETTER_COUNT]rune = LETTERS_IN_FONT
+    letter_rects: []rectf = make([]rectf, LETTER_COUNT, scene)
+    letter_count: int
+    letter_count, _ = packer.GetFontRects(&font, codepoints[:], letter_rects, font_glyphs, FONT_PADDING)
 
     // 2. Fetch target rectf slices
     player_sprite_ok:bool
@@ -108,33 +113,43 @@ init :: proc() {
     tileset_ok:bool
     tileset_packed, tileset_ok = packer.GetRects(&atlas_packer, TILESET_SIZE)
 
-    // TODO: 
-    /*
-    font_ok:bool
-    font_rect_packed, font_ok = packer.GetRects(&atlas_packer, LETTER_COUNT)
-    */
+    font_rects_ok:bool
+    font_rect_packed, font_rects_ok = packer.GetRects(&atlas_packer, letter_count)
+    font_glyphs = font_glyphs[:letter_count]
 
     // 3. Init sizes & stuff
     packer.CopySizes(player_sprite_source[:], player_sprite_packed[:])
     packer.CopySizes(tileset_rects[:], tileset_packed[:])
-    // packer_rl.init_packed_font(&font_source, &font_packed, font_glyph_buffer[:], font_rect_packed, FONT_PADDING)
+    packer.CopySizes(letter_rects[:letter_count], font_rect_packed)
 
     // 4. Pack
     packer.Pack(&atlas_packer)
 
-    // 5. Prepare target atlas
-    atlas_ok:bool
-    atlas_image, atlas_ok = glue.GenerateImageFromBuffer(atlas_buffer[:], ATLAS_SIZE)
-
-    // 6. Transfer to atlas image
+    // 5. Transfer to atlas image
     glue.BakeImageRects(player_image, &atlas_image, player_sprite_source, player_sprite_packed)
     glue.BakeImageRects(tileset_image, &atlas_image, tileset_rects[:], tileset_packed[:])
 
-    // Make Texture from Image
+    alpha_buffer: []u8 = make([]u8, packer.GlyphsMaxBytes(font_glyphs), scene)
+    glue.BakeFontGlyphs(&font, font_glyphs, font_rect_packed, &atlas_image, alpha_buffer, FONT_PADDING)
+
+    // Source images, TTF measurements and glyph bitmaps are not needed anymore
+    mem.end_arena_temp_memory(temp)
+
+    // 6. Make Texture from Image and a Font that uses it
     atlas_texture = glue.LoadTextureFromImage(&atlas_image)
+    packed_font, is_font_registered = glue.RegisterFont(karl_state, atlas_texture, &font, font_glyphs, font_rect_packed, FONT_PADDING)
 }
 
-finit :: proc() {}
+finit :: proc() {
+    if is_font_registered {
+        // Destroys atlas texture and glyph data owned by Karl2D
+        karl2d.destroy_font(packed_font)
+        is_font_registered = false
+    } else {
+        karl2d.destroy_texture(atlas_texture)
+    }
+    mem.arena_free_all(&arena)
+}
 
 process :: proc() {
     // animate using packed rectangles
@@ -155,4 +170,20 @@ draw :: proc() {
     player_frame:int = int(player_timer)
     rect_player:Rect = transmute(Rect)player_sprite_packed[player_frame]
     karl2d.draw_texture_rect(atlas_texture, rect_player, {530, 10})
+
+    // Tileset
+    TILESET_POS :Vec2: {530, 40}
+    for y:int = 0; y < TILE_ROWS; y += 1 {
+        for x:int = 0; x < TILE_COLUMNS; x += 1 {
+            i:int = TILE_COLUMNS * y + x
+            tile_pos:Vec2 = {TILESET_POS.x + TILE_SIZE * cast(f32)x, TILESET_POS.y + TILE_SIZE * cast(f32)y}
+            karl2d.draw_texture_rect(atlas_texture, transmute(Rect)tileset_packed[i], tile_pos)
+        }
+    }
+
+    // Font that was baked into the same atlas texture
+    if is_font_registered {
+        karl2d.draw_text("Hello, baked font!", {530, 140}, FONT_HEIGHT, karl2d.BLACK, packed_font)
+        karl2d.draw_text("Draw calls: 1 texture", {530, 180}, FONT_HEIGHT * 0.5, karl2d.DARK_BLUE, packed_font)
+    }
 }

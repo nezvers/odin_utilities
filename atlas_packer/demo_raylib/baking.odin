@@ -1,6 +1,7 @@
 #+private file
 package demo_raylib
 
+import "core:mem"
 import "core:slice"
 
 import rl "vendor:raylib"
@@ -26,7 +27,11 @@ baking_state :State = {
 
 ATLAS_SIZE :: 512
 RECTF_BUFFER_SIZE :: 256
-AtlasPacker :: packer.AtlasPacker(RECTF_BUFFER_SIZE, ATLAS_SIZE)
+
+// Packer buffers and glyph data come from this arena, so finit frees everything with one call
+ARENA_SIZE :: 1 * mem.Megabyte
+arena_buffer: [ARENA_SIZE]byte
+arena: mem.Arena
 
 Sprite :: struct {
     size: Vector2,
@@ -45,7 +50,7 @@ player_sprite_source: []rectf = {
     {112, 0, 16, 16},
 }
 
-atlas_packer: AtlasPacker
+atlas_packer: packer.AtlasPacker
 
 // Used as target atlas
 atlas_image:rl.Image
@@ -62,18 +67,21 @@ TILE_ROWS :: 5
 
 
 // The letters to extract from the font
-LETTERS_IN_FONT :: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
+LETTERS_IN_FONT :: " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890?!&.,_:[]-+"
 LETTER_COUNT :: len(LETTERS_IN_FONT)
 // Maybe Raylib specific, font draws outside Glyphs rectangle, so need to pack inside bigger rectangle
 FONT_PADDING :: 4
 font_packed: rl.Font
 font_rect_packed: []rectf
-font_glyph_buffer: [LETTER_COUNT]rl.GlyphInfo
+font_glyph_buffer: []rl.GlyphInfo
 
 
 init :: proc() {
     // 0. Init packer
-    packer.Init(&atlas_packer)
+    mem.arena_init(&arena, arena_buffer[:])
+    scene: mem.Allocator = mem.arena_allocator(&arena)
+    packer.Init(&atlas_packer, ATLAS_SIZE, RECTF_BUFFER_SIZE, scene)
+    font_glyph_buffer = make([]rl.GlyphInfo, LETTER_COUNT, scene)
 
     // 1. Load assets
     player_texture: rl.Texture2D = rl.LoadTexture("../assets/textures/player_sheet.png")
@@ -106,7 +114,7 @@ init :: proc() {
     // 3. Init sizes & stuff
     packer.CopySizes(player_sprite_source[:], player_sprite_packed[:])
     packer.CopySizes(tileset_rects[:], tileset_packed[:])
-    glue.init_packed_font(&font_source, &font_packed, font_glyph_buffer[:], font_rect_packed, FONT_PADDING)
+    glue.init_packed_font(&font_source, &font_packed, font_glyph_buffer, font_rect_packed, FONT_PADDING)
     
     // 4. Pack
     packer.Pack(&atlas_packer)
@@ -144,6 +152,7 @@ init :: proc() {
 finit :: proc() {
 	rl.UnloadImage(atlas_image)
     rl.UnloadTexture(atlas_texture)
+    mem.arena_free_all(&arena)
 }
 
 update :: proc() {

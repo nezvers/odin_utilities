@@ -1,52 +1,100 @@
 package atlas_packer
 
-import "core:os"
 import "core:c"
-// import "core:strings"
 import stbtt "vendor:stb/truetype"
-// import stbim "vendor:stb/image"
 
-Glyph :: struct {
-	value: rune,
-	offset: vec2i,
-	advance_x: int,
+// TTF font prepared for measuring and rendering glyphs at one pixel height.
+// `data` is not copied, keep it alive while the Font is used.
+Font :: struct {
+    info: stbtt.fontinfo,
+    height: f32,
+    scale: f32,
+    ascent: f32,            // scaled
+    descent: f32,           // scaled
+    line_gap: f32,          // scaled
+    line_spacing: f32,      // distance between baselines
 }
 
-// Doesn't work yet
-GetFontRects :: proc(font_path:string, font_height:f32, letters:[]rune, rectangles:[]rectf, glyphs:[]Glyph)->(ok:bool) {
-    assert(len(letters) != 0)
-    assert(len(letters) == len(rectangles))
-    assert(len(letters) == len(glyphs))
+// One font character. After GetFontRects `rect_index` is the same index in the rectangle slice
+Glyph :: struct {
+    value: rune,
+    index: int,             // stbtt glyph index
+    offset: [2]f32,         // from top left of the line to top left of the glyph bitmap
+    advance_x: f32,
+    size: [2]i32,           // glyph bitmap size
+}
 
-    font_data, file_ok := os.read_entire_file_from_path(font_path, context.allocator)
-    if file_ok != nil {
+FontInit :: proc(font: ^Font, data: []byte, height: f32, font_index: int = 0) -> (ok:bool) {
+    font^ = {}
+    font_offset: c.int = stbtt.GetFontOffsetForIndex(raw_data(data), cast(c.int)font_index)
+    if font_offset < 0 {
+        return false
+    }
+    if !stbtt.InitFont(&font.info, raw_data(data), font_offset) {
         return false
     }
 
-    fi: stbtt.fontinfo
-    if !stbtt.InitFont(&fi, raw_data(font_data), 0){
-        return false
-    }
+    font.height = height
+    font.scale = stbtt.ScaleForPixelHeight(&font.info, height)
 
-    scale_factor := stbtt.ScaleForPixelHeight(&fi, font_height)
-    ascent: c.int
-    stbtt.GetFontVMetrics(&fi, &ascent, nil, nil)
+    ascent, descent, line_gap: c.int
+    stbtt.GetFontVMetrics(&font.info, &ascent, &descent, &line_gap)
+    font.ascent = f32(ascent) * font.scale
+    font.descent = f32(descent) * font.scale
+    font.line_gap = f32(line_gap) * font.scale
+    font.line_spacing = font.ascent - font.descent + font.line_gap
+    return true
+}
 
-    for r, r_idx in letters {
-        advance_x: c.int
-        stbtt.GetCodepointHMetrics(&fi, r, &advance_x, nil)
+// Measure glyphs. Characters that the font doesn't have are skipped.
+// Fills `glyphs` and `rectangles` from the start, rectangle size is the glyph bitmap + padding on each side (zw).
+// Returns how many letters were found, or ok=false if buffers are too small.
+GetFontRects :: proc(font: ^Font, letters: []rune, rectangles: []rectf, glyphs: []Glyph, padding: f32 = 0)->(count:int, ok:bool) {
+    assert(len(rectangles) >= len(letters))
+    assert(len(glyphs) >= len(letters))
 
-        w, h, ox, oy: c.int
-        // Is this the only way to get offsets?
-        //data := stbtt.GetCodepointBitmap(&fi, scale_factor, scale_factor, r, &w, &h, &ox, &oy)
-
-        glyphs[r_idx] = {
-            value = r,
-            offset = {int(ox), int(f32(oy) + f32(ascent)*scale_factor)},
-            advance_x = int(f32(advance_x)*scale_factor),
+    for letter in letters {
+        index: c.int = stbtt.FindGlyphIndex(&font.info, letter)
+        if index == 0 {
+            continue
         }
-        rectangles[r_idx].zw = {cast(f32)w + 2, cast(f32)h + 2}
-    }
 
+        advance_x: c.int
+        stbtt.GetGlyphHMetrics(&font.info, index, &advance_x, nil)
+
+        x0, y0, x1, y1: c.int
+        stbtt.GetGlyphBitmapBox(&font.info, index, font.scale, font.scale, &x0, &y0, &x1, &y1)
+
+        glyphs[count] = {
+            value = letter,
+            index = int(index),
+            offset = {f32(x0), f32(y0) + font.ascent},
+            advance_x = f32(advance_x) * font.scale,
+            size = {i32(x1 - x0), i32(y1 - y0)},
+        }
+        rectangles[count] = {0, 0, f32(x1 - x0) + padding * 2, f32(y1 - y0) + padding * 2}
+        count += 1
+    }
+    ok = true
+    return
+}
+
+// Size of the alpha buffer that fits any of the glyphs
+GlyphsMaxBytes :: proc(glyphs: []Glyph) -> (bytes:int) {
+    for glyph in glyphs {
+        bytes = max(bytes, int(glyph.size.x * glyph.size.y))
+    }
+    return
+}
+
+// Render glyph into `alpha`, 1 byte per pixel, glyph.size.x * glyph.size.y bytes. Returns false if buffer is too small
+RenderGlyph :: proc(font: ^Font, glyph: ^Glyph, alpha: []u8) -> (ok:bool) {
+    if glyph.size.x <= 0 || glyph.size.y <= 0 {
+        return true
+    }
+    if len(alpha) < int(glyph.size.x * glyph.size.y) {
+        return false
+    }
+    stbtt.MakeGlyphBitmap(&font.info, raw_data(alpha), glyph.size.x, glyph.size.y, glyph.size.x, font.scale, font.scale, cast(c.int)glyph.index)
     return true
 }

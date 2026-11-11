@@ -1,3 +1,6 @@
+// Runtime rectangle packing for baking sprites, tiles and fonts into one texture.
+// All memory comes from the allocator given to Init, so an arena (core:mem Arena over a pre-allocated buffer)
+// per scene works well: pack, bake, then free everything at once.
 package atlas_packer
 
 import "core:fmt"
@@ -7,28 +10,55 @@ stb_Rect:: stbrp.Rect
 rectf :: [4]f32
 vec2i :: [2]int
 
-AtlasPacker :: struct($buffer_size:int , $atlas_size: i32) {
+AtlasPacker :: struct {
     ctx: stbrp.Context,
-    buffer: [buffer_size]rectf,            // accumulate rects to pack
-    stb_buffer: [buffer_size]stb_Rect,     // used for actual packing
-    nodes: [atlas_size]stbrp.Node,    // will determine power of 2 atlas size
-    length:int,                 // used buffer
+    buffer: []rectf,            // accumulate rects to pack
+    stb_buffer: []stb_Rect,     // used for actual packing
+    nodes: []stbrp.Node,        // as many nodes as atlas width
+    length: int,                // used buffer
+    atlas_size: i32,            // width == height
 }
 
+// Allocates buffers from `allocator`, nothing is freed by the packer. Use an arena or delete slices yourself.
+// rect_capacity - how many rectangles can be requested through GetRects
 Init :: proc(
-    packer: ^AtlasPacker($B, $A),
-){
+    packer: ^AtlasPacker,
+    atlas_size: i32,
+    rect_capacity: int,
+    allocator := context.allocator,
+)->(ok:bool) {
+    assert(atlas_size > 0)
+    assert(rect_capacity > 0)
+
     packer^ = {}
-    atlas_size: = cast(i32)len(packer.nodes)
-    stbrp.init_target(&packer.ctx, atlas_size, atlas_size, raw_data(packer.nodes[:]), atlas_size)
+    buffer, buffer_err: = make([]rectf, rect_capacity, allocator)
+    stb_buffer, stb_err: = make([]stb_Rect, rect_capacity, allocator)
+    nodes, nodes_err: = make([]stbrp.Node, atlas_size, allocator)
+    if buffer_err != nil || stb_err != nil || nodes_err != nil {
+        return false
+    }
+
+    packer.buffer = buffer
+    packer.stb_buffer = stb_buffer
+    packer.nodes = nodes
+    packer.atlas_size = atlas_size
+    Reset(packer)
+    return true
 }
 
-GetRects :: proc(packer: ^AtlasPacker($B, $A), count: int)->(result:[]rectf, ok:bool) {
-    if packer.length + count > len(packer.buffer) - 1 {
+// Forget all rectangles and start packing from scratch in the same memory
+Reset :: proc(packer: ^AtlasPacker) {
+    packer.length = 0
+    stbrp.init_target(&packer.ctx, packer.atlas_size, packer.atlas_size, raw_data(packer.nodes), cast(i32)len(packer.nodes))
+}
+
+// Returns slice of `count` rectangles to fill with sizes (zw). After Pack the slice holds positions (xy)
+GetRects :: proc(packer: ^AtlasPacker, count: int)->(result:[]rectf, ok:bool) {
+    if packer.length + count > len(packer.buffer) {
         // TODO: maybe support partial return. Or have itteratable function one by one
         return
     }
-    result = packer.buffer[packer.length:min(packer.length+count, len(packer.buffer))]
+    result = packer.buffer[packer.length:packer.length+count]
     packer.length += count
     ok = true
     return
@@ -36,13 +66,13 @@ GetRects :: proc(packer: ^AtlasPacker($B, $A), count: int)->(result:[]rectf, ok:
 
 CopySizes :: proc(original_rects: []rectf, packed_rects: []rectf) {
     assert(len(original_rects) <= len(packed_rects))
-    
+
     for i:int = 0; i < len(original_rects); i += 1 {
         packed_rects[i].zw = original_rects[i].zw
     }
 }
 
-Pack :: proc(packer: ^AtlasPacker($B, $A))->(ok:bool) {
+Pack :: proc(packer: ^AtlasPacker)->(ok:bool) {
     for i:int = 0; i < packer.length; i += 1 {
         rect: ^rectf = &packer.buffer[i]
         packer.stb_buffer[i] = {
