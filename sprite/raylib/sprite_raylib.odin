@@ -10,11 +10,11 @@ SpriteRaylib::struct{
     tint: rl.Color,
 }
 
-DrawSpriteRaylib::proc(raylib_sprite:^SpriteRaylib){
+DrawSpriteRaylib::proc(raylib_sprite:^SpriteRaylib) {
     DrawSprite(&raylib_sprite.sprite, raylib_sprite.texture, raylib_sprite.tint)
 }
 
-DrawSprite::proc(sprite:^sp.Sprite, texture:^rl.Texture, tint:rl.Color){
+DrawSprite::proc(sprite:^sp.Sprite, texture:^rl.Texture, tint:rl.Color) {
     target_rect, source_rect: = sp.GetSpriteFrame(sprite)
     target_rect.xy += sprite.offset.xy
 

@@ -17,6 +17,7 @@ init :: proc() {
 
 	load_assets()
 	create_tiles()
+	create_dualgrid_tiles()
 	create_tilemap()
     if state_list[state_index].init != nil { state_list[state_index].init() }
 }

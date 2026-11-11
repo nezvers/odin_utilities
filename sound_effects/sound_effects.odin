@@ -19,7 +19,7 @@ SoundEffect::struct{
 }
 
 @(private="file")
-GetPitch::proc(sound:^SoundEffect, delta:f32){
+UpdatePitch::proc(sound:^SoundEffect, delta:f32){
     if delta < sound.retrigger_interval {
         if sound.pitch > sound.pitch_max {
             sound.pitch = sound.pitch_max + (Lerp(sound.pitch_rand_min, sound.pitch_rand_max, rand.float32()) - 1)
@@ -52,6 +52,6 @@ Play::proc(sound:^SoundEffect, time_seconds:f64)->bool {
     }
     delta:f32 = cast(f32)(time_seconds - sound.last_time)
     sound.last_time = time_seconds
-    GetPitch(sound, delta)
+    UpdatePitch(sound, delta)
     return true
 }

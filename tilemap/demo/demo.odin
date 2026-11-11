@@ -15,6 +15,7 @@ state_list: []State = {
 	state_drag,
 	state_resize,
 	state_ruletile,
+	state_dualgrid,
 }
 
 Example :: enum {
@@ -28,6 +29,7 @@ Example :: enum {
 	Tilemap_Drag,
 	Tilemap_Resize,
 	Tilemap_Ruletile,
+	Tilemap_Dualgrid,
 	COUNT,
 }
 current_example:Example = Example.Draw_Atlas
@@ -43,6 +45,7 @@ example_names:[]cstring = {
 	"Tilemap Dragging",
 	"Tilemap Resizing",
 	"Ruletile Painting",
+	"Dual Grid Painting",
 }
 
 screen_size:Vector2
@@ -50,8 +53,10 @@ is_hovering_buttons:bool
 
 game_init :: proc() {
 	tileset_texture = rl.LoadTexture("../assets/textures/tileset_template.png")
+	tileset_dualgrid_texture = rl.LoadTexture("../assets/textures/tileset_template_dualgrid.png")
 	// demo_common.odin
 	create_tiles()
+	create_dualgrid_tiles()
 	create_tilemap()
 
 	screen_size = {cast(f32)rl.GetScreenWidth(), cast(f32)rl.GetScreenHeight()}
@@ -61,6 +66,7 @@ game_init :: proc() {
 
 game_shutdown :: proc() {
 	rl.UnloadTexture(tileset_texture)
+	rl.UnloadTexture(tileset_dualgrid_texture)
 }
 
 update :: proc() {

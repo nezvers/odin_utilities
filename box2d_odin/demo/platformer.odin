@@ -332,11 +332,11 @@ update_coins :: proc() {
     // TODO: use triggered buffer
     for i:int = 0; i < len(coins); i += 1 {
         if !coins[i].active { continue }
-        if coins[i].triggered {
-            coins[i].active = false
-            if b2.Shape_IsValid(coins[i].sensor.shape){b2_odin.DestroyShape(coins[i].sensor.shape)}
-            if b2.Body_IsValid(coins[i].body){b2_odin.DestroyBody(coins[i].body)}
-        }
+        if !coins[i].triggered { continue }
+
+        coins[i].active = false
+        if b2.Shape_IsValid(coins[i].sensor.shape){b2_odin.DestroyShape(coins[i].sensor.shape)}
+        if b2.Body_IsValid(coins[i].body){b2_odin.DestroyBody(coins[i].body)}
     }
 }
 
@@ -392,16 +392,16 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
     actor.shape_torso = b2.CreateCapsuleShape(actor.body, torso_def, capsule)
 
     // Coin Sensor
-    coin_sensor_def := b2.DefaultShapeDef()
-    coin_sensor_def.filter.categoryBits = u64(kind)
-    coin_sensor_def.filter.maskBits = u64(coin) | u64(EntityKind.jumpad)
-    // coin_sensor_def.isSensor = true
-    coin_sensor_def.enableSensorEvents = true
-    coin_sensor_def.userData = rawptr(&actor.sensor_actor)
+    sensor_def := b2.DefaultShapeDef()
+    sensor_def.filter.categoryBits = u64(kind)
+    sensor_def.filter.maskBits = u64(coin) | u64(EntityKind.jumpad)
+    // sensor_def.isSensor = true
+    sensor_def.enableSensorEvents = true
+    sensor_def.userData = rawptr(&actor.sensor_actor)
 
-    actor.sensor_actor.shape = b2.CreateCapsuleShape(actor.body, coin_sensor_def, capsule)
+    actor.sensor_actor.shape = b2.CreateCapsuleShape(actor.body, sensor_def, capsule)
     actor.sensor_actor.entity = rawptr(actor)
-    actor.sensor_actor.kind = .actor
+    actor.sensor_actor.kind = SensorKind.actor
 
     // Feet
     // feet_def := b2.DefaultShapeDef()
@@ -471,7 +471,7 @@ update_actor :: proc(actor: ^Actor) {
     }
 
     // Gravity
-    target_velocity.y += GRAVITY * rl.GetFrameTime()
+    target_velocity.y += GRAVITY * delta_time
 
     // Jumping 
     if actor.state.grounded {
@@ -516,11 +516,11 @@ sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
     visitor := cast(^Sensor)b2.Shape_GetUserData(event.visitorShapeId)
     
     #partial switch sensor.kind {
-    case .none:
+    case SensorKind.none:
         break
-    case .actor:
+    case SensorKind.actor:
         break
-    case .coin:
+    case SensorKind.coin:
         coin: = cast(^Coin)sensor.entity
         if coin.triggered { return }
         if visitor.kind == .actor && cast(^Actor)visitor.entity == &player {
@@ -528,7 +528,7 @@ sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
             score += 1
         }
         break
-    case .jumpad:
+    case SensorKind.jumpad:
         // pad: = cast(^Coin)sensor.entity
         if visitor.kind == .actor {
             actor: ^Actor = cast(^Actor)visitor.entity
@@ -546,18 +546,19 @@ sensor_begin_event :: proc(event: b2.SensorBeginTouchEvent) {
             b2.Body_SetLinearVelocity(prop.body, velocity)
         }
         break
-    case .ground:
+    case SensorKind.ground:
         break
     }
 }
 
 sensor_end_event :: proc(event: b2.SensorEndTouchEvent) {
+    if !b2.Shape_IsValid(event.sensorShapeId) { return }
     sensor := cast(^Sensor)b2.Shape_GetUserData(event.sensorShapeId)
     
     #partial switch sensor.kind {
-    case .none:
+    case SensorKind.none:
         break
-    case .ground:
+    case SensorKind.ground:
         break
     }
 }

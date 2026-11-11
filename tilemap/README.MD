@@ -22,6 +22,10 @@ Abstraction layer that represents Tile collection. It holds slice of Tiles that 
 ## Tilemap
 Abstraction layer that represents a map layer. It holds slice of TileID that can be mapped to Tileset, Tile or TileAtlas.    
 
+## Dual grid
+Framework agnostic dual grid tiling (`dual_grid.odin`). Data tilemap stores what each cell is, a display tilemap (`DualGridInit`) is 1 cell bigger and shifted by half a tile, each display cell picks a tile from 4 surrounding data cells with `DUAL_GRID_MASK_TO_TILE`.    
+Update with `DualGridUpdateTilemap` or `DualGridUpdateNeighbours`, draw display tilemap with usual `DrawTilemap`. Ported from Karl2D `dual_grid_tilemap` example.    
+
 ## Editing
 Framework agnostic and basic tilemap editor functions that utilizes libraries functions and acts also as examples for your own editor.    
 
