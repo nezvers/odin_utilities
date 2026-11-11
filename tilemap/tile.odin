@@ -1,13 +1,13 @@
 package tilemap
 
 // 
-TileInit :: proc(tile: ^Tile, index_buffer:[]TileID, initial_length:u32){
+TileInit :: proc(tile: ^Tile, index_buffer:[]TileID, initial_length:u32) {
     tile.data = index_buffer
     tile.length = initial_length
     tile.capacity = cast(u32)len(index_buffer)
 }
 
-TileNewDefault :: proc(index_buffer:[]TileID, initial_length:u32, tile_id:TileID)->Tile{
+TileNewDefault :: proc(index_buffer:[]TileID, initial_length:u32, tile_id:TileID)->Tile {
     tile:Tile = {
         index_buffer,
         initial_length,
@@ -17,7 +17,7 @@ TileNewDefault :: proc(index_buffer:[]TileID, initial_length:u32, tile_id:TileID
     return tile
 }
 
-TileAppend :: proc(tile: ^Tile, tile_id:TileID){
+TileAppend :: proc(tile: ^Tile, tile_id:TileID) {
     if (tile.length > tile.capacity -1){
         assert(false)
         return
@@ -26,17 +26,17 @@ TileAppend :: proc(tile: ^Tile, tile_id:TileID){
     tile.length += 1
 }
 
-TileRemoveId :: proc(tile: ^Tile, tile_id:TileID){
+TileRemoveId :: proc(tile: ^Tile, tile_id:TileID) {
     is_removed:bool
     i:u32 = 0
     for ; i < tile.length; {
-        if (tile.data[i] == tile_id){
+        if (tile.data[i] == tile_id) {
             is_removed = true
             break
         }
         i += 1
     }
-    if (!is_removed){
+    if (!is_removed) {
         return
     }
 
@@ -47,7 +47,7 @@ TileRemoveId :: proc(tile: ^Tile, tile_id:TileID){
     tile.length -= 1
 }
 
-TileRemoveIndex :: proc(tile: ^Tile, index:u32){
+TileRemoveIndex :: proc(tile: ^Tile, index:u32) {
     for i: = index; i < tile.length -1; i += 1 {
         tile.data[i] = tile.data[i +1]
     }
@@ -55,8 +55,8 @@ TileRemoveIndex :: proc(tile: ^Tile, index:u32){
 }
 
 // Get default 0th ID or TILE_EMPTY if no IDs inside
-TileGetId :: proc(tile: ^Tile)->TileID{
-    if (tile.length == 0){
+TileGetId :: proc(tile: ^Tile)->TileID {
+    if (tile.length == 0) {
         assert(false)
         return TILE_EMPTY
     }
@@ -66,17 +66,17 @@ TileGetId :: proc(tile: ^Tile)->TileID{
 
 // Use pointer to a seed copy when doing a batch of drawing to get repeatable results
 // Seed is mutated
-TileGetRandomSeed :: proc(tile: ^Tile, seed: ^u32)->TileID{
-    if (tile.length == 0){
+TileGetRandomSeed :: proc(tile: ^Tile, seed: ^u32)->TileID {
+    if (tile.length == 0) {
         assert(false)
         return TILE_EMPTY
     }
-    index_rnd:u32 = cast(u32)rnd_int(seed, 0, cast(int)tile.length)
+    index_rnd:u32 = cast(u32)rnd_int(seed, 0, cast(int)(tile.length - 1))
     result:TileID = tile.data[index_rnd]
     return result
 }
 
-TileGetRandomXY :: proc(tile: ^Tile, seed:u32, seed_x:int, seed_y:int)->TileID{
+TileGetRandomXY :: proc(tile: ^Tile, seed:u32, seed_x:int, seed_y:int)->TileID {
     if (tile.length == 0){
         assert(false)
         return TILE_EMPTY

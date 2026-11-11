@@ -23,6 +23,7 @@ state_list: []GameState = {
     tilemap_drag_state,
     tilemap_paint_state,
     tilemap_ruletile_state,
+    tilemap_dualgrid_state,
 }
 
 StateIndex :: enum {
@@ -36,6 +37,7 @@ StateIndex :: enum {
     Tilemap_Drag,
     Tilemap_Paint,
     Tilemap_Ruletile,
+    Tilemap_Dualgrid,
 	COUNT,
 }
 state_index:StateIndex = StateIndex.Draw_Atlas

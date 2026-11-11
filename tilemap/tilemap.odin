@@ -37,12 +37,14 @@ TilemapGetTile :: proc(tilemap: ^Tilemap, tile_pos: vec2i)->TileID {
 TilemapGetTileWorld :: proc(tilemap: ^Tilemap, world_pos: vec2i)->TileID {
     relative_pos: vec2i = world_pos - tilemap.position
     tile_pos: vec2i = relative_pos / tilemap.tile_size
+    if (relative_pos.x < 0) {tile_pos.x -= 1}
+    if (relative_pos.y < 0) {tile_pos.y -= 1}
     result: = TilemapGetTile(tilemap, tile_pos)
     return result
 }
 
 // Get rectangle region of populated tiles 
-TilemapGetUsedRecti :: proc(tilemap: ^Tilemap)->recti{
+TilemapGetUsedRecti :: proc(tilemap: ^Tilemap)->recti {
     left: i32 = tilemap.size.x - 1
     top: i32 = tilemap.size.y - 1
     right: i32 = 0
@@ -108,7 +110,7 @@ TilemapClampRecti :: proc(tilemap: ^Tilemap, relative_rect:recti)->recti {
 }
 
 // Set tile id in tile coordinates
-TilemapSetTile :: proc(tilemap: ^Tilemap, tile_pos:vec2i, tile_id:TileID){
+TilemapSetTile :: proc(tilemap: ^Tilemap, tile_pos:vec2i, tile_id:TileID) {
     if (tile_id == TILE_INVALID) {
         return
     }
@@ -122,13 +124,13 @@ TilemapSetTile :: proc(tilemap: ^Tilemap, tile_pos:vec2i, tile_id:TileID){
 }
 
 // Set tile id in world coordinates
-TilemapSetTileWorld :: proc(tilemap: ^Tilemap, world_pos:vec2i, tile_id:TileID){
+TilemapSetTileWorld :: proc(tilemap: ^Tilemap, world_pos:vec2i, tile_id:TileID) {
     tile_pos:vec2i = TilemapGetWorld2Tile(tilemap, world_pos)
     TilemapSetTile(tilemap, tile_pos, tile_id)
 }
 
 // Translate world coordinates to tile coordinates
-TilemapGetWorld2Tile :: proc(tilemap: ^Tilemap, world_pos:vec2i)->vec2i{
+TilemapGetWorld2Tile :: proc(tilemap: ^Tilemap, world_pos:vec2i)->vec2i {
     x:i32 = world_pos.x - tilemap.position.x
     y:i32 = world_pos.y - tilemap.position.y
     if (x < 0){
@@ -153,7 +155,7 @@ TilemapGetTile2World :: proc(tilemap: ^Tilemap, tile_pos:vec2i)->vec2i {
 }
 
 // Fills TileID in region
-TilemapSetTileIdBlock :: proc(tilemap: ^Tilemap, left_x:i32, top_y:i32, columns:i32, rows:i32, tile_id:TileID){
+TilemapSetTileIdBlock :: proc(tilemap: ^Tilemap, left_x:i32, top_y:i32, columns:i32, rows:i32, tile_id:TileID) {
     if (tile_id == TILE_INVALID) {
         return
     }
@@ -168,8 +170,8 @@ TilemapSetTileIdBlock :: proc(tilemap: ^Tilemap, left_x:i32, top_y:i32, columns:
         (from.y + rows) < tilemap.size.y ? (from.y + rows) : tilemap.size.y,
     }
 
-    for y in from.y..< to.y {
-        for x in from.x..< to.x {
+    for y: = from.y; y < to.y; y += 1 {
+        for x: = from.x; x < to.x; x += 1 {
             i:i32 = x + y * tilemap.size.x
             tilemap.grid[i] = tile_id
         }
@@ -178,7 +180,7 @@ TilemapSetTileIdBlock :: proc(tilemap: ^Tilemap, left_x:i32, top_y:i32, columns:
 
 // Change position & size to fit rectangle, excess gets clipped
 // Requires a temporary buffer to hold used rectangle
-TilemapResize :: proc(tilemap: ^Tilemap, relative_rect:recti, temp_buffer:[]TileID){
+TilemapResize :: proc(tilemap: ^Tilemap, relative_rect:recti, temp_buffer:[]TileID) {
     used_rect:recti = TilemapGetUsedRecti(tilemap)
     assert(cast(i32)len(temp_buffer) >= used_rect.w * used_rect.h)
 
@@ -197,7 +199,7 @@ TilemapResize :: proc(tilemap: ^Tilemap, relative_rect:recti, temp_buffer:[]Tile
 }
 
 // Copy TileID from region and place as 1D array in out_buffer
-TilemapGetRegionData :: proc(tilemap: ^Tilemap, rect_section:recti, out_buffer:[]TileID){
+TilemapGetRegionData :: proc(tilemap: ^Tilemap, rect_section:recti, out_buffer:[]TileID) {
     rect:recti = rect_section
     buffer_len: = cast(i32)len(out_buffer)
     assert(rect.w * rect.h <= buffer_len)
@@ -218,7 +220,7 @@ TilemapGetRegionData :: proc(tilemap: ^Tilemap, rect_section:recti, out_buffer:[
 }
 
 // Copy TileID from in_buffer assuming data is 1D array representing provided region in tile coordinates
-TilemapSetRegionData :: proc(tilemap: ^Tilemap, rect_section:recti, in_buffer:[]TileID, write_empty:bool){
+TilemapSetRegionData :: proc(tilemap: ^Tilemap, rect_section:recti, in_buffer:[]TileID, write_empty:bool) {
     rect:recti = rect_section
     if (rect.w < 1 || rect.h < 1){return}
     if (rect.x > tilemap.size.x - 1){return}
@@ -250,7 +252,7 @@ TilemapSetRegionData :: proc(tilemap: ^Tilemap, rect_section:recti, in_buffer:[]
 }
 
 // Copy TileID as 1D array from in_buffer starting from 0th index
-TilemapSetData :: proc(tilemap: ^Tilemap, in_buffer:[]TileID, data_width:u32, data_height:u32){
+TilemapSetData :: proc(tilemap: ^Tilemap, in_buffer:[]TileID, data_width:u32, data_height:u32) {
     width:u32 = data_width < cast(u32)tilemap.size.x ? data_width : cast(u32)tilemap.size.x
     height:u32 = data_height < cast(u32)tilemap.size.y ? data_height : cast(u32)tilemap.size.y
 

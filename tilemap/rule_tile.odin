@@ -1,7 +1,7 @@
 package tilemap
 
 // Process single cell for tilemap_out
-AutotileRuleUpdateCell::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]AutotileRule, tile_pos:vec2i){
+AutotileRuleUpdateCell::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]AutotileRule, tile_pos:vec2i) {
     assert(tile_pos.x >= 0)
     assert(tile_pos.y >= 0)
     assert(tile_pos.x < tilemap_in.tile_size.x)
@@ -18,7 +18,7 @@ AutotileRuleUpdateCell::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]
     index_out:i32 = tile_pos.x + tile_pos.y * tilemap_out.size.x
     // TODO: remove
     tile_in:TileID = TilemapGetTile(tilemap_in, tile_pos)
-    if tile_in != TILE_EMPTY {
+    if (tile_in != TILE_EMPTY) {
         tile_in = tile_in
     }
 
@@ -68,7 +68,7 @@ AutotileRuleUpdateCell::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]
     }
 }
 
-AutotileRuleUpdateTilemap::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]AutotileRule){
+AutotileRuleUpdateTilemap::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]AutotileRule) {
     assert(tilemap_in.size == tilemap_out.size)
     assert(len(tilemap_in.grid) >= len(tilemap_out.grid))
 
@@ -81,7 +81,7 @@ AutotileRuleUpdateTilemap::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules
     }
 }
 
-AutotileRuleUpdateRect::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]AutotileRule, region:recti){
+AutotileRuleUpdateRect::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]AutotileRule, region:recti) {
     rect:recti = TilemapClampRecti(tilemap_in, region)
     tile_pos:vec2i
     for y:i32 = rect.y; y < (rect.y + rect.h); y += 1 {
@@ -92,7 +92,7 @@ AutotileRuleUpdateRect::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]
     }
 }
 
-AutotileRuleUpdateNeighbours::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]AutotileRule, tile_pos:vec2i){
+AutotileRuleUpdateNeighbours::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, rules:[]AutotileRule, tile_pos:vec2i) {
     neighbour_list:[]vec2i = {
         tile_pos - {-1, -1},
         tile_pos - {0, -1},
@@ -106,10 +106,10 @@ AutotileRuleUpdateNeighbours::proc(tilemap_in:^Tilemap, tilemap_out:^Tilemap, ru
     test_pos:vec2i
     for i:int = 0; i < len(neighbour_list); i += 1 {
         test_pos = neighbour_list[i]
-        if (test_pos.x < 0 || test_pos.y < 0 ){
+        if (test_pos.x < 0 || test_pos.y < 0 ) {
             continue
         }
-        if (test_pos.x > tilemap_in.size.x -1 || test_pos.y > tilemap_in.size.y -1){
+        if (test_pos.x > tilemap_in.size.x -1 || test_pos.y > tilemap_in.size.y -1) {
             continue
         }
         AutotileRuleUpdateCell(tilemap_in, tilemap_out, rules[:], test_pos)

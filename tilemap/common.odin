@@ -19,11 +19,6 @@ rectf :: struct {
 TileID :: u8
 TILE_EMPTY: TileID: 0
 TILE_INVALID: TileID: 255
-RIGHTi:vec2i:   {1,0}
-LEFTi:vec2i:    {-1,0}
-UPi:vec2i:      {0,-1}
-DOWNi:vec2i:    {0,1}
-ZEROi:vec2i:    {0,0}
 
 // Data about Texture positions
 TileAtlas :: struct {
@@ -111,6 +106,7 @@ RectiClipRecti :: proc(clip:^recti, rect:^recti) {
     }
 }
 
+// Create a rectangle from two points
 RectiFromRange :: proc(from:vec2i, to:vec2i)->recti {
     result:recti = {}
 

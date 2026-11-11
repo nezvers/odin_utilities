@@ -6,6 +6,7 @@ import "../../../karl2d"
 
 import sfx "../.."
 import glue "../../karl2d"
+SfxKarl2D :: glue.SfxKarl2D
 
 import "core:math"
 PI :: math.PI
@@ -18,8 +19,8 @@ sfx_state: GameState = {
     draw,
 }
 
-button_sound: karl2d.Sound
-damage_sound: karl2d.Sound
+button_clip: karl2d.Audio_Clip
+damage_clip: karl2d.Audio_Clip
 
 button_sfx: sfx.SoundEffect = {
     volume = 1,
@@ -45,20 +46,23 @@ damage_sfx: sfx.SoundEffect = {
     pitch_return = 1,
 }
 
+button_sfx_karl2d: SfxKarl2D
+damage_sfx_karl2d: SfxKarl2D
+
 init :: proc() {
     background_color = karl2d.WHITE
 
-    button_sound = karl2d.load_sound_from_bytes(#load("../../../assets/sounds/button_sound.wav"))
-    damage_sound = karl2d.load_sound_from_bytes(#load("../../../assets/sounds/damage_sound.wav"))
+    button_clip = karl2d.load_audio_clip_from_bytes(#load("../../../assets/sounds/button_sound.wav"))
+    damage_clip = karl2d.load_audio_clip_from_bytes(#load("../../../assets/sounds/damage_sound.wav"))
 
     // Apply volume setting
-    glue.Init(&button_sfx, &button_sound)
-    glue.Init(&damage_sfx, &damage_sound)
+    button_sfx_karl2d = glue.Init(&button_sfx, &button_clip)
+    damage_sfx_karl2d = glue.Init(&damage_sfx, &damage_clip)
 }
 
 finit :: proc() {
-    karl2d.destroy_sound(button_sound)
-    karl2d.destroy_sound(damage_sound)
+    karl2d.destroy_audio_clip(button_clip)
+    karl2d.destroy_audio_clip(damage_clip)
 }
 
 process :: proc() {
@@ -77,16 +81,16 @@ draw :: proc() {
     karl2d.draw_text("Button", {button_rect.x + 5, button_rect.y + 3}, FONT_SIZE, karl2d.BLACK)
     if (check_hover(mouse_position, button_rect)){
         if karl2d.mouse_button_went_down(.Left) {
-            glue.Play(&button_sfx, current_time, &button_sound)
+            glue.PlaySfxKarl2D(&button_sfx_karl2d, current_time)
         }
     }
-    button_rect.y += button_rect.y + 5
+    button_rect.y += BUTTON_SIZE.y + 5
 
     karl2d.draw_rect(button_rect, karl2d.LIGHT_GRAY)
     karl2d.draw_text("Damage", {button_rect.x + 5, button_rect.y + 3}, FONT_SIZE, karl2d.BLACK)
     if (check_hover(mouse_position, button_rect)){
         if karl2d.mouse_button_went_down(.Left) {
-            glue.Play(&button_sfx, current_time, &button_sound)
+            glue.PlaySfxKarl2D(&damage_sfx_karl2d, current_time)
         }
     }
 }

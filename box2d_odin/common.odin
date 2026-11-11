@@ -31,5 +31,5 @@ pos_to_b2 :: proc(pos: Vec2, size: Vec2) -> b2.Vec2 {
 
 // convert a box2D center position to corner position
 b2_to_pos :: proc(pos: b2.Vec2, size: Vec2) -> Vec2 {
-	return {pos.x - size.x * 0.5, -pos.y - size.y * 0.5}
+	return {pos.x - size.x * 0.5, -pos.y + size.y * 0.5}
 }

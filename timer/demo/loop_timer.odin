@@ -3,8 +3,8 @@ package demo
 
 import "core:fmt"
 import rl "vendor:raylib"
-import ti ".."
-Timer :: ti.Timer
+import timerPackage ".."
+Timer :: timerPackage.Timer
 
 @(private="package")
 state_loop_timer: State = {
@@ -38,7 +38,7 @@ init :: proc() {
     input_value.digits[0] = 0
     loop_timer.wait = input_to_seconds()
 
-    ti.Reset(&loop_timer)
+    timerPackage.Reset(&loop_timer)
     measure_clock = rl.MeasureText("00:00:00.000", HEIGHT_CLOCK)
 
     rl.InitAudioDevice()
@@ -53,7 +53,7 @@ finit :: proc() {
 
 update :: proc() {
     delta_time:f32 = rl.GetFrameTime()
-    ti.Update(&loop_timer, delta_time)
+    timerPackage.Update(&loop_timer, delta_time)
     flash_update(delta_time)
     update_keyboard_input()
 }
@@ -113,7 +113,7 @@ timeout :: proc( timer: ^Timer) {
 }
 
 seconds_to_clock :: proc(sec:f32)->cstring {
-    seconds,minutes,hours,ms: = ti.seconds_to_clock(sec)
+    seconds,minutes,hours,ms: = timerPackage.seconds_to_clock(sec)
     return rl.TextFormat("%02d:%02d:%02d.%03d", hours, minutes, seconds, ms)
 }
 
@@ -180,7 +180,7 @@ update_keyboard_input :: proc() {
     if rl.IsKeyPressed(rl.KeyboardKey.ENTER) && input_is_valid() {
         loop_timer.wait = input_to_seconds()
         loop_timer.active = false
-        ti.Reset(&loop_timer)
+        timerPackage.Reset(&loop_timer)
     }
     if rl.IsKeyPressed(rl.KeyboardKey.SPACE) {
         if loop_timer.mode == .loop {
@@ -189,7 +189,7 @@ update_keyboard_input :: proc() {
             if loop_timer.remain > 0 {
                 loop_timer.active = !loop_timer.active
             } else {
-                ti.Start(&loop_timer)
+                timerPackage.Start(&loop_timer)
             }
         }
     }

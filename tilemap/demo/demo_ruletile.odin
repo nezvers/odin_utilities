@@ -7,11 +7,12 @@ import rl "vendor:raylib"
 
 AutotileRule:: tm.AutotileRule
 RuleMatch:: tm.RuleMatch
-RIGHTi::tm.RIGHTi
-LEFTi::tm.LEFTi
-UPi::tm.UPi
-DOWNi::tm.DOWNi
-ZEROi::tm.ZEROi
+
+RIGHTi:vec2i:   {1,0}
+LEFTi:vec2i:    {-1,0}
+UPi:vec2i:      {0,-1}
+DOWNi:vec2i:    {0,1}
+ZEROi:vec2i:    {0,0}
 
 @(private="package")
 state_ruletile:State = {
