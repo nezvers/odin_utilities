@@ -41,6 +41,42 @@ tile_list:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]Tile
 tilemap: Tilemap
 tilemap_buffer: [MAP_SIZE.x * MAP_SIZE.y]TileID
 
+// Dual grid tile sheet is 4x4 tiles
+DUALGRID_ATLAS_SIZE:vec2i: {4, 4}
+tile_atlas_dualgrid: tm.TileAtlas
+tileset_dualgrid:Tileset
+atlas_buffer_dualgrid:[DUALGRID_ATLAS_SIZE.x * DUALGRID_ATLAS_SIZE.y + 1]Vec2
+tile_buffer_dualgrid:[DUALGRID_ATLAS_SIZE.x * DUALGRID_ATLAS_SIZE.y + 1]TileID
+tile_list_dualgrid:[DUALGRID_ATLAS_SIZE.x * DUALGRID_ATLAS_SIZE.y + 1]Tile
+
+create_dualgrid_tiles :: proc() {
+	tile_size:Vec2 = {cast(f32)TILE_SIZE.x, cast(f32)TILE_SIZE.y}
+	tm.TileAtlasInit(&tile_atlas_dualgrid, tile_size, atlas_buffer_dualgrid[:])
+	initial_length_tileset:u32 = len(tile_list_dualgrid)
+	tm.TilesetInit(&tileset_dualgrid, tile_list_dualgrid[:], initial_length_tileset)
+
+	// Represents TILE_EMPTY
+	tex_pos:Vec2 = {0.0, 0.0}
+	initial_length:u32 = 1
+	tm.TileAtlasInsert(&tile_atlas_dualgrid, tex_pos, 0)
+	tile_buffer_dualgrid[0] = TILE_EMPTY
+	tm.TileInit(&tile_list_dualgrid[0], tile_buffer_dualgrid[0:1], initial_length)
+
+	for i:i32 = 0; i < (DUALGRID_ATLAS_SIZE.x * DUALGRID_ATLAS_SIZE.y); i += 1{
+		x:i32 = i % DUALGRID_ATLAS_SIZE.x
+		y:i32 = i / DUALGRID_ATLAS_SIZE.x
+		tex_pos = {
+			cast(f32)(x * TILE_SIZE.x),
+			cast(f32)(y * TILE_SIZE.y),
+		}
+
+		tile_i:u32 = cast(u32)(i + 1)
+		tm.TileAtlasInsert(&tile_atlas_dualgrid, tex_pos, tile_i)
+		tile_buffer_dualgrid[tile_i] = cast(u8)tile_i
+		tm.TileInit(&tile_list_dualgrid[tile_i], tile_buffer_dualgrid[tile_i:tile_i+1], initial_length)
+	}
+}
+
 load_assets :: proc() {
     // tileset_texture = karl2d.load_texture_from_file("../assets/textures/tileset_template.png")
     tileset_texture = karl2d.load_texture_from_bytes(#load("../../../assets/textures/tileset_template.png"))
@@ -49,6 +85,7 @@ load_assets :: proc() {
 
 unload_assets :: proc() {
     karl2d.destroy_texture(tileset_texture)
+	karl2d.destroy_texture(tileset_dualgrid_texture)
 }
 
 create_tiles :: proc() {
