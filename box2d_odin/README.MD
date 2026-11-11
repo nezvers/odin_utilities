@@ -1,6 +1,6 @@
 # Box2D Odin
 Abstraction and example functions for using Box2D
-`odin run demo`
+`odin run demo_raylib`
 
 ## Karl2D
 Karl2D should be one directory back, next to this library.

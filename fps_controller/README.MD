@@ -6,4 +6,4 @@ No actual physics, just movement.
 - Strafe jumping    
 - Boomer shooter camera animations     
 
-`odin run demo`    
+`odin run demo_raylib`    

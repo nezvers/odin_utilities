@@ -3,7 +3,7 @@ Designed to not allocate but work on provided slices. Meaning user can manage al
 Very flexible and hackable API.    
 To increase chance for more games including level editors I created common actions as demo examples that also helped me to bugfix the system.    
 
-`odin run demo`    
+`odin run demo_raylib`    
 
 Provides `raylib` implementation and demo example for integration with drawing and data management.    
 

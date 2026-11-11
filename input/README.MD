@@ -1,6 +1,6 @@
 # Input
 Helper functions to implement input rebinding and reading axis inputs as button state (pressed, released, held).    
-`odin run demo`    
+`odin run demo_raylib`    
     
 `UpdateAxis()` - call at update loop beginning to enable axis as button states    
 `GetAxisState(device: i32, id: i32)` - used internally but can be used to read if axis is in either polarity end    

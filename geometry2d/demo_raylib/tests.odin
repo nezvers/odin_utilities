@@ -1,0 +1,279 @@
+#+private file
+package demo_raylib
+
+import geometry2d ".."
+import rl "vendor:raylib"
+
+// DEMO STATE
+@(private="package")
+state_tests:State = {
+    enter,
+    exit,
+    nil,
+    draw,
+}
+
+TestResult :: struct{
+    name:cstring,
+    result:bool,
+}
+
+overlap_results: [dynamic]TestResult
+contains_results: [dynamic]TestResult
+intersects_results: [dynamic]TestResult
+project_results: [dynamic]TestResult
+
+enter :: proc(){
+    test_overlap()
+    test_contains()
+    test_intersects()
+    test_project()
+}
+
+exit::proc(){
+    delete(overlap_results)
+    delete(contains_results)
+    delete(intersects_results)
+    delete(project_results)
+}
+
+draw :: proc(){
+    RESULT_OFFSET :: 120
+    COLUMN_OFFSET :: 200
+    ROW_OFFSET_TITLE :: 25
+    ROW_OFFSET_TEST :: 15
+    TOP_Y :: 10
+    FONT_SIZE_TITLE :: 20
+    FONT_SIZE_TEST :: 10
+    result_string: []cstring = {
+        "FAILED",
+        "PASSED",
+    }
+    result_color: []Color = {rl.RED, rl.LIME}
+
+    x:i32 = 10
+    y:i32 = TOP_Y
+    rl.DrawText("OVERLAP", x, y, FONT_SIZE_TITLE, rl.WHITE)
+    y += ROW_OFFSET_TITLE
+    for i in 0..< len(overlap_results){
+        y += ROW_OFFSET_TEST
+        result_i := int(overlap_results[i].result)
+        rl.DrawText(overlap_results[i].name, x, y, FONT_SIZE_TEST, rl.WHITE)
+        rl.DrawText(result_string[result_i], x + RESULT_OFFSET, y, FONT_SIZE_TEST, result_color[result_i])
+    }
+
+    x += COLUMN_OFFSET
+    y = TOP_Y
+    rl.DrawText("CONTAINS", x, y, FONT_SIZE_TITLE, rl.WHITE)
+    y += ROW_OFFSET_TITLE
+    for i in 0..< len(contains_results){
+        y += ROW_OFFSET_TEST
+        result_i := int(contains_results[i].result)
+        rl.DrawText(contains_results[i].name, x, y, FONT_SIZE_TEST, rl.WHITE)
+        rl.DrawText(result_string[result_i], x + RESULT_OFFSET, y, FONT_SIZE_TEST, result_color[result_i])
+    }
+
+    x += COLUMN_OFFSET
+    y = TOP_Y
+    rl.DrawText("INTERSECTS", x, y, FONT_SIZE_TITLE, rl.WHITE)
+    y += ROW_OFFSET_TITLE
+    for i in 0..< len(intersects_results){
+        y += ROW_OFFSET_TEST
+        result_i := int(intersects_results[i].result)
+        rl.DrawText(intersects_results[i].name, x, y, FONT_SIZE_TEST, rl.WHITE)
+        rl.DrawText(result_string[result_i], x + RESULT_OFFSET, y, FONT_SIZE_TEST, result_color[result_i])
+    }
+
+    x += COLUMN_OFFSET
+    y = TOP_Y
+    rl.DrawText("PROJECT", x, y, FONT_SIZE_TITLE, rl.WHITE)
+    y += ROW_OFFSET_TITLE
+    for i in 0..< len(project_results){
+        y += ROW_OFFSET_TEST
+        result_i := int(project_results[i].result)
+        rl.DrawText(project_results[i].name, x, y, FONT_SIZE_TEST, rl.WHITE)
+        rl.DrawText(result_string[result_i], x + RESULT_OFFSET, y, FONT_SIZE_TEST, result_color[result_i])
+    }
+}
+
+append_result::proc(list:^[dynamic]TestResult, result:TestResult){
+    append(list, result)
+}
+
+test_overlap::proc(){
+    append_result(&overlap_results, {name = "Point: Point 1", result = geometry2d.OverlapsPointPoint({1000.967, 1000.967}, {1000.967, 1000.967})})
+    append_result(&overlap_results, {name = "Point: Point 2", result = !geometry2d.OverlapsPointPoint({1001.967, 1000.967}, {1000.967, 1000.967})})
+    append_result(&overlap_results, {name = "Line: Point 1", result = geometry2d.OverlapsLinePoint({1000., 1000., 3000., 3000.,}, {2000., 2000.})})
+    append_result(&overlap_results, {name = "Line: Point 2", result = !geometry2d.OverlapsLinePoint({1000., 1000., 3004., 3000.,}, {2000., 2000.})})
+    append_result(&overlap_results, {name = "Line: Line 1", result = geometry2d.OverlapsLineLine({1000., 1000., 3000., 3000.,}, {1001., 1000., 2000., 3000.,})})
+    append_result(&overlap_results, {name = "Line: Line 2", result = geometry2d.OverlapsLineLine({1000., 1000., 3000., 3000.,}, {1000., 999., 3000., 3003.,})})
+    append_result(&overlap_results, {name = "Line: Line 3", result = !geometry2d.OverlapsLineLine({1000., 1000., 3000., 3000.,}, {1000., 1000.01, 3000., 3000.01,})})
+    append_result(&overlap_results, {name = "Circle: Point 1", result = geometry2d.OverlapsCirclePoint({1000., 1000., 3000.,}, {4000., 1000.})})
+    append_result(&overlap_results, {name = "Circle: Point 2", result = !geometry2d.OverlapsCirclePoint({1000., 1000., 3000.,}, {4000., 1000.8})})
+    append_result(&overlap_results, {name = "Circle: Line 1", result = geometry2d.OverlapsCircleLine({3000., 3000., 2000.,}, {1000., 1000., 3000., 1000.,})})
+    append_result(&overlap_results, {name = "Circle: Line 2", result = geometry2d.OverlapsCircleLine({3000., 3000., 2000.,}, {1000., 3000., 5000., 3000.,})})
+    append_result(&overlap_results, {name = "Circle: Line 3", result = !geometry2d.OverlapsCircleLine({3000., 3000., 2000.,}, {5000.01, 3000., 6000., 3000.,})})
+    append_result(&overlap_results, {name = "Circle: Circle 1", result = geometry2d.OverlapsCircleCircle({3000., 3000., 2000.,}, {2000., 3000., 500.,})})
+    append_result(&overlap_results, {name = "Circle: Circle 2", result = geometry2d.OverlapsCircleCircle({3000., 3000., 2000.,}, {7000., 3000., 2000.,})})
+    append_result(&overlap_results, {name = "Circle: Circle 3", result = !geometry2d.OverlapsCircleCircle({3000., 3000., 2000.,}, {7000.01, 3000., 2000.,})})
+    append_result(&overlap_results, {name = "Circle: Rectangle 1", result = geometry2d.OverlapsCircleRectangle({3000., 3000., 2000.,}, {4900., 2000., 2000., 2000.,})})
+    append_result(&overlap_results, {name = "Circle: Rectangle 2", result = !geometry2d.OverlapsCircleRectangle({3000., 3000., 2000.,}, {5000.01, 2000., 2000., 2000.,})})
+    append_result(&overlap_results, {name = "Circle: Triangle 1", result = geometry2d.OverlapsCircleTriangle({3000., 3000., 2000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })})
+    append_result(&overlap_results, {name = "Circle: Triangle 2", result = !geometry2d.OverlapsCircleTriangle({5000.01, 1000., 2000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })})
+    append_result(&overlap_results, {name = "Rectangle: Point 1", result = geometry2d.OverlapsRectanglePoint({1000., 1000., 3000., 3000.,}, {3090., 4000.})})
+    append_result(&overlap_results, {name = "Rectangle: Point 2", result = !geometry2d.OverlapsRectanglePoint({1000., 1000., 3000., 3000.,}, {4000., 4000.001})})
+    append_result(&overlap_results, {name = "Rectangle: Line 1", result = geometry2d.OverlapsRectangleLine({1000., 1000., 3000., 3000.,}, {999., 1000., 3001., 1000.,})})
+    append_result(&overlap_results, {name = "Rectangle: Line 2", result = geometry2d.OverlapsRectangleLine({1000., 1000., 3000., 3000.,}, {1000., 1000., 3000., 900.,})})
+    append_result(&overlap_results, {name = "Rectangle: Circle 1", result = geometry2d.OverlapsRectangleCircle({1000., 1000., 3000., 3000.,}, {6000., 2000., 2000.01,})})
+    append_result(&overlap_results, {name = "Rectangle: Circle 2", result = !geometry2d.OverlapsRectangleCircle({1000., 1000., 3000., 3000.,}, {6000., 2000., 2000.,})})
+    append_result(&overlap_results, {name = "Rectangle: Triangle 1", result = geometry2d.OverlapsRectangleTriangle({1000., 1000., 3000., 3000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })})
+    append_result(&overlap_results, {name = "Rectangle: Triangle 2", result = !geometry2d.OverlapsRectangleTriangle({3000.01, 1000., 3000., 3000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })})
+    append_result(&overlap_results, {name = "Triangle: Point 1", result = geometry2d.OverlapsTrianglePoint({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1500., 2000.})})
+    append_result(&overlap_results, {name = "Triangle: Point 2", result = !geometry2d.OverlapsTrianglePoint({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1500., 2000.1})})
+    append_result(&overlap_results, {name = "Triangle: Line 1", result = geometry2d.OverlapsTriangleLine({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1000., 3000., 3000., 3000.,})})
+    append_result(&overlap_results, {name = "Triangle: Line 2", result = !geometry2d.OverlapsTriangleLine({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1000., 1000.1, 2000., 3000.1,})})
+    append_result(&overlap_results, {name = "Triangle: Line 3", result = !geometry2d.OverlapsTriangleLine({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, geometry2d.RectLeft({3000.1, 999., 3000., 3000.,}))})
+    append_result(&overlap_results, {name = "Triangle: Circle 1", result = geometry2d.OverlapsTriangleCircle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {5000., 1000., 2000.,})})
+    append_result(&overlap_results, {name = "Triangle: Circle 2", result = !geometry2d.OverlapsTriangleCircle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {5000.01, 1000., 2000.,})})
+    append_result(&overlap_results, {name = "Triangle: Rectangle 1", result = geometry2d.OverlapsTriangleRectangle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {3000., 999., 3000., 3000.,})})
+    append_result(&overlap_results, {name = "Triangle: Rectangle 2", result = !geometry2d.OverlapsTriangleRectangle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {3000.1, 999., 3000., 3000.,})})
+    append_result(&overlap_results, {name = "Triangle: Triangle 1", result = geometry2d.OverlapsTriangleTriangle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {{3000., 1000.}, {5000., 1000.}, {4000., 3000.}, })})
+    append_result(&overlap_results, {name = "Triangle: Triangle 2", result = !geometry2d.OverlapsTriangleTriangle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {{3000.01, 1000.}, {5000., 1000.}, {4000., 3000.}, })})
+}
+
+test_contains::proc(){
+    append_result(&contains_results, {name = "Point: Point 1", result = geometry2d.ContainsPointPoint({1000.967, 1000.967}, {1000.967, 1000.967})})
+    append_result(&contains_results, {name = "Point: Point 2", result = !geometry2d.ContainsPointPoint({1000.967, 1000.967}, {1000.867, 1000.967})})
+    append_result(&contains_results, {name = "Line: Point 1", result = geometry2d.ContainsLinePoint({1000., 1000., 3000., 3000.,}, {2000., 2000.})})
+    append_result(&contains_results, {name = "Line: Point 2", result = !geometry2d.ContainsLinePoint({1000., 1000., 3000., 3000.,}, {2000.01, 2000.})})
+    append_result(&contains_results, {name = "Line: Line 1", result = geometry2d.ContainsLineLine({1000., 1000., 3000., 3000.,}, {1001., 1001., 2000., 2000.,})})
+    append_result(&contains_results, {name = "Line: Line 2", result = !geometry2d.ContainsLineLine({1000., 1000., 3000., 3000.,}, {1001., 1001., 2000., 2000.01,})})
+    append_result(&contains_results, {name = "Circle: Point 1", result = geometry2d.ContainsCirclePoint({1000., 1000., 3000.,}, {4000., 1000.})})
+    append_result(&contains_results, {name = "Circle: Point 2", result = !geometry2d.ContainsCirclePoint({1000., 1000., 3000.,}, {4000., 1000.8})})
+    append_result(&contains_results, {name = "Circle: Line 1", result = geometry2d.ContainsCircleLine({3000., 3000., 2000.,}, {1000., 3000., 5000., 3000.,})})
+    append_result(&contains_results, {name = "Circle: Line 2", result = !geometry2d.ContainsCircleLine({3000., 3000., 2000.,}, {1000., 3001., 5000., 3001.,})})
+    append_result(&contains_results, {name = "Circle: Circle 1", result = geometry2d.ContainsCircleCircle({3000., 3000., 2000.,}, {2000., 3000., 500.,})})
+    append_result(&contains_results, {name = "Circle: Circle 2", result = !geometry2d.ContainsCircleCircle({3000., 3000., 2000.,}, {2000., 3000., 2000.,})})
+    append_result(&contains_results, {name = "Circle: Circle 3", result = !geometry2d.ContainsCircleCircle({3000., 3000., 2000.,}, {5001., 3000., 2000.,})})
+    append_result(&contains_results, {name = "Circle: Rectangle 1", result = geometry2d.ContainsCircleRectangle({3000., 3000., 2000.,}, {2000., 2000., 2000., 2000.,})})
+    append_result(&contains_results, {name = "Circle: Rectangle 2", result = !geometry2d.ContainsCircleRectangle({3000., 3000., 2000.,}, {1200., 2000., 2000., 2000.,})})
+    append_result(&contains_results, {name = "Circle: Triangle 1", result = geometry2d.ContainsCircleTriangle({2000., 3000., 3000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })})
+    append_result(&contains_results, {name = "Circle: Triangle 2", result = !geometry2d.ContainsCircleTriangle({3000., 3000., 2000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })})
+    append_result(&contains_results, {name = "Rectangle: Point 1", result = geometry2d.ContainsRectanglePoint({1000., 1000., 3000., 3000.,}, {3090., 4000.})})
+    append_result(&contains_results, {name = "Rectangle: Point 2", result = !geometry2d.ContainsRectanglePoint({1000., 1000., 3000., 3000.,}, {4000., 4000.001})})
+    append_result(&contains_results, {name = "Rectangle: Line 1", result = geometry2d.ContainsRectangleLine({1000., 1000., 3000., 3000.,}, {1000., 1000., 4000., 4000.,})})
+    append_result(&contains_results, {name = "Rectangle: Line 2", result = geometry2d.ContainsRectangleLine({1000., 1000., 3000., 3000.,}, {1000., 1000., 4000., 1000.,})})
+    append_result(&contains_results, {name = "Rectangle: Line 3", result = !geometry2d.ContainsRectangleLine({1000., 1000., 3000., 3000.,}, {1000., 1000., 4000.01, 1000.,})})
+    append_result(&contains_results, {name = "Rectangle: Circle 1", result = geometry2d.ContainsRectangleCircle({1000., 1000., 3000., 3000.,}, {2000., 2000., 1000.,})})
+    append_result(&contains_results, {name = "Rectangle: Circle 2", result = !geometry2d.ContainsRectangleCircle({1000., 1000., 3000., 3000.,}, {2000., 2000., 2000.,})})
+    append_result(&contains_results, {name = "Rectangle: Triangle 1", result = geometry2d.ContainsRectangleTriangle({1000., 1000., 3000., 3000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })})
+    append_result(&contains_results, {name = "Rectangle: Triangle 2", result = !geometry2d.ContainsRectangleTriangle({1000., 1000., 1900., 3000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })})
+    append_result(&contains_results, {name = "Triangle: Point 1", result = geometry2d.ContainsTrianglePoint({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1500., 2000.})})
+    append_result(&contains_results, {name = "Triangle: Point 2", result = !geometry2d.ContainsTrianglePoint({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1500., 2000.1})})
+    append_result(&contains_results, {name = "Triangle: Line 1", result = geometry2d.ContainsTriangleLine({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1000., 1000., 3000., 1000.,})})
+    append_result(&contains_results, {name = "Triangle: Line 2", result = !geometry2d.ContainsTriangleLine({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1000., 1000., 3000., 1000.01,})})
+    append_result(&contains_results, {name = "Triangle: Circle 1", result = geometry2d.ContainsTriangleCircle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {2000., 2000., 500.,})})
+    append_result(&contains_results, {name = "Triangle: Circle 2", result = !geometry2d.ContainsTriangleCircle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {5000.01, 1000., 2000.,})})
+    append_result(&contains_results, {name = "Triangle: Rectangle 1", result = geometry2d.ContainsTriangleRectangle({{1000., 1000.}, {3000., 1000.}, {1000., 3000.}, }, {1000., 1000., 1000., 1000.,})})
+    append_result(&contains_results, {name = "Triangle: Rectangle 2", result = !geometry2d.ContainsTriangleRectangle({{1000., 1000.}, {3000., 1000.}, {1000., 3000.}, }, {1000., 1000., 1000., 2000.,})})
+    append_result(&contains_results, {name = "Triangle: Triangle 1", result = geometry2d.ContainsTriangleTriangle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {{1000., 1000.}, {3000., 1000.}, {2000., 2999.}, })})
+    append_result(&contains_results, {name = "Triangle: Triangle 2", result = !geometry2d.ContainsTriangleTriangle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {{1000., 1000.}, {3000., 1000.}, {2000., 3001.}, })})
+}
+
+// TODO: intersect filter duplicate
+test_intersects::proc(){
+    point_count:int
+    _, point_count = geometry2d.IntersectsPointPoint({1000.967, 1000.967}, {1000.967, 1000.967})
+    append_result(&intersects_results, {name = "Point: Point 1",        result = point_count == 1})
+    _, point_count = geometry2d.IntersectsPointPoint({1000.967, 1000.967}, {1000.867, 1000.967})
+    append_result(&intersects_results, {name = "Point: Point 2",        result = point_count == 0})
+    _, point_count = geometry2d.IntersectsLinePoint({1000., 1000., 3000., 3000.,}, {2000., 2000.})
+    append_result(&intersects_results, {name = "Line: Point 1",         result = point_count == 1})
+    _, point_count = geometry2d.IntersectsLinePoint({1000., 1000., 3000., 3000.,}, {2000.01, 2000.})
+    append_result(&intersects_results, {name = "Line: Point 2",         result = point_count == 0})
+    _, point_count = geometry2d.IntersectsLineLine({1000., 1000., 3000., 3000.,}, {1001., 1001., 2000., 2000.,})
+    append_result(&intersects_results, {name = "Line: Line 1",          result = point_count == 0})
+    _, point_count = geometry2d.IntersectsLineLine({1000., 1000., 3000., 3000.,}, {1000., 1000.01, 2000., 2000.01,})
+    append_result(&intersects_results, {name = "Line: Line 2",          result = point_count == 0})
+    _, point_count = geometry2d.IntersectsLineLine({2000., 2000., 2000., 4000.,}, {1000., 3000., 5000., 3000.,})
+    append_result(&intersects_results, {name = "Line: Line 3",          result = point_count == 1})
+
+    _, point_count = geometry2d.IntersectsCirclePoint({1000., 1000., 3000.,}, {4000., 1000.})
+    append_result(&intersects_results, {name = "Circle: Point 1",       result = point_count == 1})
+    _, point_count = geometry2d.IntersectsCirclePoint({1000., 1000., 3000.,}, {4000.01, 1000.})
+    append_result(&intersects_results, {name = "Circle: Point 2",       result = point_count == 0})
+    _, point_count = geometry2d.IntersectsCircleLine({3000., 3000., 2000.,}, {1000., 2000., 5000., 2000.,})
+    append_result(&intersects_results, {name = "Circle: Line 1",        result = point_count == 2})
+    _, point_count = geometry2d.IntersectsCircleLine({3000., 3000., 2000.,}, {1000., 5000., 5000., 5000.01,})
+    append_result(&intersects_results, {name = "Circle: Line 2",        result = point_count == 0})
+    _, point_count = geometry2d.IntersectsCircleCircle({3000., 3000., 2000.,}, {1000., 3000., 2000.,})
+    append_result(&intersects_results, {name = "Circle: Circle 1",      result = point_count == 2})
+    _, point_count = geometry2d.IntersectsCircleCircle({3000., 3000., 2000.,}, {3000., 3000., 1000.,})
+    append_result(&intersects_results, {name = "Circle: Circle 2",      result = point_count == 0})
+    _, point_count = geometry2d.IntersectsCircleRectangle({3000., 3000., 2000.,}, {3000., 3000., 3000., 3000.,})
+    append_result(&intersects_results, {name = "Circle: Rectangle 1",   result = point_count == 2})
+    _, point_count = geometry2d.IntersectsCircleRectangle({3000., 3000., 3000.,}, {2000., 2000., 2000., 2000.,})
+    append_result(&intersects_results, {name = "Circle: Rectangle 2",   result = point_count == 0})
+    _, point_count = geometry2d.IntersectsCircleTriangle({2000., 3000., 1000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })
+    append_result(&intersects_results, {name = "Circle: Triangle 1",    result = point_count == 2})
+    _, point_count = geometry2d.IntersectsCircleTriangle({3000., 3000., 4000.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })
+    append_result(&intersects_results, {name = "Circle: Triangle 2",    result = point_count == 0})
+
+    _, point_count = geometry2d.IntersectsRectanglePoint({1000., 1000., 3000., 3000.,}, {2000., 2000.})
+    append_result(&intersects_results, {name = "Rectangle: Point 1",    result = point_count == 1})
+    _, point_count = geometry2d.IntersectsRectanglePoint({1000., 1000., 3000., 3000.,}, {4000.01, 2000.})
+    append_result(&intersects_results, {name = "Rectangle: Point 2",    result = point_count == 0})
+    _, point_count = geometry2d.IntersectsRectangleLine({2000., 2000., 2000., 2000.,}, {1000., 3000., 5000., 2000.,})
+    append_result(&intersects_results, {name = "Rectangle: Line 1",     result = point_count == 2})
+    _, point_count = geometry2d.IntersectsRectangleLine({1000., 1000., 3000., 3000.,}, {2000., 2000., 3000., 3000.,})
+    append_result(&intersects_results, {name = "Rectangle: Line 2",     result = point_count == 0})
+    _, point_count = geometry2d.IntersectsRectangleTriangle({2000., 2000., 2000., 2000.,}, {{1900., 3500.}, {2100., 1990.}, {4100., 4100.}, })
+    append_result(&intersects_results, {name = "Rectangle: Triangle 1", result = point_count == 6})
+    _, point_count = geometry2d.IntersectsRectangleTriangle({2000., 2000., 2000., 2000.,}, {{1900., 3500.}, {2100., 1990.}, {1000., 1000.}, })
+    append_result(&intersects_results, {name = "Rectangle: Triangle 2", result = point_count == 2})
+
+    _, point_count = geometry2d.IntersectsTrianglePoint({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1500., 2000.})
+    append_result(&intersects_results, {name = "Triangle: Point 1",     result = point_count == 1})
+    _, point_count = geometry2d.IntersectsTrianglePoint({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1500., 2000.1})
+    append_result(&intersects_results, {name = "Triangle: Point 2",     result = point_count == 0})
+    _, point_count = geometry2d.IntersectsTriangleLine({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1500., 900., 1500., 3000.,})
+    append_result(&intersects_results, {name = "Triangle: Line 1",      result = point_count == 2})
+    _, point_count = geometry2d.IntersectsTriangleLine({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {1000., 1000.01, 3000., 1000.01,})
+    append_result(&intersects_results, {name = "Triangle: Line 2",      result = point_count == 2})
+    _, point_count = geometry2d.IntersectsTriangleCircle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {2000., 3000., 1000.,})
+    append_result(&intersects_results, {name = "Triangle: Circle 1",    result = point_count == 2})
+    _, point_count = geometry2d.IntersectsTriangleCircle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {3000., 3000., 4000.,})
+    append_result(&intersects_results, {name = "Triangle: Circle 2",    result = point_count == 0})
+    _, point_count = geometry2d.IntersectsTriangleRectangle({{1900., 3500.}, {2100., 1990.}, {4100., 4100.}, }, {2000., 2000., 2000., 2000.,})
+    append_result(&intersects_results, {name = "Triangle: Rectangle 1", result = point_count == 6})
+    _, point_count = geometry2d.IntersectsTriangleRectangle({{1900., 3500.}, {2100., 1990.}, {1000., 1000.}, }, {2000., 2000., 2000., 2000.,})
+    append_result(&intersects_results, {name = "Triangle: Rectangle 2", result = point_count == 2})
+    _, point_count = geometry2d.IntersectsTriangleTriangle({{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, }, {{1000., 2900.}, {3000., 2900.}, {2000., 900.}, })
+    append_result(&intersects_results, {name = "Triangle: Triangle 1",  result = point_count == 6})
+
+    _, point_count = geometry2d.IntersectsRayPoint({1000., 1000., 3000., 0.,}, {2000., 1000.,})
+    append_result(&intersects_results, {name = "Ray: Point 1",  result = point_count == 1})
+    _, point_count = geometry2d.IntersectsRayPoint({1000., 1000., 3000., 0.,}, {2000., 1000.01,})
+    append_result(&intersects_results, {name = "Ray: Point 2",  result = point_count == 0})
+    _, point_count = geometry2d.IntersectsRayLine({1000., 2000., 3000., 0.,}, {2000., 1000., 2000., 4000.,})
+    append_result(&intersects_results, {name = "Ray: Line 1",  result = point_count == 1})
+    _, point_count = geometry2d.IntersectsRayLine({1000., 1000., 3000., 3000.,}, {2000., 1000., 5000., 4000.,})
+    append_result(&intersects_results, {name = "Ray: Line 2",  result = point_count == 0})
+    _, point_count = geometry2d.IntersectsRayCircle({1000., 2000., 3000., 0.,}, {2000., 2000., 500.,})
+    append_result(&intersects_results, {name = "Ray: Circle 1",  result = point_count == 2})
+    _, point_count = geometry2d.IntersectsRayRectangle({1000., 1000., 4000., 5000.,}, {2000., 2000., 2000., 2000.,})
+    append_result(&intersects_results, {name = "Ray: Rectangle 1",  result = point_count == 2})
+    _, point_count = geometry2d.IntersectsRayTriangle({1000., 2000., 3000., 0.,}, {{1000., 1000.}, {3000., 1000.}, {2000., 3000.}, })
+    append_result(&intersects_results, {name = "Ray: Triangle 1",  result = point_count == 2})
+    _, point_count = geometry2d.IntersectsRayRay({1000., 1000., 3000., 3000.,}, {1000., 3000., 3000., -3000.,})
+    append_result(&intersects_results, {name = "Ray: Ray 1",  result = point_count == 1})
+}
+
+test_project :: proc(){
+    _result:geometry2d.ProjectResult
+    _result = geometry2d.ProjectCirclePoint({0,0,100}, {2000, 1000}, {1000, 1000, 1000, 0})
+    append_result(&project_results, {name = "Circle: Point 1", result = _result.hit})
+
+    _result = geometry2d.ProjectCircleLine({0,0,100}, {2000, 1000, 2000, 2000}, {1000, 1000, 1000, 0})
+    append_result(&project_results, {name = "Circle: Line 1", result = _result.hit})
+}

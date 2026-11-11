@@ -1,7 +1,7 @@
 # Grid collision map
 Uniform grid broad phase and simple AABB narrow phase for 2D. Designed to not allocate: size of the grid, boxes per cell and collider count are compile time parameters, all memory is inside of the `GridMap` value (put it in a global or your own struct).    
 
-`odin run demo` / `odin run demo_karl2d` / `odin test .`    
+`odin run demo_raylib` / `odin run demo_karl2d` / `odin test .`    
 Demo: screen covering 80x45 grid of 16x16 cells. LMB paint wall (gray), RMB erase, MMB or `E` place player (8x16, lime), `WASD` move at 200 px/s with collision.    
 
 ```odin

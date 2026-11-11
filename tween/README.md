@@ -1,7 +1,7 @@
 # Tween
 Property animation like Godot `Tween`, without allocations. Everything lives in fixed arrays, so a `Tween` can be a field in your own struct or be taken from a `TweenSystem` pool.    
 
-`odin run demo` / `odin run demo_karl2d` / `odin test .`    
+`odin run demo_raylib` / `odin run demo_karl2d` / `odin test .`    
 
 ```odin
 import tw "tween"

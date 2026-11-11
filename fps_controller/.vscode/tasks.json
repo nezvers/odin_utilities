@@ -6,14 +6,26 @@
         {
             "label": "Build Debug",
             "type": "shell",
-            "command": "odin build demo -strict-style -vet -debug",
-            "group": "build"
+            "command": "odin build demo_raylib -strict-style -vet -out:${config:project_name}.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build demo_raylib -strict-style -vet -out:${config:project_name}.bin -debug"
+            },
+            "osx": {
+                "command": "odin build demo_raylib -strict-style -vet -out:${config:project_name}.bin -debug"
+            }
         },
         {
             "label": "Build Release",
             "type": "shell",
-            "command": "odin build demo -strict-style -vet -no-bounds-check -o:speed",
-            "group": "build"
+            "command": "odin build demo_raylib -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.exe",
+            "group": "build",
+            "linux": {
+                "command": "odin build demo_raylib -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.bin"
+            },
+            "osx": {
+                "command": "odin build demo_raylib -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.bin"
+            }
         }
     ]
 }

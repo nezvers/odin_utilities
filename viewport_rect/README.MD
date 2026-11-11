@@ -1,2 +1,2 @@
 # Viewport texture scaling functions
-`odin run demo`
+`odin run demo_raylib`

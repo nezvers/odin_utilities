@@ -6,4 +6,4 @@ Utility functions to do project automatizations.
 - extract TAR & ZIP
 - clone git repository
 
-`odin run demo` - showcase these functions on raylib repository
+`odin run demo_raylib` - showcase these functions on raylib repository

@@ -1,7 +1,7 @@
 # Forward and Backward Reaching Inverse Kinematic
 
 ### Example
-`odin run demo`
+`odin run demo_raylib`
 
 ```ruby
 fabrik::proc(point_list:[]vec2, length_buffer:[]f32, target_pos:vec2, max_itterations:int, error_treshold:f32)

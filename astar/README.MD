@@ -1,6 +1,6 @@
 # Astar
 
-`odin run demo`
+`odin run demo_raylib`
 
 ### Grid
 Uses pre-cached neighbours    
