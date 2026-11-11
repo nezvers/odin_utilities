@@ -18,10 +18,12 @@ State :: struct {
 
 state_list: []State = {
 	state_controller,
+	state_box3d,
 }
 
 StateIndex :: enum {
     CONTROLLER,
+    BOX3D,
 	COUNT,
 }
 

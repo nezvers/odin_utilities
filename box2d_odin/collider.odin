@@ -17,7 +17,7 @@ CreateBody :: proc(
     body_def: = b2.DefaultBodyDef()
     body_def.position = pos
     body_def.type = type
-    body_def.fixedRotation = fixed_rotation
+    body_def.motionLocks = {angularZ = fixed_rotation}
     body_def.name = name
     body:b2.BodyId = b2.CreateBody(ctx.world, body_def)
     return body

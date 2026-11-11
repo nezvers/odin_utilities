@@ -142,7 +142,7 @@ init :: proc() {
     background_color = karl2d.BLACK
     b2_odin.WorldInit(&world_ctx, 32, {0, 0}, sensor_begin_event, sensor_end_event)
     glue.WorldInitDebug(&world_ctx)
-    b2.World_SetPreSolveCallback(world_ctx.world, PreSolveFcn, nil)
+    b2.World_SetPreSolveCallback(world_ctx.world, PreSolveFcn, nil, nil)
     create_platforms()
     create_boxes()
     create_coins()
@@ -380,7 +380,7 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
     body_def := b2.DefaultBodyDef()
     body_def.position = {pos.x, -pos.y - size.y}
     body_def.type = .dynamicBody
-    body_def.fixedRotation = true
+    body_def.motionLocks = {angularZ = true}
     body_def.name = name
     body_def.userData = rawptr(actor)
     // body_def.gravityScale = 0
@@ -574,7 +574,7 @@ sensor_end_event :: proc(event: b2.SensorEndTouchEvent) {
     }
 }
 
-PreSolveFcn :: proc "c" (shapeIdA, shapeIdB: b2.ShapeId, manifold: ^b2.Manifold, ctx: rawptr) -> bool {
+PreSolveFcn :: proc "c" (shapeIdA, shapeIdB: b2.ShapeId, manifold: ^b2.Manifold, ctx: rawptr) {
     contactA: = cast(^Contact)b2.Shape_GetUserData(shapeIdA)
     contactB: = cast(^Contact)b2.Shape_GetUserData(shapeIdB)
     
@@ -592,6 +592,4 @@ PreSolveFcn :: proc "c" (shapeIdA, shapeIdB: b2.ShapeId, manifold: ^b2.Manifold,
             actor.state.grounded = true
         }
     }
-
-    return true
 }

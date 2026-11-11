@@ -14,10 +14,12 @@ GameState :: struct {
 
 state_list: []GameState = {
     platformer_state,
+    samples_state,
 }
 
 StateIndex :: enum {
     Platformer,
+    Samples,
 	COUNT,
 }
 state_index:StateIndex = StateIndex.Platformer

@@ -18,10 +18,12 @@ State :: struct {
 
 state_list: []State = {
 	state_platformer,
+	state_samples,
 }
 
 StateIndex :: enum {
     PLATFORMER,
+    SAMPLES,
 	COUNT,
 }
 
