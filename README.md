@@ -11,6 +11,7 @@
 [fps_controller]: ## "Camera rotation, camera animation, strafe jump velocity"
 [input]: ## "Helper functions for rebinding and gamepad axis as buttons functionality"
 
+- ✅ 3D models (glTF/GLB, skinning, raylib) `odin run 3d_models/demo_raylib`
 - ✅ [App state][app_state] `odin run app_state/demo_raylib`
 - ❎ Astar `odin run astar/demo_raylib`
     - ✅ grid 2D (4-way Manhattan, 8-way Euclidian)
