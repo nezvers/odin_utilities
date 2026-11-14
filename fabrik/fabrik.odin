@@ -1,5 +1,7 @@
 // Forward and Backward Reach Inverse Kinematics
 package fabrik
+import "core:testing"
+import "core:math"
 
 // point_list - set of points that are moved. 0th point is kept in place.
 // length_buffer - used to populate magnitude between points, need to be at least _point_count - 1
@@ -103,4 +105,60 @@ pull_front::proc(point_list:[]vec2, length_buffer:[]f32, pos:vec2){
     }
     point_list[0] = _p
     return
+}
+
+// --- Tests ---
+
+@(private="file")
+chain_lengths_hold :: proc(points: []vec2, lengths: []f32) -> bool {
+    for i in 0 ..< len(points) - 1 {
+        if abs(vec2_mag(points[i + 1] - points[i]) - lengths[i]) > 1e-3 { return false }
+    }
+    return true
+}
+
+@(test)
+test_fabrik_lengths_and_stretch :: proc(t: ^testing.T) {
+    points: [4]vec2 = {{0, 0}, {3, 4}, {3, 4 + 2}, {3, 4 + 2 + 1}}
+    lengths: [3]f32
+    total: f32 = calculate_lengths(points[:], lengths[:])
+    testing.expect_value(t, lengths, [3]f32{5, 2, 1})
+    testing.expect_value(t, total, f32(8))
+
+    stretch(points[:], lengths[:], {1, 0})
+    testing.expect_value(t, points, [4]vec2{{0, 0}, {5, 0}, {7, 0}, {8, 0}})
+}
+
+@(test)
+test_fabrik_reaches_a_target_within_range :: proc(t: ^testing.T) {
+    points: [4]vec2 = {{0, 0}, {1, 0}, {2, 0}, {3, 0}}
+    lengths: [3]f32
+    fabrik(points[:], lengths[:], {1.5, 1.5}, 32, 0.001)
+
+    testing.expect_value(t, points[0], vec2{0, 0})                         // the root never moves
+    testing.expect(t, vec2_mag(points[3] - vec2{1.5, 1.5}) < 0.01, "the tip reaches the target")
+    testing.expect(t, chain_lengths_hold(points[:], lengths[:]), "every segment keeps its length")
+}
+
+@(test)
+test_fabrik_straightens_toward_an_unreachable_target :: proc(t: ^testing.T) {
+    points: [3]vec2 = {{0, 0}, {1, 1}, {2, 0}}
+    lengths: [2]f32
+    fabrik(points[:], lengths[:], {0, 100}, 8, 0.001)
+    testing.expect(t, vec2_mag(points[2] - vec2{0, 2 * math.SQRT_TWO}) < 1e-3, "points straight at the target")
+    testing.expect(t, abs(points[1].x) < 1e-3 && points[1].y > 0, "and the middle joint is on the line")
+}
+
+@(test)
+test_fabrik_pull_passes :: proc(t: ^testing.T) {
+    points: [3]vec2 = {{0, 0}, {1, 0}, {2, 0}}
+    lengths: [2]f32 = {1, 1}
+
+    pull_back(points[:], lengths[:], {0, 5})                               // drag the root, the rest follows
+    testing.expect_value(t, points[0], vec2{0, 5})
+    testing.expect(t, chain_lengths_hold(points[:], lengths[:]))
+
+    pull_front(points[:], lengths[:], {4, 4})                              // drag the tip
+    testing.expect_value(t, points[2], vec2{4, 4})
+    testing.expect(t, chain_lengths_hold(points[:], lengths[:]))
 }

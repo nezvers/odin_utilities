@@ -1,4 +1,5 @@
 package geometry2d
+import "core:testing"
 
 // start = x,y
 // end = z, w
@@ -71,4 +72,24 @@ LineCoeficient :: proc(l:Line) -> vec2{
 	return {m, -m * x1 + y1}
 }
 
+// --- Tests ---
 
+@(test)
+test_line_helpers :: proc(t: ^testing.T) {
+    l: Line = LineNew({1, 1}, {4, 5})
+    testing.expect_value(t, LineVector(l), vec2{3, 4})
+    testing.expect_value(t, LineLength(l), f32(5))
+    testing.expect_value(t, LineLength2(l), f32(25))
+    testing.expect_value(t, LinePointMult(l, 0.5), vec2{2.5, 3})
+    testing.expect_value(t, LinePointNormal(LineNew({0, 0}, {10, 0}), 4), vec2{4, 0})
+
+    along: Line = LineNew({0, 0}, {10, 0})
+    testing.expect_value(t, LineSide(along, {5, 3}), i32(1))
+    testing.expect_value(t, LineSide(along, {5, -3}), i32(-1))
+    testing.expect_value(t, LineSide(along, {5, 0}), i32(0))
+
+    coef: vec2 = LineCoeficient(LineNew({0, 1}, {2, 5}))
+    testing.expect_value(t, coef, vec2{2, 1})
+    vertical: vec2 = LineCoeficient(LineNew({1, 0}, {1, 5}))
+    testing.expect(t, vertical.x == INF_F32 && vertical.y == INF_F32)
+}

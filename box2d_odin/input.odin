@@ -1,4 +1,5 @@
 package box2d_odin
+import "core:testing"
 
 // Framework agnostic input snapshot. The demo of each framework fills it once per frame.
 MouseButton :: enum {
@@ -39,4 +40,20 @@ InputShift :: proc(input: ^Input) -> bool {
 
 InputControl :: proc(input: ^Input) -> bool {
     return input.key_down[.LEFT_CONTROL] || input.key_down[.RIGHT_CONTROL]
+}
+
+// --- Tests ---
+
+@(test)
+test_input_modifiers :: proc(t: ^testing.T) {
+    input: Input
+    testing.expect(t, !InputShift(&input) && !InputControl(&input))
+    input.key_down[.LEFT_SHIFT] = true
+    testing.expect(t, InputShift(&input))
+    testing.expect(t, !InputControl(&input))
+    input.key_down[.LEFT_SHIFT] = false
+    input.key_down[.RIGHT_SHIFT] = true
+    testing.expect(t, InputShift(&input), "either shift counts")
+    input.key_down[.RIGHT_CONTROL] = true
+    testing.expect(t, InputControl(&input), "either control counts")
 }

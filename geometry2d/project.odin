@@ -1,6 +1,7 @@
 package geometry2d
 
 import math "core:math"
+import "core:testing"
 
 // Projects Shape A along a ray, until and if it contacts shape B. If it never contacts
 // then nothing is returned. If it does contact the closest position Shape A can be to
@@ -159,4 +160,20 @@ ProjectCircleTriangle::proc(c:Circle, t:Triangle, r:Ray)->(result:ProjectResult)
     result.hit = true
     assert(result.travel <= 1.0)
     return
+}
+
+// --- Tests ---
+
+@(test)
+test_project_circle_circle :: proc(t: ^testing.T) {
+    // a unit circle travelling along x stops when it touches the circle of radius 1 at x = 10
+    moving: Circle = {0, 0, 1}
+    target: Circle = {10, 0, 1}
+    result: ProjectResult = ProjectCircleCircle(moving, target, RayNew({0, 0}, {1, 0}))
+    testing.expect_value(t, result.hit, true)
+    testing.expect(t, abs(result.travel - 8) < 1e-3)
+    testing.expect(t, abs(result.point.x - 8) < 1e-3 && abs(result.point.y) < 1e-3)
+
+    missing: ProjectResult = ProjectCircleCircle(moving, target, RayNew({0, 0}, {0, 1}))
+    testing.expect_value(t, missing.hit, false)
 }

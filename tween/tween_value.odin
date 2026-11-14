@@ -1,6 +1,7 @@
 package tween
 
 import "core:math"
+import "core:testing"
 
 // Type erased storage for tweened values, every supported type fits in 4 components
 Values :: [4]f64
@@ -107,4 +108,80 @@ ValueWrite :: proc "contextless" (kind:ValueKind, ptr:rawptr, v:Values) {
 @(private="file")
 ColorChannel :: proc "contextless" (value:f64) -> u8 {
     return cast(u8)clamp(math.round(value), 0, 255)
+}
+
+// --- Tests ---
+
+@(test)
+test_value_kind_mapping :: proc(t: ^testing.T) {
+    testing.expect_value(t, ValueKindOf(f32), ValueKind.F32)
+    testing.expect_value(t, ValueKindOf(f64), ValueKind.F64)
+    testing.expect_value(t, ValueKindOf(i32), ValueKind.I32)
+    testing.expect_value(t, ValueKindOf([2]f32), ValueKind.F32_2)
+    testing.expect_value(t, ValueKindOf([3]f32), ValueKind.F32_3)
+    testing.expect_value(t, ValueKindOf([4]f32), ValueKind.F32_4)
+    testing.expect_value(t, ValueKindOf([2]i32), ValueKind.I32_2)
+    testing.expect_value(t, ValueKindOf([4]u8), ValueKind.U8_4)
+}
+
+@(test)
+test_value_storage_pads_unused_components :: proc(t: ^testing.T) {
+    testing.expect_value(t, ValueToStorage(f32(1.5)), Values{1.5, 0, 0, 0})
+    testing.expect_value(t, ValueToStorage(i32(-7)), Values{-7, 0, 0, 0})
+    testing.expect_value(t, ValueToStorage([2]f32{1, 2}), Values{1, 2, 0, 0})
+    testing.expect_value(t, ValueToStorage([3]f32{1, 2, 3}), Values{1, 2, 3, 0})
+    testing.expect_value(t, ValueToStorage([4]u8{10, 20, 30, 255}), Values{10, 20, 30, 255})
+}
+
+@(test)
+test_value_read_write_round_trip :: proc(t: ^testing.T) {
+    f: f32 = 2.5
+    d: f64 = -0.125
+    i: i32 = 42
+    v2: [2]f32 = {1, 2}
+    v3: [3]f32 = {1, 2, 3}
+    v4: [4]f32 = {1, 2, 3, 4}
+    i2: [2]i32 = {-5, 6}
+    color: [4]u8 = {1, 2, 3, 4}
+
+    testing.expect_value(t, ValueRead(.F32, &f), Values{2.5, 0, 0, 0})
+    testing.expect_value(t, ValueRead(.F64, &d), Values{-0.125, 0, 0, 0})
+    testing.expect_value(t, ValueRead(.I32, &i), Values{42, 0, 0, 0})
+    testing.expect_value(t, ValueRead(.F32_2, &v2), Values{1, 2, 0, 0})
+    testing.expect_value(t, ValueRead(.F32_3, &v3), Values{1, 2, 3, 0})
+    testing.expect_value(t, ValueRead(.F32_4, &v4), Values{1, 2, 3, 4})
+    testing.expect_value(t, ValueRead(.I32_2, &i2), Values{-5, 6, 0, 0})
+    testing.expect_value(t, ValueRead(.U8_4, &color), Values{1, 2, 3, 4})
+    testing.expect_value(t, ValueRead(.NONE, &f), Values{})
+
+    ValueWrite(.F32, &f, {9, 0, 0, 0})
+    ValueWrite(.F64, &d, {0.5, 0, 0, 0})
+    ValueWrite(.F32_2, &v2, {7, 8, 0, 0})
+    ValueWrite(.F32_3, &v3, {7, 8, 9, 0})
+    ValueWrite(.F32_4, &v4, {5, 6, 7, 8})
+    testing.expect_value(t, f, f32(9))
+    testing.expect_value(t, d, f64(0.5))
+    testing.expect_value(t, v2, [2]f32{7, 8})
+    testing.expect_value(t, v3, [3]f32{7, 8, 9})
+    testing.expect_value(t, v4, [4]f32{5, 6, 7, 8})
+
+    ValueWrite(.NONE, &f, {1, 1, 1, 1})                                                    // nothing to write to
+    testing.expect_value(t, f, f32(9))
+}
+
+@(test)
+test_value_write_rounds_integers_and_clamps_colors :: proc(t: ^testing.T) {
+    i: i32
+    ValueWrite(.I32, &i, {2.5, 0, 0, 0})
+    testing.expect_value(t, i, i32(3))
+    ValueWrite(.I32, &i, {-2.4, 0, 0, 0})
+    testing.expect_value(t, i, i32(-2))
+
+    i2: [2]i32
+    ValueWrite(.I32_2, &i2, {0.6, -0.6, 0, 0})
+    testing.expect_value(t, i2, [2]i32{1, -1})
+
+    color: [4]u8
+    ValueWrite(.U8_4, &color, {-30, 127.6, 300, 0.4})                                      // a tween can overshoot, a colour channel cannot
+    testing.expect_value(t, color, [4]u8{0, 128, 255, 0})
 }

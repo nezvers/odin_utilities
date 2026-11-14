@@ -1,4 +1,5 @@
 package tilemap
+import "core:testing"
 
 vec2f :: [2]f32
 vec2i :: [2]i32
@@ -131,4 +132,35 @@ RectiFromRange :: proc(from:vec2i, to:vec2i)->recti {
     result.w += 1
     result.h += 1
     return result
+}
+
+// --- Tests ---
+
+@(test)
+test_recti_clip :: proc(t: ^testing.T) {
+    clip: recti = {0, 0, 10, 10}
+
+    left: recti = {-2, 3, 5, 4}
+    RectiClipRecti(&clip, &left)
+    testing.expect_value(t, left, recti{0, 3, 3, 4})
+
+    corner: recti = {8, 8, 5, 5}
+    RectiClipRecti(&clip, &corner)
+    testing.expect_value(t, corner, recti{8, 8, 2, 2})
+
+    inside: recti = {2, 2, 3, 3}
+    RectiClipRecti(&clip, &inside)
+    testing.expect_value(t, inside, recti{2, 2, 3, 3})
+
+    outside: recti = {20, 20, 3, 3}
+    RectiClipRecti(&clip, &outside)
+    testing.expect_value(t, outside.w, i32(0))
+    testing.expect_value(t, outside.h, i32(0))
+}
+
+@(test)
+test_recti_from_range :: proc(t: ^testing.T) {
+    testing.expect_value(t, RectiFromRange({1, 1}, {3, 4}), recti{1, 1, 3, 4})            // both end cells are included
+    testing.expect_value(t, RectiFromRange({3, 4}, {1, 1}), recti{1, 1, 3, 4})            // dragging backwards gives the same rect
+    testing.expect_value(t, RectiFromRange({2, 2}, {2, 2}), recti{2, 2, 1, 1})
 }

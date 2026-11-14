@@ -2,6 +2,7 @@ package geometry2d
 
 import math "core:math"
 import "core:c/libc"
+import "core:testing"
 
 epsilon :: f32(0.001)
 pi_f64 :: f64(3.141592653589793238462643383279502884)
@@ -74,4 +75,36 @@ GetClosestPoint::proc(points:[]vec2, target:vec2)->vec2 {
         }
     }
     return closest_point
+}
+
+// --- Tests ---
+
+@(test)
+test_utility_scalars :: proc(t: ^testing.T) {
+    testing.expect_value(t, Signf(-3), i32(-1))
+    testing.expect_value(t, Signf(0), i32(0))
+    testing.expect_value(t, Signf(2), i32(1))
+    testing.expect_value(t, Signi(-3), i32(-1))
+    testing.expect_value(t, Abs(-2.5), f32(2.5))
+    testing.expect_value(t, Abs(2.5), f32(2.5))
+    testing.expect_value(t, Clamp(5, 0, 3), f32(3))
+    testing.expect_value(t, Clamp(-5, 0, 3), f32(0))
+    testing.expect_value(t, Clamp(1, 0, 3), f32(1))
+}
+
+@(test)
+test_utility_point_lists :: proc(t: ^testing.T) {
+    points: [5]vec2 = {{1, 1}, {2, 2}, {1, 1}, {3, 3}, {2, 2}}
+    count: int = FilterDuplicatePoints(points[:])
+    testing.expect_value(t, count, 3)
+
+    buffer: [4]vec2
+    used: int
+    AppendPoints(buffer[:], &used, []vec2{{1, 0}, {2, 0}})
+    AppendPoints(buffer[:], &used, []vec2{{3, 0}})
+    testing.expect_value(t, used, 3)
+    testing.expect_value(t, buffer[2], vec2{3, 0})
+
+    closest: vec2 = GetClosestPoint([]vec2{{0, 0}, {10, 0}, {4, 1}}, {5, 0})
+    testing.expect_value(t, closest, vec2{4, 1})
 }

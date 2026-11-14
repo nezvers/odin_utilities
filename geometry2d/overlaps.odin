@@ -1,4 +1,5 @@
 package geometry2d
+import "core:testing"
 
 // Check if point overlaps with point (analogous to contains())
 OverlapsPointPoint::proc(p1:vec2, p2:vec2)->bool{
@@ -66,7 +67,8 @@ OverlapsLineRectangle::proc(l:Line, r:Rect)->bool{
 
 // Checks if rectangle overlaps with rectangle
 OverlapsRectangleRectangle::proc(r1:Rect, r2:Rect)->bool{
-    return ContainsRectangleRectangle(r2, r1)
+    // separating axis on both axes: no gap between the two ranges
+    return r1.x < r2.x + r2.z && r2.x < r1.x + r1.z && r1.y < r2.y + r2.w && r2.y < r1.y + r1.w
 }
 
 
@@ -130,4 +132,24 @@ OverlapsCircleTriangle::proc(c:Circle, t:Triangle)->bool{
 // Check if triangle overlaps triangle
 OverlapsTriangleTriangle::proc(t1:Triangle, t2:Triangle)->bool{
     return OverlapsTriangleLine(t1, TriangleSide(t2, 0)) || OverlapsTriangleLine(t1, TriangleSide(t2, 1)) || OverlapsTriangleLine(t1, TriangleSide(t2, 2)) || OverlapsTrianglePoint(t2, t1[0])
+}
+
+// --- Tests ---
+
+@(test)
+test_overlaps :: proc(t: ^testing.T) {
+    testing.expect_value(t, OverlapsRectangleRectangle(Rect{0, 0, 10, 10}, Rect{5, 5, 10, 10}), true)
+    testing.expect_value(t, OverlapsRectangleRectangle(Rect{0, 0, 10, 10}, Rect{20, 0, 5, 5}), false)
+    testing.expect_value(t, OverlapsCircleCircle(Circle{0, 0, 2}, Circle{3, 0, 2}), true)
+    testing.expect_value(t, OverlapsCircleCircle(Circle{0, 0, 2}, Circle{5, 0, 2}), false)
+    testing.expect_value(t, OverlapsCircleRectangle(Circle{12, 5, 3}, Rect{0, 0, 10, 10}), true)
+    testing.expect_value(t, OverlapsCircleRectangle(Circle{20, 5, 3}, Rect{0, 0, 10, 10}), false)
+    testing.expect_value(t, OverlapsLineLine(LineNew({0, 0}, {10, 10}), LineNew({0, 10}, {10, 0})), true)
+    testing.expect_value(t, OverlapsLineLine(LineNew({0, 0}, {10, 0}), LineNew({0, 5}, {10, 5})), false)
+    testing.expect_value(t, OverlapsPointTriangle({2, 2}, Triangle{{0, 0}, {10, 0}, {0, 10}}), true)
+    testing.expect_value(t, OverlapsTriangleTriangle(Triangle{{0, 0}, {10, 0}, {0, 10}}, Triangle{{2, 2}, {12, 2}, {2, 12}}), true)
+    testing.expect_value(t, OverlapsTriangleTriangle(Triangle{{0, 0}, {1, 0}, {0, 1}}, Triangle{{20, 20}, {21, 20}, {20, 21}}), false)
+    testing.expect_value(t, OverlapsRectangleLine(Rect{0, 0, 10, 10}, LineNew({-5, 5}, {15, 5})), true)
+    testing.expect_value(t, OverlapsCircleLine(Circle{0, 0, 2}, LineNew({-5, 1}, {5, 1})), true)
+    testing.expect_value(t, OverlapsCircleLine(Circle{0, 0, 2}, LineNew({-5, 3}, {5, 3})), false)
 }

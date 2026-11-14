@@ -2,7 +2,11 @@ package atlas_packer_karl2d
 
 import "core:log"
 import "core:image"
+// Registers the decoders that LoadImageFromBytes depends on, otherwise it only works when the caller happens to import them
+import _ "core:image/png"
+import _ "core:image/jpeg"
 import "core:slice"
+import "core:testing"
 Image :: image.Image
 Color :: [4]u8
 rectf :: [4]f32
@@ -198,4 +202,114 @@ RegisterFont :: proc(
     append(&state.fonts, font_data)
     ok = true
     return
+}
+
+// --- Tests ---
+// Only the CPU side is tested here, everything that needs a texture or a window is left out.
+
+@(test)
+test_create_and_clear_image :: proc(t: ^testing.T) {
+    image, ok := CreateImage(8)
+    testing.expect(t, ok)
+    defer delete(image.pixels)
+    testing.expect_value(t, image.width, 8)
+    testing.expect_value(t, image.height, 8)
+    testing.expect_value(t, image.channels, 4)
+    testing.expect_value(t, len(image.pixels), 8 * 8 * 4)
+    for value in image.pixels { testing.expect(t, value == 0, "starts transparent") }
+
+    ClearImage(&image, {10, 20, 30, 40})
+    pixels: [^]Color = cast([^]Color)raw_data(image.pixels[:])
+    for i in 0 ..< 64 {
+        if pixels[i] != {10, 20, 30, 40} {
+            testing.expectf(t, false, "pixel %d is %v", i, pixels[i])
+            return
+        }
+    }
+    ClearImage(&image)
+    testing.expect_value(t, pixels[63], Color{0, 0, 0, 0})
+}
+
+@(test)
+test_bake_image_rects_copies_with_padding :: proc(t: ^testing.T) {
+    source, source_ok := CreateImage(8)
+    target, target_ok := CreateImage(16)
+    testing.expect(t, source_ok && target_ok)
+    defer { delete(source.pixels); delete(target.pixels) }
+
+    // every source pixel gets a value that tells where it came from
+    source_pixels: [^]Color = cast([^]Color)raw_data(source.pixels[:])
+    for y in 0 ..< 8 {
+        for x in 0 ..< 8 { source_pixels[x + y * 8] = {u8(x), u8(y), 100, 255} }
+    }
+
+    source_rects: [2]rectf = {{1, 2, 3, 2}, {4, 4, 2, 2}}
+    target_rects: [2]rectf = {{5, 6, 0, 0}, {10, 0, 0, 0}}
+    BakeImageRects(&source, &target, source_rects[:], target_rects[:], 1)
+
+    target_pixels: [^]Color = cast([^]Color)raw_data(target.pixels[:])
+    // first rectangle: its top left source pixel (1, 2) lands at (5 + 1, 6 + 1)
+    testing.expect_value(t, target_pixels[6 + 7 * 16], Color{1, 2, 100, 255})
+    testing.expect_value(t, target_pixels[8 + 8 * 16], Color{3, 3, 100, 255})              // the last pixel of the 3x2 block
+    testing.expect_value(t, target_pixels[5 + 6 * 16], Color{0, 0, 0, 0})                  // the padding stays untouched
+    testing.expect_value(t, target_pixels[9 + 7 * 16], Color{0, 0, 0, 0})                  // nothing is copied beyond the rectangle width
+    // second rectangle
+    testing.expect_value(t, target_pixels[11 + 1 * 16], Color{4, 4, 100, 255})
+    testing.expect_value(t, target_pixels[12 + 2 * 16], Color{5, 5, 100, 255})
+}
+
+@(test)
+test_bake_font_glyphs_writes_white_with_glyph_alpha :: proc(t: ^testing.T) {
+    @(static) font_data := #load("../../assets/fonts/font.ttf")
+    font: packer.Font
+    testing.expect(t, packer.FontInit(&font, font_data, 24))
+
+    letters: []rune = {'H', 'i'}
+    rects: [2]rectf
+    glyphs: [2]packer.Glyph
+    count, rects_ok := packer.GetFontRects(&font, letters, rects[:], glyphs[:], 1)
+    testing.expect(t, rects_ok)
+    testing.expect_value(t, count, 2)
+    rects[1].x = 40                                                                       // place the second glyph away from the first
+
+    atlas, atlas_ok := CreateImage(64)
+    testing.expect(t, atlas_ok)
+    defer delete(atlas.pixels)
+    alpha := make([]u8, packer.GlyphsMaxBytes(glyphs[:]))
+    defer delete(alpha)
+    testing.expect(t, BakeFontGlyphs(&font, glyphs[:], rects[:], &atlas, alpha, 1))
+
+    pixels: [^]Color = cast([^]Color)raw_data(atlas.pixels[:])
+    inked, wrong: int
+    for y in 0 ..< int(glyphs[0].size.y) {
+        for x in 0 ..< int(glyphs[0].size.x) {
+            pixel: Color = pixels[(int(rects[0].x) + 1 + x) + (int(rects[0].y) + 1 + y) * 64]
+            if pixel.a > 0 { inked += 1 }
+            if pixel.rgb != {255, 255, 255} { wrong += 1 }
+        }
+    }
+    testing.expect(t, inked > 0, "the letter is drawn")
+    testing.expect_value(t, wrong, 0)                                                      // colour is white everywhere inside the glyph box
+
+    testing.expect_value(t, pixels[0], Color{0, 0, 0, 0})                                  // outside of the glyph boxes stays transparent
+
+    small: [1]u8
+    testing.expect(t, !BakeFontGlyphs(&font, glyphs[:], rects[:], &atlas, small[:], 1), "an alpha buffer that is too small is reported")
+}
+
+@(test)
+test_load_image_from_bytes :: proc(t: ^testing.T) {
+    @(static) png := #load("../../assets/textures/dust_4_strip.png")
+    loaded, ok := LoadImageFromBytes(png)
+    testing.expect(t, ok)
+    if !ok { return }
+    defer DestroyImage(loaded)
+    testing.expect(t, loaded.width > 0 && loaded.height > 0)
+    testing.expect_value(t, loaded.channels, 4)                                            // alpha is added when the file has none
+    testing.expect_value(t, len(loaded.pixels), loaded.width * loaded.height * 4)
+
+    garbage: [32]u8
+    context.logger = log.nil_logger()                                                      // the failure is expected, the test runner counts logged errors as failures
+    _, garbage_ok := LoadImageFromBytes(garbage[:])
+    testing.expect(t, !garbage_ok, "random bytes are not an image")
 }

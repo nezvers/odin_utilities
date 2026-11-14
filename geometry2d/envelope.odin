@@ -1,6 +1,7 @@
 package geometry2d
 
 import math "core:math"
+import "core:testing"
 
 // Return circle that fully encapsulates a point
 EnvelopeCirclePoint::proc(p:vec2)->Circle{
@@ -45,4 +46,18 @@ EnvelopeCircleTriangle::proc(t:Triangle)->Circle{
         }
     }
     return {circumcenter.x, circumcenter.y, f32(r)}
+}
+
+// --- Tests ---
+
+@(test)
+test_envelope_circles :: proc(t: ^testing.T) {
+    testing.expect_value(t, EnvelopeCirclePoint({2, 3}), Circle{2, 3, 0})
+    testing.expect_value(t, EnvelopeCircleLine(LineNew({0, 0}, {6, 8})), Circle{3, 4, 5})
+    testing.expect_value(t, EnvelopeCircleRectangle(Rect{0, 0, 6, 8}), Circle{3, 4, 5})
+    testing.expect_value(t, EnvelopeCircleCircle(Circle{1, 2, 3}), Circle{1, 2, 3})
+
+    // a right triangle: the hypotenuse is the diameter
+    around: Circle = EnvelopeCircleTriangle(Triangle{{0, 0}, {6, 0}, {0, 8}})
+    testing.expect(t, abs(around.x - 3) < 1e-3 && abs(around.y - 4) < 1e-3 && abs(around.z - 5) < 1e-3)
 }

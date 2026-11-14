@@ -1,4 +1,5 @@
 package geometry2d
+import "core:testing"
 
 
 // Checks if point contains point
@@ -167,4 +168,31 @@ ContainsCircleTriangle::proc(c:Circle, t:Triangle)->bool{
 // Check if triangle contains triangle
 ContainsTriangleTriangle::proc(t1:Triangle, t2:Triangle)->bool{
     return ContainsTriangleLine(t1, TriangleSide(t2, 0)) && ContainsTriangleLine(t1, TriangleSide(t2, 1)) && ContainsTriangleLine(t1, TriangleSide(t2, 2))
+}
+
+// --- Tests ---
+
+@(test)
+test_contains_points :: proc(t: ^testing.T) {
+    testing.expect_value(t, ContainsRectanglePoint(Rect{0, 0, 10, 10}, {5, 5}), true)
+    testing.expect_value(t, ContainsRectanglePoint(Rect{0, 0, 10, 10}, {15, 5}), false)
+    testing.expect_value(t, ContainsCirclePoint(Circle{0, 0, 2}, {1, 1}), true)
+    testing.expect_value(t, ContainsCirclePoint(Circle{0, 0, 2}, {2, 2}), false)
+    testing.expect_value(t, ContainsTrianglePoint(Triangle{{0, 0}, {10, 0}, {0, 10}}, {2, 2}), true)
+    testing.expect_value(t, ContainsTrianglePoint(Triangle{{0, 0}, {10, 0}, {0, 10}}, {8, 8}), false)
+    testing.expect_value(t, ContainsLinePoint(LineNew({0, 0}, {10, 10}), {5, 5}), true)
+    testing.expect_value(t, ContainsLinePoint(LineNew({0, 0}, {10, 10}), {5, 6}), false)
+}
+
+@(test)
+test_contains_shapes :: proc(t: ^testing.T) {
+    testing.expect_value(t, ContainsRectangleRectangle(Rect{0, 0, 10, 10}, Rect{2, 2, 3, 3}), true)
+    testing.expect_value(t, ContainsRectangleRectangle(Rect{0, 0, 10, 10}, Rect{8, 8, 5, 5}), false)
+    testing.expect_value(t, ContainsCircleCircle(Circle{0, 0, 10}, Circle{1, 1, 2}), true)
+    testing.expect_value(t, ContainsCircleCircle(Circle{0, 0, 10}, Circle{9, 0, 2}), false)
+    testing.expect_value(t, ContainsRectangleCircle(Rect{0, 0, 10, 10}, Circle{5, 5, 2}), true)
+    testing.expect_value(t, ContainsRectangleCircle(Rect{0, 0, 10, 10}, Circle{9, 5, 2}), false)
+    testing.expect_value(t, ContainsCircleRectangle(Circle{5, 5, 10}, Rect{3, 3, 4, 4}), true)
+    testing.expect_value(t, ContainsRectangleLine(Rect{0, 0, 10, 10}, LineNew({1, 1}, {9, 9})), true)
+    testing.expect_value(t, ContainsRectangleLine(Rect{0, 0, 10, 10}, LineNew({1, 1}, {19, 9})), false)
 }

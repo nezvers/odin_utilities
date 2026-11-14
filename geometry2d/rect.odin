@@ -1,4 +1,5 @@
 package geometry2d
+import "core:testing"
 
 // pos = x, y
 // size = z, w
@@ -63,5 +64,21 @@ RectSideCount::proc(r:Rect)->u32{
 	return 4
 }
 
+// --- Tests ---
 
-
+@(test)
+test_rect_helpers :: proc(t: ^testing.T) {
+    r: Rect = RectNew({1, 2}, {4, 6})
+    testing.expect_value(t, RectMiddle(r), vec2{3, 5})
+    testing.expect_value(t, RectArea(r), f32(24))
+    testing.expect_value(t, RectPerimeter(r), f32(20))
+    testing.expect_value(t, RectSideCount(r), u32(4))
+    testing.expect_value(t, RectTop(r), Line{1, 2, 5, 2})
+    testing.expect_value(t, RectRight(r), Line{5, 2, 5, 8})
+    testing.expect_value(t, RectBottom(r), Line{1, 8, 5, 8})
+    testing.expect_value(t, RectLeft(r), Line{1, 2, 1, 8})
+    sides: [4]Line = {RectTop(r), RectRight(r), RectBottom(r), RectLeft(r)}
+    for i in u32(0) ..< 4 {
+        testing.expect_value(t, RectSide(r, i), sides[i])
+    }
+}

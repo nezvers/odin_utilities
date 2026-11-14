@@ -2,6 +2,7 @@ package input_karl2d
 
 import "../../karl2d"
 import "core:math"
+import "core:testing"
 
 @(private)
 ButtonState :: enum u8 {
@@ -268,4 +269,18 @@ GetAxisIndex :: proc(device:i32, id: i32)->i32 {
         axis_state[axis_index] = .none
     }
     axis_values[axis_index] = value
+}
+
+// --- Tests ---
+
+@(test)
+test_axis_sign_and_index :: proc(t: ^testing.T) {
+    testing.expect_value(t, GetAxisSign(0.9), i8(1))
+    testing.expect_value(t, GetAxisSign(-0.9), i8(-1))
+    testing.expect_value(t, GetAxisSign(0.3), i8(0))                                       // inside the dead zone
+    testing.expect_value(t, GetAxisSign(-0.5), i8(0))                                      // the edge belongs to the dead zone
+
+    testing.expect_value(t, GetAxisIndex(0, 5), i32(5))
+    testing.expect_value(t, GetAxisIndex(1, 0), i32(AXIS_COUNT))
+    testing.expect_value(t, GetAxisIndex(3, 5), i32(DEVICE_COUNT * AXIS_COUNT - 1))        // the last slot of the state arrays
 }

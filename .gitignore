@@ -8,3 +8,6 @@ log.txt
 *.dll
 *.pdb
 /karl2d/
+# the templates are one folder level too deep to reach the libraries, these junctions (mklink /J) make them build in place
+/templates/karl2d/
+/templates/viewport_rect/

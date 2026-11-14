@@ -5,6 +5,7 @@ package atlas_packer
 
 import "core:fmt"
 import stbrp "vendor:stb/rect_pack"
+import "core:testing"
 stb_Rect:: stbrp.Rect
 
 rectf :: [4]f32
@@ -99,4 +100,46 @@ Pack :: proc(packer: ^AtlasPacker)->(ok:bool) {
         packer.buffer[id].xy = tex_pos
     }
     return true
+}
+
+// --- Tests ---
+
+@(test)
+test_packed_rects_stay_inside_and_never_overlap :: proc(t: ^testing.T) {
+    packer: AtlasPacker
+    testing.expect(t, Init(&packer, 64, 16))
+    defer { delete(packer.buffer); delete(packer.stb_buffer); delete(packer.nodes) }
+
+    wanted: [10]rectf
+    for &rect, i in wanted { rect.zw = {f32(8 + i * 2), f32(6 + (i * 5) % 11)} }
+    rects, ok := GetRects(&packer, len(wanted))
+    testing.expect(t, ok)
+    CopySizes(wanted[:], rects)
+    testing.expect_value(t, rects[3].zw, wanted[3].zw)                                     // CopySizes only touches the size
+    testing.expect(t, Pack(&packer))
+
+    for a, i in rects {
+        testing.expect(t, a.x >= 0 && a.y >= 0 && a.x + a.z <= 64 && a.y + a.w <= 64, "inside the atlas")
+        for b, j in rects {
+            if i >= j { continue }
+            apart: bool = a.x + a.z <= b.x || b.x + b.z <= a.x || a.y + a.w <= b.y || b.y + b.w <= a.y
+            testing.expect(t, apart, "no two rectangles share pixels")
+        }
+    }
+}
+
+@(test)
+test_get_rects_runs_out_of_capacity :: proc(t: ^testing.T) {
+    packer: AtlasPacker
+    testing.expect(t, Init(&packer, 32, 4))
+    defer { delete(packer.buffer); delete(packer.stb_buffer); delete(packer.nodes) }
+
+    first, first_ok := GetRects(&packer, 3)
+    testing.expect(t, first_ok)
+    testing.expect_value(t, len(first), 3)
+    _, too_many := GetRects(&packer, 2)
+    testing.expect(t, !too_many, "the request does not fit the remaining capacity")
+    testing.expect_value(t, packer.length, 3)                                              // a refused request reserves nothing
+    _, last_ok := GetRects(&packer, 1)
+    testing.expect(t, last_ok)
 }

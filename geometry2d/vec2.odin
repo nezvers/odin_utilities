@@ -1,6 +1,7 @@
 package geometry2d
 
 import "core:math"
+import "core:testing"
 
 vec2 :: [2]f32
 
@@ -96,10 +97,54 @@ Vec2Equal :: proc(a: vec2, b: vec2) -> bool{
 
 // Assuming vector is an incident, given a normal, return the reflection
 Vec2Reflect :: proc(a: vec2, normal: vec2) -> vec2{
-    return (a - {2.0, 2.0}) * (Vec2Dot(a, normal) * normal)
+    return a - 2.0 * Vec2Dot(a, normal) * normal
 }
 
 //TODO: check out Godot's bounce function
 
 //TODO: check out Godot's slide function
 
+// --- Tests ---
+
+@(private="file")
+near2 :: proc(a, b: vec2, epsilon: f32 = 1e-4) -> bool {
+    return abs(a.x - b.x) <= epsilon && abs(a.y - b.y) <= epsilon
+}
+
+@(test)
+test_vec2_basics :: proc(t: ^testing.T) {
+    testing.expect_value(t, Vec2Mag(vec2{3, 4}), f32(5))
+    testing.expect_value(t, Vec2Mag2(vec2{3, 4}), f32(25))
+    testing.expect_value(t, Vec2Area(vec2{3, 4}), f32(12))
+    testing.expect_value(t, Vec2Sign(vec2{-3, 0}), vec2{-1, 0})
+    testing.expect_value(t, Vec2Abs(vec2{-3, 4}), vec2{3, 4})
+    testing.expect(t, near2(Vec2Norm(vec2{0, 9}), {0, 1}))
+    testing.expect_value(t, Vec2Perp(vec2{2, 5}), vec2{-5, 2})
+    testing.expect_value(t, Vec2Floor(vec2{1.5, -1.5}), vec2{1, -2})
+    testing.expect_value(t, Vec2Ceil(vec2{1.5, -1.5}), vec2{2, -1})
+    testing.expect_value(t, Vec2Max(vec2{1, 9}, vec2{4, 2}), vec2{4, 9})
+    testing.expect_value(t, Vec2Min(vec2{1, 9}, vec2{4, 2}), vec2{1, 2})
+    testing.expect_value(t, Vec2Dot(vec2{1, 2}, vec2{3, 4}), f32(11))
+    testing.expect_value(t, Vec2Cross(vec2{1, 0}, vec2{0, 1}), f32(1))
+    testing.expect_value(t, Vec2Cross(vec2{0, 1}, vec2{1, 0}), f32(-1))
+    testing.expect_value(t, Vec2Clamp(vec2{-5, 50}, vec2{0, 0}, vec2{10, 10}), vec2{0, 10})
+    testing.expect_value(t, Vec2Lerp(vec2{0, 10}, vec2{10, 20}, 0.5), vec2{5, 15})
+    testing.expect_value(t, Vec2Equal(vec2{1, 2}, vec2{1, 2}), true)
+    testing.expect_value(t, Vec2Equal(vec2{1, 2}, vec2{1, 3}), false)
+}
+
+@(test)
+test_vec2_polar_round_trip :: proc(t: ^testing.T) {
+    polar: vec2 = Vec2Polar(vec2{0, 2})
+    testing.expect(t, near2(polar, {2, math.PI / 2}))
+    testing.expect(t, near2(Vec2Cartisian(vec2{2, math.PI / 2}), {0, 2}))
+    testing.expect(t, near2(Vec2Cartisian(Vec2Polar(vec2{-3, 4})), {-3, 4}))
+}
+
+@(test)
+test_vec2_reflect :: proc(t: ^testing.T) {
+    // a ball going down and right hits a floor with the normal pointing up
+    testing.expect(t, near2(Vec2Reflect(vec2{1, -1}, vec2{0, 1}), {1, 1}))
+    testing.expect(t, near2(Vec2Reflect(vec2{3, 0}, vec2{0, 1}), {3, 0}), "moving along the surface is unchanged")
+    testing.expect(t, near2(Vec2Reflect(vec2{0, -2}, vec2{0, 1}), {0, 2}))
+}

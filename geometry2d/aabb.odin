@@ -1,4 +1,5 @@
 package geometry2d
+import "core:testing"
 
 // AABB - Axis Aligned Bounding Box
 // Based on - https://github.com/OneLoneCoder/Javidx9/blob/master/PixelGameEngine/SmallerProjects/OneLoneCoder_PGE_Rectangles.cpp
@@ -95,4 +96,37 @@ AABBRectRect :: proc(rect1:Rect, rect2:Rect, dir:vec2)->(result:AABBResult) {
     ray.zw = dir
     result = AABBRayRect(ray, expanded_rect)
     return
+}
+
+// --- Tests ---
+
+@(test)
+test_aabb_ray_rect :: proc(t: ^testing.T) {
+    rect: Rect = {10, 0, 10, 10}
+    hit: AABBResult = AABBRayRect(RayNew({0, 5}, {20, 0}), rect)
+    testing.expect_value(t, hit.hit, true)
+    testing.expect_value(t, hit.point, vec2{10, 5})
+    testing.expect_value(t, hit.t, f32(0.5))
+    testing.expect_value(t, hit.normal, vec2{-1, 0})
+
+    testing.expect_value(t, AABBRayRect(RayNew({0, 50}, {20, 0}), rect).hit, false)   // passes above
+    testing.expect_value(t, AABBRayRect(RayNew({0, 5}, {5, 0}), rect).hit, false)     // too short to reach
+    testing.expect_value(t, AABBRayRect(RayNew({30, 5}, {20, 0}), rect).hit, false)   // pointing away
+
+    from_below: AABBResult = AABBRayRect(RayNew({15, 20}, {0, -20}), rect)
+    testing.expect_value(t, from_below.hit, true)
+    testing.expect_value(t, from_below.point, vec2{15, 10})
+}
+
+@(test)
+test_aabb_rect_rect :: proc(t: ^testing.T) {
+    wall: Rect = {10, 0, 5, 20}
+    mover: Rect = {0, 5, 4, 4}
+    hit: AABBResult = AABBRectRect(mover, wall, {10, 0})
+    testing.expect_value(t, hit.hit, true)
+    testing.expect_value(t, hit.normal, vec2{-1, 0})
+    testing.expect(t, abs(hit.t - 0.6) < 1e-4, "stops with the right edge on the wall")
+
+    testing.expect_value(t, AABBRectRect(mover, wall, {0, 0}).hit, false)
+    testing.expect_value(t, AABBRectRect(mover, wall, {0, 10}).hit, false)
 }

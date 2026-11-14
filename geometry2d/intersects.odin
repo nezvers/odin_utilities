@@ -1,6 +1,7 @@
 package geometry2d
 
 import math "core:math"
+import "core:testing"
 
 // Get intersection points where point intersects with point
 IntersectsPointPoint::proc(p1:vec2, p2:vec2)->(points:[1]vec2, point_count:int){
@@ -522,4 +523,50 @@ IntersectsRayTriangle::proc(r:Ray, t:Triangle)->(points:[2]vec2, point_count:int
 IntersectsTriangleRay::proc(t:Triangle, r:Ray)->(points:[2]vec2, point_count:int){
     points, point_count = IntersectsRayTriangle(r, t)
     return
+}
+
+// --- Tests ---
+
+@(private="file")
+near_point :: proc(a, b: vec2) -> bool {
+    return abs(a.x - b.x) < 1e-3 && abs(a.y - b.y) < 1e-3
+}
+
+@(test)
+test_intersects_lines :: proc(t: ^testing.T) {
+    points, count := IntersectsLineLine(LineNew({0, 0}, {10, 10}), LineNew({0, 10}, {10, 0}))
+    testing.expect_value(t, count, 1)
+    testing.expect(t, near_point(points[0], {5, 5}))
+
+    _, none := IntersectsLineLine(LineNew({0, 0}, {10, 0}), LineNew({0, 5}, {10, 5}))
+    testing.expect_value(t, none, 0)
+}
+
+@(test)
+test_intersects_circles :: proc(t: ^testing.T) {
+    points, count := IntersectsCircleCircle(Circle{0, 0, 1}, Circle{1, 0, 1})
+    testing.expect_value(t, count, 2)
+    testing.expect(t, abs(points[0].x - 0.5) < 1e-3 && abs(points[1].x - 0.5) < 1e-3)
+    testing.expect(t, abs(abs(points[0].y) - math.sqrt(f32(0.75))) < 1e-3)
+    testing.expect(t, points[0].y == -points[1].y, "the two points mirror each other")
+
+    _, apart := IntersectsCircleCircle(Circle{0, 0, 1}, Circle{5, 0, 1})
+    testing.expect_value(t, apart, 0)
+}
+
+@(test)
+test_intersects_with_lines :: proc(t: ^testing.T) {
+    across: Line = LineNew({-5, 5}, {15, 5})
+    rect_points, rect_count := IntersectsRectangleLine(Rect{0, 0, 10, 10}, across)
+    testing.expect_value(t, rect_count, 2)
+    xs: [2]f32 = {rect_points[0].x, rect_points[1].x}
+    testing.expect(t, (xs[0] == 0 && xs[1] == 10) || (xs[0] == 10 && xs[1] == 0))
+
+    circle_points, circle_count := IntersectsCircleLine(Circle{0, 0, 5}, LineNew({-10, 0}, {10, 0}))
+    testing.expect_value(t, circle_count, 2)
+    testing.expect(t, abs(abs(circle_points[0].x) - 5) < 1e-3 && abs(abs(circle_points[1].x) - 5) < 1e-3)
+
+    tri_points, tri_count := IntersectsTriangleLine(Triangle{{0, 0}, {10, 0}, {0, 10}}, LineNew({-5, 2}, {20, 2}))
+    testing.expect_value(t, tri_count, 2)
+    _ = tri_points
 }

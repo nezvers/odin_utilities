@@ -1,4 +1,5 @@
 package geometry2d
+import "core:testing"
 
 Triangle::[3]vec2
 
@@ -29,3 +30,15 @@ TriangleSizeCount::proc(Triangle:Triangle)->u32{
 	return 3
 }
 
+// --- Tests ---
+
+@(test)
+test_triangle_helpers :: proc(t: ^testing.T) {
+    tri: Triangle = TriangleNew({0, 0}, {4, 0}, {0, 3})
+    testing.expect_value(t, TriangleArea(tri), f32(6))
+    testing.expect_value(t, TrianglePerimeter(tri), f32(12))
+    testing.expect_value(t, TriangleSizeCount(tri), u32(3))
+    testing.expect_value(t, TriangleSide(tri, 0), Line{0, 0, 4, 0})
+    testing.expect_value(t, TriangleSide(tri, 2), Line{0, 3, 0, 0})
+    testing.expect_value(t, TriangleSide(tri, 3), TriangleSide(tri, 0))
+}

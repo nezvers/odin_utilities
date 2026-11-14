@@ -2,6 +2,7 @@ package sound_effects
 
 import "core:math/rand"
 import "base:intrinsics"
+import "core:testing"
 
 SoundEffect::struct{
     volume:f32,
@@ -54,4 +55,58 @@ Play::proc(sound:^SoundEffect, time_seconds:f64)->bool {
     sound.last_time = time_seconds
     UpdatePitch(sound, delta)
     return true
+}
+
+// --- Tests ---
+
+@(private="file")
+make_effect :: proc() -> SoundEffect {
+    return {
+        volume = 1,
+        pitch_rand_min = 1, pitch_rand_max = 1,                                            // no random spread keeps the test exact
+        pitch_min = 0.5, pitch_max = 1.5,
+        pitch_increment = 0.1,
+        retrigger_treshold = 0.05, retrigger_interval = 0.5, pitch_return = 1,
+    }
+}
+
+@(test)
+test_sound_effect_retrigger_threshold :: proc(t: ^testing.T) {
+    effect: SoundEffect = make_effect()
+    testing.expect(t, Play(&effect, 10), "the first trigger always plays")
+    testing.expect(t, !Play(&effect, 10.01), "too soon after the last one")
+    testing.expect_value(t, effect.last_time, f64(10))                                     // a refused trigger does not move the clock
+    testing.expect(t, Play(&effect, 10.06))
+}
+
+@(test)
+test_sound_effect_pitch_rises_on_fast_repeats :: proc(t: ^testing.T) {
+    effect: SoundEffect = make_effect()
+    Play(&effect, 10)
+    testing.expect_value(t, effect.pitch, f32(1))
+
+    Play(&effect, 10.2)                                                                    // inside the retrigger interval
+    testing.expect(t, abs(effect.pitch - 1.1) < 1e-5)
+    Play(&effect, 10.4)
+    testing.expect(t, abs(effect.pitch - 1.2) < 1e-5)
+
+    effect.pitch = 1.6                                                                     // above the ceiling it falls back to it
+    Play(&effect, 10.6)
+    testing.expect(t, abs(effect.pitch - 1.5) < 1e-5)
+    effect.pitch = 0.2
+    Play(&effect, 10.8)
+    testing.expect(t, abs(effect.pitch - 0.5) < 1e-5, "and the floor")
+}
+
+@(test)
+test_sound_effect_pitch_returns_when_left_alone :: proc(t: ^testing.T) {
+    effect: SoundEffect = make_effect()
+    Play(&effect, 10)
+    effect.pitch = 1.4
+
+    Play(&effect, 11)                                                                      // 0.5 s after the interval of a 1 s return
+    testing.expect(t, abs(effect.pitch - 1.2) < 1e-4, "half way back to the default")
+
+    Play(&effect, 20)                                                                      // long silence: a fresh pitch
+    testing.expect_value(t, effect.pitch, f32(1))
 }

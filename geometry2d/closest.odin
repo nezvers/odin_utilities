@@ -1,4 +1,5 @@
 package geometry2d
+import "core:testing"
 
 // Returns closest point on point to any shape (aka p1) :P
 ClosestPointPoint::proc(p1:vec2, p2:vec2)->vec2{
@@ -193,4 +194,18 @@ ClosestTriangleTriangle::proc(t1:Triangle, t2:Triangle)->vec2{
     return {}
 }
 
+// --- Tests ---
 
+@(test)
+test_closest_points :: proc(t: ^testing.T) {
+    line: Line = LineNew({0, 0}, {10, 0})
+    testing.expect_value(t, ClosestLinePoint(line, {5, 3}), vec2{5, 0})
+    testing.expect_value(t, ClosestLinePoint(line, {-4, 3}), vec2{0, 0})              // clamped to the start
+    testing.expect_value(t, ClosestLinePoint(line, {14, -3}), vec2{10, 0})            // and to the end
+
+    testing.expect_value(t, ClosestCirclePoint(Circle{0, 0, 2}, {5, 0}), vec2{2, 0})
+    testing.expect_value(t, ClosestRectanglePoint(Rect{0, 0, 10, 10}, {20, 5}), vec2{10, 5})
+    testing.expect_value(t, ClosestRectanglePoint(Rect{0, 0, 10, 10}, {5, -7}), vec2{5, 0})
+    testing.expect_value(t, ClosestTrianglePoint(Triangle{{0, 0}, {10, 0}, {0, 10}}, {5, -3}), vec2{5, 0})
+    testing.expect_value(t, ClosestPointPoint({1, 2}, {9, 9}), vec2{1, 2})
+}

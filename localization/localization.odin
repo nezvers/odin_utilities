@@ -3,6 +3,7 @@ package localization
 
 import "core:encoding/csv"
 import "core:strings"
+import "core:testing"
 
 LocalizationData :: struct {
     array: [dynamic]string,     // 1d array of strings from CSV
@@ -101,9 +102,71 @@ GetTranslationById :: proc(data: ^LocalizationData, text_id: u32, lang_id: u32)-
 GetTranslation :: proc(data: ^LocalizationData, text: string, language: string)->(translation:string, ok: bool) {
     lang_id, lang_ok: = GetLanguageId(data, language)
     if !lang_ok { return }
-    text_id, text_ok: = GetTextId(data, language)
+    text_id, text_ok: = GetTextId(data, text)
     if !text_ok { return }
 
     translation, ok = GetTranslationById(data, text_id, lang_id)
     return
+}
+
+// --- Tests ---
+
+@(private="file")
+TEST_CSV :: "key,en,lv\nhello,Hello,Sveiki\nbye,Bye,Atā\n"
+
+@(test)
+test_localization_parses_the_table :: proc(t: ^testing.T) {
+    data: LocalizationData = MakeLocalizationData(transmute([]byte)string(TEST_CSV))
+    defer DeleteLocalizationData(&data)
+
+    testing.expect_value(t, data.columns, u32(3))
+    testing.expect_value(t, data.rows, u32(3))
+    testing.expect_value(t, len(data.array), 9)
+
+    languages, ok := GetLanguages(&data)
+    testing.expect(t, ok)
+    testing.expect_value(t, len(languages), 2)
+    testing.expect_value(t, languages[0], "en")
+    testing.expect_value(t, languages[1], "lv")
+}
+
+@(test)
+test_localization_lookup :: proc(t: ^testing.T) {
+    data: LocalizationData = MakeLocalizationData(transmute([]byte)string(TEST_CSV))
+    defer DeleteLocalizationData(&data)
+
+    text, found := GetTranslation(&data, "hello", "lv")
+    testing.expect(t, found)
+    testing.expect_value(t, text, "Sveiki")
+    text, found = GetTranslation(&data, "bye", "en")
+    testing.expect(t, found)
+    testing.expect_value(t, text, "Bye")
+
+    _, missing_text := GetTranslation(&data, "nope", "en")
+    testing.expect(t, !missing_text)
+    _, missing_language := GetTranslation(&data, "hello", "de")
+    testing.expect(t, !missing_language)
+
+    // the cached route
+    language, _ := GetLanguageId(&data, "lv")
+    key, _ := GetTextId(&data, "bye")
+    cached, cached_ok := GetTranslationById(&data, key, language)
+    testing.expect(t, cached_ok)
+    testing.expect_value(t, cached, "Atā")
+
+    _, bad_row := GetTranslationById(&data, 99, language)
+    testing.expect(t, !bad_row)
+    _, header_row := GetTranslationById(&data, 0, language)                                // row 0 is the header, not a text
+    testing.expect(t, !header_row)
+    _, key_column := GetTranslationById(&data, key, 0)                                     // column 0 holds the keys
+    testing.expect(t, !key_column)
+}
+
+@(test)
+test_localization_empty_input :: proc(t: ^testing.T) {
+    data: LocalizationData = MakeLocalizationData(nil)
+    defer DeleteLocalizationData(&data)
+    _, ok := GetLanguages(&data)
+    testing.expect(t, !ok)
+    testing.expect_value(t, data.rows, u32(0))
 }

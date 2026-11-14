@@ -2,6 +2,7 @@ package atlas_packer
 
 import "core:c"
 import stbtt "vendor:stb/truetype"
+import "core:testing"
 
 // TTF font prepared for measuring and rendering glyphs at one pixel height.
 // `data` is not copied, keep it alive while the Font is used.
@@ -97,4 +98,48 @@ RenderGlyph :: proc(font: ^Font, glyph: ^Glyph, alpha: []u8) -> (ok:bool) {
     }
     stbtt.MakeGlyphBitmap(&font.info, raw_data(alpha), glyph.size.x, glyph.size.y, glyph.size.x, font.scale, font.scale, cast(c.int)glyph.index)
     return true
+}
+
+// --- Tests ---
+
+@(test)
+test_font_init_rejects_garbage :: proc(t: ^testing.T) {
+    font: Font
+    garbage: [64]byte
+    testing.expect(t, !FontInit(&font, garbage[:], 16), "not a font")
+}
+
+@(test)
+test_font_glyph_helpers :: proc(t: ^testing.T) {
+    @(static) font_data := #load("../assets/fonts/font.ttf")
+    font: Font
+    testing.expect(t, FontInit(&font, font_data, 24))
+    testing.expect(t, font.ascent > 0 && font.descent < 0, "ascent above the baseline, descent below")
+    testing.expect(t, font.line_spacing >= font.ascent - font.descent)
+
+    // a code point in the private use area is missing from the font and is skipped
+    letters: []rune = {'A', '', 'g'}
+    rects: [3]rectf
+    glyphs: [3]Glyph
+    count, ok := GetFontRects(&font, letters, rects[:], glyphs[:], 2)
+    testing.expect(t, ok)
+    testing.expect_value(t, count, 2)
+    testing.expect_value(t, glyphs[0].value, 'A')
+    testing.expect_value(t, glyphs[1].value, 'g')
+    testing.expect_value(t, rects[0].z, f32(glyphs[0].size.x) + 4)                         // padding on both sides
+    testing.expect_value(t, rects[0].w, f32(glyphs[0].size.y) + 4)
+    testing.expect(t, glyphs[0].advance_x > 0)
+
+    biggest: int = GlyphsMaxBytes(glyphs[:count])
+    testing.expect(t, biggest >= int(glyphs[0].size.x * glyphs[0].size.y))
+    testing.expect(t, biggest >= int(glyphs[1].size.x * glyphs[1].size.y))
+
+    small: [1]u8
+    testing.expect(t, !RenderGlyph(&font, &glyphs[0], small[:]), "the buffer is too small for the bitmap")
+    alpha := make([]u8, biggest)
+    defer delete(alpha)
+    testing.expect(t, RenderGlyph(&font, &glyphs[0], alpha))
+    any_ink: bool
+    for value in alpha[:glyphs[0].size.x * glyphs[0].size.y] { any_ink = any_ink || value > 0 }
+    testing.expect(t, any_ink, "the glyph draws something")
 }

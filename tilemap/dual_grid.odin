@@ -1,4 +1,5 @@
 package tilemap
+import "core:testing"
 
 // Dual grid tiling: the data tilemap stores what each cell is, the display tilemap is shifted by half a tile
 // and each of its cells picks a tile by looking at 4 surrounding data cells.
@@ -86,4 +87,76 @@ DualGridUpdateNeighbours :: proc(data:^Tilemap, display:^Tilemap, group_id:TileI
             DualGridUpdateCell(data, display, group_id, mask_to_tile, {x, y})
         }
     }
+}
+
+// --- Tests ---
+
+@(private="file")
+dual_group :: TileID(1)
+
+@(test)
+test_dual_grid_init :: proc(t: ^testing.T) {
+    data_buffer: [9]TileID
+    data: Tilemap = TilemapInit({100, 50}, {3, 3}, {16, 16}, data_buffer[:])
+    display_buffer: [16]TileID
+    display: Tilemap = DualGridInit(&data, display_buffer[:])
+    testing.expect_value(t, display.size, vec2i{4, 4})
+    testing.expect_value(t, display.position, vec2i{92, 42})                               // half a tile up and to the left
+    testing.expect_value(t, display.tile_size, vec2i{16, 16})
+}
+
+@(test)
+test_dual_grid_corner_masks :: proc(t: ^testing.T) {
+    data_buffer: [9]TileID
+    data: Tilemap = TilemapInit({0, 0}, {3, 3}, {16, 16}, data_buffer[:])
+    display_buffer: [16]TileID
+    display: Tilemap = DualGridInit(&data, display_buffer[:])
+    TilemapSetTile(&data, {1, 1}, dual_group)                                              // one set cell in the middle
+    DualGridUpdateTilemap(&data, &display, dual_group, DUAL_GRID_MASK_TO_TILE[:])
+
+    // the four display cells around it each see it from a different corner
+    testing.expect_value(t, TilemapGetTile(&display, {1, 1}), DUAL_GRID_MASK_TO_TILE[0b0100])   // it is the bottom right of this cell
+    testing.expect_value(t, TilemapGetTile(&display, {2, 1}), DUAL_GRID_MASK_TO_TILE[0b1000])   // bottom left
+    testing.expect_value(t, TilemapGetTile(&display, {1, 2}), DUAL_GRID_MASK_TO_TILE[0b0010])   // top right
+    testing.expect_value(t, TilemapGetTile(&display, {2, 2}), DUAL_GRID_MASK_TO_TILE[0b0001])   // top left
+    testing.expect_value(t, TilemapGetTile(&display, {0, 0}), DUAL_GRID_MASK_TO_TILE[0])
+    testing.expect_value(t, TilemapGetTile(&display, {3, 3}), DUAL_GRID_MASK_TO_TILE[0])
+}
+
+@(test)
+test_dual_grid_filled_block_and_edges :: proc(t: ^testing.T) {
+    data_buffer: [4]TileID
+    data: Tilemap = TilemapInit({0, 0}, {2, 2}, {16, 16}, data_buffer[:])
+    display_buffer: [9]TileID
+    display: Tilemap = DualGridInit(&data, display_buffer[:])
+    TilemapSetTileIdBlock(&data, 0, 0, 2, 2, dual_group)
+    DualGridUpdateTilemap(&data, &display, dual_group, DUAL_GRID_MASK_TO_TILE[:])
+
+    testing.expect_value(t, TilemapGetTile(&display, {1, 1}), DUAL_GRID_MASK_TO_TILE[0b1111])   // surrounded
+    testing.expect_value(t, TilemapGetTile(&display, {0, 0}), DUAL_GRID_MASK_TO_TILE[0b0100])   // outer corners see one cell
+    testing.expect_value(t, TilemapGetTile(&display, {2, 0}), DUAL_GRID_MASK_TO_TILE[0b1000])
+    testing.expect_value(t, TilemapGetTile(&display, {1, 0}), DUAL_GRID_MASK_TO_TILE[0b1100])   // the top edge sees two
+    testing.expect_value(t, TilemapGetTile(&display, {0, 1}), DUAL_GRID_MASK_TO_TILE[0b0110])
+}
+
+@(test)
+test_dual_grid_neighbour_update_touches_four_cells :: proc(t: ^testing.T) {
+    data_buffer: [9]TileID
+    data: Tilemap = TilemapInit({0, 0}, {3, 3}, {16, 16}, data_buffer[:])
+    display_buffer: [16]TileID
+    display: Tilemap = DualGridInit(&data, display_buffer[:])
+    for &id in display_buffer { id = 99 }
+
+    TilemapSetTile(&data, {1, 1}, dual_group)
+    DualGridUpdateNeighbours(&data, &display, dual_group, DUAL_GRID_MASK_TO_TILE[:], {1, 1})
+    for y in i32(0) ..< 4 {
+        for x in i32(0) ..< 4 {
+            touched: bool = x >= 1 && x <= 2 && y >= 1 && y <= 2
+            testing.expect_value(t, TilemapGetTile(&display, {x, y}) != 99, touched)
+        }
+    }
+
+    for &id in display_buffer { id = 99 }
+    DualGridUpdateNeighbours(&data, &display, dual_group, DUAL_GRID_MASK_TO_TILE[:], {2, 2})   // at the edge of the data: nothing is read out of range
+    testing.expect_value(t, TilemapGetTile(&display, {3, 3}), DUAL_GRID_MASK_TO_TILE[0])
 }

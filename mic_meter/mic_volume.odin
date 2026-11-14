@@ -1,6 +1,7 @@
 package mic_volume
 
 import ma "vendor:miniaudio"
+import "core:testing"
 
 MicContext :: struct {
     ma_ctx: ma.context_type,
@@ -116,4 +117,53 @@ SetDevice :: proc(ctx: ^MicContext, idx:u32)->bool {
 
 SetPeakDropSpeed :: proc(ctx: ^MicContext, value:f32) {
     ctx.peak_drop_speed = value
+}
+
+// --- Tests ---
+
+@(private="file")
+feed :: proc(ctx: ^MicContext, sample_rate: u32, channels: u32, samples: []f32) {
+    device: ma.device
+    device.pUserData = ctx
+    device.sampleRate = sample_rate
+    device.capture.channels = channels
+    DataCallback(&device, nil, raw_data(samples), u32(len(samples)) / channels)
+}
+
+@(test)
+test_peak_rises_at_once_and_falls_slowly :: proc(t: ^testing.T) {
+    ctx: MicContext
+    SetPeakDropSpeed(&ctx, 1)                                                              // one unit per second, 0.01 per sample at 100 Hz
+    feed(&ctx, 100, 1, {0.5})
+    testing.expect_value(t, GetPeak(&ctx), f32(0.5))
+    feed(&ctx, 100, 1, {-0.8})                                                             // the sign does not matter
+    testing.expect_value(t, GetPeak(&ctx), f32(0.8))
+
+    feed(&ctx, 100, 1, {0, 0, 0})
+    testing.expect(t, abs(GetPeak(&ctx) - 0.77) < 1e-5, "three silent samples drop it by 3 * 0.01")
+
+    feed(&ctx, 100, 1, {0.1})                                                              // a quieter sound does not pull the peak down by itself
+    testing.expect(t, abs(GetPeak(&ctx) - 0.76) < 1e-5)
+}
+
+@(test)
+test_peak_settles_on_zero :: proc(t: ^testing.T) {
+    ctx: MicContext = {peak = 0.05, peak_drop_speed = 1}
+    silence: [20]f32
+    feed(&ctx, 100, 1, silence[:])
+    testing.expect_value(t, GetPeak(&ctx), f32(0))                                         // clamped, never negative
+
+    loud: [4]f32 = {0.2, 0.9, 0.2, 0.2}
+    feed(&ctx, 100, 2, loud[:])                                                            // stereo frames are all scanned
+    testing.expect(t, GetPeak(&ctx) > 0.85)
+}
+
+@(test)
+test_device_queries_without_devices :: proc(t: ^testing.T) {
+    ctx: MicContext
+    testing.expect_value(t, GetDeviceCount(&ctx), u32(0))
+    testing.expect_value(t, len(GetDeviceName(&ctx, 0)), 0)
+    testing.expect(t, !SetDevice(&ctx, 0), "nothing to select")
+    SetPeakDropSpeed(&ctx, 3)
+    testing.expect_value(t, ctx.peak_drop_speed, f32(3))
 }

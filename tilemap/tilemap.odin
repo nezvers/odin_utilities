@@ -1,6 +1,9 @@
 // Tile data (index array) manipulation, without any allocations by using user provided buffers
 package tilemap
 
+import "core:math"
+import "core:testing"
+
 Flags :: enum {
     NONE          = 0,
     // If set value is TILE_EMPTY, use it for overwriting
@@ -35,18 +38,16 @@ TilemapGetTile :: proc(tilemap: ^Tilemap, tile_pos: vec2i)->TileID {
 
 // Get TileID by world coordinates
 TilemapGetTileWorld :: proc(tilemap: ^Tilemap, world_pos: vec2i)->TileID {
-    relative_pos: vec2i = world_pos - tilemap.position
-    tile_pos: vec2i = relative_pos / tilemap.tile_size
-    if (relative_pos.x < 0) {tile_pos.x -= 1}
-    if (relative_pos.y < 0) {tile_pos.y -= 1}
+    tile_pos: vec2i = TilemapGetWorld2Tile(tilemap, world_pos)
     result: = TilemapGetTile(tilemap, tile_pos)
     return result
 }
 
 // Get rectangle region of populated tiles 
 TilemapGetUsedRecti :: proc(tilemap: ^Tilemap)->recti {
-    left: i32 = tilemap.size.x - 1
-    top: i32 = tilemap.size.y - 1
+    // start past the far edge so the first used tile always pulls the bounds in
+    left: i32 = tilemap.size.x
+    top: i32 = tilemap.size.y
     right: i32 = 0
     bottom: i32 = 0
     for y:i32 = 0; y < tilemap.size.y; y += 1 {
@@ -68,10 +69,9 @@ TilemapGetUsedRecti :: proc(tilemap: ^Tilemap)->recti {
         }
     }
 
-    if (left == tilemap.size.x && right == 0) {
+    if (left > right) {
         // No used tiles
-        result: recti = { tilemap.position.x, tilemap.position.y, 0, 0 }
-        return result
+        return {}
     }
 
     result: recti = { left, top, right - left +1, bottom - top +1 }
@@ -91,20 +91,13 @@ TilemapClampRecti :: proc(tilemap: ^Tilemap, relative_rect:recti)->recti {
         return result
     }
 
-    if (result.x < 0){
-        result.w -= result.x
-        result.x = 0.0
-    }
-    if (result.y < 0){
-        result.h -= result.y
-        result.y = 0.0
-    }
-    if (result.x + result.w < 0){
-        result.w -= tilemap.size.x - (result.x + result.w)
-    }
-    if (result.y + result.h < 0){
-        result.h -= tilemap.size.y - (result.y + result.h)
-    }
+    // intersection with the tilemap area
+    right:i32 = math.min(result.x + result.w, tilemap.size.x)
+    bottom:i32 = math.min(result.y + result.h, tilemap.size.y)
+    result.x = math.max(result.x, 0)
+    result.y = math.max(result.y, 0)
+    result.w = math.max(right - result.x, 0)
+    result.h = math.max(bottom - result.y, 0)
 
     return result
 }
@@ -131,17 +124,9 @@ TilemapSetTileWorld :: proc(tilemap: ^Tilemap, world_pos:vec2i, tile_id:TileID) 
 
 // Translate world coordinates to tile coordinates
 TilemapGetWorld2Tile :: proc(tilemap: ^Tilemap, world_pos:vec2i)->vec2i {
-    x:i32 = world_pos.x - tilemap.position.x
-    y:i32 = world_pos.y - tilemap.position.y
-    if (x < 0){
-        x -= tilemap.tile_size.x
-    }
-    if (y < 0){
-        y -= tilemap.tile_size.y
-    }
-    
-    x /= tilemap.tile_size.x
-    y /= tilemap.tile_size.y
+    // floored division, so every cell is the same size on both sides of zero
+    x:i32 = math.floor_div(world_pos.x - tilemap.position.x, tilemap.tile_size.x)
+    y:i32 = math.floor_div(world_pos.y - tilemap.position.y, tilemap.tile_size.y)
     result:vec2i = {x, y}
     return result
 }
@@ -164,10 +149,10 @@ TilemapSetTileIdBlock :: proc(tilemap: ^Tilemap, left_x:i32, top_y:i32, columns:
         left_x > 0 ? left_x : 0,
         top_y > 0 ? top_y : 0,
     }
-    // excluding
+    // excluding. The end is measured from the requested start, so a block hanging over the edge is cut and not shifted
     to:vec2i = {
-        (from.x + columns) < tilemap.size.x ? (from.x + columns) : tilemap.size.x,
-        (from.y + rows) < tilemap.size.y ? (from.y + rows) : tilemap.size.y,
+        (left_x + columns) < tilemap.size.x ? (left_x + columns) : tilemap.size.x,
+        (top_y + rows) < tilemap.size.y ? (top_y + rows) : tilemap.size.y,
     }
 
     for y: = from.y; y < to.y; y += 1 {
@@ -264,4 +249,174 @@ TilemapSetData :: proc(tilemap: ^Tilemap, in_buffer:[]TileID, data_width:u32, da
             tilemap.grid[tile_i] = value
         }
     }
+}
+
+// --- Tests ---
+
+@(private="file")
+make_test_map :: proc(buffer: []TileID) -> Tilemap {
+    return TilemapInit({100, 50}, {6, 4}, {16, 16}, buffer)
+}
+
+@(test)
+test_tilemap_get_set_and_bounds :: proc(t: ^testing.T) {
+    buffer: [24]TileID
+    tilemap: Tilemap = make_test_map(buffer[:])
+    testing.expect_value(t, TilemapRecti(&tilemap), recti{0, 0, 6, 4})
+
+    TilemapSetTile(&tilemap, {2, 1}, 7)
+    testing.expect_value(t, TilemapGetTile(&tilemap, {2, 1}), TileID(7))
+    testing.expect_value(t, buffer[2 + 1 * 6], TileID(7))                                  // row major
+    testing.expect_value(t, TilemapGetTile(&tilemap, {0, 0}), TILE_EMPTY)
+
+    testing.expect_value(t, TilemapGetTile(&tilemap, {-1, 0}), TILE_INVALID)
+    testing.expect_value(t, TilemapGetTile(&tilemap, {6, 0}), TILE_INVALID)
+    testing.expect_value(t, TilemapGetTile(&tilemap, {0, 4}), TILE_INVALID)
+
+    TilemapSetTile(&tilemap, {9, 9}, 3)                                                    // outside: ignored
+    TilemapSetTile(&tilemap, {-1, 0}, 3)
+    TilemapSetTile(&tilemap, {0, 0}, TILE_INVALID)                                         // the invalid id is never written
+    testing.expect_value(t, TilemapGetTile(&tilemap, {0, 0}), TILE_EMPTY)
+    for id in buffer { testing.expect(t, id == TILE_EMPTY || id == 7) }
+
+    TilemapClear(&tilemap)
+    testing.expect_value(t, TilemapGetTile(&tilemap, {2, 1}), TILE_EMPTY)
+}
+
+@(test)
+test_tilemap_world_and_tile_coordinates :: proc(t: ^testing.T) {
+    buffer: [24]TileID
+    tilemap: Tilemap = make_test_map(buffer[:])
+
+    testing.expect_value(t, TilemapGetTile2World(&tilemap, {2, 1}), vec2i{132, 66})
+    testing.expect_value(t, TilemapGetWorld2Tile(&tilemap, {132, 66}), vec2i{2, 1})
+    testing.expect_value(t, TilemapGetWorld2Tile(&tilemap, {147, 81}), vec2i{2, 1})        // anywhere inside the cell
+    testing.expect_value(t, TilemapGetWorld2Tile(&tilemap, {148, 82}), vec2i{3, 2})
+
+    // left and above the map the cells keep counting down, with no repeated cell around zero
+    testing.expect_value(t, TilemapGetWorld2Tile(&tilemap, {99, 50}), vec2i{-1, 0})
+    testing.expect_value(t, TilemapGetWorld2Tile(&tilemap, {84, 50}), vec2i{-1, 0})        // exactly one tile to the left
+    testing.expect_value(t, TilemapGetWorld2Tile(&tilemap, {83, 50}), vec2i{-2, 0})
+    testing.expect_value(t, TilemapGetWorld2Tile(&tilemap, {100, 34}), vec2i{0, -1})
+
+    TilemapSetTileWorld(&tilemap, {133, 67}, 4)
+    testing.expect_value(t, TilemapGetTile(&tilemap, {2, 1}), TileID(4))
+    testing.expect_value(t, TilemapGetTileWorld(&tilemap, {133, 67}), TileID(4))
+    testing.expect_value(t, TilemapGetTileWorld(&tilemap, {84, 50}), TILE_INVALID)
+    testing.expect_value(t, TilemapGetTileWorld(&tilemap, {99, 50}), TILE_INVALID)
+}
+
+@(test)
+test_tilemap_used_rect :: proc(t: ^testing.T) {
+    buffer: [24]TileID
+    tilemap: Tilemap = make_test_map(buffer[:])
+
+    empty: recti = TilemapGetUsedRecti(&tilemap)
+    testing.expect_value(t, empty.w, i32(0))
+    testing.expect_value(t, empty.h, i32(0))
+
+    TilemapSetTile(&tilemap, {1, 1}, 5)
+    TilemapSetTile(&tilemap, {4, 2}, 5)
+    testing.expect_value(t, TilemapGetUsedRecti(&tilemap), recti{1, 1, 4, 2})
+
+    TilemapClear(&tilemap)
+    TilemapSetTile(&tilemap, {0, 0}, 5)
+    testing.expect_value(t, TilemapGetUsedRecti(&tilemap), recti{0, 0, 1, 1})
+
+    TilemapClear(&tilemap)
+    TilemapSetTile(&tilemap, {5, 3}, 5)                                                    // the very last cell
+    testing.expect_value(t, TilemapGetUsedRecti(&tilemap), recti{5, 3, 1, 1})
+}
+
+@(test)
+test_tilemap_clamp_recti :: proc(t: ^testing.T) {
+    buffer: [24]TileID
+    tilemap: Tilemap = make_test_map(buffer[:])
+
+    testing.expect_value(t, TilemapClampRecti(&tilemap, {1, 1, 2, 2}), recti{1, 1, 2, 2})  // inside: unchanged
+    testing.expect_value(t, TilemapClampRecti(&tilemap, {-2, -1, 5, 4}), recti{0, 0, 3, 3})
+    testing.expect_value(t, TilemapClampRecti(&tilemap, {4, 2, 5, 5}), recti{4, 2, 2, 2})  // hangs over the right and bottom
+    testing.expect_value(t, TilemapClampRecti(&tilemap, {-3, -3, 20, 20}), recti{0, 0, 6, 4})
+
+    far: recti = TilemapClampRecti(&tilemap, {10, 10, 2, 2})
+    testing.expect_value(t, far.w, i32(0))
+    testing.expect_value(t, far.h, i32(0))
+}
+
+@(test)
+test_tilemap_set_block :: proc(t: ^testing.T) {
+    buffer: [24]TileID
+    tilemap: Tilemap = make_test_map(buffer[:])
+
+    TilemapSetTileIdBlock(&tilemap, 1, 1, 2, 2, 9)
+    for y in i32(0) ..< 4 {
+        for x in i32(0) ..< 6 {
+            inside: bool = x >= 1 && x <= 2 && y >= 1 && y <= 2
+            testing.expect_value(t, TilemapGetTile(&tilemap, {x, y}), TileID(9) if inside else TILE_EMPTY)
+        }
+    }
+
+    TilemapClear(&tilemap)
+    TilemapSetTileIdBlock(&tilemap, -1, -1, 3, 3, 8)                                       // hangs over the corner: only a 2x2 part is inside
+    testing.expect_value(t, TilemapGetTile(&tilemap, {0, 0}), TileID(8))
+    testing.expect_value(t, TilemapGetTile(&tilemap, {1, 1}), TileID(8))
+    testing.expect_value(t, TilemapGetTile(&tilemap, {2, 2}), TILE_EMPTY)                  // the block does not slide into the map
+
+    TilemapClear(&tilemap)
+    TilemapSetTileIdBlock(&tilemap, 4, 2, 10, 10, 6)                                       // and the far side is cut off
+    testing.expect_value(t, TilemapGetTile(&tilemap, {5, 3}), TileID(6))
+    TilemapSetTileIdBlock(&tilemap, 0, 0, 2, 2, TILE_INVALID)
+    testing.expect_value(t, TilemapGetTile(&tilemap, {0, 0}), TILE_EMPTY)
+}
+
+@(test)
+test_tilemap_region_data :: proc(t: ^testing.T) {
+    buffer: [24]TileID
+    tilemap: Tilemap = make_test_map(buffer[:])
+    TilemapSetTile(&tilemap, {1, 1}, 1)
+    TilemapSetTile(&tilemap, {2, 1}, 2)
+    TilemapSetTile(&tilemap, {1, 2}, 3)
+
+    region: [4]TileID
+    TilemapGetRegionData(&tilemap, {1, 1, 2, 2}, region[:])
+    testing.expect_value(t, region, [4]TileID{1, 2, 3, TILE_EMPTY})
+
+    other_buffer: [24]TileID
+    other: Tilemap = make_test_map(other_buffer[:])
+    TilemapSetTile(&other, {4, 2}, 9)
+    TilemapSetRegionData(&other, {4, 1, 2, 2}, region[:], false)                           // empty tiles in the data keep what was there
+    testing.expect_value(t, TilemapGetTile(&other, {4, 1}), TileID(1))
+    testing.expect_value(t, TilemapGetTile(&other, {5, 1}), TileID(2))
+    testing.expect_value(t, TilemapGetTile(&other, {4, 2}), TileID(3))
+    testing.expect_value(t, TilemapGetTile(&other, {5, 2}), TILE_EMPTY)
+
+    TilemapSetTile(&other, {5, 2}, 9)
+    TilemapSetRegionData(&other, {4, 1, 2, 2}, region[:], true)                            // empty tiles overwrite
+    testing.expect_value(t, TilemapGetTile(&other, {5, 2}), TILE_EMPTY)
+
+    TilemapSetRegionData(&other, {5, 3, 3, 3}, []TileID{1, 2, 3, 4, 5, 6, 7, 8, 9}, true)  // partly outside: clipped without a crash
+    testing.expect_value(t, TilemapGetTile(&other, {5, 3}), TileID(1))
+    TilemapSetRegionData(&other, {-1, -1, 2, 2}, region[:], true)                          // data that starts left of the map
+    testing.expect_value(t, TilemapGetTile(&other, {0, 0}), region[3])
+}
+
+@(test)
+test_tilemap_set_data_and_resize :: proc(t: ^testing.T) {
+    buffer: [24]TileID
+    tilemap: Tilemap = make_test_map(buffer[:])
+    TilemapSetData(&tilemap, []TileID{1, 2, 3, 4, 5, 6}, 3, 2)                             // a 3x2 picture placed at the top left
+    testing.expect_value(t, TilemapGetTile(&tilemap, {2, 0}), TileID(3))
+    testing.expect_value(t, TilemapGetTile(&tilemap, {0, 1}), TileID(4))
+    testing.expect_value(t, TilemapGetTile(&tilemap, {3, 0}), TILE_EMPTY)
+
+    TilemapClear(&tilemap)
+    TilemapSetTile(&tilemap, {1, 1}, 5)
+    TilemapSetTile(&tilemap, {2, 2}, 6)
+    temp: [16]TileID
+    TilemapResize(&tilemap, {1, 1, 3, 3}, temp[:])
+    testing.expect_value(t, tilemap.size, vec2i{3, 3})
+    testing.expect_value(t, tilemap.position, vec2i{116, 66})                              // moved by one tile
+    testing.expect_value(t, TilemapGetTile(&tilemap, {0, 0}), TileID(5))                   // the content stays where it was in the world
+    testing.expect_value(t, TilemapGetTile(&tilemap, {1, 1}), TileID(6))
+    testing.expect_value(t, TilemapGetTile(&tilemap, {2, 2}), TILE_EMPTY)
 }
