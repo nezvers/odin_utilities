@@ -40,6 +40,7 @@ PREFAB_NONE :: PrefabId(max(u16))
 MAX_SCENES :: 32
 MAX_PREFABS :: 32
 MAX_PREFAB_ASSETS :: 8
+PREFAB_NAME_CAPACITY :: 48
 MAX_LISTENERS :: 32
 MAX_INSTANCES :: 4      // the running scene, the one that is loading, and some room for replaced ones
 READY_BUFFER :: 16
@@ -153,8 +154,11 @@ SceneSystem :: struct {
     prefab_count: int,
     prefab_assets: [MAX_PREFABS][MAX_PREFAB_ASSETS]AssetId,
     prefab_asset_count: [MAX_PREFABS]u8,
+    prefab_names: [MAX_PREFABS][PREFAB_NAME_CAPACITY]u8,   // levels refer to prefabs by name, ids change when the code does
+    prefab_name_length: [MAX_PREFABS]u8,
     prefab_ready: [MAX_PREFABS]bool,
     scene_ready: [MAX_SCENES]bool,
+    levels: [MAX_SCENES]^Level,     // a level attached to a scene: its assets and prefabs are the scene's too (see LevelAttach)
     expected: [MAX_SCENES]bool,     // scenes that code hinted with SceneExpect, their assets survive the next scene start
 
     listeners: hm.Static_Handle_Map(MAX_LISTENERS + 1, Listener, ListenerId),    // + 1: slot 0 is the empty handle
@@ -217,6 +221,30 @@ PrefabRegister :: proc(system: ^SceneSystem, assets: []AssetId) -> PrefabId {
     return PrefabId(index)
 }
 
+// The same, with a name that levels use to refer to the prefab. Names are copied (up to PREFAB_NAME_CAPACITY bytes)
+PrefabRegisterNamed :: proc(system: ^SceneSystem, name: string, assets: []AssetId) -> PrefabId {
+    assert(len(name) <= PREFAB_NAME_CAPACITY)
+    id: PrefabId = PrefabRegister(system, assets)
+    copy(system.prefab_names[id][:], name)
+    system.prefab_name_length[id] = u8(len(name))
+    return id
+}
+
+// The prefab that was registered with this name
+PrefabFind :: proc(system: ^SceneSystem, name: string) -> (id: PrefabId, ok: bool) {
+    for i in 0 ..< system.prefab_count {
+        if int(system.prefab_name_length[i]) == len(name) && string(system.prefab_names[i][:len(name)]) == name {
+            return PrefabId(i), true
+        }
+    }
+    return PREFAB_NONE, false
+}
+
+PrefabName :: proc(system: ^SceneSystem, id: PrefabId) -> string {
+    if int(id) >= system.prefab_count { return "" }
+    return string(system.prefab_names[id][:system.prefab_name_length[id]])
+}
+
 @(private)
 PrefabAssetsOf :: proc(system: ^SceneSystem, id: PrefabId) -> []AssetId {
     return system.prefab_assets[id][:system.prefab_asset_count[id]]
@@ -262,6 +290,11 @@ SceneRequiredCount :: proc(system: ^SceneSystem, id: SceneId) -> (settled: int, 
             if AssetIsSettled(&system.assets, asset) { settled += 1 }
         }
     }
+    if system.levels[id] != nil {
+        level_settled, level_total := LevelRequiredCount(system, system.levels[id])
+        settled += level_settled
+        total += level_total
+    }
     return
 }
 
@@ -283,6 +316,7 @@ SceneRequestAssets :: proc(system: ^SceneSystem, id: SceneId, blocking: bool, wi
     def: ^SceneDef = &system.scenes[id]
     for asset in def.required { AssetRequest(&system.assets, asset, blocking) }
     for prefab in def.prefabs { PrefabRequest(system, prefab, blocking) }
+    if system.levels[id] != nil { LevelRequestAssets(system, system.levels[id], blocking) }
     if with_optional {
         for asset in def.optional { AssetRequest(&system.assets, asset, false) }
     }
@@ -294,10 +328,26 @@ SceneWantAssets :: proc(system: ^SceneSystem, id: SceneId) {
     def: ^SceneDef = &system.scenes[id]
     for asset in def.required { AssetWant(&system.assets, asset) }
     for asset in def.optional { AssetWant(&system.assets, asset) }
+    if system.levels[id] != nil { LevelWantAssets(system, system.levels[id]) }
     for prefab in def.prefabs {
         if int(prefab) >= system.prefab_count { continue }
         for asset in PrefabAssetsOf(system, prefab) { AssetWant(&system.assets, asset) }
     }
+}
+
+// A loaded level belongs to a scene: its assets and the assets of the prefabs it spawns count as assets of that scene. The scene waits for
+// them behind the transition when it was not predicted, prefetches them when it is expected, and unloads them when it is left.
+// The level has to stay where it is while it is attached (keep it in the game memory). Attach again after loading another level.
+LevelAttach :: proc(system: ^SceneSystem, id: SceneId, level: ^Level) {
+    if !SceneValid(system, id) { return }
+    system.levels[id] = level
+    system.scene_ready[id] = SceneIsReady(system, id)
+}
+
+LevelDetach :: proc(system: ^SceneSystem, id: SceneId) {
+    if !SceneValid(system, id) { return }
+    system.levels[id] = nil
+    system.scene_ready[id] = SceneIsReady(system, id)
 }
 
 // Something makes `id` likely to be the next scene: load what it needs in the background, now. Costs nothing when it is

@@ -58,6 +58,12 @@ scene.SceneSystemInit(&system, {scene_memory = memory[:]}, scene_table, asset_ta
 scene.SceneStart(&system, first)          // each frame: SceneUpdate, SceneDraw, SceneGui, glue.DrawTransition
 ```
 
+## Levels
+`level.odin`: what a level editor saves and a game loads. A `Level` is entities (instances of prefabs with a position, rotation, scale, an optional parent and overrides), asset names, and the chunks of other libraries in the same file. See `../serial/README.MD`.
+- Prefabs and assets by name, overrides by field path, resolved once (`LevelResolve`, `LevelResolvePatches`) into the plain `FieldPatch` values that spawning applies. Prefabs are registered with `PrefabRegisterNamed`.
+- `LevelOpen(bytes, storage)` fills storage you provide and refuses an inconsistent file as a whole. Names are views into the file data, it has to stay alive.
+- `LevelAttach(system, scene, &level)` makes the level's assets and prefab assets part of the scene, so predicted scenes prefetch them and unpredicted ones wait for them behind the transition.
+
 ## Hot reload
 All state is plain data and scenes are ids. `SceneRelease` before the old code is left, `SceneRebind` with the tables of the new code, `SceneResume` to start the current scene on what is loaded. The system must not move after init.
 
