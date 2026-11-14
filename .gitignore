@@ -11,3 +11,4 @@ log.txt
 # the templates are one folder level too deep to reach the libraries, these junctions (mklink /J) make them build in place
 /templates/karl2d/
 /templates/viewport_rect/
+# the demo of hot_reload builds its DLL and the loaded copies next to the executable
