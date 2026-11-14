@@ -2,7 +2,8 @@
 //   - Hover a button for a moment: the scene is expected, its assets load in the background and the click is instant.
 //   - Click Cave (no hint): not predicted, so the transition covers the wait while the blocking assets load.
 //   - Before a texture is loaded it draws as a checker (the placeholder), then the real one replaces it.
-// The tiles textures take 250 ms each to load on purpose (see slow_texture_load) so the waiting is easy to see.
+// The tiles textures take 250 ms each to decode on purpose (see slow_texture_decode) so the waiting is easy to see.
+// On a platform with threads that work happens on worker threads, the frame time on screen stays flat while the loading bar fills.
 // Run from the scene directory: odin run demo_karl2d
 package main
 
@@ -39,9 +40,10 @@ defs: [6]scene.AssetDef = {
 // the table of the library plus a kind that is slow, like a big file would be
 loaders: [5]scene.AssetLoader
 
-slow_texture_load :: proc(def: ^scene.AssetDef, scratch: runtime.Allocator) -> (scene.AssetValue, bool) {
+// The slow part is in the decode: it runs on a worker thread when the platform has them, so the frames do not stall
+slow_texture_decode :: proc(def: ^scene.AssetDef, memory: runtime.Allocator) -> (rawptr, bool) {
     time.sleep(250 * time.Millisecond)
-    return glue.TextureLoad(def, scratch)
+    return glue.TextureDecode(def, memory)
 }
 
 scenes: [4]scene.SceneDef = {
@@ -56,6 +58,7 @@ Demo :: struct {
     system: scene.SceneSystem,
     storage: scene.AssetStorage(6),
     scene_memory: [16 * 1024]byte,
+    decode_memory: [1024 * 1024]byte,   // split between the worker threads
     placeholder: scene.AssetValue,
     log: [LOG_LINES][96]u8,
     log_lengths: [LOG_LINES]int,
@@ -82,12 +85,12 @@ main :: proc() {
     defer karl2d.shutdown()
 
     for i in 0 ..< 4 { loaders[i] = glue.loaders[i] }
-    loaders[KIND_SLOW_TEXTURE] = {load = slow_texture_load, unload = glue.TextureUnload}
+    loaders[KIND_SLOW_TEXTURE] = {decode = slow_texture_decode, finish = glue.TextureFinish, unload = glue.TextureUnload}
 
     demo.placeholder = glue.PlaceholderTexture()
     glue.SetPlaceholders(defs[:], glue.KIND_TEXTURE, demo.placeholder)
     glue.SetPlaceholders(defs[:], KIND_SLOW_TEXTURE, demo.placeholder)
-    scene.SceneSystemInit(&demo.system, {scene_memory = demo.scene_memory[:]}, scenes[:], defs[:], loaders[:], &demo.storage)
+    scene.SceneSystemInit(&demo.system, {scene_memory = demo.scene_memory[:], decode_memory = demo.decode_memory[:]}, scenes[:], defs[:], loaders[:], &demo.storage)
 
     // listen to everything that is loaded, any asset
     scene.Listen(&demo.system, .ASSET_READY, scene.ANY_ID, on_event)
@@ -180,7 +183,7 @@ draw_status :: proc() {
     x: f32 = 900
     karl2d.draw_text("loader", {x, 30}, 22, karl2d.WHITE)
     karl2d.draw_text(fmt.tprintf("ready %d  queued %d  loaded %d", stats.assets_ready, stats.assets_queued, stats.loaded_total), {x, 60}, 18, karl2d.LIGHT_GRAY)
-    karl2d.draw_text(fmt.tprintf("frame %.1f ms (smoothed)", stats.smoothed_dt * 1000), {x, 84}, 18, karl2d.LIGHT_GRAY)
+    karl2d.draw_text(fmt.tprintf("frame %.1f ms (smoothed)  workers %d  decoded on them %d", stats.smoothed_dt * 1000, stats.workers, stats.decoded_on_workers), {x, 84}, 18, karl2d.LIGHT_GRAY)
     karl2d.draw_text(fmt.tprintf("scene memory %d / %d bytes", stats.arena_used, stats.arena_capacity), {x, 108}, 18, karl2d.LIGHT_GRAY)
     karl2d.draw_text("events", {x, 150}, 22, karl2d.WHITE)
     first: int = max(0, demo.log_count - LOG_LINES)

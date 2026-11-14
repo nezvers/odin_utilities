@@ -4,6 +4,11 @@ package scene
 
 import "core:testing"
 import "base:runtime"
+import "core:mem"
+import "core:os"
+import "core:sync"
+import "core:thread"
+import "core:time"
 
 @(private="file", thread_local)
 fake_time: f64
@@ -57,7 +62,7 @@ test_assets_init :: proc(assets: ^TestAssets) {
     }
     assets.defs[6].persistent = true
     assets.loaders[0] = {load = fake_load, unload = fake_unload}
-    AssetStoreInit(&assets.store, assets.defs[:], assets.loaders[:], &assets.storage, assets.scratch[:])
+    AssetStoreInit(&assets.store, assets.defs[:], assets.loaders[:], &assets.storage, {scratch = assets.scratch[:]})
     config: LoaderConfig = {clock = fake_clock}
     LoaderInit(&assets.loader, config)
 }
@@ -224,4 +229,258 @@ test_queue_wraps_around :: proc(t: ^testing.T) {
         AssetsReleaseAll(&assets.store)
         assets.store.queue_head = (assets.store.queue_head + 3) % 7
     }
+}
+
+// --- Worker threads ---
+// Real threads. Each asset has a record that its decode and finish write to, so tests do not share state.
+
+@(private="file")
+FakeRecord :: struct {
+    delay_ms: int,          // how long the decode takes
+    bytes: int,             // what the decode allocates from its memory
+    decode_thread: int,
+    finish_thread: int,
+    decode_calls: int,
+}
+
+@(private="file")
+fake_decode :: proc(def: ^AssetDef, memory: runtime.Allocator) -> (rawptr, bool) {
+    record: ^FakeRecord = cast(^FakeRecord)raw_data(def.source)
+    record.decode_thread = sync.current_thread_id()
+    record.decode_calls += 1
+    if record.delay_ms > 0 { time.sleep(time.Duration(record.delay_ms) * time.Millisecond) }
+    block, error := make([]u8, max(record.bytes, 1), memory)
+    if error != nil { return nil, false }
+    block[0] = 42
+    return raw_data(block), true
+}
+
+@(private="file")
+fake_finish :: proc(def: ^AssetDef, decoded: rawptr) -> (AssetValue, bool) {
+    record: ^FakeRecord = cast(^FakeRecord)raw_data(def.source)
+    record.finish_thread = sync.current_thread_id()
+    if (cast(^u8)decoded)^ != 42 { return {}, false }       // the decoded memory must still be intact here
+    return {handle = 500 + u64(def.flags)}, true
+}
+
+@(private="file")
+inline_load :: proc(def: ^AssetDef, scratch: runtime.Allocator) -> (AssetValue, bool) {
+    return {handle = 900 + u64(def.flags)}, true
+}
+
+@(private="file")
+ThreadedAssets :: struct {
+    defs: [8]AssetDef,
+    loaders: [2]AssetLoader,    // kind 0: decode and finish, kind 1: load only
+    storage: AssetStorage(8),
+    scratch: [4096]u8,
+    decode_memory: [64 * 1024]u8,
+    records: [8]FakeRecord,
+    store: AssetStore,
+    loader: Loader,
+}
+
+@(private="file")
+threaded_init :: proc(assets_pointer: rawptr, workers: int, decode_memory: int = 64 * 1024) {
+    assets: ^ThreadedAssets = cast(^ThreadedAssets)assets_pointer
+    for i in 1 ..< 8 {
+        assets.defs[i] = {name = "item", flags = u32(i), source = mem.byte_slice(&assets.records[i], size_of(FakeRecord)), placeholder = {handle = 7}}
+    }
+    assets.loaders[0] = {decode = fake_decode, finish = fake_finish}
+    assets.loaders[1] = {load = inline_load}
+    AssetStoreInit(&assets.store, assets.defs[:], assets.loaders[:], &assets.storage, {
+        scratch = assets.scratch[:],
+        decode_memory = assets.decode_memory[:decode_memory],
+        workers = workers,
+    })
+    LoaderInit(&assets.loader, {})
+}
+
+// Call the loader like frames do until everything requested is settled, a thread may need a few frames
+@(private="file")
+pump :: proc(assets: ^ThreadedAssets, ids: []AssetId, dt: f32 = 1.0 / 60) -> (settled: bool) {
+    ready: [8]AssetId
+    for _ in 0 ..< 600 {
+        LoaderUpdate(&assets.loader, &assets.store, dt, ready[:])
+        all: bool = true
+        for id in ids { all &&= AssetIsSettled(&assets.store, id) }
+        if all { return true }
+        time.sleep(time.Millisecond)
+    }
+    return false
+}
+
+@(test)
+test_decode_runs_on_a_worker_and_finish_on_the_calling_thread :: proc(t: ^testing.T) {
+    assets: ThreadedAssets
+    threaded_init(rawptr(&assets), 2)
+    testing.expect_value(t, WorkersCount(&assets.store), 2)
+    defer AssetStoreShutdown(&assets.store)
+    for i in 1 ..= 3 { assets.records[i].delay_ms = 40 }
+    for i in 1 ..= 3 { AssetRequest(&assets.store, AssetId(i), true) }
+
+    ready: [8]AssetId
+    start: time.Tick = time.tick_now()
+    count: int = LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    waited: time.Duration = time.tick_since(start)
+    testing.expect_value(t, count, 0)                                                // nothing is ready yet and the call did not wait for it
+    testing.expect(t, waited < 30 * time.Millisecond, "the frame is not held up by the decodes")
+    testing.expect_value(t, AssetGetState(&assets.store, 1), AssetState.LOADING)
+    testing.expect_value(t, AssetGetState(&assets.store, 3), AssetState.QUEUED)     // two workers, the third waits for one
+    testing.expect_value(t, AssetGet(&assets.store, 1).handle, u64(7))               // still the placeholder
+
+    testing.expect(t, pump(&assets, {1, 2, 3}))
+    main_thread: int = sync.current_thread_id()
+    for i in 1 ..= 3 {
+        testing.expect(t, AssetIsReady(&assets.store, AssetId(i)))
+        testing.expect_value(t, AssetGet(&assets.store, AssetId(i)).handle, u64(500 + i))
+        testing.expect(t, assets.records[i].decode_thread != main_thread, "decoded on a worker")
+        testing.expect_value(t, assets.records[i].finish_thread, main_thread)        // the framework part stays on the main thread
+    }
+    testing.expect_value(t, assets.loader.decoded_on_workers, 3)
+}
+
+@(test)
+test_in_flight_work_follows_performance :: proc(t: ^testing.T) {
+    ready: [8]AssetId
+
+    good: ThreadedAssets
+    threaded_init(rawptr(&good), 2)
+    defer AssetStoreShutdown(&good.store)
+    for i in 1 ..= 4 { good.records[i].delay_ms = 50 }
+    for i in 1 ..= 4 { AssetRequest(&good.store, AssetId(i), false) }                // background
+    LoaderUpdate(&good.loader, &good.store, 1.0 / 60, ready[:])
+    testing.expect_value(t, WorkersBusy(&good.store), 2)                             // good frames: every worker works
+
+    slow: ThreadedAssets
+    threaded_init(rawptr(&slow), 2)
+    defer AssetStoreShutdown(&slow.store)
+    for i in 1 ..= 4 { slow.records[i].delay_ms = 50 }
+    for i in 1 ..= 4 { AssetRequest(&slow.store, AssetId(i), false) }
+    LoaderUpdate(&slow.loader, &slow.store, 1.0 / 15, ready[:])
+    testing.expect_value(t, WorkersBusy(&slow.store), 1)                             // slow frames: one at a time, the game comes first
+
+    blocking: ThreadedAssets
+    threaded_init(rawptr(&blocking), 2)
+    defer AssetStoreShutdown(&blocking.store)
+    for i in 1 ..= 4 { blocking.records[i].delay_ms = 50 }
+    for i in 1 ..= 4 { AssetRequest(&blocking.store, AssetId(i), true) }
+    LoaderUpdate(&blocking.loader, &blocking.store, 1.0 / 15, ready[:])
+    testing.expect_value(t, WorkersBusy(&blocking.store), 2)                         // blocking work uses every worker even when slow
+
+    testing.expect(t, pump(&slow, {1, 2, 3, 4}, 1.0 / 15), "slow frames still finish everything, one at a time")
+}
+
+@(test)
+test_workers_reuse_their_memory_and_a_too_small_arena_fails_cleanly :: proc(t: ^testing.T) {
+    assets: ThreadedAssets
+    threaded_init(rawptr(&assets), 1, 8192)                                          // one worker with 8 KB
+    defer AssetStoreShutdown(&assets.store)
+    for i in 1 ..= 5 { assets.records[i].bytes = 6000 }
+    assets.records[6].bytes = 100_000                                                // more than the whole arena
+    assets.records[7].bytes = 6000
+
+    // each item takes 6000 of 8192 bytes: only works when the arena is reset after every item
+    for i in 1 ..= 5 { AssetRequest(&assets.store, AssetId(i), true) }
+    testing.expect(t, pump(&assets, {1, 2, 3, 4, 5}))
+    for i in 1 ..= 5 { testing.expectf(t, AssetIsReady(&assets.store, AssetId(i)), "item %d", i) }
+
+    AssetRequest(&assets.store, 6, true)
+    testing.expect(t, pump(&assets, {6}))
+    testing.expect_value(t, AssetGetState(&assets.store, 6), AssetState.FAILED)      // no crash, a failed asset
+    AssetRequest(&assets.store, 7, true)
+    testing.expect(t, pump(&assets, {7}))
+    testing.expect(t, AssetIsReady(&assets.store, 7), "the worker is usable after a failure")
+}
+
+@(test)
+test_without_workers_the_same_loader_runs_on_the_main_thread :: proc(t: ^testing.T) {
+    assets: ThreadedAssets
+    threaded_init(rawptr(&assets), -1)                                               // threads switched off
+    defer AssetStoreShutdown(&assets.store)
+    testing.expect_value(t, WorkersCount(&assets.store), 0)
+    AssetRequest(&assets.store, 1, true)
+    AssetRequest(&assets.store, 2, true)
+
+    ready: [8]AssetId
+    count: int = LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    testing.expect_value(t, count, 2)                                                // done in this call, like before
+    main_thread: int = sync.current_thread_id()
+    testing.expect_value(t, assets.records[1].decode_thread, main_thread)
+    testing.expect_value(t, assets.records[1].finish_thread, main_thread)
+    testing.expect_value(t, AssetGet(&assets.store, 1).handle, u64(501))             // the same value the threaded path makes
+    testing.expect_value(t, assets.loader.decoded_on_workers, 0)
+
+    // no memory for workers: no workers
+    nowhere: ThreadedAssets
+    threaded_init(rawptr(&nowhere), 2, 100)
+    testing.expect_value(t, WorkersCount(&nowhere.store), 0)
+}
+
+@(test)
+test_loaders_without_decode_load_next_to_the_threads :: proc(t: ^testing.T) {
+    assets: ThreadedAssets
+    threaded_init(rawptr(&assets), 2)
+    defer AssetStoreShutdown(&assets.store)
+    assets.defs[2].kind = 1                                                          // a loader that only has `load`
+    assets.records[1].delay_ms = 30
+    AssetRequest(&assets.store, 1, true)
+    AssetRequest(&assets.store, 2, true)
+
+    ready: [8]AssetId
+    LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    testing.expect(t, AssetIsReady(&assets.store, 2), "the main thread loader is done at once")
+    testing.expect_value(t, AssetGet(&assets.store, 2).handle, u64(902))
+    testing.expect(t, !AssetIsReady(&assets.store, 1), "while the decode is still running")
+    testing.expect(t, pump(&assets, {1}))
+    testing.expect_value(t, assets.loader.decoded_on_workers, 1)
+}
+
+@(test)
+test_release_all_waits_for_decodes_and_shutdown_stops_the_threads :: proc(t: ^testing.T) {
+    assets: ThreadedAssets
+    threaded_init(rawptr(&assets), 2)
+    for i in 1 ..= 4 { assets.records[i].delay_ms = 40 }
+    for i in 1 ..= 4 { AssetRequest(&assets.store, AssetId(i), true) }
+    ready: [8]AssetId
+    LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    testing.expect_value(t, WorkersBusy(&assets.store), 2)
+
+    AssetsReleaseAll(&assets.store)                                                  // waits for the running decodes, drops their results
+    testing.expect_value(t, WorkersBusy(&assets.store), 0)
+    for i in 1 ..= 4 { testing.expect_value(t, AssetGetState(&assets.store, AssetId(i)), AssetState.UNLOADED) }
+    testing.expect_value(t, assets.store.queue_count, 0)
+
+    AssetRequest(&assets.store, 1, true)                                             // still usable after that
+    testing.expect(t, pump(&assets, {1}))
+    testing.expect(t, AssetIsReady(&assets.store, 1))
+
+    AssetStoreShutdown(&assets.store)
+    testing.expect_value(t, WorkersCount(&assets.store), 0)
+    AssetStoreShutdown(&assets.store)                                                // twice is harmless
+}
+
+@(test)
+test_rebind_waits_for_the_decodes_that_read_the_tables :: proc(t: ^testing.T) {
+    assets: ThreadedAssets
+    threaded_init(rawptr(&assets), 1)
+    defer AssetStoreShutdown(&assets.store)
+    assets.records[1].delay_ms = 40
+    AssetRequest(&assets.store, 1, true)
+    ready: [8]AssetId
+    LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+
+    AssetStoreRebind(&assets.store, assets.defs[:], assets.loaders[:])               // a hot reload: waits for the decode, keeps its result
+    testing.expect(t, pump(&assets, {1}))
+    testing.expect(t, AssetIsReady(&assets.store, 1))
+}
+
+@(test)
+test_automatic_worker_count_follows_the_platform :: proc(t: ^testing.T) {
+    testing.expect_value(t, LoaderThreadsAvailable(), thread.IS_SUPPORTED)
+    assets: ThreadedAssets
+    threaded_init(rawptr(&assets), 0)                                                // automatic
+    defer AssetStoreShutdown(&assets.store)
+    expected: int = clamp(os.get_processor_core_count() - 1, 0, AUTO_WORKERS_MAX)
+    testing.expect_value(t, WorkersCount(&assets.store), expected)
 }

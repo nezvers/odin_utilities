@@ -1,6 +1,6 @@
 package scene
 
-// Assets that are loaded in the background while the game runs, a few per frame.
+// Assets that are loaded in the background while the game runs.
 //
 // Two kinds of requests share one queue:
 //   background - prefetch for something that is likely to be needed (the next scene, an optional asset). Loads a little each frame.
@@ -11,8 +11,16 @@ package scene
 // Whatever is not READY yet gives the placeholder of its definition, a null id gives a null value. Callers never have to check,
 // and never wait: they draw the placeholder and the real value shows up when it is loaded.
 //
-// Memory: the definitions are a constant table, the state lives in a user provided AssetStorage, a decode scratch arena is reset
-// after every item. Nothing allocates per frame.
+// Threads: a loader can be split in two. `decode` is the CPU work (unpacking an image, parsing a file), it only touches the bytes it
+// is given and the memory it is given, so it can run on a worker thread. `finish` makes the value from the decoded data (creates the
+// GPU texture, the audio buffer) and always runs on the main thread, because frameworks are not thread safe. When the platform has
+// threads (not the web) and memory for them is provided, decoding runs on a few worker threads next to the game and the main
+// thread only does the cheap finish step. Without threads, or for a loader that only has `load`, the same loader runs on the main
+// thread, a few items per frame, with the same results.
+//
+// Memory: the definitions are a constant table, the state lives in a user provided AssetStorage, each worker decodes into its own
+// arena (a part of the memory the user provided) that is reset after every item, a scratch arena does the same for the main thread.
+// Threads are created once at init, never while loading. Nothing allocates per frame.
 
 import "base:runtime"
 import "core:mem"
@@ -34,6 +42,7 @@ AssetValue :: struct {
 AssetState :: enum u8 {
     UNLOADED,
     QUEUED,
+    LOADING,    // decoding on a worker thread
     READY,
     FAILED,     // the loader said no. Counts as settled so nothing waits for it forever, reads give the placeholder
 }
@@ -42,15 +51,21 @@ AssetState :: enum u8 {
 AssetDef :: struct {
     name: string,
     kind: AssetKind,
-    source: []byte,             // bytes of the asset, usually #load
+    source: []byte,             // bytes of the asset, usually #load. Has to stay alive while the asset is loading or in use
     flags: u32,                 // loader options
     placeholder: AssetValue,    // given while the asset is not ready
     persistent: bool,           // survives scene changes
 }
 
+// A loader needs `load`, or `decode` and `finish`. With `decode` and `finish` the decode step can run on a worker thread.
 AssetLoader :: struct {
-    // Make the value. `scratch` is for decoding, it is cleared right after the call
+    // Everything on the main thread. `scratch` is for decoding, it is cleared right after the call
     load: proc(def: ^AssetDef, scratch: runtime.Allocator) -> (value: AssetValue, ok: bool),
+    // The CPU part. May run on a worker thread: no framework calls, no globals that change, allocate only from `memory`
+    // (an arena that is reset after finish). Returns what finish needs, usually a pointer into `memory`
+    decode: proc(def: ^AssetDef, memory: runtime.Allocator) -> (decoded: rawptr, ok: bool),
+    // The main thread part: make the value from the decoded data
+    finish: proc(def: ^AssetDef, decoded: rawptr) -> (value: AssetValue, ok: bool),
     unload: proc(def: ^AssetDef, value: AssetValue),
 }
 
@@ -61,6 +76,13 @@ AssetStorage :: struct($N: int) {
     blocking: [N]bool,
     wanted: [N]bool,
     queue: [N]AssetId,
+}
+
+AssetStoreConfig :: struct {
+    scratch: []byte,            // decode memory of the main thread, reused for every item. Empty - the temp allocator
+    decode_memory: []byte,      // split between the workers. Empty - no threads. Has to fit the biggest decoded asset per worker
+    workers: int,               // 0 - as many as the platform suggests (cores - 1, at most 4), negative - none, else that many
+    allocator: runtime.Allocator,   // for the thread objects, only at init and shutdown. Empty - context.allocator
 }
 
 AssetStore :: struct {
@@ -75,10 +97,11 @@ AssetStore :: struct {
     queue_count: int,
     scratch: mem.Arena,
     has_scratch: bool,
+    workers: Workers,               // see asset_workers.odin. The store must not move: the workers point at it
 }
 
-// `scratch` is the memory for decoding, reused for every item. Empty - the temp allocator is given to the loaders instead
-AssetStoreInit :: proc(store: ^AssetStore, defs: []AssetDef, loaders: []AssetLoader, storage: ^AssetStorage($N), scratch: []byte = nil) {
+// The store must stay where it is after this: worker threads keep a pointer to it
+AssetStoreInit :: proc(store: ^AssetStore, defs: []AssetDef, loaders: []AssetLoader, storage: ^AssetStorage($N), config: AssetStoreConfig = {}) {
     count: int = len(defs)
     assert(count > 0 && count <= N, "the storage has to be as big as the table")
     store^ = {
@@ -90,15 +113,22 @@ AssetStoreInit :: proc(store: ^AssetStore, defs: []AssetDef, loaders: []AssetLoa
         wanted = storage.wanted[:count],
         queue = storage.queue[:count],
     }
-    if len(scratch) > 0 {
-        mem.arena_init(&store.scratch, scratch)
+    if len(config.scratch) > 0 {
+        mem.arena_init(&store.scratch, config.scratch)
         store.has_scratch = true
     }
+    WorkersStart(store, config.workers, config.decode_memory, config.allocator)
 }
 
-// The code that was reloaded has new tables, the state stays
+// Stop the worker threads and wait for them. Loaded assets stay as they are, use AssetsReleaseAll to unload them
+AssetStoreShutdown :: proc(store: ^AssetStore) {
+    WorkersStop(store)
+}
+
+// The code that was reloaded has new tables, the state stays. Waits for the decodes that are running: they read the tables
 AssetStoreRebind :: proc(store: ^AssetStore, defs: []AssetDef, loaders: []AssetLoader) {
     assert(len(defs) == len(store.states))
+    WorkersWaitIdle(store)
     store.defs = defs
     store.loaders = loaders
 }
@@ -153,13 +183,13 @@ QueueRemoveAt :: proc(store: ^AssetStore, index: int) {
 }
 
 // Ask for an asset. Returns true when it is ready or on its way. Asking again is free; asking for blocking what was queued as
-// background makes it blocking. A failed asset is tried again.
+// background (or is being decoded) makes it blocking. A failed asset is tried again.
 AssetRequest :: proc(store: ^AssetStore, id: AssetId, blocking: bool) -> bool {
     if !AssetIsValid(store, id) { return false }
     switch store.states[id] {
     case .READY:
         return true
-    case .QUEUED:
+    case .QUEUED, .LOADING:
         store.blocking[id] ||= blocking
         return true
     case .UNLOADED, .FAILED:
@@ -197,6 +227,7 @@ AssetUnload :: proc(store: ^AssetStore, id: AssetId) {
 }
 
 // Unload everything that is not persistent and was not marked wanted. Drops queued requests of unwanted assets too.
+// An asset that is being decoded right now is left alone, it is released by the next call if it is still unwanted.
 AssetsReleaseUnwanted :: proc(store: ^AssetStore) -> (released: int) {
     for i in 1 ..< len(store.defs) {
         id: AssetId = AssetId(i)
@@ -211,14 +242,15 @@ AssetsReleaseUnwanted :: proc(store: ^AssetStore) -> (released: int) {
             store.blocking[id] = false
         case .FAILED:
             store.states[id] = .UNLOADED
-        case .UNLOADED:
+        case .UNLOADED, .LOADING:
         }
     }
     return
 }
 
-// Unload everything, persistent too
+// Unload everything, persistent too. Waits for the decodes that are running
 AssetsReleaseAll :: proc(store: ^AssetStore) {
+    WorkersDiscardAll(store)
     for i in 1 ..< len(store.defs) {
         id: AssetId = AssetId(i)
         if store.states[id] == .READY {
@@ -236,8 +268,8 @@ AssetsReleaseAll :: proc(store: ^AssetStore) {
 LoaderConfig :: struct {
     target_frame_seconds: f32,          // default 1/60
     slack: f32,                         // the frame time may be this much over the target and still count as good. Default 0.15
-    background_budget_seconds: f32,     // time for background items in a good frame. Default 2 ms
-    blocking_budget_seconds: f32,       // time for blocking items, a transition hides it. Default 12 ms
+    background_budget_seconds: f32,     // main thread time for background items in a good frame. Default 2 ms
+    blocking_budget_seconds: f32,       // main thread time for blocking items, a transition hides it. Default 12 ms
     max_per_frame: int,                 // Default 8
     smoothing: f32,                     // weight of the newest frame in the smoothed frame time. Default 0.1
     clock: proc() -> f64,               // seconds, nil - the system clock. Tests give a fake one
@@ -260,6 +292,7 @@ Loader :: struct {
     loaded_last_frame: int,
     loaded_total: int,
     failed_total: int,
+    decoded_on_workers: int,            // items whose decode step ran on a worker thread
 }
 
 LoaderInit :: proc(loader: ^Loader, config: LoaderConfig) {
@@ -293,6 +326,7 @@ QueueNext :: proc(store: ^AssetStore) -> int {
     return 0
 }
 
+// A blocking item is waiting in the queue
 AssetsHaveBlocking :: proc(store: ^AssetStore) -> bool {
     capacity: int = len(store.queue)
     for i in 0 ..< store.queue_count {
@@ -303,60 +337,125 @@ AssetsHaveBlocking :: proc(store: ^AssetStore) -> bool {
     return false
 }
 
+// A blocking item is waiting or being decoded
+@(private)
+BlockingWork :: proc(store: ^AssetStore) -> bool {
+    if AssetsHaveBlocking(store) { return true }
+    for i in 1 ..< len(store.states) {
+        if store.states[i] == .LOADING && store.blocking[i] { return true }
+    }
+    return false
+}
+
+// Whether the loader of the asset can decode on a worker thread
+@(private)
+Threadable :: proc(store: ^AssetStore, id: AssetId) -> bool {
+    kind: int = int(store.defs[id].kind)
+    return kind < len(store.loaders) && store.loaders[kind].decode != nil && store.loaders[kind].finish != nil
+}
+
+// Make the value of one asset on the calling thread
+@(private)
+LoadInline :: proc(store: ^AssetStore, id: AssetId) -> (value: AssetValue, ok: bool) {
+    def: ^AssetDef = &store.defs[id]
+    if int(def.kind) >= len(store.loaders) { return }
+    loader: ^AssetLoader = &store.loaders[def.kind]
+    scratch: runtime.Allocator = mem.arena_allocator(&store.scratch) if store.has_scratch else context.temp_allocator
+    if loader.load != nil {
+        value, ok = loader.load(def, scratch)
+    } else if loader.decode != nil && loader.finish != nil {
+        decoded: rawptr
+        decoded, ok = loader.decode(def, scratch)
+        if ok { value, ok = loader.finish(def, decoded) }
+    }
+    if store.has_scratch {
+        free_all(scratch)
+    }
+    return
+}
+
+@(private)
+LoaderSettle :: proc(loader: ^Loader, store: ^AssetStore, id: AssetId, value: AssetValue, ok: bool, ready: []AssetId, count: ^int) {
+    store.blocking[id] = false
+    if ok {
+        store.states[id] = .READY
+        store.values[id] = value
+        ready[count^] = id
+        count^ += 1
+        loader.loaded_total += 1
+    } else {
+        store.states[id] = .FAILED
+        loader.failed_total += 1
+    }
+    loader.loaded_last_frame += 1
+}
+
 // Load some of the queue. Call once per frame with the frame time.
 // How much is loaded depends on how the game runs:
 //   - blocking items are waiting: many, up to the blocking budget. The transition covers the cost
 //   - the frames are good (smoothed frame time near the target): many background items, up to the background budget
 //   - the frames are slow: one background item per frame, so loading never stops and never makes it worse
+// With worker threads the decode of items runs next to the game: a good frame or blocking work keeps every worker busy, a slow frame
+// one. The budget is for the main thread (finish steps and loaders without decode): that is what can make a frame slower.
 // Ids of what became ready go into `ready`, the number is returned. Loading stops when `ready` is full.
 LoaderUpdate :: proc(loader: ^Loader, store: ^AssetStore, dt: f32, ready: []AssetId) -> (count: int) {
     loader.smoothed_dt = dt if loader.smoothed_dt == 0 else loader.smoothed_dt + (dt - loader.smoothed_dt) * loader.config.smoothing
     loader.loaded_last_frame = 0
-    if store.queue_count == 0 || len(ready) == 0 {
-        return
-    }
+    if len(ready) == 0 { return }
 
-    blocking: bool = AssetsHaveBlocking(store)
+    workers: int = WorkersCount(store)
+    blocking: bool = BlockingWork(store)
     good: bool = loader.smoothed_dt <= loader.config.target_frame_seconds * (1 + loader.config.slack)
     max_items: int = loader.config.max_per_frame if blocking || good else 1
     budget: f64 = f64(loader.config.blocking_budget_seconds if blocking else loader.config.background_budget_seconds)
-
     frame_start: f64 = LoaderNow(loader)
+    main_thread_items: int
+
+    // 1. what the workers have decoded: finish it here
+    for slot in 0 ..< workers {
+        if count >= len(ready) { break }
+        id, decoded, decode_ok, done := WorkersTake(store, slot)
+        if !done { continue }
+        value: AssetValue
+        ok: bool = decode_ok
+        if ok {
+            def: ^AssetDef = &store.defs[id]
+            value, ok = store.loaders[def.kind].finish(def, decoded)
+        }
+        WorkersRelease(store, slot)
+        loader.decoded_on_workers += 1
+        LoaderSettle(loader, store, id, value, ok, ready, &count)
+        main_thread_items += 1
+        if main_thread_items >= max_items || LoaderNow(loader) - frame_start >= budget { break }
+    }
+
+    // 2. start new work
+    in_flight_limit: int = workers if blocking || good else 1
     for store.queue_count > 0 && count < len(ready) {
         index: int = QueueNext(store)
         id: AssetId = store.queue[(store.queue_head + index) % len(store.queue)]
-        QueueRemoveAt(store, index)
 
-        def: ^AssetDef = &store.defs[id]
-        value: AssetValue
-        ok: bool
-        if int(def.kind) < len(store.loaders) && store.loaders[def.kind].load != nil {
-            scratch: runtime.Allocator = mem.arena_allocator(&store.scratch) if store.has_scratch else context.temp_allocator
-            value, ok = store.loaders[def.kind].load(def, scratch)
-            if store.has_scratch {
-                free_all(scratch)
+        if workers > 0 && Threadable(store, id) {
+            if WorkersBusy(store) >= in_flight_limit { break }
+            QueueRemoveAt(store, index)
+            store.states[id] = .LOADING
+            if !WorkersSubmit(store, id) {
+                store.states[id] = .QUEUED      // no free worker after all, it keeps its place at the back
+                store.queue[(store.queue_head + store.queue_count) % len(store.queue)] = id
+                store.queue_count += 1
+                break
             }
+            continue
         }
-        store.blocking[id] = false
-        if ok {
-            store.states[id] = .READY
-            store.values[id] = value
-            ready[count] = id
-            count += 1
-            loader.loaded_total += 1
-        } else {
-            store.states[id] = .FAILED
-            loader.failed_total += 1
-        }
-        loader.loaded_last_frame += 1
 
-        // a blocking pass may use its budget only for blocking items, the rest waits for the next frame
-        if loader.loaded_last_frame >= max_items || LoaderNow(loader) - frame_start >= budget {
-            break
-        }
-        if blocking && !AssetsHaveBlocking(store) {
-            break
-        }
+        // a loader without a decode step, or no workers: on this thread, within the budget
+        if main_thread_items > 0 && (main_thread_items >= max_items || LoaderNow(loader) - frame_start >= budget) { break }
+        QueueRemoveAt(store, index)
+        value, ok := LoadInline(store, id)
+        LoaderSettle(loader, store, id, value, ok, ready, &count)
+        main_thread_items += 1
+        if main_thread_items >= max_items || LoaderNow(loader) - frame_start >= budget { break }
+        if blocking && !AssetsHaveBlocking(store) && workers == 0 { break }
     }
     return
 }

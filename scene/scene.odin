@@ -125,7 +125,11 @@ SceneSystemConfig :: struct {
     loader: LoaderConfig,
     transition: TransitionDef,      // default 0.25 s out, 0.25 s in, 0.15 s hold
     scene_memory: []byte,           // the arena of the running scene
-    scratch_memory: []byte,         // decode scratch of the loader
+    scratch_memory: []byte,         // decode memory of the main thread, reused for every item
+    decode_memory: []byte,          // split between the worker threads, each decodes into its part. Empty - no threads.
+                                    // Per worker it has to fit the biggest decoded asset
+    workers: int,                   // 0 - as many as the platform suggests (cores - 1, at most 4), negative - none
+    allocator: runtime.Allocator,   // for the thread objects, only at init and shutdown. Empty - context.allocator
 }
 
 SceneSystem :: struct {
@@ -176,7 +180,12 @@ SceneSystemInit :: proc(
     if system.default_transition == {} {
         system.default_transition = {out_seconds = 0.25, in_seconds = 0.25, hold_seconds = 0.15}
     }
-    AssetStoreInit(&system.assets, asset_defs, loaders, storage, config.scratch_memory)
+    AssetStoreInit(&system.assets, asset_defs, loaders, storage, {
+        scratch = config.scratch_memory,
+        decode_memory = config.decode_memory,
+        workers = config.workers,
+        allocator = config.allocator,
+    })
     LoaderInit(&system.loader, config.loader)
     if len(config.scene_memory) > 0 {
         mem.arena_init(&system.arena, config.scene_memory)
@@ -661,10 +670,11 @@ SceneResume :: proc(system: ^SceneSystem) {
     }
 }
 
-// Finish the scene and unload everything
+// Finish the scene, unload everything and stop the worker threads. The system is not usable afterwards
 SceneShutdown :: proc(system: ^SceneSystem) {
     SceneRelease(system)
     AssetsReleaseAll(&system.assets)
+    AssetStoreShutdown(&system.assets)
     for i in 1 ..< int(system.instances.used_len) {
         if system.instances.items[i].handle.idx != 0 {
             hm.remove(&system.instances, system.instances.items[i].handle)
@@ -684,6 +694,8 @@ SceneStats :: struct {
     assets_queued: int,
     loaded_total: int,
     failed_total: int,
+    decoded_on_workers: int,    // items that were decoded on a worker thread
+    workers: int,               // worker threads, 0 when everything loads on the main thread
     smoothed_dt: f32,
     instances_started: u32,
 }
@@ -695,6 +707,8 @@ SceneGetStats :: proc(system: ^SceneSystem) -> (stats: SceneStats) {
     stats.assets_queued = system.assets.queue_count
     stats.loaded_total = system.loader.loaded_total
     stats.failed_total = system.loader.failed_total
+    stats.decoded_on_workers = system.loader.decoded_on_workers
+    stats.workers = WorkersCount(&system.assets)
     stats.smoothed_dt = system.loader.smoothed_dt
     stats.instances_started = system.instances_started
     if system.has_arena {

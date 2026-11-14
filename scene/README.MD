@@ -16,8 +16,16 @@ Assets are rows of a constant table (`AssetDef`), loaded a few per frame on the 
 - **Never stalls**: `AssetGet` gives the placeholder (or a null value for the null id) until the real value is there. A failed asset counts as settled, nothing waits for it forever.
 - `LoaderConfig`: `target_frame_seconds`, `slack`, `background_budget_seconds`, `blocking_budget_seconds`, `max_per_frame`.
 
+## Threads
+A loader can be split in two: `decode` (the CPU work: unpacking an image, parsing a file) and `finish` (creating the GPU texture or audio buffer). `decode` only touches the bytes it is given and the memory it is given, so it can run on a worker thread. `finish` always runs on the main thread because frameworks are not thread safe. A loader that only has `load` stays on the main thread.
+- The platform decides: with `thread.IS_SUPPORTED` and `decode_memory` provided, workers are created once at init (`workers = 0`: cores - 1, at most 4; negative: none). The web, or no memory, means no workers and the same loaders run on the main thread, a few per frame, with the same results (`LoaderThreadsAvailable`).
+- Each worker has its own job slot and decodes into its own part of `decode_memory`, an arena that is reset after every item. No queue, no locks: a slot is owned by whoever its atomic state says, a semaphore wakes the worker. Size the memory for the biggest decoded asset per worker, a decode that does not fit fails cleanly (the asset is FAILED).
+- The same rule as before decides how much runs at once: blocking work or good frames keep every worker busy, slow frames one. The frame budget is for the main thread (finish steps, loaders without decode), that is what can make a frame slower.
+- The karl2d glue decodes textures on workers (`TextureDecode`, `TextureFinish`). Sounds and fonts still load on the main thread.
+- `AssetStoreShutdown` (called by `SceneShutdown`) joins the threads. A hot reload `SceneRebind` waits for running decodes first.
+
 ## Memory
-- Fixed size, nothing allocates per frame. The state of the assets is your `AssetStorage(N)` (for example inside the game memory), listeners and scene instances are static handle maps (`core:container/handle_map`), a stale handle is refused.
+- Fixed size, nothing allocates per frame (threads are created once at init). The state of the assets is your `AssetStorage(N)` (for example inside the game memory), listeners and scene instances are static handle maps (`core:container/handle_map`), a stale handle is refused.
 - Assets, prefabs and scenes are ids that index constant tables. Handles (`ListenerId`, `SceneInstanceId`) are for what is made and removed while running.
 - Each scene has an arena (`SceneAllocator`): what its `init` allocates goes there and `free_all` runs when it exits. A decode scratch arena is reset after every loaded item.
 - When a scene starts, the assets that it, its `next` scenes, `SceneExpect` hints and `persistent` assets don't need are unloaded.

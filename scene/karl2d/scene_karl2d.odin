@@ -5,6 +5,10 @@ package scene_karl2d
 // (see scene.LoaderUpdate).
 
 import "base:runtime"
+import "core:image"
+// registers the decoders that TextureDecode depends on, they are looked up by file type
+import _ "core:image/png"
+import _ "core:image/jpeg"
 import "../../karl2d"
 import scene ".."
 
@@ -18,7 +22,7 @@ FLAG_PREMULTIPLY_ALPHA :: u32(1)
 
 // Index with AssetKind: pass to SceneSystemInit
 loaders: [4]scene.AssetLoader = {
-    KIND_TEXTURE = {load = TextureLoad, unload = TextureUnload},
+    KIND_TEXTURE = {decode = TextureDecode, finish = TextureFinish, unload = TextureUnload},
     KIND_AUDIO_CLIP = {load = AudioClipLoad, unload = AudioClipUnload},
     KIND_AUDIO_STREAM = {load = AudioStreamLoad, unload = AudioStreamUnload},
     KIND_FONT = {load = FontLoad, unload = FontUnload},
@@ -41,10 +45,30 @@ Unpack :: proc(value: scene.AssetValue, $T: typeid) -> T where size_of(T) <= 8 {
     return result
 }
 
-TextureLoad :: proc(def: ^scene.AssetDef, scratch: runtime.Allocator) -> (value: scene.AssetValue, ok: bool) {
-    texture, texture_ok := karl2d.load_texture_from_bytes(def.source, {premultiply_alpha = def.flags & FLAG_PREMULTIPLY_ALPHA != 0})
+// A texture loads in two steps, the same ones karl2d.load_texture_from_bytes does inside. The decode (unpacking the image, premultiplying
+// the alpha) is pure CPU work, so it can run on a worker thread, into the memory of that worker. The finish creates the GPU texture and
+// runs on the main thread.
+TextureDecode :: proc(def: ^scene.AssetDef, memory: runtime.Allocator) -> (decoded: rawptr, ok: bool) {
+    options: image.Options = {.alpha_add_if_missing}
+    if def.flags & FLAG_PREMULTIPLY_ALPHA != 0 {
+        options += {.alpha_premultiply}
+    }
+    img, error := image.load_from_bytes(def.source, options = options, allocator = memory)
+    if error != nil { return }
+    return img, true
+}
+
+TextureFinish :: proc(def: ^scene.AssetDef, decoded: rawptr) -> (value: scene.AssetValue, ok: bool) {
+    img: ^image.Image = cast(^image.Image)decoded
+    texture, texture_ok := karl2d.load_texture_from_bytes_raw(img.pixels[:], img.width, img.height, .RGBA_8_Norm)
     if !texture_ok { return }
     return Pack(texture), true
+}
+
+// Both steps on the calling thread, for a loader that wraps the texture loader
+TextureLoad :: proc(def: ^scene.AssetDef, scratch: runtime.Allocator) -> (value: scene.AssetValue, ok: bool) {
+    decoded := TextureDecode(def, scratch) or_return
+    return TextureFinish(def, decoded)
 }
 
 TextureUnload :: proc(def: ^scene.AssetDef, value: scene.AssetValue) {
