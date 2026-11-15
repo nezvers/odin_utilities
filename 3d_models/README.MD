@@ -28,3 +28,11 @@ All slices and strings of a `Model` are allocated with the allocator you pass, s
 
 ## Limits
 No morph targets (weights channels are ignored), no sparse accessors, only triangle lists/indexed triangles, interleaved buffers are supported (byte stride). Textures are loaded from embedded image bytes (GLB), images referenced by uri are only reported in `Image.uri`.
+
+## Karl2D glue needs the custom fork
+`karl2d/models3d_karl2d.odin` and `demo_karl2d` use the 3D layer (`karl2d.r3d_*`) of my Karl2D fork (`odin_utilities/karl2d` is a junction to `odin_plug/karl2d`, repository `nezvers/karl2d_fork`, branch `render3d`), not upstream Karl2D.
+Skinning is on the CPU like in the raylib glue, each posed primitive becomes a mesh for the draw call of that frame. Karl2D has to be started with `depth_test = true`.
+
+## Demos and tests
+`odin run demo_raylib`, `odin run demo_karl2d`: the same demo from `demo_common` (animation list, orbit camera, speed slider), the 3D drawing is the only part of each framework (`scene3d.odin`).
+`odin test demo_common -strict-style -vet` plays its script headless, `odin run demo_raylib -define:DEMO_TEST=true` plays it in the window.

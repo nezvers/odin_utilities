@@ -1,51 +1,11 @@
 package demo_raylib
 
-import rl "vendor:raylib"
-import "core:os"
+import kit_raylib "../../demo_kit/raylib"
+import demo_common "../demo_common"
 
-
+// `odin run demo_raylib`. The model is drawn by scene3d.odin (raylib, CPU skinning through 3d_models/raylib), the demo in demo_common only poses it.
+// `-define:DEMO_TEST=true` plays the script of the demo with simulated input and exits with 1 on a failure.
 main :: proc() {
-	working_dir, err: = os.get_working_directory(context.allocator)
-	defer delete(working_dir)
-	// Return user to original directory in case project change it
-	defer os.change_directory(working_dir)
-	if err != nil {
-		return
-	}
-	executable_directory:string
-	executable_directory, err = os.get_executable_directory(context.allocator)
-	defer delete(executable_directory)
-	if err != nil {
-		return
-	}
-	os.change_directory(executable_directory)
-	game_init_window()
-	game_init()
-
-	main_loop: for game_should_run() {
-		update()
-		draw()
-	}
-
-	game_shutdown()
-    rl.CloseWindow()
-}
-
-game_init_window :: proc() {
-    rl.SetConfigFlags({.WINDOW_RESIZABLE, .VSYNC_HINT})
-	rl.InitWindow(1280, 720, "template demo")
-	rl.SetWindowPosition(200, 200)
-	rl.SetTargetFPS(60)
-	rl.SetExitKey(nil)
-}
-
-game_should_run :: proc() -> bool {
-    when ODIN_OS != .JS {
-        // Never run this proc in browser. It contains a 16 ms sleep on web!
-		if rl.WindowShouldClose() {
-            return false
-		}
-	}
-    
-	return !rl.IsKeyPressed(.ESCAPE)
+	demo_common.model_drawer = draw_model
+	kit_raylib.Run("3d_models", demo_common.demos[:])
 }
