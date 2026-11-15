@@ -73,6 +73,12 @@ SoundTrigger::proc(settings:^SoundSettings, state:^SoundState, time_seconds:f64)
     }
     delta:f32 = cast(f32)(time_seconds - state.last_time)
     state.last_time = time_seconds
+    if state.pitch == 0 {
+        // never played: it starts at a random pitch of its range. Without this the zero state counts as "triggered a moment ago"
+        // (the time since time zero is short) and the pitch would fall below pitch_min
+        state.pitch = Lerp(settings.pitch_rand_min, settings.pitch_rand_max, rand.float32())
+        return true
+    }
     UpdatePitch(settings, state, delta)
     return true
 }

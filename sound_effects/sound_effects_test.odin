@@ -128,3 +128,14 @@ test_bank_keeps_its_states_when_the_settings_are_rebound :: proc(t: ^testing.T) 
     SoundBankInit(&bank, reloaded[:], states[:])
     testing.expect_value(t, states[1].pitch, f32(0))                                       // Init starts clean
 }
+
+@(test)
+test_the_first_trigger_starts_inside_of_the_pitch_range :: proc(t: ^testing.T) {
+    // the first trigger shortly after the program started: the pitch must not start below the minimum
+    settings: SoundSettings = {volume = 1, pitch_rand_min = 0.9, pitch_rand_max = 1.2, pitch_min = 0.5, pitch_max = 1.75, pitch_increment = 0.01, retrigger_interval = 0.5, pitch_return = 1}
+    for _ in 0 ..< 200 {
+        state: SoundState
+        testing.expect(t, SoundTrigger(&settings, &state, 0.05))
+        testing.expect(t, state.pitch >= 0.9 && state.pitch <= 1.2, "starts at a pitch of the random range")
+    }
+}
