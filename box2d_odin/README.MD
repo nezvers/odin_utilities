@@ -10,7 +10,7 @@ Karl2D should be one directory back, next to this library.
 - `camera.odin` - world (meters, y up) to screen mapping, pan and zoom.
 - `input.odin`, `ui.odin` - framework agnostic input snapshot and a small immediate mode UI (sliders, checkboxes, buttons) that draws through a `Backend` (rect + text).
 - `sample.odin` - `Sample` descriptor, registry, `SampleHost` (browser panel, controls panel, world step, mouse joint, camera, debug drawing). `random.odin` - deterministic random like the C++ samples.
-- `raylib/`, `karl2d/` - glue: `InitDebugDraw` (b2.DebugDraw with camera support). Pass `^Camera` as `userContext`, without it world units are pixels with flipped y.
+- `glue_raylib/`, `glue_karl2d/` - glue: `InitDebugDraw` (b2.DebugDraw with camera support). Pass `^Camera` as `userContext`, without it world units are pixels with flipped y.
 
 ## Samples (`samples/`, package `box2d_samples`)
 Each file ports one `sample_*.cpp`. A sample is a set of callbacks registered with `@(init)`:

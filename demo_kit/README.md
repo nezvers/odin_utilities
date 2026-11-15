@@ -10,8 +10,8 @@ demo_kit/
 ├── sim.odin         Step, Player: simulated input and Checks as data
 ├── runner.odin      Demo, Runner (menu, switching), TestDemo / TestAll / RunTests, Report
 ├── headless.odin    a backend without a window or device, drawing is only counted
-├── raylib/          the raylib backend:  kit_raylib.Run("name", demos)
-├── karl2d/          the Karl2D backend:  kit_karl2d.Run("name", demos)
+├── glue_raylib/          the raylib backend:  kit_raylib.Run("name", demos)
+├── glue_karl2d/          the Karl2D backend:  kit_karl2d.Run("name", demos)
 └── demo_kit_test.odin
 ```
 
@@ -59,6 +59,6 @@ Keep the positions a script clicks fixed numbers (not relative to the window siz
 | `kit_karl2d.Run` | Karl2D | keyboard and mouse | `odin run demo_karl2d` |
 | `kit.HeadlessInit` | none | a `Player` (the script) | tests |
 
-A new framework is one more backend: fill the `Backend` table (see `raylib/raylib.odin`).
+A new framework is one more backend: fill the `Backend` table (see `glue_raylib/raylib.odin`).
 
 `odin test demo_kit -strict-style -vet`

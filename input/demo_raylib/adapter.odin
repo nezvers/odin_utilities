@@ -5,7 +5,7 @@ package demo_raylib
 
 import rl "vendor:raylib"
 import kit "../../demo_kit"
-import input "../raylib"
+import input "../glue_raylib"
 import demo_common "../demo_common"
 
 actions: [demo_common.ACTION_COUNT]input.InputAction = {

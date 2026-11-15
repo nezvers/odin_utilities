@@ -4,7 +4,7 @@ package demo_karl2d
 
 import "../../karl2d"
 import kit "../../demo_kit"
-import input "../karl2d"
+import input "../glue_karl2d"
 import demo_common "../demo_common"
 
 actions: [demo_common.ACTION_COUNT]input.InputAction = {

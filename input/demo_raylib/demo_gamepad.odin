@@ -8,7 +8,7 @@ import "core:reflect"
 import "core:strings"
 import rl "vendor:raylib"
 import kit "../../demo_kit"
-import input "../raylib"
+import input "../glue_raylib"
 
 @(private="package")
 demo_gamepad: kit.Demo = {

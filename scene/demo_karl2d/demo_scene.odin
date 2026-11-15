@@ -14,7 +14,7 @@ import "core:time"
 import "base:runtime"
 import "../../karl2d"
 import scene ".."
-import glue "../karl2d"
+import glue "../glue_karl2d"
 
 KIND_SLOW_TEXTURE :: scene.AssetKind(4)
 

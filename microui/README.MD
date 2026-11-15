@@ -6,7 +6,7 @@ Demo shows the default microui windows: widgets, log panel with text input, styl
 
 ```odin
 import mu "vendor:microui"
-import mui_rl "microui/raylib"     // or mui_k2 "microui/karl2d"
+import mui_rl "microui/glue_raylib"     // or mui_k2 "microui/glue_karl2d"
 
 mui_state: mui_rl.MuiState
 ctx: ^mu.Context
@@ -25,8 +25,8 @@ mui_rl.Cleanup(&mui_state)
 
 ## Parts
 - `microui.odin` (package `microui_utils`) - framework agnostic helpers: `MuiLog` text log (`LogWrite`, `LogRead`, `LogIsUpdated`, `LogReset`), `U8Slider` for colors, `AtlasToRGBA`.
-- `raylib/microui_raylib.odin` - `Init`, `Update` (text, mouse, wheel, shift/ctrl/alt, enter, backspace), `Render` (rects, atlas text and icons, scissor clipping), `Cleanup`.
-- `karl2d/microui_karl2d.odin` - same API for Karl2D. It expects the Karl2D repository next to other libraries, like this library. Holding backspace repeats.
+- `glue_raylib/microui_raylib.odin` - `Init`, `Update` (text, mouse, wheel, shift/ctrl/alt, enter, backspace), `Render` (rects, atlas text and icons, scissor clipping), `Cleanup`.
+- `glue_karl2d/microui_karl2d.odin` - same API for Karl2D. It expects the Karl2D repository next to other libraries, like this library. Holding backspace repeats.
 
 ## Demos and tests
 `odin run demo_raylib`, `odin run demo_karl2d` (Karl2D needs to be next to the other libraries): the same demos from `demo_common`, written once against the

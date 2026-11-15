@@ -2,7 +2,7 @@ package demo_karl2d
 
 import "../../karl2d"
 import m3d "../"
-import glue "../karl2d"
+import glue "../glue_karl2d"
 import kit "../../demo_kit"
 import demo_common "../demo_common"
 

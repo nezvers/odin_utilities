@@ -1,7 +1,7 @@
 package demo_karl2d
 
 import kit "../../demo_kit"
-import kit_karl2d "../../demo_kit/karl2d"
+import kit_karl2d "../../demo_kit/glue_karl2d"
 import demo_common "../demo_common"
 
 // `odin run demo_karl2d`. The actions demo works through input/karl2d (real devices): Karl2D reads them itself, so no script plays into it.

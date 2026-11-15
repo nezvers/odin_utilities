@@ -10,7 +10,7 @@ Helper functions to implement input rebinding and reading axis inputs as button 
 `GetValueAxis(negative: InputID, positive: InputID)` - Read float value for directions -1 to 1
 
 ## Demos and tests
-`odin run demo_raylib`, `odin run demo_karl2d`: input rebinding through the glue of the framework (`raylib/`, `karl2d/`), the demo itself is in `demo_common` and reaches the glue
+`odin run demo_raylib`, `odin run demo_karl2d`: input rebinding through the glue of the framework (`glue_raylib/`, `glue_karl2d/`), the demo itself is in `demo_common` and reaches the glue
 through an `Adapter` (a table of procs the framework fills). raylib also has a gamepad state demo.
 The glue reads the real devices, so simulated input cannot reach it: `odin test demo_common -strict-style -vet` and `-define:DEMO_TEST=true` run the demo script on an adapter over the keys of the demo kit
 (`KitAdapter`), which plays the whole rebinding flow (click Rebind, press a key, the action follows it).

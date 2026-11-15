@@ -1,7 +1,7 @@
 package demo_raylib
 
 import kit "../../demo_kit"
-import kit_raylib "../../demo_kit/raylib"
+import kit_raylib "../../demo_kit/glue_raylib"
 import demo_common "../demo_common"
 
 // `odin run demo_raylib`. The actions demo works through input/raylib (real devices), the gamepad demo is raylib only.

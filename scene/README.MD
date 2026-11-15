@@ -1,6 +1,6 @@
 # Scene system
 
-Scenes and prefabs as data, with loading that stays out of the way. Framework agnostic core (`asset.odin`, `prefab.odin`, `scene.odin`), karl2d glue in `karl2d/`.
+Scenes and prefabs as data, with loading that stays out of the way. Framework agnostic core (`asset.odin`, `prefab.odin`, `scene.odin`), karl2d glue in `glue_karl2d/`.
 Builds for js_wasm32 too, so a game with a web build can use it as it is. The tests are in `*_test.odin` files with `#+build !js` because `core:testing` doesn't compile for wasm.
 
 ## Fast loading
@@ -68,9 +68,9 @@ scene.SceneStart(&system, first)          // each frame: SceneUpdate, SceneDraw,
 All state is plain data and scenes are ids. `SceneRelease` before the old code is left, `SceneRebind` with the tables of the new code, `SceneResume` to start the current scene on what is loaded. The system must not move after init.
 
 ## Demo and tests
-`odin run demo_karl2d` (from this directory): hover to prefetch, click a button with no hint to see the transition, the placeholder checker, the event log. `odin test scene -strict-style -vet` and `odin test scene/karl2d`.
+`odin run demo_karl2d` (from this directory): hover to prefetch, click a button with no hint to see the transition, the placeholder checker, the event log. `odin test scene -strict-style -vet` and `odin test scene/glue_karl2d`.
 The jam game (`WIP/karl2d_jam_2026`) is a full use of it: asset table in `assets/ids.odin`, prefabs in `actor/prefabs.odin`, scene table in `game_screens/`.
 
 ## Demos and tests
-`odin run demo_karl2d`: three scenes with different textures (hover to prefetch, click to go, an unpredicted scene is covered by a transition). Karl2D only: the asset loaders of the scene system are Karl2D glue (`karl2d/`), there is no raylib glue, so there is no `demo_common` or `demo_raylib`.
+`odin run demo_karl2d`: three scenes with different textures (hover to prefetch, click to go, an unpredicted scene is covered by a transition). Karl2D only: the asset loaders of the scene system are Karl2D glue (`glue_karl2d/`), there is no raylib glue, so there is no `demo_common` or `demo_raylib`.
 The demo runs on the demo kit and its script hovers, clicks and waits for the loading: `odin run demo_karl2d -define:DEMO_TEST=true`. Library tests: `odin test scene -strict-style -vet`.

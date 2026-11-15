@@ -2,7 +2,7 @@ package demo_raylib
 
 import rl "vendor:raylib"
 import m3d "../"
-import glue "../raylib"
+import glue "../glue_raylib"
 import kit "../../demo_kit"
 import demo_common "../demo_common"
 

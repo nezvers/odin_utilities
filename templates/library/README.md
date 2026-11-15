@@ -8,8 +8,8 @@ The structure is the same for every library of odin_utilities, so any of them is
 ├── README.md                 what it is, the API in a few lines, how to run the demos and the tests
 ├── <lib>.odin                the core: framework agnostic, caller owned memory (more files when it grows, one concept each)
 ├── <lib>_test.odin           tests, `#+build !js` when the library builds for the web (else at the bottom of the tested file)
-├── raylib/<lib>_raylib.odin  glue that needs raylib (package <lib>_raylib)              optional
-├── karl2d/<lib>_karl2d.odin  glue that needs Karl2D (package <lib>_karl2d)              optional
+├── glue_raylib/<lib>_raylib.odin  glue that needs raylib (package <lib>_raylib)              optional
+├── glue_karl2d/<lib>_karl2d.odin  glue that needs Karl2D (package <lib>_karl2d)              optional
 ├── demo_common/              the demos, written once against demo_kit: one file per demo, demos.odin lists them,
 │                             demo_common_test.odin plays their scripts headless
 ├── demo_raylib/main.odin     one call: kit_raylib.Run("<lib>", demo_common.demos[:])
