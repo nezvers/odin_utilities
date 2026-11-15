@@ -69,7 +69,8 @@ The same connection twice is refused: the same `Key`, or without a key the same 
 
 `odin test signal -strict-style -vet`
 
-### Demos
-`odin run demo_raylib`, `odin run demo_karl2d` (Karl2D needs to be next to the other libraries). A health bar with three listeners
-(bar, red flash, deferred log) and a one shot one. Space damage, H heal, R revive, 1/2/3 connect and disconnect a listener, B block the signal,
-F rebind everything the way a hot reload does. Shared logic is in `demo_common`.
+### Demos and tests
+`odin run demo_raylib`, `odin run demo_karl2d` (Karl2D needs to be next to the other libraries): the same demo from `demo_common`, written against the demo kit.
+A health bar with three listeners (bar, red flash, deferred log) and a one shot one. Space damage, H heal, R revive, 1/2/3 connect and disconnect a listener,
+B block the signal, F rebind everything the way a hot reload does.
+`odin test signal/demo_common` plays the demo with simulated input and checks (headless), `-define:DEMO_TEST=true` plays it in the window.
