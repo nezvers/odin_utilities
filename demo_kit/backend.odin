@@ -1,8 +1,8 @@
 package demo_kit
 
 // What a demo needs from a framework, as a table of procs. The demos of a library are written once (demo_common/) against this and
-// the same code runs on raylib, on Karl2D and headless (no window, for tests). A framework gets one implementation: demo_kit/raylib,
-// demo_kit/karl2d, and Headless below.
+// the same code runs on raylib, on Karl2D and headless (no window, for tests). A framework gets one implementation: demo_kit/glue_raylib,
+// demo_kit/glue_karl2d, and Headless below.
 //
 // Handles (Texture, Sound) are numbers the backend gives out: a demo holds them in plain data and never sees a framework type.
 // Anything a framework does that is not in here belongs in a demo of that framework (demo_raylib/, demo_karl2d/), not in demo_common.
