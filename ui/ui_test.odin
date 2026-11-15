@@ -831,3 +831,35 @@ test_every_widget_leaves_the_containers_balanced :: proc(t: ^testing.T) {
     UiEnd(c)
     testing.expect_value(t, c.problems, Problems{})
 }
+
+@(test)
+test_opening_a_header_at_the_bottom_shows_its_body :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    list :: proc(ctx: ^Context) {
+        if UiScroll(ctx, "list", {Fixed(200), Fixed(120)}) {
+            for i in 0 ..< 6 { UiButton(ctx, UiFormat(ctx, "Item %d##%d", i, i), {Grow(), {}}) }
+            if UiCollapsing(ctx, "More") {
+                for i in 0 ..< 4 { UiLabelf(ctx, "line %d", i) }
+            }
+        }
+    }
+    actionFrame(harness, list)
+    actionFrame(harness, list, {.END})                           // the last widget: the header, at the bottom of the scroll
+    actionFrame(harness, list)
+    focused: Id = UiFocused(&harness.ctx)
+    testing.expect_value(t, focused, UiIdPath("list", "More"))
+    before: f32 = UiScrollGet(&harness.ctx, UiIdPath("list"))
+    actionFrame(harness, list, {.ACCEPT})
+    for _ in 0 ..< 4 { actionFrame(harness, list) }
+    testing.expect(t, UiIsOpen(&harness.ctx, UiIdPath("list", "More")))
+    after: f32 = UiScrollGet(&harness.ctx, UiIdPath("list"))
+    testing.expect(t, after > before + 20, "the list scrolled down to show what the header opened")
+    // the last line of the body is inside of the view
+    body, found := UiElementRect(&harness.ctx, UiBodyId(UiIdPath("list", "More")))
+    view, _ := UiElementRect(&harness.ctx, UiIdPath("list"))
+    header, _ := UiElementRect(&harness.ctx, UiIdPath("list", "More"))
+    testing.expect(t, found && body.y + 20 < view.y + view.w, "the body starts inside of the view, with room for lines")
+    testing.expect(t, header.y >= view.y - 1, "and the header stays in view (the body is taller than the view)")
+}

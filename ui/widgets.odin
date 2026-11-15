@@ -196,6 +196,9 @@ UiScroll :: proc(ctx: ^Context, name: string, size: Size = {}, layout: Layout = 
     if ctx.reveal && ctx.focus != 0 {
         scrollReveal(ctx, state)
     }
+    if ctx.reveal_open != 0 {
+        scrollRevealBody(ctx, state)
+    }
     // limits from the last frame: how much the content is bigger than the view
     limit: f32 = max(state.content_size.y - state.rect.w, 0)
     state.scroll.y = clamp(state.scroll.y, -limit, 0)
@@ -234,6 +237,29 @@ scrollReveal :: proc(ctx: ^Context, state: ^WidgetState) {
         }
         return
     }
+}
+
+// A header was opened (with the mouse or the keyboard): shows what it opened, as much as the view can hold, with the header itself kept in view
+@(private)
+scrollRevealBody :: proc(ctx: ^Context, state: ^WidgetState) {
+    body: ^WidgetState = stateFind(ctx, ctx.reveal_open)
+    if body == nil {
+        ctx.reveal_open = 0                 // closed again
+        return
+    }
+    view: Rect = state.rect
+    place: Rect = body.rect
+    if view.w <= 0 || place.w <= 0 { return }       // not laid out yet: next frame
+    // the body has to be inside of this container, and so it is when it starts inside of the view's width
+    if place.x < view.x - 1 || place.x > view.x + view.z { return }
+    margin: f32 = 4
+    header_top: f32 = place.y - ctx.style.metrics.control_height - 4
+    overflow: f32 = place.y + place.w - (view.y + view.w - margin)
+    if overflow > 0 {
+        // down as far as the bottom of the body needs, not so far that the header leaves the view
+        state.scroll.y -= min(overflow, max(header_top - (view.y + margin), 0))
+    }
+    ctx.reveal_open = 0
 }
 
 UiScrollEnd :: proc(ctx: ^Context, name: string, size: Size = {}, layout: Layout = {}) {

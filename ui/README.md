@@ -38,7 +38,7 @@ ui.UiEnd(&ctx)
 ui.UiRender(&ctx)
 ```
 Widgets: `UiWindow UiPanel UiRow UiColumn UiBox UiScroll UiLabel UiButton UiToggle UiSlider UiProgress UiTextField UiDropdown UiSeparator UiSpacer UiCustom`.
-More widgets (`widgets_more.odin`): `UiCollapsing` / `UiTreeNode` (headers with a body), `UiRadio`, `UiSelectable`, `UiListBox`, `UiTabBar`, `UiArrowButton` (repeats),
+More widgets (`widgets_more.odin`): `UiCollapsing` / `UiTreeNode` (headers with a body; opening one scrolls the container to show what it opened, with the header kept in view), `UiRadio`, `UiSelectable`, `UiListBox`, `UiTabBar`, `UiArrowButton` (repeats),
 `UiDrag` / `UiDragInt`, `UiSliderInt` / `UiSliderAngle`, `UiInputInt` / `UiInputFloat`, `UiPlotLines` / `UiPlotHistogram`, `UiColorEdit3` / `UiColorButton`,
 `UiLabelColored` / `UiBullet` / `UiLabelText` / `UiSeparatorText`, `UiTooltip`, menus (`UiMenuBar`, `UiMenu` with submenus, `UiMenuItem` with shortcut and check),
 `UiModal` (a dialog over a dimmed screen that keeps the focus) and `UiWindowTitled` (a window with a title bar that is dragged).

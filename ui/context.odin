@@ -91,6 +91,7 @@ Context :: struct {
     active: Id,                     // the widget that holds the mouse press
     focus: Id,                      // the widget that gets the keyboard, the gamepad and the navigation (see nav.odin)
     hover_root: Id,                 // the floating element (popup, window) the hovered widget is in, 0 for the main layer
+    reveal_open: Id,                // the body of a header that was just opened: a scrolling container shows it (as much as fits) once it is laid out
     modal_root: Id,                 // the dialog that was open at the end of the last frame: navigation stays in it
     modal_next: Id,
     open_menu: Id,                  // the menu of the bar that is open

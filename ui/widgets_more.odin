@@ -26,7 +26,10 @@ collapsingBegin :: proc(ctx: ^Context, name: string, default_open: bool, tree: b
         state.open = default_open
     }
     interaction: Interaction = widgetBehavior(ctx, id)
-    if interaction.clicked { state.open = !state.open }
+    if interaction.clicked {
+        state.open = !state.open
+        if state.open { ctx.reveal_open = IdFromString("body", id) }
+    }
     metrics: ^Metrics = &ctx.style.metrics
     ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM}})
     flags: Flags = {.OPEN} if state.open else {}
@@ -42,6 +45,7 @@ collapsingBegin :: proc(ctx: ^Context, name: string, default_open: bool, tree: b
         ctx.fold_count += 1
     }
     if state.open {
+        _ = stateGet(ctx, IdFromString("body", id))        // so that its place is known after the layout
         ElementOpen(ctx, {
             id = IdFromString("body", id),
             layout = {size = {Grow(), Fit()}, padding = {left = metrics.padding.x * 1.5, top = 4, bottom = 6}, gap = metrics.gap, direction = .TOP_TO_BOTTOM},

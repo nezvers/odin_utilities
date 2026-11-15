@@ -74,6 +74,9 @@ dont_ask: bool
 popup_choice: string
 // inputs
 last_action: string
+input_a, input_b, input_c: [24]u8
+input_a_length, input_b_length, input_c_length: int
+inputs_report: bool = true
 
 init :: proc(ctx: ^kit.Context) {
     ui_kit.PainterInit(&state.painter)
@@ -412,9 +415,22 @@ section_tables :: proc(c: ^ui.Context) {
 }
 
 section_inputs :: proc(c: ^ui.Context) {
+    ui.UiSeparatorText(c, "Mouse State")
     ui.UiLabelf(c, "Mouse pos: (%.0f, %.0f)", c.input.mouse_position.x, c.input.mouse_position.y)
+    ui.UiLabelf(c, "Mouse down: %v", c.input.mouse_down)
+    ui.UiSeparatorText(c, "Keyboard, Gamepad & Navigation State")
     ui.UiLabelf(c, "Last action: %s", last_action)
     ui.UiLabelf(c, "Focused id: %d", u32(ui.UiFocused(c)))
+    ui.UiSeparatorText(c, "Tabbing")
+    ui.UiLabel(c, "Use Tab and Shift+Tab to cycle through these widgets:")
+    ui.UiTextField(c, "1", input_a[:], &input_a_length)
+    ui.UiTextField(c, "2", input_b[:], &input_b_length)
+    ui.UiTextField(c, "3", input_c[:], &input_c_length)
+    ui.UiToggle(c, "Pointer over the ui is reported to the game", &inputs_report)
+    if ui.UiRow(c) {
+        if ui.UiButton(c, "Clear the fields") { input_a_length, input_b_length, input_c_length = 0, 0, 0 }
+        ui.UiLabelf(c, "over the ui: %v", ui.UiPointerOverUi(c))
+    }
 }
 
 hsv :: proc(h: f32, s: f32, v: f32) -> [3]f32 {
@@ -546,5 +562,28 @@ script: []kit.Step = {
     kit.Tap(.ESCAPE),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !modal_open }, "cancel closed the dialog"),
+
+    // the last header: opened from above with accept, the list scrolls to show what it opened, and down goes into its widgets
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return focus(TITLE, "scroll", "Inputs & Focus") }, ""),
+    kit.Tap(.ENTER),
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiIsOpen(&state.ctx, path(TITLE, "scroll", "Inputs & Focus")) }, "accept opened Inputs & Focus"),
+    kit.Tap(.DOWN),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.ctx.focus != path(TITLE, "scroll", "Inputs & Focus") && state.ctx.focus != 0 }, "down leaves the header for what it opened"),
+    kit.Capture("imgui_inputs"),
+    kit.Wait(1),
+    kit.Tap(.TAB),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return focused_in_inputs() }, "tab walks the widgets of the opened section"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.ctx) == {} }, "the frames had no problems"),
+}
+
+// the focus is on a widget of the body of "Inputs & Focus"
+focused_in_inputs :: proc() -> bool {
+    body: ui.Id = ui.UiBodyId(path(TITLE, "scroll", "Inputs & Focus"))
+    for name in ([?]string{"1", "2", "3", "Pointer over the ui is reported to the game", "Clear the fields"}) {
+        if ui.IdFromString(name, body) == state.ctx.focus { return true }
+    }
+    return false
 }

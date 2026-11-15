@@ -846,7 +846,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
     }
     element.content_size = {content.x + layout.padding.left + layout.padding.right, content.y + layout.padding.top + layout.padding.bottom}
     state: ^WidgetState = stateFind(ctx, element.id)
-    if state != nil && element.decl.hit != {} {
+    if state != nil {
         state.rect = shown
         state.content_size = element.content_size
     }
