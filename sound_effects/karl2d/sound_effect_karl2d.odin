@@ -26,3 +26,13 @@ Play :: proc(sound_effect:^sfx.SoundEffect, time_seconds:f64, clip: ^karl2d.Audi
 
     karl2d.play_audio_clip(clip^, sound_effect.volume, 0, sound_effect.pitch)
 }
+
+// An effect of a SoundBank by id, with the clip to play. Nothing plays when the effect says it is too soon, or when `clip` is
+// empty (not loaded yet): the retrigger state only moves for a sound that really plays
+PlayBank :: proc(bank:^sfx.SoundBank, id:sfx.SoundId, clip: karl2d.Audio_Clip, time_seconds:f64) -> bool {
+    if clip == karl2d.AUDIO_CLIP_NONE { return false }
+    volume, pitch, ok := sfx.SoundBankTrigger(bank, id, time_seconds)
+    if !ok { return false }
+    karl2d.play_audio_clip(clip, volume, 0, pitch)
+    return true
+}

@@ -20,27 +20,52 @@ DrawSpriteKarl2d::proc(karl_sprite: ^SpriteKarl2d){
 
 DrawSprite::proc(sprite:^sp.Sprite, texture:Texture, tint:karl2d.Color){
     target_rect, source_rect: = sp.GetSpriteFrame(sprite)
-    target_rect.xy += sprite.offset
+    DrawSpriteRects(target_rect, source_rect, sprite.origin, sprite.offset, sprite.scale, sprite.rotation, texture, tint)
+}
 
-    // target_rect.zw *= sprite.scale
-    origin:karl2d.Vec2 = sprite.origin * {abs(sprite.scale.x), abs(sprite.scale.y)}
+// A sprite whose animation is data (see sp.SheetSprite): the sheets are the table the sprite refers to
+SheetSpriteKarl2d::struct{
+    using sprite: sp.SheetSprite,
+    texture: Texture,
+    tint: karl2d.Color,
+    visible:bool,
+}
 
-    if sprite.scale.x < 0 {
+DrawSheetSpriteKarl2d::proc(sheets:[]sp.Sheet, karl_sprite: ^SheetSpriteKarl2d){
+    if !karl_sprite.visible { return }
+    DrawSheetSprite(sheets, &karl_sprite.sprite, karl_sprite.texture, karl_sprite.tint)
+}
+
+DrawSheetSprite::proc(sheets:[]sp.Sheet, sprite:^sp.SheetSprite, texture:Texture, tint:karl2d.Color){
+    target_rect, source_rect: = sp.SheetSpriteFrame(sheets, sprite)
+    DrawSpriteRects(target_rect, source_rect, sprite.origin, sprite.offset, sprite.scale, sprite.rotation, texture, tint)
+}
+
+// The drawing of every kind of sprite: where the frame is on the texture, where it goes, and the pivot, flip and turn
+DrawSpriteRects::proc(target_rect:sp.rectf, source_rect:sp.rectf, sprite_origin:Vec2, offset:Vec2, scale:Vec2, rotation:f32, texture:Texture, tint:karl2d.Color){
+    target_rect: = target_rect
+    source_rect: = source_rect
+    target_rect.xy += offset
+
+    origin:karl2d.Vec2 = sprite_origin * {abs(scale.x), abs(scale.y)}
+
+    // a negative scale flips: the source is read backwards and the pivot moves with it
+    if scale.x < 0 {
         source_rect.z *= -1
     }
 
-    if sprite.scale.y < 0 {
-        origin.y = sprite.origin.y * sprite.scale.y - target_rect.w * sprite.scale.y
+    if scale.y < 0 {
+        origin.y = sprite_origin.y * scale.y - target_rect.w * scale.y
         source_rect.w *= -1
     }
-    target_rect.zw *= sprite.scale
-    
+    target_rect.zw *= scale
+
     karl2d.draw_texture_fit(
 		texture,
 		transmute(karl2d.Rect)source_rect,
 		transmute(karl2d.Rect)target_rect,
 		origin,
-		sprite.rotation,
+		rotation,
         tint,
 	)
 }

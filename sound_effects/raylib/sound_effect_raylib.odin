@@ -16,3 +16,13 @@ Play::proc(sound_effect:^sf.SoundEffect, time_seconds:f64, sound: ^rl.Sound){
     rl.SetSoundPitch(sound^, sound_effect.pitch)
     rl.PlaySound(sound^)
 }
+
+// An effect of a SoundBank by id, with the sound to play
+PlayBank::proc(bank:^sf.SoundBank, id:sf.SoundId, sound: rl.Sound, time_seconds:f64)->bool {
+    volume, pitch, ok := sf.SoundBankTrigger(bank, id, time_seconds)
+    if !ok { return false }
+    rl.SetSoundVolume(sound, volume)
+    rl.SetSoundPitch(sound, pitch)
+    rl.PlaySound(sound)
+    return true
+}
