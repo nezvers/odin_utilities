@@ -16,7 +16,6 @@ package ui_raylib
 //     ui.UiRender(&ctx)           // draws into the batch of raylib that is open: same one as the game
 //     rl.EndDrawing()
 
-import "core:strings"
 import rl "vendor:raylib"
 import ui ".."
 import ui_default "../default_style"
@@ -36,10 +35,12 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
             rl.DrawRectangleRounded(transmute(rl.Rectangle)rect, roundness, i32(ui.RoundedSegments(radius) * 4), rl.Color(color))
         },
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
-            rl.DrawTextEx(fontOf(painter), strings.clone_to_cstring(text, context.temp_allocator), position, size, size / 10, rl.Color(color))
+            buffer: [TEXT_BUFFER_SIZE]u8
+            rl.DrawTextEx(fontOf(painter), cstringInto(&buffer, text), position, size, size / 10, rl.Color(color))
         },
         measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
-            return rl.MeasureTextEx(fontOf(painter), strings.clone_to_cstring(text, context.temp_allocator), size, size / 10)
+            buffer: [TEXT_BUFFER_SIZE]u8
+            return rl.MeasureTextEx(fontOf(painter), cstringInto(&buffer, text), size, size / 10)
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             if begin {
@@ -49,6 +50,19 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
             }
         },
     }
+}
+
+// raylib wants a C string: the text is copied into a buffer of the caller (on its stack) with a zero at the end, cut when too long.
+// No allocation, nothing left in the temp allocator for every text of every frame.
+@(private)
+TEXT_BUFFER_SIZE :: 512
+
+@(private)
+cstringInto :: proc(buffer: ^[TEXT_BUFFER_SIZE]u8, text: string) -> cstring {
+    count: int = min(len(text), TEXT_BUFFER_SIZE - 1)
+    copy(buffer[:count], text[:count])
+    buffer[count] = 0
+    return cstring(raw_data(buffer[:]))
 }
 
 @(private)

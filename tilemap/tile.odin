@@ -142,8 +142,9 @@ test_tile_random_alternatives :: proc(t: ^testing.T) {
     testing.expect_value(t, TileGetRandomSeed(&single, &seed), TileID(42))
 
     testing.expect_value(t, TileGetRandomXY(&tile, 9, 3, 4), TileGetRandomXY(&tile, 9, 3, 4))
-    variety: map[TileID]bool
-    defer delete(variety)
-    for x in 0 ..< 64 { variety[TileGetRandomXY(&tile, 9, x, 0)] = true }
-    testing.expect(t, len(variety) > 1, "neighbouring cells do not all pick the same alternative")
+    picked: [256]bool                                                                      // a TileID is a byte: a flag per id, no map
+    for x in 0 ..< 64 { picked[TileGetRandomXY(&tile, 9, x, 0)] = true }
+    variety: int = 0
+    for flag in picked { if flag { variety += 1 } }
+    testing.expect(t, variety > 1, "neighbouring cells do not all pick the same alternative")
 }

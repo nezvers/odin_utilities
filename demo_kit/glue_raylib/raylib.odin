@@ -74,10 +74,12 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         },
         draw_triangle = drawTriangle,
         draw_text = proc(backend: ^kit.Backend, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
-            rl.DrawText(strings.clone_to_cstring(text, context.temp_allocator), i32(position.x), i32(position.y), i32(size), rl.Color(color))
+            buffer: [TEXT_BUFFER_SIZE]u8
+            rl.DrawText(cstringInto(&buffer, text), i32(position.x), i32(position.y), i32(size), rl.Color(color))
         },
         measure_text = proc(backend: ^kit.Backend, text: string, size: f32) -> kit.Vec2 {
-            return {f32(rl.MeasureText(strings.clone_to_cstring(text, context.temp_allocator), i32(size))), size}
+            buffer: [TEXT_BUFFER_SIZE]u8
+            return {f32(rl.MeasureText(cstringInto(&buffer, text), i32(size))), size}
         },
         font_load = fontLoad,
         font_unload = proc(backend: ^kit.Backend, font: kit.Font) {
@@ -90,7 +92,8 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             state: ^State = cast(^State)backend.state
             face: rl.Font = rl.GetFontDefault()
             if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
-            rl.DrawTextEx(face, strings.clone_to_cstring(text, context.temp_allocator), position, size, 0, rl.Color(color))
+            buffer: [TEXT_BUFFER_SIZE]u8
+            rl.DrawTextEx(face, cstringInto(&buffer, text), position, size, 0, rl.Color(color))
         },
         texture_load = textureLoad,
         texture_from_pixels = proc(backend: ^kit.Backend, width: int, height: int, rgba: []u8) -> kit.Texture {
@@ -194,6 +197,19 @@ beginFrame :: proc(backend: ^kit.Backend, input: ^kit.Input) -> (running: bool, 
     }
     rl.BeginDrawing()
     return true, rl.GetFrameTime()
+}
+
+// raylib wants a C string: the text is copied into a buffer of the caller (on its stack) with a zero at the end, cut when too long.
+// No allocation, nothing left in the temp allocator for every text of every frame.
+@(private)
+TEXT_BUFFER_SIZE :: 512
+
+@(private)
+cstringInto :: proc(buffer: ^[TEXT_BUFFER_SIZE]u8, text: string) -> cstring {
+    count: int = min(len(text), TEXT_BUFFER_SIZE - 1)
+    copy(buffer[:count], text[:count])
+    buffer[count] = 0
+    return cstring(raw_data(buffer[:]))
 }
 
 // raylib wants the corners counter clockwise
