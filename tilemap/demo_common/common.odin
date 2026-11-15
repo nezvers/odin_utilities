@@ -1,11 +1,8 @@
-package game
+package demo_common
 
-import "../../../karl2d"
-Texture :: karl2d.Texture
-// Vec2 :: karl2d.Vec2
-// Rect :: karl2d.Rect
+import tm ".."
+import kit "../../demo_kit"
 
-import tm "../.."
 vec2i :: tm.vec2i
 recti :: tm.recti
 TileAtlas :: tm.TileAtlas
@@ -18,20 +15,21 @@ TILE_INVALID :: tm.TILE_INVALID
 //for editing
 InputState :: tm.InputState
 
+Vector2 :: kit.Vec2
+
 TILE_SIZE:vec2i: {16, 16}
 ATLAS_SIZE:vec2i: {10, 5}
 MAP_SIZE:vec2i: {10, 10}
 
 // Holds texture positions for tiles
-atlas_buffer:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]Vec2
+atlas_buffer:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]Vector2
 // Holds indexes for tile_atlas positions
 // For this example same buffer sliced for each Tile (no alternative tiles)
 tile_buffer:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]TileID
 // Holds indexes for Tiles
 tileset_buffer:[ATLAS_SIZE.x * ATLAS_SIZE.y + 1]TileID
 
-tileset_texture: Texture
-tileset_dualgrid_texture: Texture
+tileset_texture: kit.Texture
 tile_atlas: tm.TileAtlas
 
 // Allocated Tile array
@@ -43,20 +41,21 @@ tilemap_buffer: [MAP_SIZE.x * MAP_SIZE.y]TileID
 
 // Dual grid tile sheet is 4x4 tiles
 DUALGRID_ATLAS_SIZE:vec2i: {4, 4}
+tileset_dualgrid_texture: kit.Texture
 tile_atlas_dualgrid: tm.TileAtlas
 tileset_dualgrid:Tileset
-atlas_buffer_dualgrid:[DUALGRID_ATLAS_SIZE.x * DUALGRID_ATLAS_SIZE.y + 1]Vec2
+atlas_buffer_dualgrid:[DUALGRID_ATLAS_SIZE.x * DUALGRID_ATLAS_SIZE.y + 1]Vector2
 tile_buffer_dualgrid:[DUALGRID_ATLAS_SIZE.x * DUALGRID_ATLAS_SIZE.y + 1]TileID
 tile_list_dualgrid:[DUALGRID_ATLAS_SIZE.x * DUALGRID_ATLAS_SIZE.y + 1]Tile
 
 create_dualgrid_tiles :: proc() {
-	tile_size:Vec2 = {cast(f32)TILE_SIZE.x, cast(f32)TILE_SIZE.y}
+	tile_size:Vector2 = {cast(f32)TILE_SIZE.x, cast(f32)TILE_SIZE.y}
 	tm.TileAtlasInit(&tile_atlas_dualgrid, tile_size, atlas_buffer_dualgrid[:])
 	initial_length_tileset:u32 = len(tile_list_dualgrid)
 	tm.TilesetInit(&tileset_dualgrid, tile_list_dualgrid[:], initial_length_tileset)
 
 	// Represents TILE_EMPTY
-	tex_pos:Vec2 = {0.0, 0.0}
+	tex_pos:Vector2 = {0.0, 0.0}
 	initial_length:u32 = 1
 	tm.TileAtlasInsert(&tile_atlas_dualgrid, tex_pos, 0)
 	tile_buffer_dualgrid[0] = TILE_EMPTY
@@ -77,19 +76,8 @@ create_dualgrid_tiles :: proc() {
 	}
 }
 
-load_assets :: proc() {
-    // tileset_texture = karl2d.load_texture_from_file("../assets/textures/tileset_template.png")
-    tileset_texture = karl2d.load_texture_from_bytes(#load("../../../assets/textures/tileset_template.png"))
-	tileset_dualgrid_texture = karl2d.load_texture_from_bytes(#load("../../../assets/textures/tileset_template_dualgrid.png"))
-}
-
-unload_assets :: proc() {
-    karl2d.destroy_texture(tileset_texture)
-	karl2d.destroy_texture(tileset_dualgrid_texture)
-}
-
 create_tiles :: proc() {
-	tile_size:Vec2 = {cast(f32)TILE_SIZE.x, cast(f32)TILE_SIZE.y}
+	tile_size:Vector2 = {cast(f32)TILE_SIZE.x, cast(f32)TILE_SIZE.y}
 	tm.TileAtlasInit(&tile_atlas, tile_size, atlas_buffer[:])
 	
 	// Assign Tile array to a tileset
@@ -97,7 +85,7 @@ create_tiles :: proc() {
 	tm.TilesetInit(&tileset, tile_list[:], initial_length_tileset)
 	
 	// Represents TILE_EMPTY, use skip_zero flag
-	tex_pos:Vec2 = {0.0, 0.0}
+	tex_pos:Vector2 = {0.0, 0.0}
 	// Each tile gets 1 TileAtlas position
 	initial_length:u32 = 1
 	tm.TileAtlasInsert(&tile_atlas, tex_pos, 0)
@@ -150,12 +138,35 @@ create_tilemap :: proc() {
 	tm.TilemapSetTile(&tilemap, {6, 6}, 4 + cast(TileID)ATLAS_SIZE.x * 3)
 }
 
-get_animation_time :: proc(speed:f32)->f32 {
-	@(static) t:f32
-    delta_time:f32 = karl2d.get_frame_time()
-	t += delta_time * speed
-	if t > 1.0 {
-		t -= cast(f32)cast(i32)t
+animation_t: f32
+get_animation_time :: proc(ctx: ^kit.Context, speed: f32) -> f32 {
+	animation_t += ctx.delta_time * speed
+	if animation_t > 1.0 {
+		animation_t -= f32(i32(animation_t))
 	}
-	return t
+	return animation_t
+}
+
+// Every demo shares the textures and the tiles: made when the first demo starts, the textures belong to the backend
+common_ready: bool
+
+common_init :: proc(ctx: ^kit.Context) {
+	if !common_ready {
+		tileset_texture = kit.TextureLoad(ctx, #load("../../assets/textures/tileset_template.png"))
+		tileset_dualgrid_texture = kit.TextureLoad(ctx, #load("../../assets/textures/tileset_template_dualgrid.png"))
+		create_tiles()
+		create_dualgrid_tiles()
+		common_ready = true
+	}
+	// every demo starts from the same tilemap
+	create_tilemap()
+}
+
+// The state of the left mouse button for the editing procs of the library
+mouse_state :: proc(ctx: ^kit.Context, button: kit.MouseButton) -> InputState {
+	return tm.GetInputState(kit.MousePressed(&ctx.input, button), kit.MouseDown(&ctx.input, button), kit.MouseReleased(&ctx.input, button))
+}
+
+mouse_cell :: proc(ctx: ^kit.Context) -> vec2i {
+	return {i32(ctx.input.mouse_position.x), i32(ctx.input.mouse_position.y)}
 }

@@ -1,9 +1,15 @@
 #+private file
-package game
+package demo_common
 
-// import "core:fmt"
+// Rule tiles: a group tilemap says where solid ground is, the rules pick the tile of every cell by its neighbours.
 
-import tm "../.."
+import tm ".."
+import tm_kit "../kit"
+import kit "../../demo_kit"
+
+@(private="package")
+demo_ruletile: kit.Demo = {name = "ruletile", init = init, draw = draw, script = script}
+
 AutotileRule:: tm.AutotileRule
 RuleMatch:: tm.RuleMatch
 
@@ -13,16 +19,6 @@ UPi:vec2i:      {0,-1}
 DOWNi:vec2i:    {0,1}
 ZEROi:vec2i:    {0,0}
 
-import tm_glue "../../karl2d"
-import "../../../karl2d"
-
-@(private="package")
-tilemap_ruletile_state: GameState = {
-    init,
-    finit,
-    process,
-    draw,
-}
 
 // Holds TileID of tileset groups (in example just one)
 group_tilemap: Tilemap
@@ -154,40 +150,33 @@ rules: []AutotileRule = {
         {12, {{solid_id, ZEROi, false},}}, // Default to solid center
     }
 
-init :: proc() {
-	// same properties as main Tilemap
-    group_tilemap = tm.TilemapInit(tilemap.position, tilemap.size, tilemap.tile_size, group_buffer[:])
-	// reset map to predictable state
-	tm.TilemapClear(&group_tilemap)
 
-    // Init group tilemap
-    tile_id:TileID
-    tile_pos:vec2i
-    for y:i32 = 0; y < group_tilemap.size.y; y += 1 {
-        for x:i32 = 0; x < group_tilemap.size.x; x += 1 {
-            tile_pos = {x, y}
-            tile_id = tm.TilemapGetTile(&tilemap, tile_pos)
-            if tile_id == TILE_EMPTY {
-                // Group tilemap already zeroed out
-                continue
-            }
-            tm.TilemapSetTile(&group_tilemap, tile_pos, solid_id) // 
+init :: proc(ctx: ^kit.Context) {
+    common_init(ctx)
+    // same properties as main Tilemap
+    group_tilemap = tm.TilemapInit(tilemap.position, tilemap.size, tilemap.tile_size, group_buffer[:])
+    // reset map to predictable state
+    tm.TilemapClear(&group_tilemap)
+    // Init group tilemap: solid wherever the main one has a tile
+    for y in 0 ..< group_tilemap.size.y {
+        for x in 0 ..< group_tilemap.size.x {
+            tile_pos: vec2i = {x, y}
+            if tm.TilemapGetTile(&tilemap, tile_pos) == TILE_EMPTY { continue }
+            tm.TilemapSetTile(&group_tilemap, tile_pos, solid_id)
         }
     }
-
     // Apply group rules to main Tilemap
     tm.AutotileRuleUpdateTilemap(&group_tilemap, &tilemap, rules[:])
 }
 
-finit :: proc() {}
+draw :: proc(ctx: ^kit.Context) {
+    skip_zero: bool = true
+    tm_kit.DrawTilemap(ctx, &tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, tileset_texture)
+    kit.DrawText(ctx, "Rule tile: Tilemap -> Tileset -> Tile -> TileAtlas (incomplete rule set)", {10, 10}, 20, kit.BLACK)
+}
 
-process :: proc() {}
-
-draw :: proc() {
-    karl2d.clear(karl2d.WHITE)
-	
-    skip_zero:bool = true
-	tm_glue.DrawTilemap(&tilemap, &tileset, &tile_atlas, skip_zero, tm.TileRandType.NONE, &tileset_texture)
-
-	karl2d.draw_text("Rule tile: Tilemap -> Tileset -> Tile -> TileAtlas\nIncomplete rule set", {10, 10}, 20, karl2d.BLACK)
+script: []kit.Step = {
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tm.TilemapGetTile(&group_tilemap, {2, 2}) == solid_id && tm.TilemapGetTile(&group_tilemap, {0, 0}) == TILE_EMPTY }, "the group tilemap is solid where the map had tiles"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tm.TilemapGetTile(&tilemap, {2, 2}) != TILE_EMPTY }, "the rules wrote tiles into the main tilemap"),
 }
