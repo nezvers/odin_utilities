@@ -1,22 +1,27 @@
 #+private file
-package demo_raylib
+package demo_common
 
 import b2_odin ".."
-import glue "../raylib"
+import b2_kit "../kit"
+import kit "../../demo_kit"
+import "core:fmt"
 import b2 "vendor:box2d"
-import rl "vendor:raylib"
 
 Vec2 :: b2.Vec2
 Sensor :: b2_odin.Sensor(SensorKind)
 Contact :: b2_odin.Contact(EntityKind)
 
 @(private="package")
-state_platformer : State = {
-    init,
-    finit,
-    update,
-    draw,
+demo_platformer: kit.Demo = {
+    name = "platformer",
+    init = init,
+    finit = finit,
+    update = update,
+    draw = draw,
+    script = script,
 }
+
+ctx_now: ^kit.Context       // the frame of the kit: time and input for the procs of this file
 
 EntityKind :: enum {
     none            = 0,
@@ -128,9 +133,10 @@ jump_pads: []Jumpad = {
     {pos = {380, 496}, size = {32, 4}},
 }
 
-init :: proc(){
+init :: proc(ctx: ^kit.Context){
+    ctx_now = ctx
     b2_odin.WorldInit(&world_ctx, 32, {0, 0}, sensor_begin_event, sensor_end_event)
-    glue.WorldInitDebug(&world_ctx)
+    b2_kit.WorldInitDebug(&world_ctx)
     b2.World_SetPreSolveCallback(world_ctx.world, PreSolveFcn, nil, nil)
     create_platforms()
     create_boxes()
@@ -141,7 +147,8 @@ init :: proc(){
     score = 0
 }
 
-finit :: proc(){
+finit :: proc(ctx: ^kit.Context){
+    ctx_now = ctx
     for i:int=0; i < len(platforms); i += 1 {
         if b2.Shape_IsValid(platforms[i].shape){b2_odin.DestroyShape(platforms[i].shape)}
         if b2.Body_IsValid(platforms[i].body){b2_odin.DestroyBody(platforms[i].body)}
@@ -171,13 +178,14 @@ finit :: proc(){
     if b2.World_IsValid(world_ctx.world) {b2_odin.WorldFinit(&world_ctx)}
 }
 
-update :: proc(){
-    b2_odin.WorldUpdate(&world_ctx, rl.GetFrameTime())
+update :: proc(ctx: ^kit.Context){
+    ctx_now = ctx
+    b2_odin.WorldUpdate(&world_ctx, ctx.delta_time)
     
     // player input update
-    player.input.jump = rl.IsKeyDown(rl.KeyboardKey.SPACE)
-    right:bool = rl.IsKeyDown(rl.KeyboardKey.D)
-    left:bool = rl.IsKeyDown(rl.KeyboardKey.A)
+    player.input.jump = kit.KeyDown(&ctx_now.input, .SPACE)
+    right:bool = kit.KeyDown(&ctx_now.input, .D)
+    left:bool = kit.KeyDown(&ctx_now.input, .A)
     player.input.x = f32(i32(right)) - f32(i32(left))
     update_actor(&player)
 
@@ -185,20 +193,22 @@ update :: proc(){
     update_coins()
 }
 
-draw :: proc(){
+draw :: proc(ctx: ^kit.Context){
+    ctx_now = ctx
+    b2_kit.Begin(ctx)
     b2_odin.WorldDebug(&world_ctx)
 
-    text:cstring
+    text: string
     if score < len(coins) {
-        text = rl.TextFormat("SCORE: %d", score)
+        text = fmt.tprintf("SCORE: %d", score)
     } else  {
-        text = rl.TextFormat("COMPLTED!!!")
+        text = "COMPLTED!!!"
     }
-    rl.DrawText(text, 500, 10, 20, rl.YELLOW)
+    kit.DrawText(ctx, text, {500, 10}, 20, kit.YELLOW)
 }
 
 create_platforms :: proc() {
-    name:cstring = "Platform"
+    name: cstring = "Platform"
     fixed_rotation :: true
     not_sensor :: false
     for i:int=0; i < len(platforms); i += 1 {
@@ -225,7 +235,7 @@ create_platforms :: proc() {
 }
 
 create_coins :: proc() {
-    name:cstring = "Coin"
+    name: cstring = "Coin"
     fixed_rotation :: true
     is_sensor :: true
     enable_sensor :: true
@@ -256,7 +266,7 @@ create_coins :: proc() {
 }
 
 create_jump_pads :: proc() {
-    name:cstring = "JumpPad"
+    name: cstring = "JumpPad"
     fixed_rotation :: true
     is_sensor :: true
     enable_sensor :: true
@@ -287,7 +297,7 @@ create_jump_pads :: proc() {
 }
 
 create_boxes :: proc() {
-    name:cstring = "Box"
+    name: cstring = "Box"
     fixed_rotation :: false
     not_sensor :: false
     enable_sensorevents :: true
@@ -341,7 +351,7 @@ update_coins :: proc() {
 }
 
 update_boxes :: proc() {
-    delta_time: f32 = rl.GetFrameTime()
+    delta_time: f32 = ctx_now.delta_time
     for i:int = 0; i < len(boxes); i += 1 {
         box: ^Box = &boxes[i]
         velocity: = b2.Body_GetLinearVelocity(box.body)
@@ -350,7 +360,7 @@ update_boxes :: proc() {
     }
 }
 
-init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: EntityKind, name:cstring = "") {
+init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: EntityKind, name: cstring = "") {
     // TODO: pass in "config" values
     actor.values.jump_force = JUMP_FORCE
     actor.values.acceleration = ACCELERATE
@@ -446,7 +456,7 @@ init_actor :: proc(actor: ^Actor, kind: EntityKind, enemy: EntityKind, coin: Ent
 }
 
 update_actor :: proc(actor: ^Actor) {
-    delta_time :f32 = rl.GetFrameTime()
+    delta_time :f32 = ctx_now.delta_time
     b2_pos: = b2.Body_GetPosition(actor.body)
     // TODO: use sprite size
     actor.state.pos = b2_odin.b2_to_pos(b2_pos, {})
@@ -581,4 +591,15 @@ PreSolveFcn :: proc "c" (shapeIdA, shapeIdB: b2.ShapeId, manifold: ^b2.Manifold,
             actor.state.grounded = true
         }
     }
+}
+script: []kit.Step = {
+    kit.Wait(30),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return b2.World_IsValid(world_ctx.world) && b2.Body_IsValid(player.body) }, "the world and the player exist"),
+    kit.Hold(.D, 40),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return b2.Body_GetPosition(player.body).x > 0 }, "D moves the player to the right"),
+    kit.Hold(.SPACE, 10),
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return b2.Body_GetLinearVelocity(player.body).y != 0 }, "space moves the player vertically (a jump)"),
+    kit.Wait(120),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return score >= 0 && score <= len(coins) }, "the score counts coins"),
 }
