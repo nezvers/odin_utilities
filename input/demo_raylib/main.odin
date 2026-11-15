@@ -1,51 +1,13 @@
 package demo_raylib
 
-import rl "vendor:raylib"
-import "core:os"
+import kit "../../demo_kit"
+import kit_raylib "../../demo_kit/raylib"
+import demo_common "../demo_common"
 
-
+// `odin run demo_raylib`. The actions demo works through input/raylib (real devices), the gamepad demo is raylib only.
 main :: proc() {
-	working_dir, err: = os.get_working_directory(context.allocator)
-	defer delete(working_dir)
-	// Return user to original directory in case project change it
-	defer os.change_directory(working_dir)
-	if err != nil {
-		return
-	}
-	executable_directory:string
-	executable_directory, err = os.get_executable_directory(context.allocator)
-	defer delete(executable_directory)
-	if err != nil {
-		return
-	}
-	os.change_directory(executable_directory)
-	game_init_window()
-	game_init()
-
-	main_loop: for game_should_run() {
-		update()
-		draw()
-	}
-
-	game_shutdown()
-    rl.CloseWindow()
-}
-
-game_init_window :: proc() {
-    rl.SetConfigFlags({.WINDOW_RESIZABLE, .VSYNC_HINT})
-	rl.InitWindow(1280, 720, "template demo")
-	rl.SetWindowPosition(200, 200)
-	rl.SetTargetFPS(60)
-	rl.SetExitKey(nil)
-}
-
-game_should_run :: proc() -> bool {
-    when ODIN_OS != .JS {
-        // Never run this proc in browser. It contains a 16 ms sleep on web!
-		if rl.WindowShouldClose() {
-            return false
-		}
-	}
-    
-	return !rl.IsKeyPressed(.ESCAPE)
+	// a test run plays simulated input of the kit, raylib devices cannot get it: the adapter over the keys of the kit takes its place
+	when kit.DEMO_TEST { demo_common.adapter = demo_common.KitAdapter() } else { demo_common.adapter = raylib_adapter() }
+	demos: []kit.Demo = {demo_common.ActionDemo(), demo_gamepad}
+	kit_raylib.Run("input", demos)
 }

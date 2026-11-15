@@ -1,41 +1,12 @@
-package main
+package demo_karl2d
 
-import game "game"
-import "core:os"
+import kit "../../demo_kit"
+import kit_karl2d "../../demo_kit/karl2d"
+import demo_common "../demo_common"
 
+// `odin run demo_karl2d`. The actions demo works through input/karl2d (real devices): Karl2D reads them itself, so no script plays into it.
 main :: proc() {
-	// To be sure resources/ assets are always relative directory,
-	// set working directory where executable is.
-
-	working_dir, err: = os.get_working_directory(context.allocator)
-	defer delete(working_dir)
-	// Return user to original directory in case project change it
-	defer os.change_directory(working_dir)
-	if err != nil {
-		return
-	}
-	executable_directory:string
-	executable_directory, err = os.get_executable_directory(context.allocator)
-	defer delete(executable_directory)
-	if err != nil {
-		return
-	}
-	os.change_directory(executable_directory)
-
-	// MAIN LOOP
-	main_init()
-	game.init()
-
-	for game.step() {
-		game.update_desktop()
-	}
-
-	game.shutdown()
-    main_shutdown()
-}
-
-main_init :: proc() {
-}
-
-main_shutdown :: proc() {
+	// a test run plays simulated input of the kit, Karl2D devices cannot get it: the adapter over the keys of the kit takes its place
+	when kit.DEMO_TEST { demo_common.adapter = demo_common.KitAdapter() } else { demo_common.adapter = karl2d_adapter() }
+	kit_karl2d.Run("input", demo_common.demos[:])
 }
