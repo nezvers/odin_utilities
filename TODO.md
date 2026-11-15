@@ -23,7 +23,7 @@ Kept by hand and by Claude: tick an item when it is done and verified (tests pas
 
 ## odin_utilities
 - [x] `scratch`: two thread local scratch arenas with the conflict rule (`ScratchBegin(conflict)` / `ScratchEnd`), for non realtime tools
-- [ ] `scene` assets: cancellation tokens for superseded requests, a generation so a reloaded asset is served stale until the new one is ready,
+- [x] `scene` assets: cancellation tokens for superseded requests, a generation so a reloaded asset is served stale until the new one is ready,
       a per frame "held" guard against eviction, priority levels, eviction by time (RAD artifact cache)
 - [x] `lanes`: barrier, broadcast and index range for fan out of non realtime work (RAD lanes); the realtime graph pool of odin_plug stays as it is
 

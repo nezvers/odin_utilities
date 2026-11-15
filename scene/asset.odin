@@ -11,6 +11,12 @@ package scene
 // Whatever is not READY yet gives the placeholder of its definition, a null id gives a null value. Callers never have to check,
 // and never wait: they draw the placeholder and the real value shows up when it is loaded.
 //
+// Cancel, reload, hold, priority (after the artifact cache of the RAD Debugger): AssetCancel drops a request that is not needed any more (a decode
+// that is already running is thrown away when it ends). AssetReload makes a new version of a loaded asset while the old one is still served
+// (stale while revalidate: no placeholder flash, AssetGeneration changes when the new value arrives, a failed reload keeps the old one).
+// AssetUse marks an asset as used in this frame: what was used lately is not released (AssetsReleaseUnwanted, AssetsReleaseIdle).
+// A request has a priority (AssetRequestPriority): higher first, blocking requests before all of them.
+//
 // Threads: a loader can be split in two. `decode` is the CPU work (unpacking an image, parsing a file), it only touches the bytes it
 // is given and the memory it is given, so it can run on a worker thread. `finish` makes the value from the decoded data (creates the
 // GPU texture, the audio buffer) and always runs on the main thread, because frameworks are not thread safe. When the platform has
@@ -76,6 +82,11 @@ AssetStorage :: struct($N: int) {
     blocking: [N]bool,
     wanted: [N]bool,
     queue: [N]AssetId,
+    cancelled: [N]bool,
+    reloading: [N]bool,
+    generation: [N]u32,
+    last_used: [N]u32,
+    priority: [N]i8,
 }
 
 AssetStoreConfig :: struct {
@@ -93,6 +104,12 @@ AssetStore :: struct {
     blocking: []bool,
     wanted: []bool,
     queue: []AssetId,               // FIFO ring
+    cancelled: []bool,              // the decode that is running is not needed any more
+    reloading: []bool,              // a new version is on its way, the old value is still served
+    generation: []u32,              // +1 every time the value of the asset was replaced by a reload
+    last_used: []u32,               // the frame of the last AssetUse
+    priority: []i8,
+    frame: u32,                     // counted by LoaderUpdate
     queue_head: int,
     queue_count: int,
     scratch: mem.Arena,
@@ -112,6 +129,11 @@ AssetStoreInit :: proc(store: ^AssetStore, defs: []AssetDef, loaders: []AssetLoa
         blocking = storage.blocking[:count],
         wanted = storage.wanted[:count],
         queue = storage.queue[:count],
+        cancelled = storage.cancelled[:count],
+        reloading = storage.reloading[:count],
+        generation = storage.generation[:count],
+        last_used = storage.last_used[:count],
+        priority = storage.priority[:count],
     }
     if len(config.scratch) > 0 {
         mem.arena_init(&store.scratch, config.scratch)
@@ -185,7 +207,16 @@ QueueRemoveAt :: proc(store: ^AssetStore, index: int) {
 // Ask for an asset. Returns true when it is ready or on its way. Asking again is free; asking for blocking what was queued as
 // background (or is being decoded) makes it blocking. A failed asset is tried again.
 AssetRequest :: proc(store: ^AssetStore, id: AssetId, blocking: bool) -> bool {
+    return AssetRequestPriority(store, id, blocking, 0)
+}
+
+// The same with a priority: of the requests that wait, the higher number is loaded first (blocking ones before all of them), equal ones in the order they came
+AssetRequestPriority :: proc(store: ^AssetStore, id: AssetId, blocking: bool, priority: i8) -> bool {
     if !AssetIsValid(store, id) { return false }
+    if store.states[id] == .QUEUED || store.states[id] == .LOADING || (store.states[id] == .READY && store.reloading[id]) {
+        store.priority[id] = max(store.priority[id], priority)
+    }
+    store.cancelled[id] = false
     switch store.states[id] {
     case .READY:
         return true
@@ -198,9 +229,83 @@ AssetRequest :: proc(store: ^AssetStore, id: AssetId, blocking: bool) -> bool {
         store.blocking[id] = blocking
         store.queue[(store.queue_head + store.queue_count) % len(store.queue)] = id
         store.queue_count += 1
+        store.priority[id] = priority
         return true
     }
     return false
+}
+
+// A request that is not needed any more: a queued one is dropped, a decode that is running is thrown away when it ends. A ready asset is left alone
+// (see AssetsReleaseUnwanted). A reload that was asked for is dropped and the old value stays.
+AssetCancel :: proc(store: ^AssetStore, id: AssetId) {
+    if !AssetIsValid(store, id) { return }
+    switch store.states[id] {
+    case .QUEUED:
+        QueueRemoveAt(store, QueueFind(store, id))
+        store.states[id] = .UNLOADED
+        store.blocking[id] = false
+    case .LOADING:
+        store.cancelled[id] = true
+    case .READY:
+        if store.reloading[id] {
+            if index: int = QueueFind(store, id); index >= 0 {
+                QueueRemoveAt(store, index)
+                store.reloading[id] = false
+            } else {
+                store.cancelled[id] = true      // the new version is being decoded
+            }
+        }
+    case .UNLOADED, .FAILED:
+    }
+}
+
+// Makes a new version of a loaded asset (its file changed, the quality setting changed) while the old value is still served: `AssetGet` gives the old
+// one until the new one is ready, then `AssetGeneration` goes up. A failed reload keeps the old value. An asset that is not ready is requested as usual.
+AssetReload :: proc(store: ^AssetStore, id: AssetId, blocking: bool = false) -> bool {
+    if !AssetIsValid(store, id) { return false }
+    if store.states[id] != .READY { return AssetRequest(store, id, blocking) }
+    if store.reloading[id] { return true }
+    if store.queue_count >= len(store.queue) { return false }
+    store.reloading[id] = true
+    store.cancelled[id] = false
+    store.blocking[id] = blocking
+    store.queue[(store.queue_head + store.queue_count) % len(store.queue)] = id
+    store.queue_count += 1
+    return true
+}
+
+// A reload is on its way: the value that is served is the old one
+AssetIsStale :: proc(store: ^AssetStore, id: AssetId) -> bool {
+    return AssetIsValid(store, id) && store.reloading[id]
+}
+
+// How many times the value was replaced by a reload (a program that made something from the value compares it with what it remembers)
+AssetGeneration :: proc(store: ^AssetStore, id: AssetId) -> u32 {
+    if !AssetIsValid(store, id) { return 0 }
+    return store.generation[id]
+}
+
+// The asset is used in this frame: its value (the placeholder while it is not ready), and it is not released while it is in use
+AssetUse :: proc(store: ^AssetStore, id: AssetId) -> AssetValue {
+    if AssetIsValid(store, id) {
+        store.last_used[id] = store.frame
+        store.wanted[id] = true
+    }
+    return AssetGet(store, id)
+}
+
+// Unloads the assets that were not used (AssetUse) for `frames` frames or more, persistent ones and the ones marked wanted excluded.
+// For caches that grow while the game runs (many sounds, many textures): call it now and then.
+AssetsReleaseIdle :: proc(store: ^AssetStore, frames: u32) -> (released: int) {
+    for i in 1 ..< len(store.defs) {
+        id: AssetId = AssetId(i)
+        if store.states[id] != .READY || store.defs[id].persistent || store.reloading[id] { continue }
+        if store.frame - store.last_used[id] >= frames {
+            AssetUnload(store, id)
+            released += 1
+        }
+    }
+    return
 }
 
 // --- Unloading: mark what is still needed, then release the rest ---
@@ -224,6 +329,8 @@ AssetUnload :: proc(store: ^AssetStore, id: AssetId) {
     store.states[id] = .UNLOADED
     store.values[id] = {}
     store.blocking[id] = false
+    store.reloading[id] = false
+    store.cancelled[id] = false
 }
 
 // Unload everything that is not persistent and was not marked wanted. Drops queued requests of unwanted assets too.
@@ -232,6 +339,8 @@ AssetsReleaseUnwanted :: proc(store: ^AssetStore) -> (released: int) {
     for i in 1 ..< len(store.defs) {
         id: AssetId = AssetId(i)
         if store.wanted[id] || store.defs[id].persistent { continue }
+        // used in this frame or the last: in use, not released (an asset that the program reads while the scene changes)
+        if store.last_used[id] != 0 && store.frame - store.last_used[id] <= 1 { continue }
         switch store.states[id] {
         case .READY:
             AssetUnload(store, id)
@@ -242,7 +351,9 @@ AssetsReleaseUnwanted :: proc(store: ^AssetStore) -> (released: int) {
             store.blocking[id] = false
         case .FAILED:
             store.states[id] = .UNLOADED
-        case .UNLOADED, .LOADING:
+        case .LOADING:
+            store.cancelled[id] = true      // nobody needs it any more: the decode that is running is thrown away when it ends
+        case .UNLOADED:
         }
     }
     return
@@ -314,7 +425,7 @@ LoaderNow :: proc(loader: ^Loader) -> f64 {
     return time.duration_seconds(time.since(time.Time{}))
 }
 
-// The next item to load: the oldest blocking one, else the oldest. Returns the position in the queue
+// The next item to load: the oldest blocking one, else the one with the highest priority (the oldest of equals). Returns the position in the queue
 @(private)
 QueueNext :: proc(store: ^AssetStore) -> int {
     capacity: int = len(store.queue)
@@ -323,7 +434,13 @@ QueueNext :: proc(store: ^AssetStore) -> int {
             return i
         }
     }
-    return 0
+    best: int = 0
+    for i in 1 ..< store.queue_count {
+        if store.priority[store.queue[(store.queue_head + i) % capacity]] > store.priority[store.queue[(store.queue_head + best) % capacity]] {
+            best = i
+        }
+    }
+    return best
 }
 
 // A blocking item is waiting in the queue
@@ -342,7 +459,7 @@ AssetsHaveBlocking :: proc(store: ^AssetStore) -> bool {
 BlockingWork :: proc(store: ^AssetStore) -> bool {
     if AssetsHaveBlocking(store) { return true }
     for i in 1 ..< len(store.states) {
-        if store.states[i] == .LOADING && store.blocking[i] { return true }
+        if (store.states[i] == .LOADING || store.reloading[i]) && store.blocking[i] { return true }
     }
     return false
 }
@@ -377,6 +494,38 @@ LoadInline :: proc(store: ^AssetStore, id: AssetId) -> (value: AssetValue, ok: b
 @(private)
 LoaderSettle :: proc(loader: ^Loader, store: ^AssetStore, id: AssetId, value: AssetValue, ok: bool, ready: []AssetId, count: ^int) {
     store.blocking[id] = false
+    // nobody needs it any more: the value is thrown away (a reload keeps its old value)
+    if store.cancelled[id] {
+        store.cancelled[id] = false
+        if ok && int(store.defs[id].kind) < len(store.loaders) && store.loaders[store.defs[id].kind].unload != nil {
+            store.loaders[store.defs[id].kind].unload(&store.defs[id], value)
+        }
+        if store.reloading[id] {
+            store.reloading[id] = false
+        } else {
+            store.states[id] = .UNLOADED
+        }
+        loader.loaded_last_frame += 1
+        return
+    }
+    // a reload: the new value replaces the old one, the old one is unloaded; a failed reload keeps the old value
+    if store.reloading[id] {
+        store.reloading[id] = false
+        if ok {
+            if int(store.defs[id].kind) < len(store.loaders) && store.loaders[store.defs[id].kind].unload != nil {
+                store.loaders[store.defs[id].kind].unload(&store.defs[id], store.values[id])
+            }
+            store.values[id] = value
+            store.generation[id] += 1
+            ready[count^] = id
+            count^ += 1
+            loader.loaded_total += 1
+        } else {
+            loader.failed_total += 1
+        }
+        loader.loaded_last_frame += 1
+        return
+    }
     if ok {
         store.states[id] = .READY
         store.values[id] = value
@@ -401,6 +550,7 @@ LoaderSettle :: proc(loader: ^Loader, store: ^AssetStore, id: AssetId, value: As
 LoaderUpdate :: proc(loader: ^Loader, store: ^AssetStore, dt: f32, ready: []AssetId) -> (count: int) {
     loader.smoothed_dt = dt if loader.smoothed_dt == 0 else loader.smoothed_dt + (dt - loader.smoothed_dt) * loader.config.smoothing
     loader.loaded_last_frame = 0
+    store.frame += 1
     if len(ready) == 0 { return }
 
     workers: int = WorkersCount(store)
@@ -418,7 +568,7 @@ LoaderUpdate :: proc(loader: ^Loader, store: ^AssetStore, dt: f32, ready: []Asse
         if !done { continue }
         value: AssetValue
         ok: bool = decode_ok
-        if ok {
+        if ok && !store.cancelled[id] {
             def: ^AssetDef = &store.defs[id]
             value, ok = store.loaders[def.kind].finish(def, decoded)
         }
@@ -438,9 +588,10 @@ LoaderUpdate :: proc(loader: ^Loader, store: ^AssetStore, dt: f32, ready: []Asse
         if workers > 0 && Threadable(store, id) {
             if WorkersBusy(store) >= in_flight_limit { break }
             QueueRemoveAt(store, index)
-            store.states[id] = .LOADING
+            was_ready: bool = store.states[id] == .READY        // a reload: the old value is served while the new one is made
+            if !was_ready { store.states[id] = .LOADING }
             if !WorkersSubmit(store, id) {
-                store.states[id] = .QUEUED      // no free worker after all, it keeps its place at the back
+                if !was_ready { store.states[id] = .QUEUED }      // no free worker after all, it keeps its place at the back
                 store.queue[(store.queue_head + store.queue_count) % len(store.queue)] = id
                 store.queue_count += 1
                 break

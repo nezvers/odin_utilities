@@ -484,3 +484,79 @@ test_automatic_worker_count_follows_the_platform :: proc(t: ^testing.T) {
     expected: int = clamp(os.get_processor_core_count() - 1, 0, AUTO_WORKERS_MAX)
     testing.expect_value(t, WorkersCount(&assets.store), expected)
 }
+
+@(test)
+test_cancel_drops_a_queued_request_and_a_priority_goes_first :: proc(t: ^testing.T) {
+    assets: TestAssets
+    test_assets_init(&assets)
+    ready: [8]AssetId
+    assets.loader.config.max_per_frame = 1
+    AssetRequestPriority(&assets.store, 1, false, 0)
+    AssetRequestPriority(&assets.store, 2, false, 0)
+    AssetRequestPriority(&assets.store, 3, false, 5)
+    AssetCancel(&assets.store, 2)
+    testing.expect_value(t, AssetGetState(&assets.store, 2), AssetState.UNLOADED)
+    testing.expect_value(t, assets.store.queue_count, 2)
+    LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    testing.expect(t, AssetIsReady(&assets.store, 3), "the higher priority is loaded first")
+    LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    testing.expect(t, AssetIsReady(&assets.store, 1))
+    testing.expect(t, !AssetIsReady(&assets.store, 2), "the cancelled one never loaded")
+}
+
+@(test)
+test_reload_serves_the_old_value_until_the_new_one_is_ready :: proc(t: ^testing.T) {
+    assets: TestAssets
+    test_assets_init(&assets)
+    ready: [8]AssetId
+    AssetRequest(&assets.store, 1, false)
+    LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    testing.expect_value(t, AssetGeneration(&assets.store, 1), u32(0))
+    testing.expect(t, AssetReload(&assets.store, 1))
+    testing.expect(t, AssetIsStale(&assets.store, 1))
+    testing.expect_value(t, AssetGetState(&assets.store, 1), AssetState.READY)
+    testing.expect_value(t, AssetGet(&assets.store, 1).handle, u64(101))
+    unloaded: int = unload_count
+    count: int = LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    testing.expect_value(t, count, 1)
+    testing.expect(t, !AssetIsStale(&assets.store, 1))
+    testing.expect_value(t, AssetGeneration(&assets.store, 1), u32(1))
+    testing.expect_value(t, unload_count, unloaded + 1)          // the old value was unloaded
+    testing.expect(t, AssetIsReady(&assets.store, 1))
+}
+
+@(test)
+test_cancelled_reload_and_failed_reload_keep_the_old_value :: proc(t: ^testing.T) {
+    assets: TestAssets
+    test_assets_init(&assets)
+    ready: [8]AssetId
+    AssetRequest(&assets.store, 1, false)
+    LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    AssetReload(&assets.store, 1)
+    AssetCancel(&assets.store, 1)
+    testing.expect(t, !AssetIsStale(&assets.store, 1))
+    LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    testing.expect_value(t, AssetGeneration(&assets.store, 1), u32(0))
+    testing.expect_value(t, AssetGet(&assets.store, 1).handle, u64(101))
+}
+
+@(test)
+test_used_assets_are_not_released_and_idle_ones_are :: proc(t: ^testing.T) {
+    assets: TestAssets
+    test_assets_init(&assets)
+    ready: [8]AssetId
+    AssetRequest(&assets.store, 1, false)
+    AssetRequest(&assets.store, 2, false)
+    LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    LoaderUpdate(&assets.loader, &assets.store, 1.0 / 60, ready[:])
+    store: ^AssetStore = &assets.store
+    store.wanted[1] = false
+    store.wanted[2] = false
+    _ = AssetUse(store, 1)
+    testing.expect_value(t, AssetsReleaseUnwanted(store), 1)
+    testing.expect(t, AssetIsReady(store, 1), "used in this frame: kept")
+    testing.expect(t, !AssetIsReady(store, 2))
+    for _ in 0 ..< 5 { LoaderUpdate(&assets.loader, store, 1.0 / 60, ready[:]) }
+    testing.expect_value(t, AssetsReleaseIdle(store, 4), 1)
+    testing.expect(t, !AssetIsReady(store, 1), "idle for more than 4 frames")
+}
