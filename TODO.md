@@ -19,7 +19,7 @@ Kept by hand and by Claude: tick an item when it is done and verified (tests pas
 ## odin_plug
 - [x] Thread names (`SetThreadDescription`): audio threads, graph pool workers, device and capture threads, simulated driver thread; a `platform.ThreadName`
 - [x] A `-sanitize:address` step in `tools/dev verify` if the toolchain here supports it
-- [ ] Source line / current step recorded per thread for crash reports (RAD `tctx_write_srcloc`), next to `trace_scope`
+- [x] Source line / current step recorded per thread for crash reports (RAD `tctx_write_srcloc`), next to `trace_scope`
 
 ## odin_utilities
 - [x] `scratch`: two thread local scratch arenas with the conflict rule (`ScratchBegin(conflict)` / `ScratchEnd`), for non realtime tools
