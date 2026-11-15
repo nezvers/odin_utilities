@@ -58,15 +58,15 @@ Slider :: proc(ctx: ^Context, rect: Rect, text: string, value: ^f32, minimum: f3
     DrawRect(ctx, {bar.x, bar.y, bar.z * fill, bar.w}, GUI_PRESSED)
     DrawRectOutline(ctx, bar, 1, GUI_BORDER)
 
-    if guiHovered(ctx, bar) && MousePressed(&ctx.input) { gui_active_rect = bar }
+    if guiHovered(ctx, bar) && MousePressed(&ctx.input) { gui_active_rect = rect }      // by the rectangle the caller gave: the label may change its width every frame
     changed: bool = false
-    if gui_active_rect == bar && MouseDown(&ctx.input) {
+    if gui_active_rect == rect && MouseDown(&ctx.input) {
         t: f32 = clamp((ctx.input.mouse_position.x - bar.x) / bar.z, 0, 1)
         new_value: f32 = minimum + t * range
         changed = new_value != value^
         value^ = new_value
     }
-    if gui_active_rect == bar && !MouseDown(&ctx.input) { gui_active_rect = {} }
+    if gui_active_rect == rect && !MouseDown(&ctx.input) { gui_active_rect = {} }
     return changed
 }
 

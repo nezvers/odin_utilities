@@ -45,6 +45,7 @@ script: []kit.Step = {
 ```
 A step that takes time holds the steps behind it, the others happen in the same frame. A `Check` runs at the start of a frame, so it sees what the last update did.
 The constructors are `contextless`, so a script can be a global.
+Keep the positions a script clicks fixed numbers (not relative to the window size or to the width of a text): the same script runs on a headless 1280 x 720 screen and in real windows. A widget that has a label is found by the rectangle you gave it, aim at the inner part of its bar.
 
 - `odin test <lib>/demo_common` : the scripts run headless (`kit.TestDemo`), a failed check fails the test with its message and frame.
 - `odin run <lib>/demo_raylib -define:DEMO_TEST=true` : the same scripts in the window, you see the simulated input, the exit code is 1 on a failure.
