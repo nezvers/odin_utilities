@@ -5,6 +5,7 @@ package demo_common
 //   health_changed -> hud (shows the bar), flash (red on a hit), log (DEFERRED: written when the frame is over)
 //   died           -> the player is down
 // The first hit also connects a one shot listener, it says "first blood" once.
+// Every connection has a Key, so model_rebind can give them their procs again like after a hot reload.
 
 import "core:fmt"
 import signal ".."
@@ -18,8 +19,9 @@ LOG_WIDTH :: 64
 
 Model :: struct {
     health: f32,
-    health_changed: signal.Signal(HealthChange, 8, 16),
-    died: signal.Signal(signal.Empty, 4, 4),
+    // the bound value is a pointer to the model: the model is a global of the demo and lives longer than the signals
+    health_changed: signal.Signal(HealthChange, 8, 16, size_of(^Model)),
+    died: signal.Signal(signal.Empty, 4, 4, size_of(^Model)),
 
     // what the listeners wrote
     hud_target: f32,                    // what the hud listener was told, the bar follows it. No listener, no change on the bar
@@ -29,20 +31,44 @@ Model :: struct {
     log: [LOG_LINES][LOG_WIDTH]u8,
     log_lengths: [LOG_LINES]int,
     log_count: int,                     // lines written in total, the newest are the last
+    reloads: int,                       // how many times model_rebind ran
 }
 
 HEALTH_MAX :: 100
+
+// Keys of the connections: what finds them again after a reload
+KEY_HUD :: signal.Key(1)
+KEY_FLASH :: signal.Key(2)
+KEY_LOG :: signal.Key(3)
+KEY_FIRST_BLOOD :: signal.Key(4)
+KEY_DIED :: signal.Key(5)
 
 model_init :: proc(model: ^Model) {
     model^ = {}
     model.health = HEALTH_MAX
     model.hud_target = HEALTH_MAX
     model.hud_value = HEALTH_MAX
-    signal.SignalConnect(&model.health_changed, on_hud, model)
-    signal.SignalConnect(&model.health_changed, on_flash, model)
-    signal.SignalConnect(&model.health_changed, on_log, model, {.DEFERRED})
-    signal.SignalConnect(&model.health_changed, on_first_blood, model, {.ONE_SHOT})
-    signal.SignalConnect(&model.died, on_died, model)
+    signal.SignalConnect(&model.health_changed, on_hud, model, key = KEY_HUD)
+    signal.SignalConnect(&model.health_changed, on_flash, model, key = KEY_FLASH)
+    signal.SignalConnect(&model.health_changed, on_log, model, {.DEFERRED}, key = KEY_LOG)
+    signal.SignalConnect(&model.health_changed, on_first_blood, model, {.ONE_SHOT}, key = KEY_FIRST_BLOOD)
+    signal.SignalConnect(&model.died, on_died, model, key = KEY_DIED)
+}
+
+// What a game does after a hot reload: the model and its signals are in the memory that was kept, the procs are the ones of the
+// old code. Every connection says which proc it wants now. Nothing is created: the one shot that fired is not brought back and a
+// connection the user switched off stays off.
+model_rebind :: proc(model: ^Model) {
+    signal.SignalRebindBegin(&model.health_changed)
+    signal.SignalRebindBegin(&model.died)
+    signal.SignalRebind(&model.health_changed, on_hud, model, key = KEY_HUD)
+    signal.SignalRebind(&model.health_changed, on_flash, model, key = KEY_FLASH)
+    signal.SignalRebind(&model.health_changed, on_log, model, {.DEFERRED}, key = KEY_LOG)
+    signal.SignalRebind(&model.health_changed, on_first_blood, model, {.ONE_SHOT}, key = KEY_FIRST_BLOOD)
+    signal.SignalRebind(&model.died, on_died, model, key = KEY_DIED)
+    signal.SignalDisconnectStale(&model.health_changed)
+    signal.SignalDisconnectStale(&model.died)
+    model.reloads += 1
 }
 
 model_set_health :: proc(model: ^Model, value: f32) {
@@ -84,18 +110,27 @@ Listener :: enum {
     LOG,
 }
 
+listener_key :: proc(which: Listener) -> signal.Key {
+    switch which {
+    case .HUD: return KEY_HUD
+    case .FLASH: return KEY_FLASH
+    case .LOG: return KEY_LOG
+    }
+    return 0
+}
+
 model_is_listening :: proc(model: ^Model, which: Listener) -> bool {
-    return signal.SignalIsConnected(&model.health_changed, listener_proc(which), model)
+    return signal.SignalIsKeyConnected(&model.health_changed, listener_key(which))
 }
 
 model_toggle_listener :: proc(model: ^Model, which: Listener) {
-    callback: proc(payload: HealthChange, user: rawptr) = listener_proc(which)
-    if signal.SignalIsConnected(&model.health_changed, callback, model) {
-        signal.SignalDisconnectCallback(&model.health_changed, callback, model)
-        return
+    key: signal.Key = listener_key(which)
+    if signal.SignalDisconnectKey(&model.health_changed, key) { return }
+    switch which {
+    case .HUD: signal.SignalConnect(&model.health_changed, on_hud, model, key = key)
+    case .FLASH: signal.SignalConnect(&model.health_changed, on_flash, model, key = key)
+    case .LOG: signal.SignalConnect(&model.health_changed, on_log, model, {.DEFERRED}, key = key)
     }
-    flags: signal.ConnectFlags = {.DEFERRED} if which == .LOG else {}
-    signal.SignalConnect(&model.health_changed, callback, model, flags)
 }
 
 model_toggle_blocked :: proc(model: ^Model) {
@@ -120,16 +155,6 @@ model_log_line :: proc(model: ^Model, index: int) -> string {
 }
 
 @(private)
-listener_proc :: proc(which: Listener) -> proc(payload: HealthChange, user: rawptr) {
-    switch which {
-    case .HUD: return on_hud
-    case .FLASH: return on_flash
-    case .LOG: return on_log
-    }
-    return nil
-}
-
-@(private)
 log_write :: proc(model: ^Model, format: string, args: ..any) {
     slot: int = model.log_count % LOG_LINES
     text: string = fmt.bprintf(model.log[slot][:], format, ..args)
@@ -138,29 +163,27 @@ log_write :: proc(model: ^Model, format: string, args: ..any) {
 }
 
 @(private)
-on_hud :: proc(change: HealthChange, user: rawptr) {
-    (cast(^Model)user).hud_target = change.new
+on_hud :: proc(change: HealthChange, model: ^Model) {
+    model.hud_target = change.new
 }
 
 @(private)
-on_flash :: proc(change: HealthChange, user: rawptr) {
-    model: ^Model = cast(^Model)user
+on_flash :: proc(change: HealthChange, model: ^Model) {
     if change.new < change.old { model.flash = 1 }
 }
 
 @(private)
-on_log :: proc(change: HealthChange, user: rawptr) {
-    log_write(cast(^Model)user, "health %.0f -> %.0f", change.old, change.new)
+on_log :: proc(change: HealthChange, model: ^Model) {
+    log_write(model, "health %.0f -> %.0f", change.old, change.new)
 }
 
 @(private)
-on_first_blood :: proc(change: HealthChange, user: rawptr) {
-    log_write(cast(^Model)user, "one shot: first change of health")
+on_first_blood :: proc(change: HealthChange, model: ^Model) {
+    log_write(model, "one shot: first change of health")
 }
 
 @(private)
-on_died :: proc(payload: signal.Empty, user: rawptr) {
-    model: ^Model = cast(^Model)user
+on_died :: proc(payload: signal.Empty, model: ^Model) {
     model.is_down = true
     log_write(model, "died: press R")
 }

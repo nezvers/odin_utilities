@@ -25,6 +25,7 @@ step :: proc() -> bool {
 	if karl2d.key_went_down(.N2) { common.model_toggle_listener(&model, .FLASH) }
 	if karl2d.key_went_down(.N3) { common.model_toggle_listener(&model, .LOG) }
 	if karl2d.key_went_down(.B) { common.model_toggle_blocked(&model) }
+	if karl2d.key_went_down(.F) { common.model_rebind(&model) }
 	common.model_update(&model, karl2d.get_frame_time())
 
 	draw()
@@ -46,13 +47,13 @@ draw :: proc() {
 	karl2d.draw_rect_outline(bar, 2, karl2d.DARK_GRAY)
 	karl2d.draw_text(fmt.tprintf("health %.0f%s", model.health, "   DOWN" if model.is_down else ""), {bar.x, bar.y - 30}, 24, karl2d.BLACK)
 
-	karl2d.draw_text("Space: damage    H: heal    R: revive    B: block the signal", {20, 20}, 20, karl2d.DARK_GRAY)
+	karl2d.draw_text("Space: damage    H: heal    R: revive    B: block the signal    F: rebind like after a hot reload", {20, 20}, 20, karl2d.DARK_GRAY)
 	listeners: [3]string = {"1  hud (the bar follows)", "2  flash (red on damage)", "3  log (deferred)"}
 	for name, i in listeners {
 		on: bool = common.model_is_listening(&model, common.Listener(i))
 		karl2d.draw_text(fmt.tprintf("%s  %s", name, "connected" if on else "disconnected"), {20, 60 + f32(i) * 26}, 20, karl2d.DARK_GREEN if on else karl2d.GRAY)
 	}
-	karl2d.draw_text(fmt.tprintf("connections: %d   signal blocked: %v", common.model_connection_count(&model), common.model_is_blocked(&model)), {20, 150}, 20, karl2d.DARK_BLUE)
+	karl2d.draw_text(fmt.tprintf("connections: %d   signal blocked: %v   rebinds: %d", common.model_connection_count(&model), common.model_is_blocked(&model), model.reloads), {20, 150}, 20, karl2d.DARK_BLUE)
 
 	karl2d.draw_text("log (deferred lines come after the frame, the one shot line comes first)", {20, 220}, 20, karl2d.DARK_GRAY)
 	for i in 0 ..< common.LOG_LINES {

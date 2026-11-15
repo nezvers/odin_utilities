@@ -26,6 +26,7 @@ update :: proc() {
 	if rl.IsKeyPressed(.TWO) { common.model_toggle_listener(&model, .FLASH) }
 	if rl.IsKeyPressed(.THREE) { common.model_toggle_listener(&model, .LOG) }
 	if rl.IsKeyPressed(.B) { common.model_toggle_blocked(&model) }
+	if rl.IsKeyPressed(.F) { common.model_rebind(&model) }
 	common.model_update(&model, rl.GetFrameTime())
 }
 
@@ -41,13 +42,13 @@ draw :: proc() {
 	rl.DrawRectangleLinesEx(bar, 2, rl.DARKGRAY)
 	rl.DrawText(fmt.ctprintf("health %.0f%s", model.health, "   DOWN" if model.is_down else ""), i32(bar.x), i32(bar.y) - 30, 24, rl.BLACK)
 
-	rl.DrawText("Space: damage    H: heal    R: revive    B: block the signal", 20, 20, 20, rl.DARKGRAY)
+	rl.DrawText("Space: damage    H: heal    R: revive    B: block the signal    F: rebind like after a hot reload", 20, 20, 20, rl.DARKGRAY)
 	listeners: [3]string = {"1  hud (the bar follows)", "2  flash (red on damage)", "3  log (deferred)"}
 	for name, i in listeners {
 		on: bool = common.model_is_listening(&model, common.Listener(i))
 		rl.DrawText(fmt.ctprintf("%s  %s", name, "connected" if on else "disconnected"), 20, 60 + i32(i) * 26, 20, rl.DARKGREEN if on else rl.GRAY)
 	}
-	rl.DrawText(fmt.ctprintf("connections: %d   signal blocked: %v", common.model_connection_count(&model), common.model_is_blocked(&model)), 20, 150, 20, rl.DARKBLUE)
+	rl.DrawText(fmt.ctprintf("connections: %d   signal blocked: %v   rebinds: %d", common.model_connection_count(&model), common.model_is_blocked(&model), model.reloads), 20, 150, 20, rl.DARKBLUE)
 
 	rl.DrawText("log (deferred lines come after the frame, the one shot line comes first)", 20, 220, 20, rl.DARKGRAY)
 	for i in 0 ..< common.LOG_LINES {
