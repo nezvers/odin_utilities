@@ -1,5 +1,7 @@
 package demo_kit
 
+import "base:runtime"
+
 // What a demo needs from a framework, as a table of procs. The demos of a library are written once (demo_common/) against this and
 // the same code runs on raylib, on Karl2D and headless (no window, for tests). A framework gets one implementation: demo_kit/glue_raylib,
 // demo_kit/glue_karl2d, and Headless below.
@@ -73,6 +75,10 @@ Backend :: struct {
     camera_end: proc(backend: ^Backend),
     clip_begin: proc(backend: ^Backend, rect: Rect),
     clip_end: proc(backend: ^Backend),
+
+    // the pixels of the frame that was drawn (RGBA 8 bits, top left first), made with `allocator`. nil: the backend cannot (headless).
+    // Called after the demo drew and before the frame is presented.
+    capture: proc(backend: ^Backend, allocator: runtime.Allocator) -> (rgba: []u8, width: int, height: int),
 
     sound_load: proc(backend: ^Backend, bytes: []u8) -> Sound,
     sound_unload: proc(backend: ^Backend, sound: Sound),

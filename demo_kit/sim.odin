@@ -30,6 +30,7 @@ StepKind :: enum u8 {
     MOUSE_DELTA,
     TEXT,
     CHECK,
+    CAPTURE,
 }
 
 Step :: struct {
@@ -42,6 +43,7 @@ Step :: struct {
     amount: f32,                // Scroll
     text: string,               // Type, and the message of a Check
     check: proc(ctx: ^Context) -> bool,
+    file: string,               // Capture: the file of the script, the golden images are next to it
 }
 
 Wait :: proc "contextless" (frames: u32) -> Step { return {kind = .WAIT, frames = frames} }
@@ -62,6 +64,10 @@ Type :: proc "contextless" (text: string) -> Step { return {kind = .TEXT, text =
 // The check says if what the demo shows is right, `message` is what the report says when it is not
 Check :: proc "contextless" (check: proc(ctx: ^Context) -> bool, message: string) -> Step { return {kind = .CHECK, check = check, text = message} }
 
+// Takes the pixels of the frame that is drawn in this frame and compares them with the golden image `captures/<backend>/<name>.png` next to the
+// script file (see capture.odin). Only with -define:DEMO_CAPTURE=true and a backend that can capture, else it does nothing.
+Capture :: proc "contextless" (name: string, location := #caller_location) -> Step { return {kind = .CAPTURE, text = name, file = location.file_path} }
+
 MAX_FAILURES :: 16
 
 Failure :: struct {
@@ -76,6 +82,9 @@ Report :: struct {
     failures: [MAX_FAILURES]Failure,    // the first ones, `failed` counts all
     frames: int,
     draw_calls: int,
+    captures: int,                      // Capture steps that compared or wrote an image
+    captures_skipped: int,
+    captures_written: int,              // golden images that were made because there was none
     finished: bool,                     // the script played to its end (false: the frame limit stopped it)
 }
 
@@ -92,6 +101,8 @@ Player :: struct {
     drag_from: Vec2,
     drag_to: Vec2,
     drag_total: u32,
+    capture_name: string,       // a Capture step of this frame: the runner takes it after the demo drew
+    capture_file: string,
     report: Report,
 }
 
@@ -109,6 +120,7 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
     previous_buttons: MouseButtons = player.held_buttons
     previous_position: Vec2 = player.mouse_position
     input^ = {}
+    player.capture_name = ""
 
     // what a tap or a click of the last frame lets go of
     player.held_keys -= player.release_next
@@ -194,6 +206,9 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
                 input.text[input.text_count] = character
                 input.text_count += 1
             }
+        case .CAPTURE:
+            player.capture_name = step.text
+            player.capture_file = step.file
         case .CHECK:
             player.report.checks += 1
             if step.check != nil && !step.check(ctx) {

@@ -19,3 +19,4 @@ log.txt
 /templates/demo_kit/
 /hot_reload_demo/
 /**/hot_reload_demo/
+*.actual.png

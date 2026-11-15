@@ -72,6 +72,7 @@ RunnerStep :: proc(runner: ^Runner) -> bool {
     backend.clear(backend, ctx.background)
     if demo.draw != nil { demo.draw(ctx) }
     if runner.show_menu { runnerMenuDraw(runner) }
+    if runner.playing && runner.player.capture_name != "" { runnerCapture(runner) }
     backend.end_frame(backend)
     backend.stats.frames += 1
     ctx.frame += 1
@@ -153,6 +154,26 @@ TestAll :: proc(demos: []Demo, backend: ^Backend, max_frames: int = 36000) -> (t
 
 // ------------------------------------------------------------------------------------------------------------------------
 
+// The pixels of the frame against the golden image; a difference is a failure of the script like a failed check
+@(private)
+runnerCapture :: proc(runner: ^Runner) {
+    player: ^Player = &runner.player
+    result, message := CaptureCompare(&runner.ctx, player.capture_file, player.capture_name)
+    #partial switch result {
+    case .SKIPPED: player.report.captures_skipped += 1
+    case .WRITTEN:
+        player.report.captures += 1
+        player.report.captures_written += 1
+    case .MATCH: player.report.captures += 1
+    case:
+        player.report.captures += 1
+        if player.report.failed < MAX_FAILURES {
+            player.report.failures[player.report.failed] = {message = message, frame = runner.ctx.frame}
+        }
+        player.report.failed += 1
+    }
+}
+
 @(private)
 runnerStartDemo :: proc(runner: ^Runner) {
     runner.started = true
@@ -224,6 +245,9 @@ RunTests :: proc(demos: []Demo, backend: ^Backend) -> bool {
 PrintReport :: proc(name: string, report: Report) {
     report := report
     fmt.printfln("[DEMO TEST] %s: %d checks, %d failed, %d frames, %d draw calls%s", name, report.checks, report.failed, report.frames, report.draw_calls, "" if report.finished else ", the script did NOT finish")
+    if report.captures + report.captures_skipped > 0 {
+        fmt.printfln("[DEMO TEST]   captures: %d compared (%d new golden images), %d skipped", report.captures, report.captures_written, report.captures_skipped)
+    }
     for failure in report.failures[:min(report.failed, MAX_FAILURES)] {
         fmt.printfln("[DEMO TEST]   failed on frame %d: %s", failure.frame, failure.message)
     }

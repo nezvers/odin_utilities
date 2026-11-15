@@ -66,6 +66,11 @@ demo_common/    widgets, layout, styles demos with scripted input          demo_
 ```
 Run: `odin test ui`, `odin test ui/demo_common` (the scripts click real widgets), `odin run ui/demo_raylib`, `odin run ui/demo_karl2d`.
 
+## Testing the look
+Three levels: `odin test ui` (layout and behavior with a fake font), `odin test ui/demo_common` (scripted clicks on real widgets, headless) and screen captures:
+`odin run ui/demo_raylib -define:DEMO_TEST=true -define:DEMO_CAPTURE=true` compares frames with `demo_common/captures/<backend>/*.png`
+(see `demo_kit/README.md`). `UiCommands(&ctx)` is the third way: assert on what the style would be asked to draw, without pixels.
+
 ## Known limits
 Text is measured per word each frame (no cache); the scrollbar is not draggable (wheel only); a text field edits one line of UTF-8 without selection;
 an element that is declared after the floating element that names it as parent is not found (declare the parent first).

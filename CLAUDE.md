@@ -23,6 +23,7 @@ Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git
 ## demo_kit (odin_utilities/demo_kit)
 - `Backend` (table of procs: shapes, text, textures, sound, camera, clip, mouse capture) implemented by `demo_kit/glue_raylib`, `demo_kit/glue_karl2d` and `HeadlessInit` (no window, drawing is counted). `Input` is plain data per frame, `Context` is what a demo proc gets. `gui.odin` has Button/Toggle/Slider/Spinner.
 - Runtime tests: a demo's `script` is a `[]kit.Step` (Wait, Tap, Hold, Click, Drag, MoveTo, Scroll, LookBy, Type, Check(proc, message)); a Player turns it into input. Constructors are contextless so a script can be a global. `odin test <lib>/demo_common` runs it headless, `odin run <lib>/demo_raylib -define:DEMO_TEST=true` plays it in the window (exit code 1 on a failed check). A demo without script is a 60 frame smoke test.
+- Screen capture tests: script step `kit.Capture("name")` compares the drawn frame with `captures/<backend>/<name>.png` next to the script file; only in a window with `-define:DEMO_CAPTURE=true` (new goldens are written when missing, `-define:DEMO_CAPTURE_UPDATE=true` replaces them). Headless skips it. See demo_kit/README.md.
 - Strings with apostrophes break multi file bash heredocs here: write demo files with the Write tool.
 
 ## Repository map

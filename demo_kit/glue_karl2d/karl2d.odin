@@ -6,6 +6,7 @@ package demo_kit_karl2d
 //
 // Karl2D has to be next to the other libraries (odin_utilities/karl2d, a junction to the fork).
 
+import "base:runtime"
 import "core:os"
 import "../../karl2d"
 import kit ".."
@@ -26,7 +27,11 @@ State :: struct {
 
 // `options` is what Karl2D is started with: a demo of the 3D layer of the fork needs depth_test = true
 Run :: proc(title: string, demos: []kit.Demo, width: int = 1280, height: int = 720, options: karl2d.Init_Options = {window_mode = .Windowed_Resizable}) {
-    karl2d.init(width, height, title, options = options)
+    run_options: karl2d.Init_Options = options
+    // reading the screen back is a function of the 3D layer of the fork, which needs the depth buffer
+    when kit.DEMO_CAPTURE { run_options.depth_test = true }
+    karl2d.init(width, height, title, options = run_options)
+    when kit.DEMO_CAPTURE { karl2d.r3d_init() }
     state: State
     backend: kit.Backend
     Init(&backend, &state)
@@ -142,6 +147,13 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         camera_end = proc(backend: ^kit.Backend) { karl2d.set_camera(nil) },
         clip_begin = proc(backend: ^kit.Backend, rect: kit.Rect) { karl2d.set_scissor_rect(transmute(karl2d.Rect)rect) },
         clip_end = proc(backend: ^kit.Backend) { karl2d.set_scissor_rect(nil) },
+        capture = proc(backend: ^kit.Backend, allocator: runtime.Allocator) -> (rgba: []u8, width: int, height: int) {
+            when kit.DEMO_CAPTURE {
+                pixels, w, h, ok := karl2d.r3d_read_pixels({}, allocator)
+                if ok { return pixels, w, h }
+            }
+            return nil, 0, 0
+        },
         sound_load = proc(backend: ^kit.Backend, bytes: []u8) -> kit.Sound {
             state: ^State = cast(^State)backend.state
             if state.sound_count + 1 >= MAX_SOUNDS { return kit.SOUND_NONE }

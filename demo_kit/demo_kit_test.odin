@@ -2,6 +2,8 @@
 // Tests of the kit: the input player, the headless backend and the test runner, on a small demo of their own.
 package demo_kit
 
+import "core:os"
+import "core:slice"
 import "core:testing"
 
 @(private="file")
@@ -178,4 +180,42 @@ test_axis_keys_and_camera_helpers :: proc(t: ^testing.T) {
     camera: Camera = {target = {100, 100}, offset = {400, 300}, zoom = 2}
     testing.expect_value(t, CameraScreenToWorld(camera, {400, 300}), Vec2{100, 100})
     testing.expect_value(t, CameraWorldToScreen(camera, {110, 100}), Vec2{420, 300})
+}
+
+@(test)
+test_png_round_trip_and_image_difference :: proc(t: ^testing.T) {
+    width, height: int = 37, 5
+    pixels: []u8 = make([]u8, width * height * 4)
+    defer delete(pixels)
+    for i in 0 ..< len(pixels) { pixels[i] = u8(i * 7) }
+    path: string = "demo_kit_test_round_trip.png"
+    defer os.remove(path)
+    testing.expect(t, PngWrite(path, width, height, pixels))
+    back, back_width, back_height, ok := PngRead(path)
+    defer delete(back)
+    testing.expect(t, ok)
+    testing.expect_value(t, back_width, width)
+    testing.expect_value(t, back_height, height)
+    testing.expect(t, ok && slice.equal(back, pixels), "the pixels come back as they went in")
+
+    other: []u8 = make([]u8, len(pixels))
+    defer delete(other)
+    copy(other, pixels)
+    different, biggest := ImageDifference(pixels, other)
+    testing.expect_value(t, different, 0)
+    other[0] += 3                                   // under the tolerance
+    other[8] += 100                                 // a pixel that differs
+    different, biggest = ImageDifference(pixels, other)
+    testing.expect_value(t, different, 1)
+    testing.expect_value(t, biggest, 100)
+}
+
+@(test)
+test_capture_is_skipped_on_the_headless_backend :: proc(t: ^testing.T) {
+    state: HeadlessState
+    backend: Backend
+    HeadlessInit(&backend, &state)
+    ctx: Context = {backend = &backend}
+    _, _, _, ok := CaptureFrame(&ctx)
+    testing.expect(t, !ok)
 }

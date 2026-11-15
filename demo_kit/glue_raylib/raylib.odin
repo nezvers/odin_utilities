@@ -4,9 +4,11 @@ package demo_kit_raylib
 //
 //     main :: proc() { kit_raylib.Run("tween", demo_common.demos[:]) }
 
+import "base:runtime"
 import "core:os"
 import "core:strings"
 import rl "vendor:raylib"
+import rlgl "vendor:raylib/rlgl"
 import kit ".."
 
 MAX_TEXTURES :: 64
@@ -126,6 +128,17 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             rl.BeginScissorMode(i32(rect.x), i32(rect.y), i32(rect.z), i32(rect.w))
         },
         clip_end = proc(backend: ^kit.Backend) { rl.EndScissorMode() },
+        capture = proc(backend: ^kit.Backend, allocator: runtime.Allocator) -> (rgba: []u8, width: int, height: int) {
+            // what the batch still holds goes to the screen first
+            rlgl.DrawRenderBatchActive()
+            image: rl.Image = rl.LoadImageFromScreen()
+            defer rl.UnloadImage(image)
+            if image.data == nil || image.format != .UNCOMPRESSED_R8G8B8A8 { return nil, 0, 0 }
+            width, height = int(image.width), int(image.height)
+            rgba = make([]u8, width * height * 4, allocator)
+            copy(rgba, ([^]u8)(image.data)[:width * height * 4])
+            return
+        },
         sound_load = soundLoad,
         sound_unload = proc(backend: ^kit.Backend, sound: kit.Sound) {
             state: ^State = cast(^State)backend.state

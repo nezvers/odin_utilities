@@ -104,6 +104,7 @@ script: []kit.Step = {
     // items are 28 high, 6 apart, the first at y 80 before scrolling: the one at y 210 is the item 7
     kit.Click({260, 210}),
     kit.Wait(2),
+    kit.Capture("layout_item_picked"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return selected == 7 }, "the item under the pointer was picked after the scroll"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.ctx) == {} }, "the frames had no problems"),
 }

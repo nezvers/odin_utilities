@@ -185,6 +185,7 @@ script: []kit.Step = {
     kit.Click({280, 64}),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return look == LOOK_NEON }, "the third button picks the neon look"),
+    kit.Capture("styles_neon"),
     kit.Click({150, 64}),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return look == LOOK_LIGHT }, "the second button picks the light look"),

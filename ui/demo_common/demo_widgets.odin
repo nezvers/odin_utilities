@@ -98,8 +98,10 @@ script: []kit.Step = {
     // dropdown at y 213 .. 241, the list under it with 28 high rows: the third is at y 299 .. 327
     kit.Click({100, 227}),
     kit.Wait(3),
+    kit.Capture("widgets_dropdown_open"),
     kit.Click({100, 313}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return quality == 2 }, "the third option of the dropdown was picked"),
+    kit.Capture("widgets_done"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.ctx) == {} }, "the frames had no problems"),
 }

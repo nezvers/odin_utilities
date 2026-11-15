@@ -59,6 +59,17 @@ Keep the positions a script clicks fixed numbers (not relative to the window siz
 | `kit_karl2d.Run` | Karl2D | keyboard and mouse | `odin run demo_karl2d` |
 | `kit.HeadlessInit` | none | a `Player` (the script) | tests |
 
-A new framework is one more backend: fill the `Backend` table (see `glue_raylib/raylib.odin`).
+## Screen capture tests
+`kit.Capture("name")` is a script step: the pixels of the frame just drawn are compared with the golden image
+`captures/<backend>/<name>.png` next to the script file (`#caller_location`). It runs only in a window and only with `-define:DEMO_CAPTURE=true`
+(`odin run <lib>/demo_raylib -define:DEMO_TEST=true -define:DEMO_CAPTURE=true`), so `odin test` and normal runs ignore it.
+- No golden image yet: the frame is written as the golden (look at it, commit it). Otherwise a pixel differs above `-define:DEMO_CAPTURE_TOLERANCE=8`
+  per channel, and the step fails when more than 0.2 percent of the pixels differ; the frame is saved as `<name>.actual.png` (git ignored) next to the golden.
+- `-define:DEMO_CAPTURE_UPDATE=true` replaces the golden images with the current frames.
+- One folder per backend (fonts differ), and goldens depend on the window size and scale of the machine that made them.
+- Karl2D reads the screen back through the 3D layer of the fork, so `DEMO_CAPTURE` makes `Run` start Karl2D with `depth_test`.
+- `CaptureFrame` (pixels of the frame), `PngWrite`/`PngRead` (the writer compresses flat areas, a ui frame is about 50 KB) and `ImageDifference` are plain procs for your own checks.
+
+A new framework is one more backend: fill the `Backend` table (see `glue_raylib/raylib.odin`; `capture` may stay nil).
 
 `odin test demo_kit -strict-style -vet`
