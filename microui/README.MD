@@ -27,3 +27,8 @@ mui_rl.Cleanup(&mui_state)
 - `microui.odin` (package `microui_utils`) - framework agnostic helpers: `MuiLog` text log (`LogWrite`, `LogRead`, `LogIsUpdated`, `LogReset`), `U8Slider` for colors, `AtlasToRGBA`.
 - `raylib/microui_raylib.odin` - `Init`, `Update` (text, mouse, wheel, shift/ctrl/alt, enter, backspace), `Render` (rects, atlas text and icons, scissor clipping), `Cleanup`.
 - `karl2d/microui_karl2d.odin` - same API for Karl2D. It expects the Karl2D repository next to other libraries, like this library. Holding backspace repeats.
+
+## Demos and tests
+`odin run demo_raylib`, `odin run demo_karl2d` (Karl2D needs to be next to the other libraries): the same demos from `demo_common`, written once against the
+demo kit (`odin_utilities/demo_kit`). Each demo has a script of simulated input with checks:
+`odin test demo_common -strict-style -vet` plays it headless, `odin run demo_raylib -define:DEMO_TEST=true` plays it in the window.

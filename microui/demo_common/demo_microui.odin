@@ -1,40 +1,54 @@
 #+private file
-package game
+package demo_common
+
+// microui (vendor:microui) windows: the standard demo with a log, a style editor and a background color. The glue (microui/kit) feeds the
+// input of the kit to microui and draws its commands with the kit, so a script can click and type into the widgets.
 
 import "core:fmt"
+import "core:strings"
 import mu "vendor:microui"
-import mui "../.."
-import mui_k2 "../../karl2d"
-import "../../../karl2d"
+import mui ".."
+import mui_kit "../kit"
+import kit "../../demo_kit"
 
 @(private="package")
-microui_demo_state: GameState = {
-    init,
-    finit,
-    process,
-    draw,
+demo_microui: kit.Demo = {
+    name = "microui",
+    init = init,
+    finit = finit,
+    update = update,
+    draw = draw,
+    script = script,
 }
 
-bg_colors:mu.Color = {90, 95, 100, 255}
-mui_state: mui_k2.MuiState
-ctx: ^mu.Context
+bg_colors: mu.Color = {90, 95, 100, 255}
+mui_state: mui_kit.MuiState
+mu_ctx: ^mu.Context
+presses: int            // how many button presses were logged
 
-init :: proc() {
-    ctx = mui_k2.Init(&mui_state)
+init :: proc(ctx: ^kit.Context) {
+    mu_ctx = mui_kit.Init(&mui_state, ctx)
+    mui.LogReset(&mui_state.log)
+    presses = 0
 }
 
-finit :: proc() {
-    mui_k2.Cleanup(&mui_state)
+finit :: proc(ctx: ^kit.Context) {
+    mui_kit.Cleanup(&mui_state, ctx)
 }
 
-process :: proc() {
-    background_color = transmute(karl2d.Color)bg_colors
-    mui_k2.Update(&mui_state)
-    AllWindows(ctx)
+update :: proc(ctx: ^kit.Context) {
+    mui_kit.Update(&mui_state, ctx)
+    AllWindows(mu_ctx)
 }
 
-draw :: proc() {
-    mui_k2.Render(&mui_state)
+draw :: proc(ctx: ^kit.Context) {
+    ctx.background = transmute(kit.Color)bg_colors
+    mui_kit.Render(&mui_state, ctx)
+}
+
+press :: proc(log: ^mui.MuiLog, text: string) {
+    presses += 1
+    mui.LogWrite(log, text)
 }
 
 AllWindows :: proc(ctx: ^mu.Context) {
@@ -69,11 +83,11 @@ AllWindows :: proc(ctx: ^mu.Context) {
 		if .ACTIVE in mu.header(ctx, "Test Buttons", {.EXPANDED}) {
 			mu.layout_row(ctx, {86, -110, -1})
 			mu.label(ctx, "Test buttons 1:")
-			if .SUBMIT in mu.button(ctx, "Button 1") { mui.LogWrite(&mui_state.log, "Pressed button 1") }
-			if .SUBMIT in mu.button(ctx, "Button 2") { mui.LogWrite(&mui_state.log, "Pressed button 2") }
+			if .SUBMIT in mu.button(ctx, "Button 1") { press(&mui_state.log, "Pressed button 1") }
+			if .SUBMIT in mu.button(ctx, "Button 2") { press(&mui_state.log, "Pressed button 2") }
 			mu.label(ctx, "Test buttons 2:")
-			if .SUBMIT in mu.button(ctx, "Button 3") { mui.LogWrite(&mui_state.log, "Pressed button 3") }
-			if .SUBMIT in mu.button(ctx, "Button 4") { mui.LogWrite(&mui_state.log, "Pressed button 4") }
+			if .SUBMIT in mu.button(ctx, "Button 3") { press(&mui_state.log, "Pressed button 3") }
+			if .SUBMIT in mu.button(ctx, "Button 4") { press(&mui_state.log, "Pressed button 4") }
 		}
 		
 		if .ACTIVE in mu.header(ctx, "Tree and Text", {.EXPANDED}) {
@@ -85,16 +99,16 @@ AllWindows :: proc(ctx: ^mu.Context) {
 					mu.label(ctx, "world")
 				}
 				if .ACTIVE in mu.treenode(ctx, "Test 1b") {
-					if .SUBMIT in mu.button(ctx, "Button 1") { mui.LogWrite(&mui_state.log, "Pressed button 1") }
-					if .SUBMIT in mu.button(ctx, "Button 2") { mui.LogWrite(&mui_state.log, "Pressed button 2") }
+					if .SUBMIT in mu.button(ctx, "Button 1") { press(&mui_state.log, "Pressed button 1") }
+					if .SUBMIT in mu.button(ctx, "Button 2") { press(&mui_state.log, "Pressed button 2") }
 				}
 			}
 			if .ACTIVE in mu.treenode(ctx, "Test 2") {
 				mu.layout_row(ctx, {53, 53})
-				if .SUBMIT in mu.button(ctx, "Button 3") { mui.LogWrite(&mui_state.log, "Pressed button 3") }
-				if .SUBMIT in mu.button(ctx, "Button 4") { mui.LogWrite(&mui_state.log, "Pressed button 4") }
-				if .SUBMIT in mu.button(ctx, "Button 5") { mui.LogWrite(&mui_state.log, "Pressed button 5") }
-				if .SUBMIT in mu.button(ctx, "Button 6") { mui.LogWrite(&mui_state.log, "Pressed button 6") }
+				if .SUBMIT in mu.button(ctx, "Button 3") { press(&mui_state.log, "Pressed button 3") }
+				if .SUBMIT in mu.button(ctx, "Button 4") { press(&mui_state.log, "Pressed button 4") }
+				if .SUBMIT in mu.button(ctx, "Button 5") { press(&mui_state.log, "Pressed button 5") }
+				if .SUBMIT in mu.button(ctx, "Button 6") { press(&mui_state.log, "Pressed button 6") }
 			}
 			if .ACTIVE in mu.treenode(ctx, "Test 3") {
 				@static checks := [3]bool{true, false, true}
@@ -191,4 +205,23 @@ AllWindows :: proc(ctx: ^mu.Context) {
 			mu.draw_rect(ctx, mu.layout_next(ctx), ctx.style.colors[col])
 		}
 	}
+}
+script: []kit.Step = {
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return mui_state.atlas_texture != kit.TEXTURE_NONE && mu_ctx != nil }, "the atlas texture of microui was made from pixels"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return ctx.backend.stats.draw_calls > 50 }, "the windows draw rectangles and the text of the atlas"),
+    // the layout of microui is the same everywhere (its own font atlas): in the Test Buttons header Button 1 is at 152,142 and Button 3 at 152,166
+    // microui finds the window under the mouse one frame after the mouse arrived: move, wait a frame, then click
+    kit.MoveTo({165, 150}), kit.Wait(2), kit.Click({165, 150}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return presses == 1 && strings.has_prefix(mui.LogRead(&mui_state.log), "Pressed button 1") }, "a click on a microui button reaches its code and writes the log"),
+    kit.MoveTo({165, 174}), kit.Wait(2), kit.Click({165, 174}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return presses == 2 }, "another button"),
+    // the header Test Buttons can be folded with a click on it
+    kit.MoveTo({100, 126}), kit.Wait(2), kit.Click({100, 126}),
+    kit.Wait(3),
+    kit.MoveTo({165, 150}), kit.Wait(2), kit.Click({165, 150}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return presses == 2 }, "a folded header hides its buttons: the click finds nothing"),
 }
