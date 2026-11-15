@@ -17,15 +17,15 @@ Kept by hand and by Claude: tick an item when it is done and verified (tests pas
 - [ ] Shrink priority ("strictness" of RAD sizes): which child of an overfull container gives way first
 
 ## odin_plug
-- [ ] Thread names (`SetThreadDescription`): audio threads, graph pool workers, device and capture threads, simulated driver thread; a `platform.ThreadName`
-- [ ] A `-sanitize:address` step in `tools/dev verify` if the toolchain here supports it
+- [x] Thread names (`SetThreadDescription`): audio threads, graph pool workers, device and capture threads, simulated driver thread; a `platform.ThreadName`
+- [x] A `-sanitize:address` step in `tools/dev verify` if the toolchain here supports it
 - [ ] Source line / current step recorded per thread for crash reports (RAD `tctx_write_srcloc`), next to `trace_scope`
 
 ## odin_utilities
-- [ ] `scratch`: two thread local scratch arenas with the conflict rule (`ScratchBegin(conflict)` / `ScratchEnd`), for non realtime tools
+- [x] `scratch`: two thread local scratch arenas with the conflict rule (`ScratchBegin(conflict)` / `ScratchEnd`), for non realtime tools
 - [ ] `scene` assets: cancellation tokens for superseded requests, a generation so a reloaded asset is served stale until the new one is ready,
       a per frame "held" guard against eviction, priority levels, eviction by time (RAD artifact cache)
-- [ ] `lanes`: barrier, broadcast and index range for fan out of non realtime work (RAD lanes); the realtime graph pool of odin_plug stays as it is
+- [x] `lanes`: barrier, broadcast and index range for fan out of non realtime work (RAD lanes); the realtime graph pool of odin_plug stays as it is
 
 ## Notes: what the RAD Debugger does (summary)
 UI: persistent box table keyed by name (hash part and display part split with `##`), pruned two frames after the last touch; animations keyed by id with a

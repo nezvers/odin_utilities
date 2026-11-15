@@ -101,6 +101,11 @@ Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git
 - Pointer is tested against the hit boxes of the last frame; a click needs a frame of layout first (scripts `Wait(3)` at the start). Ids are hashes of the name inside the container (`"Save##2"`), `UiIdPath("Window", "Widget")` finds one from outside a frame.
 - `odin test ui`, `odin test ui/demo_common`.
 
+## scratch and lanes (threads, no demos)
+- `scratch/scratch.odin`: two thread local `core:mem/virtual` arenas per thread (64 MB reserve), `ScratchBegin(conflicts..)` / `ScratchEnd` / `ScratchAllocator` / `ScratchRelease`: a function that writes its result into an arena names it as the conflict and gets the other arena for temporaries. For tools and loaders, not realtime.
+- `lanes/lanes.odin`: SPMD fan out, `Run(count, work, user)` runs the same proc on every lane, `LaneRange` / `LaneSync` / `LaneBroadcast`. Not realtime (`odin_plug/graph/pool.odin` is the realtime pool). Both are `#+build !js`, tests inside, `odin test scratch`, `odin test lanes`.
+- `TODO.md` (this folder) is the list of improvements under way: tick items when verified and committed.
+
 ## Commands (run in odin_utilities, tilemap shown)
 - `odin check demo_raylib -strict-style -vet` and `odin check demo_karl2d -strict-style -vet`
 - `odin run demo_raylib`, `odin run demo_karl2d`
