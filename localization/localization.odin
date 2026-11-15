@@ -2,31 +2,31 @@ package localization
 
 
 import "core:encoding/csv"
-import "core:strings"
 import "core:testing"
 
 LocalizationData :: struct {
-    array: [dynamic]string,     // 1d array of strings from CSV
+    array: []string,            // 1d array of strings from CSV: slices of `chars`
+    chars: []u8,                // the text of every cell, packed one after another (a linear allocation: one block for all strings)
     columns: u32,               // store count of CSV columns
-    rows: u32,                  // store count of CSV rows 
+    rows: u32,                  // store count of CSV rows
     lang_map: map[string] u32,  // column index for languages
     key_map: map[string] u32,   // row index for translated text
 }
 
-// Cleanup
+// Cleanup: two blocks and two maps, whatever the number of strings
 DeleteLocalizationData :: proc(data: ^LocalizationData, allocator := context.allocator, loc := #caller_location) {
     context.allocator = allocator
-    for i:int = 0; i < len(data.array); i += 1 { delete(data.array[i]) }
     delete(data.array)
+    delete(data.chars)
     delete(data.key_map)
     delete(data.lang_map)
     data ^= {}
 }
 
-// Parse 
+// Parse. All the strings of the table share one lifetime, so they are packed into one block: the text of the cells together is never
+// longer than the CSV itself (quotes and separators are dropped), which makes the size of the block known before the first cell is read.
 MakeLocalizationData :: proc(csv_bytes: []byte, allocator := context.allocator, loc := #caller_location)->(data: LocalizationData) {
     context.allocator = allocator
-    data.array = make([dynamic]string, allocator, loc)
     data.key_map = make(map[string]u32)
     data.lang_map = make(map[string]u32)
 
@@ -34,20 +34,39 @@ MakeLocalizationData :: proc(csv_bytes: []byte, allocator := context.allocator, 
     defer csv.reader_destroy(&reader)
 
 	reader.trim_leading_space  = true
+	reader.fields_per_record  = -1   // a short row is allowed, its missing cells stay empty
 	reader.reuse_record        = true // Without it you have to delete(record)
 	reader.reuse_record_buffer = true // Without it you have to each of the fields within it
 
+    // first pass: the size of the table, so the array has its exact size and never grows (growing would move the strings)
     csv.reader_init_with_string(&reader, string(csv_bytes))
+    for record, row, err in csv.iterator_next(&reader) {
+        if err != nil { continue }
+        if cast(u32)row <= data.rows { data.rows = cast(u32)row + 1 }
+        for _, column in record {
+            if cast(u32)column <= data.columns { data.columns = cast(u32)column + 1 }
+        }
+    }
+    csv.reader_destroy(&reader)
+    reader = {}
+	reader.trim_leading_space  = true
+	reader.fields_per_record  = -1   // a short row is allowed, its missing cells stay empty
+	reader.reuse_record        = true
+	reader.reuse_record_buffer = true
 
-    // Collect CSV cells in 1D array
+    // a cell is at row * columns + column, a short row leaves empty cells
+    data.array = make([]string, int(data.rows * data.columns), allocator, loc)
+    data.chars = make([]u8, len(csv_bytes), allocator, loc)
+    used: int = 0       // the linear allocator: the length of what is packed so far
+
+    // second pass: the cells go into the block one after another
+    csv.reader_init_with_string(&reader, string(csv_bytes))
 	for record, row, err in csv.iterator_next(&reader) {
 		if err != nil { continue /* Do something with error */ }
-        if cast(u32)row <= data.rows { data.rows = cast(u32)row + 1 }
-        
 		for value, column in record {
-            if cast(u32)column <= data.columns { data.columns = cast(u32)column + 1 }
-			// fmt.printfln("%v, %v: %q", row, column, value)
-            append(&data.array, strings.clone(value))
+            copy(data.chars[used:], value)
+            data.array[row * int(data.columns) + column] = string(data.chars[used:used + len(value)])
+            used += len(value)
 		}
 	}
 
@@ -169,4 +188,19 @@ test_localization_empty_input :: proc(t: ^testing.T) {
     _, ok := GetLanguages(&data)
     testing.expect(t, !ok)
     testing.expect_value(t, data.rows, u32(0))
+}
+
+@(test)
+test_localization_short_rows_and_quotes :: proc(t: ^testing.T) {
+    csv_text: string = "key,en,lv\nhello,\"Hello, you\"\nbye,Bye,Atā\n"       // a short row and a quoted comma
+    data: LocalizationData = MakeLocalizationData(transmute([]byte)csv_text)
+    defer DeleteLocalizationData(&data)
+    text, ok := GetTranslation(&data, "hello", "en")
+    testing.expect(t, ok)
+    testing.expect_value(t, text, "Hello, you")
+    text, ok = GetTranslation(&data, "hello", "lv")
+    testing.expect(t, ok)
+    testing.expect_value(t, text, "")                                            // the missing cell is empty, not out of range
+    text, _ = GetTranslation(&data, "bye", "lv")
+    testing.expect_value(t, text, "Atā")
 }
