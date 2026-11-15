@@ -12,6 +12,7 @@ HeadlessState :: struct {
     texture_count: u32,
     sounds_played: int,
     sounds_loaded: u32,
+    fonts_loaded: u32,
 }
 
 // `state` has to live as long as the backend
@@ -34,6 +35,13 @@ HeadlessInit :: proc(backend: ^Backend, state: ^HeadlessState, screen: Vec2 = HE
         draw_triangle = proc(backend: ^Backend, a: Vec2, b: Vec2, c: Vec2, color: Color) {},
         draw_text = proc(backend: ^Backend, text: string, position: Vec2, size: f32, color: Color) {},
         measure_text = proc(backend: ^Backend, text: string, size: f32) -> Vec2 { return {f32(len(text)) * size * 0.5, size} },
+        font_load = proc(backend: ^Backend, bytes: []u8, size: f32, glyph_count: int) -> Font {
+            state: ^HeadlessState = cast(^HeadlessState)backend.state
+            state.fonts_loaded += 1
+            return Font(state.fonts_loaded)
+        },
+        font_unload = proc(backend: ^Backend, font: Font) {},
+        draw_text_font = proc(backend: ^Backend, font: Font, text: string, position: Vec2, size: f32, color: Color) {},
         texture_load = headlessTextureLoad,
         texture_unload = proc(backend: ^Backend, texture: Texture) {},
         texture_size = headlessTextureSize,

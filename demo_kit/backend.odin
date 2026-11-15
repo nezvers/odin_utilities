@@ -9,7 +9,9 @@ package demo_kit
 
 Texture :: distinct u32
 Sound :: distinct u32
+Font :: distinct u32
 
+FONT_DEFAULT :: Font(0)         // the font of the framework: latin letters only
 TEXTURE_NONE :: Texture(0)
 SOUND_NONE :: Sound(0)
 
@@ -49,6 +51,11 @@ Backend :: struct {
     draw_triangle: proc(backend: ^Backend, a: Vec2, b: Vec2, c: Vec2, color: Color),
     draw_text: proc(backend: ^Backend, text: string, position: Vec2, size: f32, color: Color),
     measure_text: proc(backend: ^Backend, text: string, size: f32) -> Vec2,
+
+    // a font from the bytes of a ttf file with the glyphs of the unicode range 0 .. glyph_count (a language other than english needs them)
+    font_load: proc(backend: ^Backend, bytes: []u8, size: f32, glyph_count: int) -> Font,
+    font_unload: proc(backend: ^Backend, font: Font),
+    draw_text_font: proc(backend: ^Backend, font: Font, text: string, position: Vec2, size: f32, color: Color),
 
     // images: loaded from the bytes of a file (`#load` embeds them, so no working directory matters)
     texture_load: proc(backend: ^Backend, bytes: []u8) -> Texture,
@@ -128,6 +135,21 @@ MeasureText :: proc(ctx: ^Context, text: string, size: f32) -> Vec2 {
 DrawTextCentered :: proc(ctx: ^Context, text: string, center: Vec2, size: f32, color: Color) {
     measured: Vec2 = MeasureText(ctx, text, size)
     DrawText(ctx, text, center - measured * 0.5, size, color)
+}
+
+// `size` is the size the glyphs are made in (draw at this size for a sharp text), glyph_count the number of unicode code points from 0
+FontLoad :: proc(ctx: ^Context, bytes: []u8, size: f32 = 32, glyph_count: int = 1280) -> Font {
+    return ctx.backend.font_load(ctx.backend, bytes, size, glyph_count)
+}
+
+FontUnload :: proc(ctx: ^Context, font: Font) {
+    if font == FONT_DEFAULT { return }
+    ctx.backend.font_unload(ctx.backend, font)
+}
+
+DrawTextFont :: proc(ctx: ^Context, font: Font, text: string, position: Vec2, size: f32, color: Color) {
+    ctx.backend.stats.draw_calls += 1
+    ctx.backend.draw_text_font(ctx.backend, font, text, position, size, color)
 }
 
 TextureLoad :: proc(ctx: ^Context, bytes: []u8) -> Texture {

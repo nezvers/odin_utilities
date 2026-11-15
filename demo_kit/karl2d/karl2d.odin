@@ -12,12 +12,15 @@ import kit ".."
 
 MAX_TEXTURES :: 64
 MAX_SOUNDS :: 64
+MAX_FONTS :: 8
 
 State :: struct {
     textures: [MAX_TEXTURES]karl2d.Texture,
     texture_count: u32,
     sounds: [MAX_SOUNDS]karl2d.Audio_Clip,
     sound_count: u32,
+    fonts: [MAX_FONTS]karl2d.Font,
+    font_count: u32,
     last_mouse: kit.Vec2,
 }
 
@@ -71,6 +74,28 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         },
         measure_text = proc(backend: ^kit.Backend, text: string, size: f32) -> kit.Vec2 {
             return karl2d.measure_text(text, size)
+        },
+        font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int) -> kit.Font {
+            state: ^State = cast(^State)backend.state
+            if state.font_count + 1 >= MAX_FONTS { return kit.FONT_DEFAULT }
+            // a dynamic font makes the glyphs it needs when they are drawn: any language works
+            font, ok := karl2d.load_dynamic_font_from_bytes(bytes)
+            if !ok { return kit.FONT_DEFAULT }
+            state.font_count += 1
+            state.fonts[state.font_count] = font
+            return kit.Font(state.font_count)
+        },
+        font_unload = proc(backend: ^kit.Backend, font: kit.Font) {
+            state: ^State = cast(^State)backend.state
+            if u32(font) == 0 || u32(font) > state.font_count { return }
+            karl2d.destroy_font(state.fonts[font])
+            state.fonts[font] = {}
+        },
+        draw_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
+            state: ^State = cast(^State)backend.state
+            face: karl2d.Font = karl2d.FONT_DEFAULT
+            if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
+            karl2d.draw_text(text, position, size, color, face)
         },
         texture_load = proc(backend: ^kit.Backend, bytes: []u8) -> kit.Texture {
             state: ^State = cast(^State)backend.state

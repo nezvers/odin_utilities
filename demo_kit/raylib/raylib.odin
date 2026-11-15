@@ -11,12 +11,15 @@ import kit ".."
 
 MAX_TEXTURES :: 64
 MAX_SOUNDS :: 64
+MAX_FONTS :: 8
 
 State :: struct {
     textures: [MAX_TEXTURES]rl.Texture2D,
     texture_count: u32,
     sounds: [MAX_SOUNDS]rl.Sound,
     sound_count: u32,
+    fonts: [MAX_FONTS]rl.Font,
+    font_count: u32,
     last_mouse: kit.Vec2,
 }
 
@@ -73,6 +76,19 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         },
         measure_text = proc(backend: ^kit.Backend, text: string, size: f32) -> kit.Vec2 {
             return {f32(rl.MeasureText(strings.clone_to_cstring(text, context.temp_allocator), i32(size))), size}
+        },
+        font_load = fontLoad,
+        font_unload = proc(backend: ^kit.Backend, font: kit.Font) {
+            state: ^State = cast(^State)backend.state
+            if u32(font) == 0 || u32(font) > state.font_count { return }
+            rl.UnloadFont(state.fonts[font])
+            state.fonts[font] = {}
+        },
+        draw_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
+            state: ^State = cast(^State)backend.state
+            face: rl.Font = rl.GetFontDefault()
+            if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
+            rl.DrawTextEx(face, strings.clone_to_cstring(text, context.temp_allocator), position, size, 0, rl.Color(color))
         },
         texture_load = textureLoad,
         texture_unload = proc(backend: ^kit.Backend, texture: kit.Texture) {
@@ -168,6 +184,20 @@ drawTriangle :: proc(backend: ^kit.Backend, a: kit.Vec2, b: kit.Vec2, c: kit.Vec
     } else {
         rl.DrawTriangle(a, b, c, rl.Color(color))
     }
+}
+
+@(private)
+fontLoad :: proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int) -> kit.Font {
+    state: ^State = cast(^State)backend.state
+    if state.font_count + 1 >= MAX_FONTS { return kit.FONT_DEFAULT }
+    codepoints: [dynamic]rune
+    defer delete(codepoints)
+    for i in 0 ..< glyph_count { append(&codepoints, rune(i)) }
+    font: rl.Font = rl.LoadFontFromMemory(".ttf", raw_data(bytes), i32(len(bytes)), i32(size), raw_data(codepoints), i32(len(codepoints)))
+    if font.texture.id == 0 { return kit.FONT_DEFAULT }
+    state.font_count += 1
+    state.fonts[state.font_count] = font
+    return kit.Font(state.font_count)
 }
 
 @(private)
