@@ -105,7 +105,7 @@ script: []kit.Step = {
     kit.Click({50, 50}),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return played[DAMAGE] == 2 }, "and plays again after the treshold"),
     // drag the volume slider to the middle
-    kit.Drag({10 + 200, 111}, {10 + 100, 111}, 5),    // from inside of the bar (whatever the label width is) toward its middle
+    kit.Drag({10 + 200, 111}, {10 + 250, 111}, 5),    // from inside of the bar (whatever the label width is) to a bit right of it
     kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return settings[DAMAGE].volume > 0.3 && settings[DAMAGE].volume < 0.9 }, "the slider changes the setting"),
 }
