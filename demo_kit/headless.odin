@@ -38,6 +38,7 @@ HeadlessInit :: proc(backend: ^Backend, state: ^HeadlessState, screen: Vec2 = HE
         texture_unload = proc(backend: ^Backend, texture: Texture) {},
         texture_size = headlessTextureSize,
         texture_draw = proc(backend: ^Backend, texture: Texture, source: Rect, destination: Rect, origin: Vec2, rotation: f32, tint: Color) {},
+        mouse_capture = proc(backend: ^Backend, captured: bool) {},
         camera_begin = proc(backend: ^Backend, camera: Camera) {},
         camera_end = proc(backend: ^Backend) {},
         clip_begin = proc(backend: ^Backend, rect: Rect) {},

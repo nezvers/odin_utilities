@@ -34,7 +34,7 @@ Run :: proc(title: string, demos: []kit.Demo, width: i32 = 1280, height: i32 = 7
     when kit.DEMO_TEST {
         passed: bool = kit.RunTests(demos, &backend)
         backend.shutdown(&backend)
-        os.exit(0 if passed else 1)
+        exit_process(passed)
     } else {
         runner: kit.Runner
         kit.Run(&runner, demos, &backend)
@@ -91,6 +91,9 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             if u32(texture) == 0 || u32(texture) > state.texture_count { return }
             rl.DrawTexturePro(state.textures[texture], transmute(rl.Rectangle)source, transmute(rl.Rectangle)destination, origin, rotation, rl.Color(tint))
         },
+        mouse_capture = proc(backend: ^kit.Backend, captured: bool) {
+            if captured { rl.DisableCursor() } else { rl.EnableCursor() }
+        },
         camera_begin = proc(backend: ^kit.Backend, camera: kit.Camera) {
             rl.BeginMode2D({offset = camera.offset, target = camera.target, rotation = camera.rotation, zoom = camera.zoom})
         },
@@ -141,7 +144,7 @@ beginFrame :: proc(backend: ^kit.Backend, input: ^kit.Input) -> (running: bool, 
         if rl.IsMouseButtonReleased(mouse_buttons[button]) { input.mouse_released += {button} }
     }
     input.mouse_position = rl.GetMousePosition()
-    input.mouse_delta = input.mouse_position - state.last_mouse
+    input.mouse_delta = rl.GetMouseDelta()
     state.last_mouse = input.mouse_position
     input.mouse_wheel = rl.GetMouseWheelMove()
     for {
@@ -219,4 +222,10 @@ keys: [kit.Key]rl.KeyboardKey = {
     .COMMA = .COMMA, .PERIOD = .PERIOD, .MINUS = .MINUS, .EQUAL = .EQUAL, .SLASH = .SLASH,
     .LEFT_BRACKET = .LEFT_BRACKET, .RIGHT_BRACKET = .RIGHT_BRACKET,
     .F1 = .F1, .F2 = .F2, .F3 = .F3, .F4 = .F4, .F5 = .F5, .F6 = .F6, .F7 = .F7, .F8 = .F8, .F9 = .F9, .F10 = .F10, .F11 = .F11, .F12 = .F12,
+}
+
+// the exit code of a test run: 0 when every check passed
+@(private)
+exit_process :: proc(passed: bool) {
+    os.exit(0 if passed else 1)
 }

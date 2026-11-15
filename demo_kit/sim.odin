@@ -27,6 +27,7 @@ StepKind :: enum u8 {
     MOUSE_CLICK,
     MOUSE_DRAG,
     WHEEL,
+    MOUSE_DELTA,
     TEXT,
     CHECK,
 }
@@ -54,6 +55,8 @@ MouseUpStep :: proc "contextless" (button: MouseButton = .LEFT) -> Step { return
 Click :: proc "contextless" (position: Vec2, button: MouseButton = .LEFT) -> Step { return {kind = .MOUSE_CLICK, position = position, button = button} }
 // Hold a button and move from one point to another over `frames` frames
 Drag :: proc "contextless" (from: Vec2, to: Vec2, frames: u32, button: MouseButton = .LEFT) -> Step { return {kind = .MOUSE_DRAG, from = from, position = to, frames = frames, button = button} }
+// The mouse moves by this much in this frame (a captured mouse, a first person look) without a position
+LookBy :: proc "contextless" (delta: Vec2) -> Step { return {kind = .MOUSE_DELTA, position = delta} }
 Scroll :: proc "contextless" (amount: f32) -> Step { return {kind = .WHEEL, amount = amount} }
 Type :: proc "contextless" (text: string) -> Step { return {kind = .TEXT, text = text} }
 // The check says if what the demo shows is right, `message` is what the report says when it is not
@@ -116,6 +119,7 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
     // a step that takes time is counted down first. When it ends by letting go of something, the next step waits for the next
     // frame: let go and press again in one frame would be no press at all
     skip_steps: bool = false
+    extra_delta: Vec2
     if player.active {
         if player.drag_total > 0 {
             progress: f32 = 1 - f32(player.wait_left) / f32(player.drag_total)
@@ -182,6 +186,8 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
             player.wait_left = player.drag_total
         case .WHEEL:
             input.mouse_wheel += step.amount
+        case .MOUSE_DELTA:
+            extra_delta += step.position
         case .TEXT:
             for character in transmute([]u8)step.text {
                 if int(input.text_count) >= TEXT_CAPACITY { break }
@@ -202,6 +208,6 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
     input.keys_down = player.held_keys
     input.mouse_down = player.held_buttons
     input.mouse_position = player.mouse_position
-    input.mouse_delta = player.mouse_position - previous_position
+    input.mouse_delta = player.mouse_position - previous_position + extra_delta
     InputFromHeld(input, previous_keys, previous_buttons)
 }

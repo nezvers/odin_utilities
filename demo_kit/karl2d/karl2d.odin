@@ -21,15 +21,16 @@ State :: struct {
     last_mouse: kit.Vec2,
 }
 
-Run :: proc(title: string, demos: []kit.Demo, width: int = 1280, height: int = 720) {
-    karl2d.init(width, height, title, options = {window_mode = .Windowed_Resizable})
+// `options` is what Karl2D is started with: a demo of the 3D layer of the fork needs depth_test = true
+Run :: proc(title: string, demos: []kit.Demo, width: int = 1280, height: int = 720, options: karl2d.Init_Options = {window_mode = .Windowed_Resizable}) {
+    karl2d.init(width, height, title, options = options)
     state: State
     backend: kit.Backend
     Init(&backend, &state)
     when kit.DEMO_TEST {
         passed: bool = kit.RunTests(demos, &backend)
         backend.shutdown(&backend)
-        os.exit(0 if passed else 1)
+        exit_process(passed)
     } else {
         runner: kit.Runner
         kit.Run(&runner, demos, &backend)
@@ -96,6 +97,10 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             if u32(texture) == 0 || u32(texture) > state.texture_count { return }
             karl2d.draw_texture_fit(state.textures[texture], transmute(karl2d.Rect)source, transmute(karl2d.Rect)destination, origin, rotation * (3.14159265 / 180), tint)
         },
+        mouse_capture = proc(backend: ^kit.Backend, captured: bool) {
+            karl2d.set_mouse_locked(captured)
+            karl2d.set_cursor_hidden(captured)
+        },
         camera_begin = proc(backend: ^kit.Backend, camera: kit.Camera) {
             karl2d.set_camera(karl2d.Camera{target = camera.target, offset = camera.offset, rotation = camera.rotation * (3.14159265 / 180), zoom = camera.zoom})
         },
@@ -144,7 +149,7 @@ beginFrame :: proc(backend: ^kit.Backend, input: ^kit.Input) -> (running: bool, 
         if karl2d.mouse_button_went_up(mouse_buttons[button]) { input.mouse_released += {button} }
     }
     input.mouse_position = karl2d.get_mouse_position()
-    input.mouse_delta = input.mouse_position - state.last_mouse
+    input.mouse_delta = karl2d.get_mouse_delta()
     state.last_mouse = input.mouse_position
     for event in karl2d.get_events() {
         #partial switch e in event {
@@ -174,4 +179,10 @@ keys: [kit.Key]karl2d.Keyboard_Key = {
     .COMMA = .Comma, .PERIOD = .Period, .MINUS = .Minus, .EQUAL = .Equal, .SLASH = .Slash,
     .LEFT_BRACKET = .Left_Bracket, .RIGHT_BRACKET = .Right_Bracket,
     .F1 = .F1, .F2 = .F2, .F3 = .F3, .F4 = .F4, .F5 = .F5, .F6 = .F6, .F7 = .F7, .F8 = .F8, .F9 = .F9, .F10 = .F10, .F11 = .F11, .F12 = .F12,
+}
+
+// the exit code of a test run: 0 when every check passed
+@(private)
+exit_process :: proc(passed: bool) {
+    os.exit(0 if passed else 1)
 }

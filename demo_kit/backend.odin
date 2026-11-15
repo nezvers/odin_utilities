@@ -57,6 +57,9 @@ Backend :: struct {
     // `source` of the texture on `destination` of the screen, turned around `origin` (a point of destination, from its top left)
     texture_draw: proc(backend: ^Backend, texture: Texture, source: Rect, destination: Rect, origin: Vec2, rotation: f32, tint: Color),
 
+    // the mouse is hidden and gives only movement (a first person camera); the position keeps counting but is not the pointer anymore
+    mouse_capture: proc(backend: ^Backend, captured: bool),
+
     camera_begin: proc(backend: ^Backend, camera: Camera),
     camera_end: proc(backend: ^Backend),
     clip_begin: proc(backend: ^Backend, rect: Rect),
@@ -149,6 +152,10 @@ DrawTexture :: proc(ctx: ^Context, texture: Texture, destination: Rect, tint: Co
 DrawTextureRect :: proc(ctx: ^Context, texture: Texture, source: Rect, destination: Rect, origin: Vec2 = {}, rotation: f32 = 0, tint: Color = {255, 255, 255, 255}) {
     ctx.backend.stats.draw_calls += 1
     ctx.backend.texture_draw(ctx.backend, texture, source, destination, origin, rotation, tint)
+}
+
+MouseCapture :: proc(ctx: ^Context, captured: bool) {
+    if ctx.backend.mouse_capture != nil { ctx.backend.mouse_capture(ctx.backend, captured) }
 }
 
 CameraBegin :: proc(ctx: ^Context, camera: Camera) {
