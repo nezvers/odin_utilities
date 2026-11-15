@@ -116,6 +116,7 @@ kit_of :: proc(ctx: ^ui.Context) -> ^kit.Context {
 // A pill with a colored outline that lights up when the pointer is on it
 neon_button :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^ui_default.Painter = painter_of(ctx)
+    ui_default.FocusRing(painter, info, 1)
     glow: ui.Color = ui.ColorLerp(NEON_CYAN, NEON_PINK, info.hover)
     ui_default.FillRoundedBorder(painter, info.rect, 1, ui.ColorLerp({16, 12, 34, 255}, glow, info.press * 0.6), glow, 2)
     ui_default.TextCentered(painter, info.name, info.rect, info.font_size, glow)

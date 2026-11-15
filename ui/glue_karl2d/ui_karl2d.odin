@@ -96,7 +96,39 @@ InputPoll :: proc() -> ui.Input {
     for key in ui.Key {
         if karl2d.key_went_down(keys[key], allow_repeat = true) { input.keys += {key} }
     }
+    input.actions = actionsPoll()
     return input
+}
+
+// The default actions of Godot's input map from the keyboard and the first gamepad (d-pad, A accepts, B cancels, the shoulders are next / previous)
+@(private)
+actionsPoll :: proc() -> ui.Actions {
+    actions: ui.Actions
+    if karl2d.key_went_down(.Enter) || karl2d.key_went_down(.Space) { actions += {.ACCEPT} }
+    if karl2d.key_went_down(.Space) { actions += {.SELECT} }
+    if karl2d.key_went_down(.Escape) { actions += {.CANCEL} }
+    if karl2d.key_went_down(.Tab) {
+        actions += {.FOCUS_PREV} if karl2d.key_is_held(.Left_Shift) || karl2d.key_is_held(.Right_Shift) else {.FOCUS_NEXT}
+    }
+    if karl2d.key_went_down(.Up, allow_repeat = true) { actions += {.UP} }
+    if karl2d.key_went_down(.Down, allow_repeat = true) { actions += {.DOWN} }
+    if karl2d.key_went_down(.Left, allow_repeat = true) { actions += {.LEFT} }
+    if karl2d.key_went_down(.Right, allow_repeat = true) { actions += {.RIGHT} }
+    if karl2d.key_went_down(.Page_Up, allow_repeat = true) { actions += {.PAGE_UP} }
+    if karl2d.key_went_down(.Page_Down, allow_repeat = true) { actions += {.PAGE_DOWN} }
+    if karl2d.key_went_down(.Home) { actions += {.HOME} }
+    if karl2d.key_went_down(.End) { actions += {.END} }
+    if karl2d.is_gamepad_active(0) {
+        if karl2d.gamepad_button_went_down(0, .Left_Face_Up) { actions += {.UP} }
+        if karl2d.gamepad_button_went_down(0, .Left_Face_Down) { actions += {.DOWN} }
+        if karl2d.gamepad_button_went_down(0, .Left_Face_Left) { actions += {.LEFT} }
+        if karl2d.gamepad_button_went_down(0, .Left_Face_Right) { actions += {.RIGHT} }
+        if karl2d.gamepad_button_went_down(0, .Right_Face_Down) { actions += {.ACCEPT, .SELECT} }
+        if karl2d.gamepad_button_went_down(0, .Right_Face_Right) { actions += {.CANCEL} }
+        if karl2d.gamepad_button_went_down(0, .Left_Shoulder) { actions += {.FOCUS_PREV} }
+        if karl2d.gamepad_button_went_down(0, .Right_Shoulder) { actions += {.FOCUS_NEXT} }
+    }
+    return actions
 }
 
 @(private)

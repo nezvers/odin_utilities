@@ -42,11 +42,22 @@ Widgets: `UiWindow UiPanel UiRow UiColumn UiBox UiScroll UiLabel UiButton UiTogg
 Names are ids inside their container: `"Save##slot2"` shows "Save" and hashes the whole string. `UiIdPath("Settings", "Volume")` finds an id from outside.
 
 ## Navigation without a pointer
-`nav.odin` is input agnostic: your code calls `UiNavigate(&ctx, .DOWN)` (arrow key, d-pad, stick, test script) and `UiActivate(&ctx)` (confirm) after `UiBegin`.
-The focus goes to the nearest interactive widget in that direction (Godot style); the style sees the `FOCUSED` flag. Overrides, right after a widget:
-`UiNavLink(&ctx, .DOWN, UiId(&ctx, "Quit"))` jumps to a given widget, `UiNavBlock(&ctx, .UP)` allows no move that way.
-A focused slider takes left/right as steps of a twentieth of its range (unless linked). `UiFocus`, `UiFocused`, `UiIsFocused` read and set the focus.
-A click focuses a widget too, so mouse and keyboard share one focus. See `demo_common/demo_navigation.odin`.
+`nav.odin` is input agnostic. The default actions of Godot's input map are `ui.Action`s; a glue maps keys and gamepad buttons to `Input.actions`
+(ui/kit, glue_raylib and glue_karl2d do, with the keyboard and the first gamepad) and `UiBegin` applies them before the widgets are declared:
+
+| Godot action | `ui.Action` | keys / gamepad | what the ui does |
+|---|---|---|---|
+| `ui_accept` / `ui_select` | `ACCEPT` / `SELECT` | Enter, Space / A | clicks the focused widget (button, toggle; a dropdown opens on its chosen option) |
+| `ui_cancel` | `CANCEL` | Escape / B | closes a dropdown, a text field lets go; what is left is `UiCancelled(&ctx)` for the program to close its dialog |
+| `ui_focus_next` / `ui_focus_prev` | `FOCUS_NEXT` / `FOCUS_PREV` | Tab, Shift+Tab / shoulders | the order of the layout, around the end |
+| `ui_up` `ui_down` `ui_left` `ui_right` | `UP` `DOWN` `LEFT` `RIGHT` | arrows / d-pad | the nearest widget that way; a slider takes left and right as steps; a text field keeps them for its caret |
+| `ui_home` / `ui_end` | `HOME` / `END` | Home, End | the first / the last widget |
+| `ui_page_up` / `ui_page_down` | `PAGE_UP` / `PAGE_DOWN` | Page up, Page down | a page of widgets (the height of the scrolling container the focus is in) |
+
+The focus is one id for mouse and keyboard (`UiFocused`, `UiFocus`, `UiIsFocused`); the style sees the `FOCUSED` flag (the default style draws a ring). A
+scrolling container scrolls the focused widget into view. Overrides, right after a widget: `UiNavLink(&ctx, .DOWN, UiId(&ctx, "Quit"))` jumps to a given
+widget, `UiNavBlock(&ctx, .UP)` allows no move that way. `UiAction(&ctx, .PAGE_DOWN)` does an action from code (tests, scripted input) and
+`UiNavigate` / `UiActivate` are the plain moves. See `demo_common/demo_navigation.odin`: a menu, a dropdown, a scrolling list and a dialog, driven by keys only.
 
 ## Styles
 A `Style` is a table of procs per `StyleKind` (PANEL, LABEL, BUTTON, TOGGLE, SLIDER, PROGRESS, TEXT_FIELD, SEPARATOR, DROPDOWN, DROPDOWN_ITEM, SCROLLBAR,

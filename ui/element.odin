@@ -261,6 +261,25 @@ Key :: enum u8 {
 }
 Keys :: bit_set[Key; u16]
 
+// The default actions of a ui, named like the ones of Godot (the project settings input map): a glue maps the keys and the buttons of a
+// gamepad to them (see ui/kit and the glue packages), the ui does the rest. Directions and pages repeat while the key is held.
+Action :: enum u8 {
+    ACCEPT,         // ui_accept: Enter, Space, the A button: clicks the focused widget (a button, a toggle, opens a dropdown)
+    SELECT,         // ui_select: Space: the same, for apps that tell the two apart (UiActionPressed)
+    CANCEL,         // ui_cancel: Escape, the B button: closes a dropdown, leaves a text field, and is what UiCancelled tells an app to close its dialog
+    FOCUS_NEXT,     // ui_focus_next: Tab, the right shoulder: the next widget in the order of the layout (wraps around)
+    FOCUS_PREV,     // ui_focus_prev: Shift + Tab, the left shoulder
+    UP,             // ui_up, ui_down, ui_left, ui_right: the arrows, the d-pad: the nearest widget that way (UiNavigate)
+    DOWN,
+    LEFT,
+    RIGHT,
+    PAGE_UP,        // ui_page_up, ui_page_down: a page of widgets in a scrolling list
+    PAGE_DOWN,
+    HOME,           // ui_home, ui_end: the first and the last widget
+    END,
+}
+Actions :: bit_set[Action; u16]
+
 INPUT_TEXT_CAPACITY :: 32
 
 // What the ui needs of a frame of input, plain data: a glue (or a test) fills it
@@ -271,6 +290,7 @@ Input :: struct {
     mouse_released: bool,           // went up this frame
     wheel: Vec2,                    // scrolled lines this frame, up is positive
     keys: Keys,                     // pressed this frame (key repeat counts)
+    actions: Actions,               // the default actions pressed this frame (key repeat counts for directions and pages)
     text: [INPUT_TEXT_CAPACITY]u8,  // typed this frame, UTF-8
     text_count: u8,
 }
@@ -295,6 +315,7 @@ WidgetState :: struct {
     nav: [Direction]Id,             // where navigation goes from here: 0 the nearest widget, NAV_BLOCK nowhere, else that widget
     adjustable: bool,               // a slider: left and right of the navigation change its value
     pending_adjust: int,            // steps asked by UiNavigate, taken by the widget in its next call
+    editing: bool,                  // a text field that has the focus: it keeps left, right, home and end for the caret
 }
 
 @(private)

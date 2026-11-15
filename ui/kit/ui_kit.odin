@@ -81,6 +81,20 @@ InputFrom :: proc(ctx: ^kit.Context) -> ui.Input {
     for key in ui.Key {
         if keys[key] in source.keys_pressed { result.keys += {key} }
     }
+    // the default actions of Godot's input map
+    pressed: ^kit.KeySet = &source.keys_pressed
+    if .ENTER in pressed^ || .SPACE in pressed^ { result.actions += {.ACCEPT} }
+    if .SPACE in pressed^ { result.actions += {.SELECT} }
+    if .ESCAPE in pressed^ { result.actions += {.CANCEL} }
+    if .TAB in pressed^ { result.actions += {.FOCUS_PREV} if kit.ShiftDown(source) else {.FOCUS_NEXT} }
+    if .UP in pressed^ { result.actions += {.UP} }
+    if .DOWN in pressed^ { result.actions += {.DOWN} }
+    if .LEFT in pressed^ { result.actions += {.LEFT} }
+    if .RIGHT in pressed^ { result.actions += {.RIGHT} }
+    if .PAGE_UP in pressed^ { result.actions += {.PAGE_UP} }
+    if .PAGE_DOWN in pressed^ { result.actions += {.PAGE_DOWN} }
+    if .HOME in pressed^ { result.actions += {.HOME} }
+    if .END in pressed^ { result.actions += {.END} }
     return result
 }
 

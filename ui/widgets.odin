@@ -65,6 +65,7 @@ widgetBehavior :: proc(ctx: ^Context, id: Id, disabled: bool = false) -> Interac
     }
     if ctx.activate && ctx.focus == id {
         result.clicked = true       // the confirm key or button of a gamepad
+        ctx.activate = false        // one click per press: a widget that opens (a dropdown) does not click what appears under the focus
     }
     result.pressed = ctx.active == id
     if ctx.active == id && ctx.input.mouse_released {
@@ -191,6 +192,10 @@ UiScroll :: proc(ctx: ^Context, name: string, size: Size = {}, layout: Layout = 
     if ctx.hover_scroll == id && ctx.input.wheel.y != 0 {
         state.scroll.y += ctx.input.wheel.y * ctx.style.metrics.font_size * 2.5
     }
+    // the focus moved with the keyboard: show the focused widget when it is one of this container's
+    if ctx.reveal && ctx.focus != 0 {
+        scrollReveal(ctx, state)
+    }
     // limits from the last frame: how much the content is bigger than the view
     limit: f32 = max(state.content_size.y - state.rect.w, 0)
     state.scroll.y = clamp(state.scroll.y, -limit, 0)
@@ -207,6 +212,28 @@ UiScroll :: proc(ctx: ^Context, name: string, size: Size = {}, layout: Layout = 
         hit = {.SCROLL, .BLOCKER},
         draw = {kind = .SCROLL_AREA, name = IdSplitName(name), font_size = ctx.style.metrics.font_size},
     })
+}
+
+// Moves the scroll position so that the focused widget is inside of the view, when it sits in this container (its hit box was clipped by the
+// view of the container: the same clip rectangle)
+@(private)
+scrollReveal :: proc(ctx: ^Context, state: ^WidgetState) {
+    view: Rect = state.rect
+    if view.w <= 0 { return }
+    for i in 0 ..< ctx.hit_count {
+        box: ^HitBox = &ctx.hits[i]
+        if box.id != ctx.focus { continue }
+        if abs(box.clip_rect.y - view.y) > 0.5 || abs(box.clip_rect.w - view.w) > 0.5 { return }       // another container's
+        margin: f32 = 4
+        top: f32 = box.rect.y
+        bottom: f32 = box.rect.y + box.rect.w
+        if top < view.y + margin {
+            state.scroll.y += view.y + margin - top
+        } else if bottom > view.y + view.w - margin {
+            state.scroll.y -= bottom - (view.y + view.w - margin)
+        }
+        return
+    }
 }
 
 UiScrollEnd :: proc(ctx: ^Context, name: string, size: Size = {}, layout: Layout = {}) {
@@ -386,7 +413,8 @@ UiTextField :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, siz
         ctx.focus = id
         state.cursor = textFieldCursorAt(ctx, string(buffer[:length^]), ctx.input.mouse_position.x - state.rect.x - metrics.padding.x)
     }
-    if ctx.focus == id {
+    state.editing = ctx.focus == id
+    if state.editing {
         changed, submitted = textFieldEdit(ctx, state, buffer, length)
     }
 
@@ -462,8 +490,9 @@ textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: 
     if .ENTER in input.keys {
         submitted = true
     }
-    if .ESCAPE in input.keys {
-        ctx.focus = 0
+    if ctx.cancel_pending {
+        ctx.focus = 0                   // cancel leaves the field
+        ctx.cancel_pending = false
     }
     return
 }
@@ -476,11 +505,16 @@ UiDropdown :: proc(ctx: ^Context, name: string, options: []string, selected: ^in
     interaction: Interaction = widgetBehavior(ctx, id, disabled)
     metrics: ^Metrics = &ctx.style.metrics
     selected^ = clamp(selected^, 0, max(len(options) - 1, 0))
+    popup_id: Id = IdFromString("popup", id)
     if interaction.clicked {
         state.open = !state.open
+        // opened with the keyboard: the focus goes to the chosen option, so up and down walk the list
+        if state.open { ctx.focus = IdFromIndex(u32(selected^), popup_id) }
     }
-    if .ESCAPE in ctx.input.keys {
+    if state.open && ctx.cancel_pending {
         state.open = false
+        ctx.cancel_pending = false
+        ctx.focus = id                  // back on the box
     }
 
     current: string = options[selected^] if len(options) > 0 else ""
@@ -501,7 +535,6 @@ UiDropdown :: proc(ctx: ^Context, name: string, options: []string, selected: ^in
 
     ctx.last_id = id
     if !state.open { return }
-    popup_id: Id = IdFromString("popup", id)
     _ = stateGet(ctx, popup_id)
     ElementOpen(ctx, {
         id = popup_id,
@@ -520,6 +553,7 @@ UiDropdown :: proc(ctx: ^Context, name: string, options: []string, selected: ^in
             if selected^ != i { changed = true }
             selected^ = i
             state.open = false
+            ctx.focus = id
         }
         item_flags: Flags = {.SELECTED} if i == selected^ else {}
         ElementOpen(ctx, {

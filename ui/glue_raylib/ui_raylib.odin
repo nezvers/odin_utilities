@@ -113,7 +113,40 @@ InputPoll :: proc() -> ui.Input {
     for key in ui.Key {
         if rl.IsKeyPressed(keys[key]) || rl.IsKeyPressedRepeat(keys[key]) { input.keys += {key} }
     }
+    input.actions = actionsPoll()
     return input
+}
+
+// The default actions of Godot's input map from the keyboard and the first gamepad (d-pad, A accepts, B cancels, the shoulders are next / previous)
+@(private)
+actionsPoll :: proc() -> ui.Actions {
+    actions: ui.Actions
+    again :: proc(key: rl.KeyboardKey) -> bool { return rl.IsKeyPressed(key) || rl.IsKeyPressedRepeat(key) }
+    if rl.IsKeyPressed(.ENTER) || rl.IsKeyPressed(.KP_ENTER) || rl.IsKeyPressed(.SPACE) { actions += {.ACCEPT} }
+    if rl.IsKeyPressed(.SPACE) { actions += {.SELECT} }
+    if rl.IsKeyPressed(.ESCAPE) { actions += {.CANCEL} }
+    if rl.IsKeyPressed(.TAB) {
+        actions += {.FOCUS_PREV} if rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT) else {.FOCUS_NEXT}
+    }
+    if again(.UP) { actions += {.UP} }
+    if again(.DOWN) { actions += {.DOWN} }
+    if again(.LEFT) { actions += {.LEFT} }
+    if again(.RIGHT) { actions += {.RIGHT} }
+    if again(.PAGE_UP) { actions += {.PAGE_UP} }
+    if again(.PAGE_DOWN) { actions += {.PAGE_DOWN} }
+    if rl.IsKeyPressed(.HOME) { actions += {.HOME} }
+    if rl.IsKeyPressed(.END) { actions += {.END} }
+    if rl.IsGamepadAvailable(0) {
+        if rl.IsGamepadButtonPressed(0, .LEFT_FACE_UP) { actions += {.UP} }
+        if rl.IsGamepadButtonPressed(0, .LEFT_FACE_DOWN) { actions += {.DOWN} }
+        if rl.IsGamepadButtonPressed(0, .LEFT_FACE_LEFT) { actions += {.LEFT} }
+        if rl.IsGamepadButtonPressed(0, .LEFT_FACE_RIGHT) { actions += {.RIGHT} }
+        if rl.IsGamepadButtonPressed(0, .RIGHT_FACE_DOWN) { actions += {.ACCEPT, .SELECT} }
+        if rl.IsGamepadButtonPressed(0, .RIGHT_FACE_RIGHT) { actions += {.CANCEL} }
+        if rl.IsGamepadButtonPressed(0, .LEFT_TRIGGER_1) { actions += {.FOCUS_PREV} }
+        if rl.IsGamepadButtonPressed(0, .RIGHT_TRIGGER_1) { actions += {.FOCUS_NEXT} }
+    }
+    return actions
 }
 
 @(private)

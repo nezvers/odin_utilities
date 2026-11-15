@@ -21,8 +21,8 @@ Seen :: struct {
     clip_end: int,
 }
 
-@(private = "file")
-seen: Seen
+@(private = "file", thread_local)
+seen: Seen            // per test thread: the tests run in parallel
 
 @(private = "file")
 testStyle :: proc(ctx: ^Context, info: ^DrawInfo) {
@@ -642,4 +642,124 @@ seenFocusFlag :: proc(harness: ^Harness) -> Flags {
         if command.kind == .DRAW && command.info.kind == .SLIDER { return command.info.flags }
     }
     return {}
+}
+
+@(test)
+test_accept_opens_the_dropdown_on_the_chosen_option_and_cancel_closes_it :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    options: [3]string = {"Low", "Medium", "High"}
+    selected: int = 1
+    @(static) shared_options: [3]string
+    @(static) shared_selected: ^int
+    shared_options = options
+    shared_selected = &selected
+    defer shared_selected = nil
+    run :: proc(harness: ^Harness, actions: Actions) {
+        input: Input = pointerAt({-100, -100})
+        input.actions = actions
+        frame(harness, input)
+        UiDropdown(&harness.ctx, "Quality", shared_options[:], shared_selected)
+        UiEnd(&harness.ctx)
+    }
+    run(harness, {})
+    run(harness, {.DOWN})                                        // focuses the box
+    box: Id = UiIdPath("Quality")
+    testing.expect_value(t, UiFocused(&harness.ctx), box)
+    run(harness, {.ACCEPT})
+    popup: Id = IdFromString("popup", box)
+    testing.expect_value(t, UiFocused(&harness.ctx), IdFromIndex(1, popup))      // on the chosen option
+    run(harness, {})
+    run(harness, {.DOWN})
+    testing.expect_value(t, UiFocused(&harness.ctx), IdFromIndex(2, popup))
+    run(harness, {.CANCEL})                                      // closes it, nothing is chosen, the focus is back on the box
+    testing.expect_value(t, UiFocused(&harness.ctx), box)
+    testing.expect_value(t, selected, 1)
+    run(harness, {.ACCEPT})
+    run(harness, {})
+    run(harness, {.DOWN})
+    run(harness, {.ACCEPT})                                      // chooses the option under the focus
+    testing.expect_value(t, selected, 2)
+    testing.expect_value(t, UiFocused(&harness.ctx), box)
+}
+
+@(private = "file")
+actionFrame :: proc(harness: ^Harness, body: proc(ctx: ^Context), actions: Actions = {}) {
+    input: Input = pointerAt({-100, -100})
+    input.actions = actions
+    frame(harness, input)
+    body(&harness.ctx)
+    UiEnd(&harness.ctx)
+}
+
+@(test)
+test_focus_next_and_previous_wrap_around_and_home_end_jump :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    actionFrame(harness, navMenu)
+    actionFrame(harness, navMenu, {.FOCUS_NEXT})                 // nothing focused: the first
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("A"))
+    actionFrame(harness, navMenu, {.FOCUS_NEXT})
+    actionFrame(harness, navMenu, {.FOCUS_NEXT})
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("C"))
+    actionFrame(harness, navMenu, {.FOCUS_NEXT})                 // around the end
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("A"))
+    actionFrame(harness, navMenu, {.FOCUS_PREV})                 // and back
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("C"))
+    actionFrame(harness, navMenu, {.HOME})
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("A"))
+    actionFrame(harness, navMenu, {.END})
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("C"))
+}
+
+@(test)
+test_cancel_is_taken_by_a_text_field_then_left_for_the_program :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    @(static) buffer: [8]u8
+    @(static) length: int
+    length = 0
+    field :: proc(ctx: ^Context) { _, _ = UiTextField(ctx, "Name", buffer[:], &length) }
+    actionFrame(harness, field)
+    actionFrame(harness, field, {.DOWN})                         // the field has the focus
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("Name"))
+    cancelled: bool
+    frame(harness, Input{mouse_position = {-100, -100}, actions = {.CANCEL}})
+    field(&harness.ctx)
+    cancelled = UiCancelled(&harness.ctx)
+    UiEnd(&harness.ctx)
+    testing.expect(t, !cancelled, "the text field took it")
+    testing.expect_value(t, UiFocused(&harness.ctx), Id(0))
+    frame(harness, Input{mouse_position = {-100, -100}, actions = {.CANCEL}})
+    field(&harness.ctx)
+    cancelled = UiCancelled(&harness.ctx)
+    UiEnd(&harness.ctx)
+    testing.expect(t, cancelled, "nothing is left to take it: the program closes its dialog")
+}
+
+@(test)
+test_keyboard_focus_scrolls_the_container_to_show_it :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    list :: proc(ctx: ^Context) {
+        if UiScroll(ctx, "list", {Fixed(120), Fixed(100)}) {
+            for i in 0 ..< 20 { UiButton(ctx, UiFormat(ctx, "Item %d##%d", i, i), {Grow(), {}}) }
+        }
+    }
+    actionFrame(harness, list)
+    actionFrame(harness, list, {.END})
+    actionFrame(harness, list)
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("list", "Item 19##19"))
+    testing.expect(t, UiScrollGet(&harness.ctx, UiIdPath("list")) > 300, "the last item is shown")
+    actionFrame(harness, list, {.PAGE_UP})
+    actionFrame(harness, list)
+    testing.expect(t, UiFocused(&harness.ctx) != UiIdPath("list", "Item 19##19") && UiFocused(&harness.ctx) != UiIdPath("list", "Item 18##18"))
+    actionFrame(harness, list, {.HOME})
+    actionFrame(harness, list)
+    actionFrame(harness, list)
+    testing.expect(t, UiScrollGet(&harness.ctx, UiIdPath("list")) < 10, "and back at the top (the first item shown with a margin)")
 }

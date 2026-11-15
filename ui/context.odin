@@ -91,6 +91,8 @@ Context :: struct {
     active: Id,                     // the widget that holds the mouse press
     focus: Id,                      // the widget that gets the keyboard, the gamepad and the navigation (see nav.odin)
     activate: bool,                 // UiActivate was called this frame
+    cancel_pending: bool,           // the cancel action came this frame and nothing took it yet (a dropdown, a text field: UiCancelled is what is left)
+    reveal: bool,                   // the focus moved this frame: a scrolling container shows the focused widget
     last_id: Id,                    // the last widget declared (UiNavLink works on it)
     problems: Problems,
     overflow: bool,
@@ -136,6 +138,8 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
     ctx.problems = {}
     ctx.overflow = false
     ctx.activate = false
+    ctx.cancel_pending = false
+    ctx.reveal = false
     for i in 0 ..< len(ctx.element_slots) {
         ctx.element_slots[i] = 0
     }
@@ -147,6 +151,12 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
     }
     if !input.mouse_down && !input.mouse_released {
         ctx.active = 0
+    }
+
+    // the default actions of this frame move the focus before any widget is declared, so the widgets of this frame see it
+    ctx.cancel_pending = .CANCEL in input.actions || .ESCAPE in input.keys
+    for action in Action {
+        if action in input.actions { UiAction(ctx, action) }
     }
 
     // the root covers the screen, every other element is inside of it

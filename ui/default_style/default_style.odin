@@ -135,6 +135,13 @@ FillRoundedBorder :: proc(painter: ^Painter, rect: ui.Rect, rounding: f32, color
     }
 }
 
+// The ring of the widget that has the focus (keyboard, gamepad, navigation): drawn behind the control, two pixels wider than it
+FocusRing :: proc(painter: ^Painter, info: ^ui.DrawInfo, rounding: f32 = -1) {
+    if .FOCUSED not_in info.flags { return }
+    theme: ^Theme = &painter.theme
+    FillRounded(painter, {info.rect.x - 2, info.rect.y - 2, info.rect.z + 4, info.rect.w + 4}, theme.rounding if rounding < 0 else rounding, theme.accent, theme.max_radius + 2)
+}
+
 // A text with its center at the center of the rect
 TextCentered :: proc(painter: ^Painter, text: string, rect: ui.Rect, size: f32, color: ui.Color) {
     measured: ui.Vec2 = painter.measure_text(painter, text, size)
@@ -181,6 +188,7 @@ DrawButton :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
     color: ui.Color = theme.control if .DISABLED in info.flags else ControlColor(theme, info)
+    FocusRing(painter, info)
     FillRounded(painter, info.rect, theme.rounding, color, theme.max_radius)
     TextCentered(painter, info.name, info.rect, info.font_size, textColor(theme, info))
 }
@@ -190,6 +198,7 @@ DrawToggle :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     theme: ^Theme = &painter.theme
     box: ui.Rect = {info.rect.x, info.rect.y, info.rect.w, info.rect.w}
     on: bool = .ON in info.flags
+    FocusRing(painter, &{rect = box, flags = info.flags})
     FillRoundedBorder(painter, box, theme.rounding, theme.accent if on else ControlColor(theme, info), theme.border, theme.border_width, theme.max_radius)
     if on {
         // a check mark inside of the box
@@ -204,6 +213,7 @@ DrawSlider :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     theme: ^Theme = &painter.theme
     rect: ui.Rect = info.rect
     // a bar that fills up to the value, a thin handle at the end of the fill, the name and the number on it
+    FocusRing(painter, info)
     FillRounded(painter, rect, theme.rounding, theme.track, theme.max_radius)
     width: f32 = rect.z * info.value
     if width > 0 {
@@ -255,6 +265,7 @@ DrawSeparator :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
 DrawDropdown :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
+    FocusRing(painter, info)
     FillRounded(painter, info.rect, theme.rounding, ControlColor(theme, info), theme.max_radius)
     TextLeft(painter, info.text, info.rect, info.font_size, ctx.style.metrics.padding.x, textColor(theme, info))
     // an arrow that turns up when the list is open
@@ -272,7 +283,11 @@ DrawDropdown :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
 DrawDropdownItem :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
-    if .SELECTED in info.flags {
+    if .FOCUSED in info.flags {
+        // the focused option: a frame in the accent color, drawn inside of the row so the list does not overlap itself
+        FillRounded(painter, info.rect, theme.rounding * 0.6, theme.accent, theme.max_radius)
+        FillRounded(painter, ui.RectShrink(info.rect, 2), theme.rounding * 0.5, ui.ColorLerp(theme.control, theme.accent, 0.35) if .SELECTED in info.flags else theme.control_hover, theme.max_radius)
+    } else if .SELECTED in info.flags {
         FillRounded(painter, info.rect, theme.rounding * 0.6, ui.ColorLerp(theme.control, theme.accent, 0.6), theme.max_radius)
     } else if info.hover > 0.01 {
         FillRounded(painter, info.rect, theme.rounding * 0.6, ui.ColorLerp(theme.panel, theme.control_hover, info.hover), theme.max_radius)
