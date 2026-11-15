@@ -92,12 +92,19 @@ Context :: struct {
     active: Id,                     // the widget that holds the mouse press
     focus: Id,                      // the widget that gets the keyboard, the gamepad and the navigation (see nav.odin)
     hover_root: Id,                 // the floating element (popup, window) the hovered widget is in, 0 for the main layer
+    focus_memory: [UI_MAX_ROOTS * 2]FocusMemory,     // per window or popup: the widget in it that had the focus last
+    focus_memory_count: int,
+    drag: DragState,
+    press_position: Vec2,           // where the last press was (a drag starts some pixels from it)
+    tag_stack: [16]Id,
+    tag_count: int,
     disabled_depth: int,            // UiDisabled scopes that are open
     animating: bool,                // some fade of the last frame had not arrived yet (UiAnimating)
     cursor: Cursor,                 // what the pointer is over (UiCursor)
     last_press_id: Id,              // the widget of the last press and when, for double clicks
     last_press_time: f64,
     peak: Usage,                    // the highest use of each buffer so far (UiUsage)
+    hover_info: Id,                 // the HOVER element under the pointer
     reveal_open: Id,                // the body of a header that was just opened: a scrolling container shows it (as much as fits) once it is laid out
     modal_root: Id,                 // the dialog that was open at the end of the last frame: navigation stays in it
     modal_next: Id,
@@ -156,6 +163,7 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
     ctx.overflow = false
     ctx.activate = false
     ctx.disabled_depth = 0
+    ctx.tag_count = 0
     ctx.menu_close = false
     ctx.menu_depth = 0
     ctx.fold_count = 0
@@ -206,6 +214,8 @@ UiEnd :: proc(ctx: ^Context) {
         ctx.command_count = 0
     }
     stateCollect(ctx)
+    focusMemoryRecord(ctx)
+    dragEnd(ctx)
     ctx.modal_root, ctx.modal_next = ctx.modal_next, 0
     if ctx.focus != 0 && stateFind(ctx, ctx.focus) == nil {
         ctx.focus = 0           // the focused widget is gone
@@ -255,6 +265,7 @@ UiElementRect :: proc(ctx: ^Context, id: Id) -> (rect: Rect, found: bool) {
 @(private)
 hoverUpdate :: proc(ctx: ^Context) {
     ctx.hover = 0
+    ctx.hover_info = 0
     ctx.cursor = .ARROW
     ctx.hover_root = 0
     ctx.hover_scroll = 0
@@ -265,6 +276,7 @@ hoverUpdate :: proc(ctx: ^Context) {
         box: ^HitBox = &ctx.hits[i]
         if !RectContains(box.rect, point) || !RectContains(box.clip_rect, point) { continue }
         ctx.pointer_over_ui = true
+        if .HOVER in box.kinds && ctx.hover_info == 0 { ctx.hover_info = box.id }
         if .INTERACTIVE in box.kinds && ctx.hover == 0 {
             ctx.hover = box.id
             ctx.hover_root = box.root
@@ -353,6 +365,35 @@ follow :: proc(value: ^f32, target: f32, step: f32) -> bool {
     }
     value^ += (target - value^) * step
     return true
+}
+
+@(private)
+FocusMemory :: struct {
+    root: Id,
+    focus: Id,
+}
+
+// Remembers which widget of which window (or popup: a floating root, 0 for the main layer) has the focus now
+@(private)
+focusMemoryRecord :: proc(ctx: ^Context) {
+    if ctx.focus == 0 { return }
+    for i in 0 ..< ctx.hit_count {
+        box: ^HitBox = &ctx.hits[i]
+        if box.id != ctx.focus { continue }
+        for &entry in ctx.focus_memory[:ctx.focus_memory_count] {
+            if entry.root == box.root {
+                entry.focus = ctx.focus
+                return
+            }
+        }
+        if ctx.focus_memory_count < len(ctx.focus_memory) {
+            ctx.focus_memory[ctx.focus_memory_count] = {box.root, ctx.focus}
+            ctx.focus_memory_count += 1
+        } else {
+            ctx.focus_memory[int(ctx.frame) % len(ctx.focus_memory)] = {box.root, ctx.focus}     // full: replaces one
+        }
+        return
+    }
 }
 
 // Frames a widget may be left out of before the ui forgets its state

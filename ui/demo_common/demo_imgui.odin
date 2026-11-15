@@ -67,6 +67,8 @@ histogram: [12]f32
 progress: f32
 show_second_header: bool
 disable_block: bool
+slot_items: [3]string
+item_names: [3]string = {"Apple", "Banana", "Cherry"}
 wrap_width: f32
 scroll_to: f32
 // popups
@@ -99,6 +101,7 @@ init :: proc(ctx: ^kit.Context) {
     tab = 0
     progress = 0.25
     show_second_header = false
+    slot_items = {}
     wrap_width = 260
     modal_open, dont_ask = false, false
     popup_choice = "nothing"
@@ -322,11 +325,44 @@ section_widgets :: proc(c: ^ui.Context) {
         ui.UiLabelColored(c, "Pink", {255, 0, 255, 255})
         ui.UiLabelColored(c, "Yellow", {255, 255, 0, 255})
         ui.UiLabelColored(c, "Disabled", {120, 124, 140, 255})
+        ui.UiSeparatorText(c, "Truncated text")
+        if ui.UiBox(c, {layout = {size = {ui.Fixed(wrap_width), {}}}}) {
+            ui.UiLabelTruncated(c, "This long text is cut with dots when it does not fit; hover it to read all of it")
+        }
         ui.UiSeparatorText(c, "Word Wrapping")
         ui.UiSlider(c, "Wrap width", &wrap_width, 100, 460, {}, "%.0f")
         if ui.UiBox(c, {layout = {size = {ui.Fixed(wrap_width), {}}}}) {
             ui.UiLabel(c, "This text should automatically wrap on the edge of the box that is as wide as the slider says. It is the wrap of the layout.", .WORDS)
         }
+    }
+    if ui.UiTreeNode(c, "Drag and Drop") {
+        ui.UiLabel(c, "Drag an item onto a slot (the payload is a number kept by the ui):")
+        if ui.UiRow(c) {
+            for i in 0 ..< 3 {
+                ui.UiSelectable(c, ui.UiFormat(c, "Item %d##drag%d", i, i), false, {ui.Fixed(90), {}})
+                item: int = i
+                ui.UiDragSourceValue(c, "item", &item)
+            }
+        }
+        if ui.UiRow(c) {
+            for slot in 0 ..< 3 {
+                label: string = ui.UiFormat(c, "Slot %d: %s##slot%d", slot, slot_items[slot] if slot_items[slot] != "" else "empty", slot)
+                ui.UiSelectable(c, label, ui.UiDropHover(c, "item"), {ui.Fixed(140), {}})
+                if payload, dropped := ui.UiDropTarget(c, "item"); dropped {
+                    value: int = (^int)(raw_data(payload))^
+                    slot_items[slot] = item_names[value]
+                }
+            }
+        }
+        if _, dragging := ui.UiDragging(c); dragging { ui.UiDragPreview(c, "dragging an item") }
+    }
+    if ui.UiTreeNode(c, "Styles with tags") {
+        if ui.UiRow(c) {
+            ui.UiButton(c, "Normal")
+            if ui.UiTagged(c, "primary") { ui.UiButton(c, "Primary") }
+            if ui.UiTagged(c, "danger") { ui.UiButton(c, "Delete") }
+        }
+        ui.UiLabelColored(c, "a style looks at the tags of a widget (DrawInfoHasTag)", {140, 144, 160, 255})
     }
     if ui.UiTreeNode(c, "Combo") {
         ui.UiDropdown(c, "combo 1", combo_items[:], &combo_item, {ui.Fixed(170), {}})

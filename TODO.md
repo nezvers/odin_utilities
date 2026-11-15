@@ -10,11 +10,11 @@ Kept by hand and by Claude: tick an item when it is done and verified (tests pas
 - [x] `Interaction.double_clicked` (press history of the last press: id + time)
 - [x] Cursor hints: `UiCursor(ctx)` (arrow, text, hand, resize, not allowed) from the widget under the pointer, applied by the glue
 - [x] `UiUsage(ctx)`: elements, commands, text lines, text bytes, states, roots: now and the highest so far, for sizing `Storage`
-- [ ] Focus memory per container: leaving and entering a window / panel / tab again returns to its last focused child (RAD `default_nav_focus_*`)
-- [ ] Style tags: `UiPushTag(ctx, "danger")` / `UiPopTag`, `DrawInfo.tag`, so a style picks colors by tag without new StyleKinds
-- [ ] Text truncation with "..." and the full text as a tooltip on hover
-- [ ] Drag and drop with a small payload (source, target, a fixed buffer for the data)
-- [ ] Shrink priority ("strictness" of RAD sizes): which child of an overfull container gives way first
+- [x] Focus memory per container: leaving and entering a window / panel / tab again returns to its last focused child (RAD `default_nav_focus_*`)
+- [x] Style tags: `UiPushTag(ctx, "danger")` / `UiPopTag`, `DrawInfo.tag`, so a style picks colors by tag without new StyleKinds
+- [x] Text truncation with "..." and the full text as a tooltip on hover
+- [x] Drag and drop with a small payload (source, target, a fixed buffer for the data)
+- [x] Shrink priority ("strictness" of RAD sizes): which child of an overfull container gives way first
 
 ## odin_plug
 - [x] Thread names (`SetThreadDescription`): audio threads, graph pool workers, device and capture threads, simulated driver thread; a `platform.ThreadName`

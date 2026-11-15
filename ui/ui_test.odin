@@ -977,3 +977,175 @@ test_fades_are_frame_rate_independent_and_report_animating :: proc(t: ^testing.T
     }
     testing.expect(t, !UiAnimating(&harness.ctx), "and it arrived")
 }
+
+@(test)
+test_a_truncated_text_ends_in_dots_and_shows_itself_in_a_tooltip :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    // 8 px per character: 15 characters are 120 px, the box is 80 px (10 characters, 7 of the text and "...")
+    label :: proc(ctx: ^Context) {
+        if UiBox(ctx, {layout = {size = {Fixed(80), Fit()}}}) {
+            UiLabelTruncated(ctx, "abcdefghijklmno")
+        }
+    }
+    for i in 0 ..< 3 {
+        frame(harness, pointerAt({10, 8}))
+        label(&harness.ctx)
+        UiEnd(&harness.ctx)
+        _ = i
+    }
+    saw_tooltip: bool
+    for command in UiCommands(&harness.ctx) {
+        if command.kind == .DRAW && command.info.kind == .LABEL {
+            if .TRUNCATED in command.info.flags {
+                testing.expect_value(t, command.info.text, "abcdefg...")
+                testing.expect_value(t, command.info.name, "abcdefghijklmno")
+            } else if command.info.text == "abcdefghijklmno" {
+                saw_tooltip = true                              // the whole text in the tooltip
+            }
+        }
+    }
+    testing.expect(t, saw_tooltip, "the whole text is shown while the pointer is on it")
+    // wide enough: the text as it is, no tooltip
+    wide :: proc(ctx: ^Context) {
+        if UiBox(ctx, {layout = {size = {Fixed(200), Fit()}}}) { UiLabelTruncated(ctx, "abcdefghijklmno") }
+    }
+    for i in 0 ..< 3 {
+        frame(harness, pointerAt({10, 8}))
+        wide(&harness.ctx)
+        UiEnd(&harness.ctx)
+        _ = i
+    }
+    count: int
+    for command in UiCommands(&harness.ctx) {
+        if command.kind == .DRAW && command.info.kind == .LABEL {
+            count += 1
+            testing.expect(t, .TRUNCATED not_in command.info.flags)
+        }
+    }
+    testing.expect_value(t, count, 1)
+}
+
+@(test)
+test_tags_reach_the_style_and_nest :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    frame(harness)
+    UiButton(&harness.ctx, "plain")
+    if UiTagged(&harness.ctx, "danger") {
+        UiButton(&harness.ctx, "delete")
+        if UiTagged(&harness.ctx, "flat") { UiButton(&harness.ctx, "both") }
+    }
+    UiButton(&harness.ctx, "after")
+    UiEnd(&harness.ctx)
+    found: [4]bool
+    for command in UiCommands(&harness.ctx) {
+        if command.kind != .DRAW || command.info.kind != .BUTTON { continue }
+        info: DrawInfo = command.info
+        switch info.name {
+        case "plain": found[0] = !DrawInfoHasTag(&info, "danger")
+        case "delete": found[1] = DrawInfoHasTag(&info, "danger") && !DrawInfoHasTag(&info, "flat")
+        case "both": found[2] = DrawInfoHasTag(&info, "danger") && DrawInfoHasTag(&info, "flat")
+        case "after": found[3] = !DrawInfoHasTag(&info, "danger")
+        }
+    }
+    testing.expect_value(t, found, [4]bool{true, true, true, true})
+}
+
+@(test)
+test_shrink_priority_decides_who_gives_way_first :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    frame(harness)
+    // a row of 200 with two containers of a text of 6 words (136 px each, a word is 16): both have to shrink 72 together, and the one with the higher
+    // shrink number only after the other is at its minimum
+    ElementOpen(&harness.ctx, {id = 10, layout = {size = {Fixed(200), Fixed(30)}, direction = .LEFT_TO_RIGHT}})
+    ElementOpen(&harness.ctx, {id = 11, layout = {size = {{kind = .FIT, shrink = 1}, Fit()}}})
+    TextOpen(&harness.ctx, "aa aa aa aa aa aa", {wrap = .WORDS})
+    ElementClose(&harness.ctx)
+    ElementOpen(&harness.ctx, {id = 12, layout = {size = {{kind = .FIT, shrink = 0}, Fit()}}})
+    TextOpen(&harness.ctx, "aa aa aa aa aa aa", {wrap = .WORDS})
+    ElementClose(&harness.ctx)
+    ElementClose(&harness.ctx)
+    UiEnd(&harness.ctx)
+    keeps, _ := UiElementRect(&harness.ctx, 11)
+    gives, _ := UiElementRect(&harness.ctx, 12)
+    testing.expect(t, near(gives.z, 64), "the element with the lower number shrank until the row fits (136 - 72)")
+    testing.expect(t, near(keeps.z, 136), "the one with the higher number kept its size")
+}
+
+@(test)
+test_drag_and_drop_moves_a_payload_between_widgets :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    @(static) dropped_value: int
+    @(static) dragging_seen: bool
+    dropped_value = -1
+    dragging_seen = false
+    build :: proc(ctx: ^Context) {
+        ElementOpen(ctx, {layout = {direction = .LEFT_TO_RIGHT, gap = 20}})
+        UiButton(ctx, "Item", {Fixed(80), Fixed(30)})
+        item: int = 42
+        if UiDragSourceValue(ctx, "item", &item) { dragging_seen = true }
+        UiButton(ctx, "Slot", {Fixed(80), Fixed(30)})
+        if payload, dropped := UiDropTarget(ctx, "item"); dropped { dropped_value = (^int)(raw_data(payload))^ }
+        UiButton(ctx, "Other", {Fixed(80), Fixed(30)})
+        if _, dropped := UiDropTarget(ctx, "something else"); dropped { dropped_value = -2 }      // another kind: never
+        ElementClose(ctx)
+    }
+    inputs: [8]Input = {
+        pointerAt({-100, -100}),
+        pointerAt({20, 12}),
+        pointerAt({20, 12}, down = true, pressed = true),
+        pointerAt({40, 12}, down = true),                           // 20 px away: the drag starts
+        pointerAt({120, 12}, down = true),                          // over the slot
+        pointerAt({120, 12}, released = true),                      // let go: dropped
+        pointerAt({120, 12}),
+        pointerAt({120, 12}),
+    }
+    for input in inputs {
+        frame(harness, input)
+        build(&harness.ctx)
+        UiEnd(&harness.ctx)
+    }
+    testing.expect(t, dragging_seen, "the source knew it was dragged")
+    testing.expect_value(t, dropped_value, 42)
+    _, still_dragging := UiDragging(&harness.ctx)
+    testing.expect(t, !still_dragging, "the drag ended with the button")
+}
+
+@(test)
+test_focus_returns_to_the_remembered_widget_of_a_window :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    two_windows :: proc(ctx: ^Context) {
+        if UiWindow(ctx, "A", {0, 0}, {Fixed(100), {}}) {
+            UiButton(ctx, "a1")
+            UiButton(ctx, "a2")
+        }
+        if UiWindow(ctx, "B", {200, 0}, {Fixed(100), {}}) {
+            UiButton(ctx, "b1")
+            UiButton(ctx, "b2")
+        }
+    }
+    actionFrame(harness, two_windows)
+    actionFrame(harness, two_windows, {.FOCUS_NEXT})            // a1
+    actionFrame(harness, two_windows, {.FOCUS_NEXT})            // a2
+    actionFrame(harness, two_windows, {.FOCUS_NEXT})            // b1: the first of window B (nothing remembered there)
+    actionFrame(harness, two_windows, {.FOCUS_NEXT})            // b2
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("B", "b2"))
+    actionFrame(harness, two_windows, {.FOCUS_NEXT})            // around the end: window A again, at the widget that had the focus there: a2
+    actionFrame(harness, two_windows)
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("A", "a2"))
+    actionFrame(harness, two_windows, {.FOCUS_PREV})            // a1
+    actionFrame(harness, two_windows, {.FOCUS_PREV})            // around the start into window B, at its b2 (the last widget that had the focus there)
+    actionFrame(harness, two_windows)
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("B", "b2"))
+    UiFocusRoot(&harness.ctx, UiIdPath("A"))
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("A", "a1"))     // window A: where its focus was last
+}

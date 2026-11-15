@@ -442,9 +442,25 @@ UiLabelText :: proc(ctx: ^Context, name: string, value: string) {
     ElementClose(ctx)
 }
 
+// A text that ends in "..." when its container is too narrow for it, and shows the whole text in a tooltip while the pointer is on it
+UiLabelTruncated :: proc(ctx: ^Context, text: string, width: SizingAxis = {}) {
+    shown: string = IdSplitName(text)
+    id: Id = UiId(ctx, text)
+    state: ^WidgetState = stateGet(ctx, id)
+    ElementOpen(ctx, {id = id, layout = {size = {width if width != {} else Grow(), Fit()}}, hit = {.HOVER}})
+    TextOpen(ctx, shown, {wrap = .TRUNCATE})
+    ElementClose(ctx)
+    if state.open && ctx.hover_info == id { tooltipBox(ctx, shown) }
+}
+
 // A box with a text that appears at the pointer while the widget declared just before is hovered
 UiTooltip :: proc(ctx: ^Context, text: string) {
     if !UiIsHovered(ctx, ctx.last_id) { return }
+    tooltipBox(ctx, text)
+}
+
+@(private)
+tooltipBox :: proc(ctx: ^Context, text: string) {
     ElementOpen(ctx, {
         layout = {padding = PaddingXY(8, 5)},
         floating = {attach_to = .ROOT, offset = ctx.input.mouse_position + {14, 18}, z_index = 400},

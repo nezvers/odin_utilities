@@ -38,6 +38,10 @@ ElementOpen :: proc(ctx: ^Context, decl: Decl) -> bool {
         clip = elementClipTop(ctx),
         root = ctx.root_stack[ctx.root_stack_count - 1] if ctx.root_stack_count > 0 else 0,
     }
+    // the tags that are pushed now, innermost first
+    for i in 0 ..< min(ctx.tag_count, DRAW_TAGS) {
+        element.decl.draw.tags[i] = ctx.tag_stack[ctx.tag_count - 1 - i]
+    }
     // inside of a UiDisabled scope nothing takes the pointer or the focus and everything is drawn disabled
     if ctx.disabled_depth > 0 {
         if .INTERACTIVE in element.decl.hit { element.decl.cursor = .NOT_ALLOWED }
@@ -239,6 +243,9 @@ TextOpen :: proc(ctx: ^Context, text: string, config: TextConfig = {}) {
     element.text.contains_newlines = newlines
     element.size = {preferred.x, line_height}
     element.min_size = {min_width, line_height}
+    if text_config.wrap == .TRUNCATE {
+        element.min_size.x = ctx.measure(ctx, "...", text_config.font_size).x         // it can shrink down to the dots
+    }
     parent.children_count += 1
 }
 
@@ -395,7 +402,7 @@ sizeChildren :: proc(ctx: ^Context, parent_index: i32, x_axis: bool) {
         child: ^Element = &ctx.elements[child_index]
         sizing: SizingAxis = sizingOf(child, x_axis)
         child_size: f32 = sizeAxisOf(child, x_axis)^
-        if sizing.kind != .PERCENT && sizing.kind != .FIXED && (!child.is_text || child.text.config.wrap == .WORDS) {
+        if sizing.kind != .PERCENT && sizing.kind != .FIXED && (!child.is_text || child.text.config.wrap == .WORDS || child.text.config.wrap == .TRUNCATE) {
             resizable[resizable_count] = child_index
             resizable_count += 1
         }
@@ -430,10 +437,18 @@ sizeChildren :: proc(ctx: ^Context, parent_index: i32, x_axis: bool) {
             // too much content: shrink what may shrink, the biggest first. A clipping container lets its content be bigger.
             if !clips_axis {
                 for to_distribute < -LAYOUT_EPSILON && resizable_count > 0 {
+                    // the elements that give way first: the lowest shrink number among those that can still shrink
+                    first_group: i8 = 127
+                    for i in 0 ..< resizable_count {
+                        first_group = min(first_group, sizingOf(&ctx.elements[resizable[i]], x_axis).shrink)
+                    }
                     largest: f32 = 0
                     second_largest: f32 = 0
                     to_add: f32 = to_distribute
+                    group_count: int = 0
                     for i in 0 ..< resizable_count {
+                        if sizingOf(&ctx.elements[resizable[i]], x_axis).shrink != first_group { continue }
+                        group_count += 1
                         child_size: f32 = sizeAxisOf(&ctx.elements[resizable[i]], x_axis)^
                         if floatEqual(child_size, largest) { continue }
                         if child_size > largest {
@@ -445,9 +460,10 @@ sizeChildren :: proc(ctx: ^Context, parent_index: i32, x_axis: bool) {
                             to_add = second_largest - largest
                         }
                     }
-                    to_add = max(to_add, to_distribute / f32(resizable_count))
+                    to_add = max(to_add, to_distribute / f32(group_count))
                     for i := 0; i < resizable_count; i += 1 {
                         child: ^Element = &ctx.elements[resizable[i]]
+                        if sizingOf(child, x_axis).shrink != first_group { continue }
                         size: ^f32 = sizeAxisOf(child, x_axis)
                         min_size: f32 = child.min_size.x if x_axis else child.min_size.y
                         previous: f32 = size^
@@ -567,6 +583,11 @@ textWrapAll :: proc(ctx: ^Context) {
         data.line_count = 0
         line_height: f32 = config.line_height if config.line_height > 0 else data.preferred.y
 
+        if config.wrap == .TRUNCATE {
+            textTruncate(ctx, element)
+            continue
+        }
+
         if !data.contains_newlines && data.preferred.x <= element.size.x + LAYOUT_EPSILON {
             if ctx.line_count < len(ctx.lines) {
                 ctx.lines[ctx.line_count] = {start = 0, length = i32(len(data.text)), width = data.preferred.x}
@@ -619,6 +640,41 @@ textWrapAll :: proc(ctx: ^Context) {
             textAddLine(ctx, data, line_start, line_length, line_width)
         }
         element.size.y = line_height * f32(data.line_count)
+    }
+}
+
+// A text that is wider than its element gets one line: as much of its start as fits with "..." after it. The container of the text (when it has an id) is
+// told that it is truncated, so that it can show the whole text in a tooltip.
+@(private)
+textTruncate :: proc(ctx: ^Context, element: ^Element) {
+    data: ^TextData = &element.text
+    config: TextConfig = data.config
+    element.size.y = config.line_height if config.line_height > 0 else data.preferred.y
+    fits: bool = data.preferred.x <= element.size.x + LAYOUT_EPSILON
+    line: TextLine = {start = 0, length = i32(len(data.text)), width = data.preferred.x}
+    if !fits {
+        dots: f32 = ctx.measure(ctx, "...", config.font_size).x
+        end: int = len(data.text)
+        for end > 0 {
+            // one character less (a character is one rune: a UTF-8 continuation byte is not the start of one)
+            end -= 1
+            for end > 0 && data.text[end] & 0xC0 == 0x80 { end -= 1 }
+            if ctx.measure(ctx, data.text[:end], config.font_size).x + dots <= element.size.x { break }
+        }
+        line = {start = 0, length = i32(end), width = ctx.measure(ctx, data.text[:end], config.font_size).x + dots, ellipsis = true}
+    }
+    data.line_start = i32(ctx.line_count)
+    data.line_count = 0
+    if ctx.line_count < len(ctx.lines) {
+        ctx.lines[ctx.line_count] = line
+        ctx.line_count += 1
+        data.line_count = 1
+    } else {
+        ctx.problems += {.LINES_FULL}
+    }
+    if element.parent >= 0 {
+        state: ^WidgetState = stateFind(ctx, ctx.elements[element.parent].id)
+        if state != nil { state.open = !fits }
     }
 }
 
@@ -946,9 +1002,15 @@ textCommands :: proc(ctx: ^Context, element: ^Element, rect: Rect, clip_rect: Re
         case .RIGHT:
         }
         text: string = data.text[line.start:line.start + line.length]
+        flags: Flags = {}
+        if line.ellipsis {
+            text = UiFormat(ctx, "%s...", text)
+            flags += {.TRUNCATED}
+        }
         layoutCommand(ctx, {kind = .DRAW, info = {
             kind = config.kind,
             rect = {rect.x + offset, rect.y + y, line.width, natural_height},
+            flags = flags,
             text = text,
             name = data.text,
             font_size = config.font_size,

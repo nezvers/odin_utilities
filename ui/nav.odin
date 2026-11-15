@@ -122,9 +122,49 @@ focusCycle :: proc(ctx: ^Context, step: int) -> bool {
         if focusable(ctx, &ctx.hits[target]) { break }
     }
     if ctx.hits[target].id == ctx.focus { return false }
+    // moving into another window or popup: back to the widget that had the focus there, not to its first one
+    if ctx.hits[target].root != ctx.hits[current].root {
+        if remembered: Id = focusMemoryOf(ctx, ctx.hits[target].root); remembered != 0 {
+            ctx.focus = remembered
+            ctx.reveal = true
+            return true
+        }
+    }
     ctx.focus = ctx.hits[target].id
     ctx.reveal = true
     return true
+}
+
+// The widget of this window (or popup, a floating root; 0 is the main layer) that had the focus last, when it is still there
+@(private)
+focusMemoryOf :: proc(ctx: ^Context, root: Id) -> Id {
+    for entry in ctx.focus_memory[:ctx.focus_memory_count] {
+        if entry.root != root { continue }
+        for i in 0 ..< ctx.hit_count {
+            box: ^HitBox = &ctx.hits[i]
+            if box.id == entry.focus && box.root == root && focusable(ctx, box) { return entry.focus }
+        }
+    }
+    return 0
+}
+
+// Enters a window or popup (a floating root: the id of its element, UiIdPath("Window")): the widget that had the focus in it, or its first one.
+// With the main layer (root 0) it is the same for what is not in a window.
+UiFocusRoot :: proc(ctx: ^Context, root: Id) -> bool {
+    if remembered: Id = focusMemoryOf(ctx, root); remembered != 0 {
+        ctx.focus = remembered
+        ctx.reveal = true
+        return true
+    }
+    for i in 0 ..< ctx.hit_count {
+        box: ^HitBox = &ctx.hits[i]
+        if box.root == root && focusable(ctx, box) {
+            ctx.focus = box.id
+            ctx.reveal = true
+            return true
+        }
+    }
+    return false
 }
 
 // A page up or down: the focus moves through the widgets in that direction until it has gone as far as the container it is in is high

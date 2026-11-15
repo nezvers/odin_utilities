@@ -28,6 +28,7 @@ Theme :: struct {
     track: ui.Color,                // the empty part of sliders and progress bars
     accent: ui.Color,               // what is on, filled, selected, focused
     accent_text: ui.Color,
+    danger: ui.Color,               // controls with the tag "danger"
     rounding: f32,                  // controls: 0 sharp .. 1 full round
     panel_rounding: f32,
     max_radius: f32,                // pixels, 0: no limit
@@ -45,6 +46,7 @@ THEME_DARK :: Theme{
     track = {24, 26, 32, 255},
     accent = {86, 156, 240, 255},
     accent_text = {255, 255, 255, 255},
+    danger = {190, 60, 60, 255},
     rounding = 0.3,
     panel_rounding = 0.08,
     max_radius = 12,
@@ -204,7 +206,15 @@ TextRight :: proc(painter: ^Painter, text: string, rect: ui.Rect, size: f32, pad
 
 // The color of a control through its states: base, then hover, then pressed (the style animates with info.hover and info.press)
 ControlColor :: proc(theme: ^Theme, info: ^ui.DrawInfo) -> ui.Color {
-    color: ui.Color = ui.ColorLerp(theme.control, theme.control_hover, info.hover)
+    base: ui.Color = theme.control
+    hover: ui.Color = theme.control_hover
+    // tags: "danger" and "primary" controls are tinted, the states are the same
+    if ui.DrawInfoHasTag(info, "danger") {
+        base, hover = ui.ColorLerp(theme.control, theme.danger, 0.55), ui.ColorLerp(theme.control_hover, theme.danger, 0.8)
+    } else if ui.DrawInfoHasTag(info, "primary") {
+        base, hover = ui.ColorLerp(theme.control, theme.accent, 0.55), ui.ColorLerp(theme.control_hover, theme.accent, 0.8)
+    }
+    color: ui.Color = ui.ColorLerp(base, hover, info.hover)
     return ui.ColorLerp(color, theme.control_pressed, info.press)
 }
 

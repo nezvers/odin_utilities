@@ -69,6 +69,15 @@ Widget state is kept for 2 frames after the last declaration (`STATE_GRACE_FRAME
 within 0.35 s. `UiCursor(&ctx)` is what the mouse cursor should look like (the glue's `ApplyCursor` sets it). `UiUsage(&ctx)` returns the use of the buffers now and the highest so far,
 to size a `Storage` and `UI_STATES`.
 
+## Focus memory, tags, truncated text, drag and drop, shrink priority
+- Moving the focus with Tab into another window or popup returns to the widget that had the focus there (`UiFocusRoot(&ctx, window_id)` does it from code).
+- `UiPushTag(&ctx, "danger")` / `UiPopTag` or the block `if ui.UiTagged(&ctx, "danger") { ... }` put tags on the widgets declared inside; a style asks `DrawInfoHasTag(info, "danger")`
+  (the default style tints "danger" and "primary" controls).
+- `UiLabelTruncated(&ctx, text)` (or `TextConfig{wrap = .TRUNCATE}`) ends in "..." when its container is too narrow and shows the whole text in a tooltip while hovered.
+- `UiDragSource(&ctx, "kind", bytes)` / `UiDragSourceValue` after a widget, `UiDropTarget(&ctx, "kind")` and `UiDropHover` after another, `UiDragPreview(&ctx, text)`: a payload of up to 64 bytes
+  kept by the ui, a drag starts 5 px from the press.
+- `SizingAxis.shrink`: in an overfull container the elements with the lowest number shrink first, the others only once those are at their minimum.
+
 ## Styles
 A `Style` is a table of procs per `StyleKind` (PANEL, LABEL, BUTTON, TOGGLE, SLIDER, PROGRESS, TEXT_FIELD, SEPARATOR, DROPDOWN, DROPDOWN_ITEM, SCROLLBAR,
 CUSTOM), a `clip` proc for the scissor (nested clips are resolved for you) and `Metrics` (font size, padding, control height).

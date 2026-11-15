@@ -4,6 +4,19 @@ package ui
 // what is known about the element (DrawInfo). The user decides how a button, a slider or a progress bar looks, in any framework, with
 // any number of draw calls, in the same render batch as the rest of the frame (UiRender is called wherever the frame wants the ui).
 
+// How many tags of the stack a widget keeps
+DRAW_TAGS :: 4
+
+// The widget was declared inside of `UiTagged(&ctx, name)` / between UiPushTag and UiPopTag of this name: a style picks colors and shapes by tag
+// ("danger", "primary", "flat"...) without a StyleKind for every variant
+DrawInfoHasTag :: proc(info: ^DrawInfo, name: string) -> bool {
+    wanted: Id = IdFromString(name)
+    for tag in info.tags {
+        if tag == wanted { return true }
+    }
+    return false
+}
+
 // What kind of thing an element is, so Style.procs picks the proc that draws it
 StyleKind :: enum u8 {
     NONE,               // layout only, nothing to draw
@@ -45,6 +58,7 @@ Flag :: enum u8 {
     ON,                 // a toggle that is on
     SELECTED,           // the chosen option of a list
     OPEN,               // a dropdown that shows its list
+    TRUNCATED,          // a text line that was cut short: DrawInfo.name has the whole text
 }
 Flags :: bit_set[Flag; u8]
 
@@ -72,6 +86,7 @@ DrawInfo :: struct {
     font_size: f32,
     align: TextAlign,
     cursor: int,            // text field: byte offset of the cursor
+    tags: [DRAW_TAGS]Id,    // the tags that were pushed when the widget was declared, the innermost first (UiPushTag); DrawInfoHasTag
     values: []f32,          // plots: the numbers (they have to live until the frame is rendered)
     color: Color,           // swatches and colored text
     custom: StyleProc,      // kind == .CUSTOM: the user's own draw proc

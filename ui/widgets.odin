@@ -82,6 +82,7 @@ widgetBehavior :: proc(ctx: ^Context, id: Id, disabled: bool = false) -> Interac
         result.double_clicked = ctx.last_press_id == id && ctx.time - ctx.last_press_time <= DOUBLE_CLICK_SECONDS
         ctx.last_press_id = id
         ctx.last_press_time = ctx.time
+        ctx.press_position = ctx.input.mouse_position
     }
     if ctx.activate && ctx.focus == id {
         result.clicked = true       // the confirm key or button of a gamepad
@@ -89,7 +90,7 @@ widgetBehavior :: proc(ctx: ^Context, id: Id, disabled: bool = false) -> Interac
     }
     result.pressed = ctx.active == id
     if ctx.active == id && ctx.input.mouse_released {
-        result.clicked = ctx.hover == id
+        result.clicked = ctx.hover == id && !(ctx.drag.active && ctx.drag.source == id)       // a drag that ends on its source is not a click
         ctx.active = 0
     }
     return result
@@ -638,4 +639,28 @@ UiCustom :: proc(ctx: ^Context, name: string, draw: StyleProc, size: Size, user:
     })
     ElementClose(ctx)
     return interaction
+}
+
+// Tags for styles: everything declared until UiPopTag carries the tag (nested tags are all kept, the innermost first, up to DRAW_TAGS).
+//     ui.UiPushTag(&ctx, "danger"); ui.UiButton(&ctx, "Delete"); ui.UiPopTag(&ctx)
+UiPushTag :: proc(ctx: ^Context, name: string) {
+    if ctx.tag_count < len(ctx.tag_stack) {
+        ctx.tag_stack[ctx.tag_count] = IdFromString(name)
+        ctx.tag_count += 1
+    }
+}
+
+UiPopTag :: proc(ctx: ^Context) {
+    if ctx.tag_count > 0 { ctx.tag_count -= 1 }
+}
+
+// The block form: `if ui.UiTagged(&ctx, "danger") { ui.UiButton(&ctx, "Delete") }`
+@(deferred_in = UiTaggedEnd)
+UiTagged :: proc(ctx: ^Context, name: string) -> bool {
+    UiPushTag(ctx, name)
+    return true
+}
+
+UiTaggedEnd :: proc(ctx: ^Context, name: string) {
+    UiPopTag(ctx)
 }

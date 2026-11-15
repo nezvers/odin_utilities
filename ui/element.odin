@@ -46,6 +46,7 @@ SizingAxis :: struct {
     min: f32,
     max: f32,           // 0 means no limit
     percent: f32,
+    shrink: i8,         // when the container is too small: the elements with the lowest number shrink first, the others only once those are at their minimum (default 0)
 }
 
 Fit :: proc(min: f32 = 0, max: f32 = 0) -> SizingAxis {
@@ -153,6 +154,7 @@ HitKind :: enum u8 {
     INTERACTIVE,        // hover, press (buttons, sliders...)
     BLOCKER,            // the pointer over it is not for what is below (panels, popups)
     SCROLL,             // takes the mouse wheel
+    HOVER,              // only wants to know that the pointer is over it (ctx.hover_info): a truncated text that shows itself in a tooltip; no focus, no click
 }
 HitKinds :: bit_set[HitKind; u8]
 
@@ -174,6 +176,7 @@ TextWrap :: enum u8 {
     WORDS,              // at spaces when a line is too wide, and at new lines
     NEWLINES,           // only at new lines
     NONE,               // never (the width is the longest line)
+    TRUNCATE,           // one line that shrinks with its container and ends in "..." when the text does not fit
 }
 
 TextConfig :: struct {
@@ -194,6 +197,7 @@ TextLine :: struct {
     start: i32,         // byte offset in the text of the element
     length: i32,
     width: f32,
+    ellipsis: bool,     // the line ends in "..." (a truncated text)
 }
 
 @(private)
