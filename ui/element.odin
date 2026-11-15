@@ -8,7 +8,7 @@ package ui
 import hm "core:container/handle_map"
 
 // The number of widgets that keep state from one frame to the next (scroll position, text cursor, hover fade): fixed, so no allocations
-UI_STATES :: #config(UI_STATES, 256)
+UI_STATES :: #config(UI_STATES, 512)
 // Floating elements (popups, tooltips) and the main root: every one of them is its own layer
 UI_MAX_ROOTS :: #config(UI_MAX_ROOTS, 32)
 UI_MAX_DEPTH :: 64
@@ -171,6 +171,7 @@ TextConfig :: struct {
     wrap: TextWrap,
     align: TextAlign,
     kind: StyleKind,    // .LABEL when left as it is
+    color: Color,       // alpha 0: the color of the style
     user: rawptr,
 }
 
@@ -243,6 +244,7 @@ HitBox :: struct {
     rect: Rect,
     clip_rect: Rect,
     kinds: HitKinds,
+    root: Id,                       // the floating element it lives in (0: the main layer): what tells that the pointer is inside of a popup
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -316,6 +318,9 @@ WidgetState :: struct {
     adjustable: bool,               // a slider: left and right of the navigation change its value
     pending_adjust: int,            // steps asked by UiNavigate, taken by the widget in its next call
     editing: bool,                  // a text field that has the focus: it keeps left, right, home and end for the caret
+    initialized: bool,              // the widget was declared before (a header that starts open sets its state once)
+    drag: Vec2,                     // where the pointer was in the last frame of a drag (a drag widget, a window title)
+    press_time: f32,                // seconds the widget has been held (a button that repeats)
 }
 
 @(private)

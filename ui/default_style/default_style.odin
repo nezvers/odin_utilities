@@ -93,6 +93,21 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.DROPDOWN] = DrawDropdown
     style.procs[.DROPDOWN_ITEM] = DrawDropdownItem
     style.procs[.SCROLLBAR] = DrawScrollbar
+    style.procs[.COLLAPSING] = DrawCollapsing
+    style.procs[.RADIO] = DrawRadio
+    style.procs[.SELECTABLE] = DrawSelectable
+    style.procs[.TAB] = DrawTab
+    style.procs[.DRAG] = DrawDrag
+    style.procs[.ARROW] = DrawArrow
+    style.procs[.PLOT] = DrawPlot
+    style.procs[.SWATCH] = DrawSwatch
+    style.procs[.MENU_BAR] = DrawMenuBar
+    style.procs[.MENU] = DrawMenu
+    style.procs[.MENU_ITEM] = DrawMenuItem
+    style.procs[.WINDOW_TITLE] = DrawWindowTitle
+    style.procs[.BULLET] = DrawBullet
+    style.procs[.SEPARATOR_TEXT] = DrawSeparatorText
+    style.procs[.BACKDROP] = DrawBackdrop
     return style
 }
 
@@ -142,6 +157,34 @@ FocusRing :: proc(painter: ^Painter, info: ^ui.DrawInfo, rounding: f32 = -1) {
     FillRounded(painter, {info.rect.x - 2, info.rect.y - 2, info.rect.z + 4, info.rect.w + 4}, theme.rounding if rounding < 0 else rounding, theme.accent, theme.max_radius + 2)
 }
 
+// A straight line of a thickness, as a quad
+Line :: proc(painter: ^Painter, from: ui.Vec2, to: ui.Vec2, thickness: f32, color: ui.Color) {
+    delta: ui.Vec2 = to - from
+    length: f32 = math.sqrt(delta.x * delta.x + delta.y * delta.y)
+    if length < 0.001 { return }
+    side: ui.Vec2 = {-delta.y, delta.x} * (thickness * 0.5 / length)
+    if painter.fill_polygon == nil {
+        painter.fill_rect(painter, {min(from.x, to.x), min(from.y, to.y), max(abs(delta.x), thickness), max(abs(delta.y), thickness)}, color)
+        return
+    }
+    points: [4]ui.Vec2 = {from + side, to + side, to - side, from - side}
+    painter.fill_polygon(painter, points[:], color)
+}
+
+// A triangle that points `direction` (0 up, 1 down, 2 left, 3 right) in a square of `size` around `center`
+ArrowShape :: proc(painter: ^Painter, center: ui.Vec2, size: f32, direction: int, color: ui.Color) {
+    if painter.fill_polygon == nil { return }
+    h: f32 = size * 0.5
+    points: [3]ui.Vec2
+    switch direction {
+    case 0: points = {{center.x - h, center.y + h * 0.6}, {center.x, center.y - h * 0.8}, {center.x + h, center.y + h * 0.6}}
+    case 1: points = {{center.x - h, center.y - h * 0.6}, {center.x + h, center.y - h * 0.6}, {center.x, center.y + h * 0.8}}
+    case 2: points = {{center.x + h * 0.6, center.y - h}, {center.x - h * 0.8, center.y}, {center.x + h * 0.6, center.y + h}}
+    case: points = {{center.x - h * 0.6, center.y - h}, {center.x + h * 0.8, center.y}, {center.x - h * 0.6, center.y + h}}
+    }
+    painter.fill_polygon(painter, points[:], color)
+}
+
 // A text with its center at the center of the rect
 TextCentered :: proc(painter: ^Painter, text: string, rect: ui.Rect, size: f32, color: ui.Color) {
     measured: ui.Vec2 = painter.measure_text(painter, text, size)
@@ -181,7 +224,8 @@ DrawPanel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
 
 DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
-    painter.draw_text(painter, info.text, {info.rect.x, info.rect.y}, info.font_size, painter.theme.text)
+    color: ui.Color = info.color if info.color.a > 0 else painter.theme.text
+    painter.draw_text(painter, info.text, {info.rect.x, info.rect.y}, info.font_size, color)
 }
 
 DrawButton :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
@@ -303,4 +347,172 @@ DrawScrollbar :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     thumb: ui.Rect = {track.x, track.y + (track.w - thumb_height) * info.value, track.z, thumb_height}
     FillRounded(painter, track, 1, ui.Color{theme.track.r, theme.track.g, theme.track.b, 140})
     FillRounded(painter, thumb, 1, theme.text_dim)
+}
+
+// ------------------------------------------------------------------------------------------------------------------------
+// The kinds of widgets_more.odin
+
+DrawCollapsing :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    open: bool = .OPEN in info.flags
+    tree: bool = info.actual == 1
+    FocusRing(painter, info)
+    if tree {
+        if info.hover > 0.01 { FillRounded(painter, info.rect, theme.rounding * 0.6, ui.ColorLerp(theme.panel, theme.control_hover, info.hover * 0.6), theme.max_radius) }
+    } else {
+        FillRounded(painter, info.rect, theme.rounding * 0.6, ui.ColorLerp(ui.ColorLerp(theme.control, theme.accent, 0.25), theme.control_hover, info.hover), theme.max_radius)
+    }
+    ArrowShape(painter, {info.rect.x + 14, info.rect.y + info.rect.w * 0.5}, info.rect.w * 0.3, 1 if open else 3, theme.text)
+    TextLeft(painter, info.name, info.rect, info.font_size, 28, theme.text)
+}
+
+DrawRadio :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    box: ui.Rect = {info.rect.x, info.rect.y, info.rect.w, info.rect.w}
+    FocusRing(painter, &{rect = box, flags = info.flags}, 1)
+    FillRoundedBorder(painter, box, 1, ControlColor(theme, info), theme.border, theme.border_width)
+    if .ON in info.flags { FillRounded(painter, ui.RectShrink(box, box.z * 0.3), 1, theme.accent) }
+    TextLeft(painter, info.name, {info.rect.x + box.z, info.rect.y, info.rect.z - box.z, info.rect.w}, info.font_size, 8, textColor(theme, info))
+}
+
+DrawSelectable :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    if .FOCUSED in info.flags { FillRounded(painter, info.rect, theme.rounding * 0.4, theme.accent, theme.max_radius) }
+    inner: ui.Rect = ui.RectShrink(info.rect, 2 if .FOCUSED in info.flags else 0)
+    if .SELECTED in info.flags {
+        FillRounded(painter, inner, theme.rounding * 0.4, ui.ColorLerp(theme.control, theme.accent, 0.55), theme.max_radius)
+    } else if info.hover > 0.01 {
+        FillRounded(painter, inner, theme.rounding * 0.4, ui.ColorLerp(theme.panel, theme.control_hover, info.hover), theme.max_radius)
+    }
+    TextLeft(painter, info.name, info.rect, info.font_size, 8, textColor(theme, info))
+}
+
+DrawTab :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    selected: bool = .SELECTED in info.flags
+    FocusRing(painter, info, 0.2)
+    FillRounded(painter, info.rect, theme.rounding * 0.5, ui.ColorLerp(theme.control, theme.control_hover, info.hover) if !selected else ui.ColorLerp(theme.control_hover, theme.accent, 0.5), theme.max_radius)
+    TextCentered(painter, info.name, info.rect, info.font_size, theme.text if selected else theme.text_dim)
+}
+
+DrawDrag :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    FocusRing(painter, info, theme.rounding * 0.6)
+    FillRoundedBorder(painter, info.rect, theme.rounding * 0.6, ui.ColorLerp(theme.control, theme.control_hover, max(info.hover, info.press)), theme.border, theme.border_width, theme.max_radius)
+    TextCentered(painter, info.text, info.rect, info.font_size, textColor(theme, info))
+}
+
+DrawArrow :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    FocusRing(painter, info)
+    FillRounded(painter, info.rect, theme.rounding, ControlColor(theme, info), theme.max_radius)
+    ArrowShape(painter, ui.RectCenter(info.rect), info.rect.w * 0.35, int(info.actual), theme.text)
+}
+
+DrawPlot :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    FillRoundedBorder(painter, info.rect, theme.rounding * 0.4, theme.track, theme.border, theme.border_width, theme.max_radius)
+    inner: ui.Rect = ui.RectShrink(info.rect, 3)
+    count: int = len(info.values)
+    range: f32 = max(info.maximum - info.minimum, 0.000001)
+    if count > 0 {
+        if info.actual == 1 {
+            // a histogram: a bar per number
+            width: f32 = inner.z / f32(count)
+            for value, i in info.values {
+                height: f32 = clamp((value - info.minimum) / range, 0, 1) * inner.w
+                painter.fill_rect(painter, {inner.x + f32(i) * width + 0.5, inner.y + inner.w - height, max(width - 1, 1), height}, theme.accent)
+            }
+        } else if count > 1 {
+            previous: ui.Vec2
+            for value, i in info.values {
+                point: ui.Vec2 = {inner.x + f32(i) / f32(count - 1) * inner.z, inner.y + inner.w - clamp((value - info.minimum) / range, 0, 1) * inner.w}
+                if i > 0 { Line(painter, previous, point, 1.5, theme.accent) }
+                previous = point
+            }
+        }
+    }
+    if info.text != "" {
+        TextCentered(painter, info.text, {info.rect.x, info.rect.y + 2, info.rect.z, info.font_size + 4}, info.font_size, theme.text_dim)
+    }
+}
+
+DrawSwatch :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    FocusRing(painter, info)
+    FillRoundedBorder(painter, info.rect, theme.rounding * 0.5, info.color, ui.ColorLerp(theme.border, theme.text, info.hover), max(theme.border_width, 1), theme.max_radius)
+}
+
+DrawMenuBar :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    painter.fill_rect(painter, info.rect, ui.ColorLerp(painter.theme.panel, painter.theme.control, 0.5))
+}
+
+DrawMenu :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    lit: f32 = 1 if .OPEN in info.flags else info.hover
+    FocusRing(painter, info, 0.2)
+    if lit > 0.01 { FillRounded(painter, info.rect, theme.rounding * 0.5, ui.ColorLerp(theme.panel, theme.control_hover, lit), theme.max_radius) }
+    if info.actual == 1 {
+        TextLeft(painter, info.name, info.rect, info.font_size, 8, textColor(theme, info))
+        ArrowShape(painter, {info.rect.x + info.rect.z - 12, info.rect.y + info.rect.w * 0.5}, info.rect.w * 0.3, 3, theme.text_dim)
+    } else {
+        TextCentered(painter, info.name, info.rect, info.font_size, textColor(theme, info))
+    }
+}
+
+DrawMenuItem :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    if .FOCUSED in info.flags { FillRounded(painter, info.rect, theme.rounding * 0.4, theme.accent, theme.max_radius) }
+    inner: ui.Rect = ui.RectShrink(info.rect, 2 if .FOCUSED in info.flags else 0)
+    if info.hover > 0.01 || .FOCUSED in info.flags { FillRounded(painter, inner, theme.rounding * 0.4, ui.ColorLerp(theme.panel, theme.control_hover, max(info.hover, 0.6 if .FOCUSED in info.flags else 0)), theme.max_radius) }
+    if .ON in info.flags {
+        // a check mark: two strokes
+        c: ui.Vec2 = {info.rect.x + 12, info.rect.y + info.rect.w * 0.5}
+        Line(painter, c + {-4, 0}, c + {-1, 3.5}, 2, theme.accent)
+        Line(painter, c + {-1, 3.5}, c + {5, -4}, 2, theme.accent)
+    }
+    TextLeft(painter, info.name, info.rect, info.font_size, 26, textColor(theme, info))
+    if info.text != "" { TextRight(painter, info.text, info.rect, info.font_size, 10, theme.text_dim) }
+}
+
+DrawWindowTitle :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    color: ui.Color = ui.ColorLerp(theme.control, theme.accent, 0.55 if .FOCUSED in info.flags else 0.3)
+    FillRounded(painter, info.rect, theme.panel_rounding, color, theme.max_radius)
+    TextLeft(painter, info.name, info.rect, info.font_size, 10, theme.text)
+}
+
+DrawBullet :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    size: f32 = min(info.rect.z, info.rect.w) * 0.45
+    center: ui.Vec2 = ui.RectCenter(info.rect)
+    FillRounded(painter, {center.x - size * 0.5, center.y - size * 0.5, size, size}, 1, painter.theme.text_dim)
+}
+
+DrawSeparatorText :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    measured: ui.Vec2 = painter.measure_text(painter, info.name, info.font_size)
+    y: f32 = info.rect.y + info.rect.w * 0.5
+    painter.fill_rect(painter, {info.rect.x, y, 14, 1}, theme.border)
+    painter.draw_text(painter, info.name, {info.rect.x + 22, info.rect.y + (info.rect.w - measured.y) * 0.5}, info.font_size, theme.text_dim)
+    after: f32 = info.rect.x + 30 + measured.x
+    painter.fill_rect(painter, {after, y, max(info.rect.x + info.rect.z - after, 0), 1}, theme.border)
+}
+
+DrawBackdrop :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    painter.fill_rect(painter, info.rect, {0, 0, 0, 130})
 }

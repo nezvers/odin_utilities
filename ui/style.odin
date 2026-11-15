@@ -19,6 +19,21 @@ StyleKind :: enum u8 {
     DROPDOWN_ITEM,      // one option of the open list: SELECTED flag
     SCROLL_AREA,        // the background of a scrolling container
     SCROLLBAR,          // value: position 0..1, ratio: how much of the content is visible 0..1
+    COLLAPSING,         // the header of a section: OPEN flag, actual 1 for a tree node (an arrow, no frame)
+    RADIO,              // ON flag
+    SELECTABLE,         // SELECTED flag: a row of a list
+    TAB,                // SELECTED flag
+    DRAG,               // a value that is dragged: text is the number, value 0..1 inside of minimum .. maximum when there is a range
+    ARROW,              // actual: the Direction, 0 up, 1 down, 2 left, 3 right
+    PLOT,               // values, minimum, maximum; actual 0 lines, 1 histogram; text: an overlay
+    SWATCH,             // color
+    MENU_BAR,           // the strip a menu bar is in
+    MENU,               // the title of a menu in a bar (OPEN flag) or a submenu entry (actual 1)
+    MENU_ITEM,          // name, text: the shortcut, ON flag: a checked item
+    WINDOW_TITLE,       // the title bar of a window: name
+    BULLET,             // the dot of a bullet text
+    SEPARATOR_TEXT,     // a line with a name in it
+    BACKDROP,           // what dims the screen behind a modal dialog
     CUSTOM,             // DrawInfo.custom is called instead of a table entry
 }
 
@@ -57,6 +72,8 @@ DrawInfo :: struct {
     font_size: f32,
     align: TextAlign,
     cursor: int,            // text field: byte offset of the cursor
+    values: []f32,          // plots: the numbers (they have to live until the frame is rendered)
+    color: Color,           // swatches and colored text
     custom: StyleProc,      // kind == .CUSTOM: the user's own draw proc
     user: rawptr,           // anything of the user: it is passed through to the style
 }

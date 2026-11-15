@@ -725,7 +725,8 @@ LayoutCalculate :: proc(ctx: ^Context) {
             clipped = true
             layoutPushClip(ctx, RectIntersect(clip_rect, screen_rect))
         }
-        placeElement(ctx, root.element, position, clip_rect)
+        root_id: Id = element.id if element.decl.floating.attach_to != .NONE else 0
+        placeElement(ctx, root.element, position, clip_rect, root_id)
         if clipped {
             layoutPopClip(ctx)
         }
@@ -754,7 +755,7 @@ layoutCommand :: proc(ctx: ^Context, command: Command) {
 
 // Gives the element its place and writes what the style needs to draw it, then does the same for its children
 @(private)
-placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect) {
+placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect, root_id: Id) {
     element: ^Element = &ctx.elements[index]
     rect: Rect = {position.x, position.y, element.size.x, element.size.y}
     screen_rect: Rect = {0, 0, ctx.screen.x, ctx.screen.y}
@@ -789,7 +790,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect)
     kinds: HitKinds = element.decl.hit
     if floating.attach_to != .NONE && floating.capture { kinds += {.BLOCKER} }
     if kinds != {} && ctx.hit_count < len(ctx.hits) {
-        ctx.hits[ctx.hit_count] = {id = element.id, rect = shown, clip_rect = own_clip, kinds = kinds}
+        ctx.hits[ctx.hit_count] = {id = element.id, rect = shown, clip_rect = own_clip, kinds = kinds, root = root_id}
         ctx.hit_count += 1
     }
 
@@ -872,7 +873,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect)
             }
         }
         child_position: Vec2 = {rect.x + next.x + scroll.x, rect.y + next.y + scroll.y}
-        placeElement(ctx, child_index, child_position, own_clip)
+        placeElement(ctx, child_index, child_position, own_clip, root_id)
         if layout.direction == .LEFT_TO_RIGHT {
             next.x += child.size.x + layout.gap
         } else {
@@ -946,6 +947,7 @@ textCommands :: proc(ctx: ^Context, element: ^Element, rect: Rect, clip_rect: Re
             name = data.text,
             font_size = config.font_size,
             align = config.align,
+            color = config.color,
             user = config.user,
         }})
         y += line_height

@@ -38,7 +38,11 @@ ui.UiEnd(&ctx)
 ui.UiRender(&ctx)
 ```
 Widgets: `UiWindow UiPanel UiRow UiColumn UiBox UiScroll UiLabel UiButton UiToggle UiSlider UiProgress UiTextField UiDropdown UiSeparator UiSpacer UiCustom`.
-`UiBox` takes a whole `Decl`, `UiCustom` draws a widget of your own with a proc. A zero `Size` is what the style metrics say, `{ui.Grow(), ui.Fixed(30)}` is yours.
+More widgets (`widgets_more.odin`): `UiCollapsing` / `UiTreeNode` (headers with a body), `UiRadio`, `UiSelectable`, `UiListBox`, `UiTabBar`, `UiArrowButton` (repeats),
+`UiDrag` / `UiDragInt`, `UiSliderInt` / `UiSliderAngle`, `UiInputInt` / `UiInputFloat`, `UiPlotLines` / `UiPlotHistogram`, `UiColorEdit3` / `UiColorButton`,
+`UiLabelColored` / `UiBullet` / `UiLabelText` / `UiSeparatorText`, `UiTooltip`, menus (`UiMenuBar`, `UiMenu` with submenus, `UiMenuItem` with shortcut and check),
+`UiModal` (a dialog over a dimmed screen that keeps the focus) and `UiWindowTitled` (a window with a title bar that is dragged).
+``UiBox` takes a whole `Decl`, `UiCustom` draws a widget of your own with a proc. A zero `Size` is what the style metrics say, `{ui.Grow(), ui.Fixed(30)}` is yours.
 Names are ids inside their container: `"Save##slot2"` shows "Save" and hashes the whole string. `UiIdPath("Settings", "Volume")` finds an id from outside.
 
 ## Navigation without a pointer
@@ -67,6 +71,12 @@ text, measure, clip) that the glue fills in. `demo_common/demo_styles.odin` swap
 
 Rounded rectangles: `RoundedRadius(rect, rounding, max_radius)` takes the rounding as a part of the shortest side (1 = full round, a pill or a circle),
 clamped to half of it and to `max_radius` pixels; `RoundedPoints` writes the polygon into a buffer of yours (`RoundedBuffer`) for a triangle fan.
+
+## The demo of Dear ImGui, remade
+`demo_common/demo_imgui.odin` is the layout of `ShowDemoWindow` (`references/imgui/imgui_demo.cpp`, a git ignored checkout of ocornut/imgui): a window with a title bar and
+a menu bar (Menu with submenus, Examples, Tools), collapsing headers (Help, Configuration, Window options, Widgets, Layout & Scrolling, Popups & Modal windows, Tables, Inputs & Focus)
+and under Widgets the tree nodes Basic, Trees, Collapsing Headers, Bullets, Text, Combo, Selectables, Tabs, Plotting, Color, Multi-component, Querying status. What the
+library does not have (multi-line text input, sortable tables, docking, drag and drop, resizing) is left out. Its script drives it with the keyboard only.
 
 ## Layout of the folder
 ```

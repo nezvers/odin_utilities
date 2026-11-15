@@ -90,6 +90,15 @@ Context :: struct {
     pointer_over_ui: bool,          // the pointer is over something of the ui: a game should not take the click
     active: Id,                     // the widget that holds the mouse press
     focus: Id,                      // the widget that gets the keyboard, the gamepad and the navigation (see nav.odin)
+    hover_root: Id,                 // the floating element (popup, window) the hovered widget is in, 0 for the main layer
+    modal_root: Id,                 // the dialog that was open at the end of the last frame: navigation stays in it
+    modal_next: Id,
+    open_menu: Id,                  // the menu of the bar that is open
+    menu_close: bool,               // a menu item was used this frame: the menus close
+    menu_depth: int,
+    menu_opened: [8]bool,
+    fold_stack: [UI_MAX_DEPTH]Id,   // the headers whose body is open at the moment (UiCollapsing)
+    fold_count: int,
     activate: bool,                 // UiActivate was called this frame
     cancel_pending: bool,           // the cancel action came this frame and nothing took it yet (a dropdown, a text field: UiCancelled is what is left)
     reveal: bool,                   // the focus moved this frame: a scrolling container shows the focused widget
@@ -138,6 +147,9 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
     ctx.problems = {}
     ctx.overflow = false
     ctx.activate = false
+    ctx.menu_close = false
+    ctx.menu_depth = 0
+    ctx.fold_count = 0
     ctx.cancel_pending = false
     ctx.reveal = false
     for i in 0 ..< len(ctx.element_slots) {
@@ -184,6 +196,7 @@ UiEnd :: proc(ctx: ^Context) {
         ctx.command_count = 0
     }
     stateCollect(ctx)
+    ctx.modal_root, ctx.modal_next = ctx.modal_next, 0
     if ctx.focus != 0 && stateFind(ctx, ctx.focus) == nil {
         ctx.focus = 0           // the focused widget is gone
     }
@@ -232,6 +245,7 @@ UiElementRect :: proc(ctx: ^Context, id: Id) -> (rect: Rect, found: bool) {
 @(private)
 hoverUpdate :: proc(ctx: ^Context) {
     ctx.hover = 0
+    ctx.hover_root = 0
     ctx.hover_scroll = 0
     ctx.pointer_over_ui = false
     point: Vec2 = ctx.input.mouse_position
@@ -242,11 +256,13 @@ hoverUpdate :: proc(ctx: ^Context) {
         ctx.pointer_over_ui = true
         if .INTERACTIVE in box.kinds && ctx.hover == 0 {
             ctx.hover = box.id
+            ctx.hover_root = box.root
         }
         if .SCROLL in box.kinds && ctx.hover_scroll == 0 {
             ctx.hover_scroll = box.id
         }
         if .BLOCKER in box.kinds {
+            if ctx.hover == 0 { ctx.hover_root = box.root }
             break           // what is below is covered
         }
     }

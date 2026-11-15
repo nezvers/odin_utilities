@@ -21,7 +21,8 @@ package ui
 
 // A widget the focus can go to. One that is scrolled out of its container counts too: the container shows it when the focus gets there.
 @(private)
-focusable :: proc(box: ^HitBox) -> bool {
+focusable :: proc(ctx: ^Context, box: ^HitBox) -> bool {
+    if ctx.modal_root != 0 && box.root != ctx.modal_root { return false }      // a dialog is open: the focus stays in it
     return .INTERACTIVE in box.kinds && box.id != 0
 }
 
@@ -44,7 +45,7 @@ UiNavigate :: proc(ctx: ^Context, direction: Direction) -> bool {
     }
     current: ^HitBox
     for i in 0 ..< ctx.hit_count {
-        if ctx.hits[i].id == ctx.focus && focusable(&ctx.hits[i]) { current = &ctx.hits[i] }
+        if ctx.hits[i].id == ctx.focus && focusable(ctx, &ctx.hits[i]) { current = &ctx.hits[i] }
     }
     if current == nil { return focusEdge(ctx, false) }       // the focused widget is not on screen any more: start again
     from: Vec2 = RectCenter(current.rect)
@@ -59,7 +60,7 @@ UiNavigate :: proc(ctx: ^Context, direction: Direction) -> bool {
     best_score: f32 = INFINITE
     for i in 0 ..< ctx.hit_count {
         box: ^HitBox = &ctx.hits[i]
-        if box.id == ctx.focus || !focusable(box) { continue }
+        if box.id == ctx.focus || !focusable(ctx, box) { continue }
         delta: Vec2 = RectCenter(box.rect) - from
         along: f32 = delta.x * heading.x + delta.y * heading.y
         if along <= 0.01 { continue }                   // not in that direction
@@ -88,7 +89,7 @@ UiNavigate :: proc(ctx: ^Context, direction: Direction) -> bool {
 focusEdge :: proc(ctx: ^Context, last: bool) -> bool {
     found: Id = 0
     for i in 0 ..< ctx.hit_count {
-        if !focusable(&ctx.hits[i]) { continue }
+        if !focusable(ctx, &ctx.hits[i]) { continue }
         found = ctx.hits[i].id
         if !last { break }
     }
@@ -105,7 +106,7 @@ focusCycle :: proc(ctx: ^Context, step: int) -> bool {
     current: int = -1
     count: int = 0
     for i in 0 ..< ctx.hit_count {
-        if !focusable(&ctx.hits[i]) { continue }
+        if !focusable(ctx, &ctx.hits[i]) { continue }
         if first < 0 { first = i }
         last = i
         count += 1
@@ -118,7 +119,7 @@ focusCycle :: proc(ctx: ^Context, step: int) -> bool {
         target += step
         if target < 0 { target = last }
         if target >= ctx.hit_count { target = first }
-        if focusable(&ctx.hits[target]) { break }
+        if focusable(ctx, &ctx.hits[target]) { break }
     }
     if ctx.hits[target].id == ctx.focus { return false }
     ctx.focus = ctx.hits[target].id

@@ -763,3 +763,71 @@ test_keyboard_focus_scrolls_the_container_to_show_it :: proc(t: ^testing.T) {
     actionFrame(harness, list)
     testing.expect(t, UiScrollGet(&harness.ctx, UiIdPath("list")) < 10, "and back at the top (the first item shown with a margin)")
 }
+
+@(test)
+test_every_widget_leaves_the_containers_balanced :: proc(t: ^testing.T) {
+    storage: ^Storage(512, 512, 128, 4096) = new(Storage(512, 512, 128, 4096))
+    defer free(storage)
+    big: Context
+    style: Style = makeStyle()
+    UiInit(&big, storage, testMeasure)
+    seen = {}
+    c: ^Context = &big
+    @(static) a: bool
+    @(static) number: int
+    @(static) real: f32
+    @(static) color: [3]f32
+    @(static) buffer: [8]u8
+    @(static) length: int
+    @(static) open: bool
+    @(static) position: Vec2
+    items: [2]string = {"x", "y"}
+    values: [4]f32 = {0, 1, 0.5, 0.2}
+    open = true
+    checks: [32]string
+    UiBegin(c, {}, 1.0 / 60, {400, 300}, &style)
+    base: int = c.open_count
+    count: int = 0
+    check :: proc(t: ^testing.T, c: ^Context, base: int, name: string) {
+        testing.expectf(t, c.open_count == base, "%s left %d containers open", name, c.open_count - base)
+    }
+    if UiCollapsing(c, "h") { UiLabel(c, "x") }
+    check(t, c, base, "collapsing")
+    if UiTreeNode(c, "n", true) { UiLabel(c, "x") }
+    check(t, c, base, "tree")
+    UiRadio(c, "r", &number, 1); check(t, c, base, "radio")
+    UiSelectable(c, "s", true); check(t, c, base, "selectable")
+    selected: int
+    UiListBox(c, "l", items[:], &selected); check(t, c, base, "listbox")
+    UiTabBar(c, "t", items[:], &selected); check(t, c, base, "tabs")
+    UiArrowButton(c, "a", .LEFT, true); check(t, c, base, "arrow")
+    UiDrag(c, "d", &real); check(t, c, base, "drag")
+    UiDragInt(c, "di", &number); check(t, c, base, "drag int")
+    UiSliderInt(c, "si", &number, 0, 3); check(t, c, base, "slider int")
+    UiSliderAngle(c, "sa", &real); check(t, c, base, "slider angle")
+    UiInputInt(c, "ii", &number); check(t, c, base, "input int")
+    UiInputFloat(c, "if", &real); check(t, c, base, "input float")
+    UiPlotLines(c, "p", values[:]); check(t, c, base, "plot")
+    UiPlotHistogram(c, "ph", values[:]); check(t, c, base, "histogram")
+    UiColorEdit3(c, "c", &color); check(t, c, base, "color edit")
+    UiColorButton(c, "cb", color); check(t, c, base, "color button")
+    UiLabelColored(c, "x", {255, 0, 0, 255}); check(t, c, base, "colored label")
+    UiBullet(c, "b"); check(t, c, base, "bullet")
+    UiLabelText(c, "n", "v"); check(t, c, base, "label text")
+    UiSeparatorText(c, "s"); check(t, c, base, "separator text")
+    UiButton(c, "tip"); UiTooltip(c, "x"); check(t, c, base, "tooltip")
+    if UiMenuBar(c) {
+        if UiMenu(c, "m") { UiMenuItem(c, "i"); if UiMenu(c, "sub") { UiMenuItem(c, "j") } }
+    }
+    check(t, c, base, "menus")
+    if UiModal(c, "dlg", &open) { UiLabel(c, "x") }
+    check(t, c, base, "modal")
+    open = false
+    if UiModal(c, "dlg2", &open) { UiLabel(c, "x") }
+    check(t, c, base, "closed modal")
+    if UiWindowTitled(c, "w", &position) { UiLabel(c, "x") }
+    check(t, c, base, "window")
+    _ = a; _ = checks; _ = count; _ = buffer; _ = length
+    UiEnd(c)
+    testing.expect_value(t, c.problems, Problems{})
+}
