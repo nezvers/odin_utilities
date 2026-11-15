@@ -35,3 +35,8 @@ Raylib images (`rl.Image`) are allocated by raylib, so only the packer and recta
 - `FontInit` - TTF (`[]byte`, not copied) at one pixel height. `GetFontRects` measures letters (missing characters are skipped) and gives rectangles with padding. `RenderGlyph` renders one glyph into a caller buffer, `GlyphsMaxBytes` sizes that buffer.
 - Raylib: `init_packed_font` builds an `rl.Font` from the packed rectangles.
 - Karl2D: `BakeFontGlyphs` writes glyphs into the atlas image, `RegisterFont` makes a static `karl2d.Font` that draws from the same atlas texture, so text and sprites share one draw call. Karl2D frees the glyph data, so call `karl2d.destroy_font(font)` (it also destroys the atlas texture) instead of destroying the texture.
+
+## Demos and tests
+`odin run demo_raylib`, `odin run demo_karl2d` (Karl2D needs to be next to the other libraries): the same demos from `demo_common`, written once against the
+demo kit (`odin_utilities/demo_kit`). Each demo has a script of simulated input with checks:
+`odin test demo_common -strict-style -vet` plays it headless, `odin run demo_raylib -define:DEMO_TEST=true` plays it in the window.

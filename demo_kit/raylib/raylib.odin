@@ -91,6 +91,14 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             rl.DrawTextEx(face, strings.clone_to_cstring(text, context.temp_allocator), position, size, 0, rl.Color(color))
         },
         texture_load = textureLoad,
+        texture_from_pixels = proc(backend: ^kit.Backend, width: int, height: int, rgba: []u8) -> kit.Texture {
+            state: ^State = cast(^State)backend.state
+            if state.texture_count + 1 >= MAX_TEXTURES { return kit.TEXTURE_NONE }
+            image: rl.Image = {data = raw_data(rgba), width = i32(width), height = i32(height), mipmaps = 1, format = .UNCOMPRESSED_R8G8B8A8}
+            state.texture_count += 1
+            state.textures[state.texture_count] = rl.LoadTextureFromImage(image)     // copies the pixels to the GPU
+            return kit.Texture(state.texture_count)
+        },
         texture_unload = proc(backend: ^kit.Backend, texture: kit.Texture) {
             state: ^State = cast(^State)backend.state
             if u32(texture) == 0 || u32(texture) > state.texture_count { return }

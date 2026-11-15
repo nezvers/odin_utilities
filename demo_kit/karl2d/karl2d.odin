@@ -106,6 +106,16 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             state.textures[state.texture_count] = texture
             return kit.Texture(state.texture_count)
         },
+        texture_from_pixels = proc(backend: ^kit.Backend, width: int, height: int, rgba: []u8) -> kit.Texture {
+            state: ^State = cast(^State)backend.state
+            if state.texture_count + 1 >= MAX_TEXTURES { return kit.TEXTURE_NONE }
+            texture, ok := karl2d.create_texture(width, height, .RGBA_8_Norm)
+            if !ok { return kit.TEXTURE_NONE }
+            karl2d.update_texture(texture, rgba, {0, 0, f32(width), f32(height)})
+            state.texture_count += 1
+            state.textures[state.texture_count] = texture
+            return kit.Texture(state.texture_count)
+        },
         texture_unload = proc(backend: ^kit.Backend, texture: kit.Texture) {
             state: ^State = cast(^State)backend.state
             if u32(texture) == 0 || u32(texture) > state.texture_count { return }

@@ -59,6 +59,8 @@ Backend :: struct {
 
     // images: loaded from the bytes of a file (`#load` embeds them, so no working directory matters)
     texture_load: proc(backend: ^Backend, bytes: []u8) -> Texture,
+    // a texture from pixels made at run time (an atlas baked in memory): width * height * 4 bytes, RGBA, 8 bits each
+    texture_from_pixels: proc(backend: ^Backend, width: int, height: int, rgba: []u8) -> Texture,
     texture_unload: proc(backend: ^Backend, texture: Texture),
     texture_size: proc(backend: ^Backend, texture: Texture) -> Vec2,
     // `source` of the texture on `destination` of the screen, turned around `origin` (a point of destination, from its top left)
@@ -154,6 +156,11 @@ DrawTextFont :: proc(ctx: ^Context, font: Font, text: string, position: Vec2, si
 
 TextureLoad :: proc(ctx: ^Context, bytes: []u8) -> Texture {
     return ctx.backend.texture_load(ctx.backend, bytes)
+}
+
+TextureFromPixels :: proc(ctx: ^Context, width: int, height: int, rgba: []u8) -> Texture {
+    assert(len(rgba) >= width * height * 4)
+    return ctx.backend.texture_from_pixels(ctx.backend, width, height, rgba)
 }
 
 TextureUnload :: proc(ctx: ^Context, texture: Texture) {
