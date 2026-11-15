@@ -68,6 +68,7 @@ fake_unload :: proc(def: ^AssetDef, value: AssetValue) {
     arena_pointer = raw_data(scene_memory)
 }
 @(private="file") game_finit :: proc() { write_log("game finit") }
+@(private="file") game_resume :: proc() { write_log("game resume") }
 @(private="file") game_update :: proc() { write_log("game update") }
 
 @(private="file", thread_local)
@@ -432,10 +433,12 @@ test_hot_reload_release_rebind_resume :: proc(t: ^testing.T) {
     testing.expect_value(t, SceneGetStats(system).assets_ready, ready_before)        // loaded assets are kept
 
     other: [3]SceneDef = test_scenes()                                               // the tables of the new code
+    other[GAME].resume = game_resume
     SceneRebind(system, other[:], world.asset_defs[:], world.loaders[:])
     log_count = 0
     SceneResume(system)
-    testing.expect(t, log_has("game init"), "the scene starts again on what is loaded")
+    testing.expect(t, log_has("game resume"), "the scene continues on its data: resume, not init")
+    testing.expect(t, !log_has("game init"))
     testing.expect_value(t, system.transition.phase, TransitionPhase.NONE)
     testing.expect(t, system.entered && system.current == GAME)
 }

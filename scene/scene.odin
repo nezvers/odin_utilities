@@ -69,6 +69,7 @@ Transition :: struct {
 SceneDef :: struct {
     name: string,
     init: proc(),
+    resume: proc(),             // instead of init after a hot reload that kept the memory: the data of the scene is there, rebind the code to it. nil: init runs
     finit: proc(),
     update: proc(),
     draw: proc(),
@@ -541,7 +542,7 @@ TransitionOf :: proc(system: ^SceneSystem, id: SceneId) -> TransitionDef {
 
 // The scene starts: release what the new set of scenes does not need, run init, prefetch what is likely to come next
 @(private)
-SceneEnter :: proc(system: ^SceneSystem, id: SceneId, instance: SceneInstanceId, release_unused: bool) {
+SceneEnter :: proc(system: ^SceneSystem, id: SceneId, instance: SceneInstanceId, release_unused: bool, resuming: bool = false) {
     def: ^SceneDef = &system.scenes[id]
 
     if release_unused {
@@ -562,7 +563,11 @@ SceneEnter :: proc(system: ^SceneSystem, id: SceneId, instance: SceneInstanceId,
     system.instances_started += 1
     system.entered = true
     if item, alive := hm.get(&system.instances, instance); alive { item.active = true }
-    if def.init != nil { def.init() }
+    if resuming && def.resume != nil {
+        def.resume()
+    } else if def.init != nil {
+        def.init()
+    }
     Dispatch(system, {kind = .SCENE_ENTERED, id = u32(id), instance = instance})
 
     // after init: what the scene likes, then what is likely next, both in the background. The required assets are settled already,
@@ -713,7 +718,7 @@ SceneResume :: proc(system: ^SceneSystem) {
     if system.entered { return }
     SceneRequestAssets(system, id, true, false)
     if SceneIsReady(system, id) {
-        SceneEnter(system, id, system.current_instance, false)
+        SceneEnter(system, id, system.current_instance, false, true)
     } else {
         InstanceRemove(system, system.current_instance)
         SceneStart(system, id)
