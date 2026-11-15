@@ -57,9 +57,14 @@ widgetBehavior :: proc(ctx: ^Context, id: Id, disabled: bool = false) -> Interac
     state: ^WidgetState = stateFind(ctx, id)
     if state != nil { result.rect = state.rect }
     if disabled { return result }
+    ctx.last_id = id
     result.hovered = ctx.hover == id && (ctx.active == 0 || ctx.active == id)
     if result.hovered && ctx.input.mouse_pressed {
         ctx.active = id
+        ctx.focus = id
+    }
+    if ctx.activate && ctx.focus == id {
+        result.clicked = true       // the confirm key or button of a gamepad
     }
     result.pressed = ctx.active == id
     if ctx.active == id && ctx.input.mouse_released {
@@ -320,6 +325,16 @@ UiSlider :: proc(ctx: ^Context, name: string, value: ^f32, minimum: f32 = 0, max
             changed = true
         }
     }
+    // left and right of the navigation: a twentieth of the range per step
+    state.adjustable = true
+    if state.pending_adjust != 0 && range != 0 {
+        new_value: f32 = clamp(value^ + f32(state.pending_adjust) * range / 20, min(minimum, maximum), max(minimum, maximum))
+        if new_value != value^ {
+            value^ = new_value
+            changed = true
+        }
+    }
+    state.pending_adjust = 0
     metrics: ^Metrics = &ctx.style.metrics
     normalized: f32 = 0
     if range != 0 { normalized = clamp((value^ - minimum) / range, 0, 1) }
@@ -484,6 +499,7 @@ UiDropdown :: proc(ctx: ^Context, name: string, options: []string, selected: ^in
     })
     ElementClose(ctx)
 
+    ctx.last_id = id
     if !state.open { return }
     popup_id: Id = IdFromString("popup", id)
     _ = stateGet(ctx, popup_id)

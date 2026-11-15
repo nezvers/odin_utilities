@@ -530,3 +530,116 @@ test_rounded_points_stay_inside_the_rectangle :: proc(t: ^testing.T) {
     testing.expect_value(t, len(sharp), 8)                          // two points per corner, equal ones
     testing.expect_value(t, sharp[0], Vec2{10, 20})
 }
+
+@(private = "file")
+navFrame :: proc(harness: ^Harness, body: proc(ctx: ^Context), direction: Maybe(Direction) = nil, activate: bool = false) {
+    frame(harness, pointerAt({-100, -100}))
+    if d, ok := direction.?; ok { UiNavigate(&harness.ctx, d) }
+    if activate { UiActivate(&harness.ctx) }
+    body(&harness.ctx)
+    UiEnd(&harness.ctx)
+}
+
+@(private = "file")
+navMenu :: proc(ctx: ^Context) {
+    UiButton(ctx, "A")
+    UiButton(ctx, "B")
+    UiButton(ctx, "C")
+}
+
+@(test)
+test_navigation_moves_to_the_nearest_widget_in_the_direction :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    navFrame(harness, navMenu)
+    navFrame(harness, navMenu, .DOWN)                       // nothing was focused: the first one
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("A"))
+    navFrame(harness, navMenu, .DOWN)
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("B"))
+    navFrame(harness, navMenu, .DOWN)
+    navFrame(harness, navMenu, .DOWN)                       // nothing under C: stays
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("C"))
+    navFrame(harness, navMenu, .UP)
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("B"))
+    navFrame(harness, navMenu, .LEFT)                       // nothing on the left
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("B"))
+}
+
+@(test)
+test_navigation_finds_the_widget_in_a_grid :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    grid :: proc(ctx: ^Context) {
+        if UiRow(ctx) { UiButton(ctx, "A", {Fixed(60), {}}); UiButton(ctx, "B", {Fixed(60), {}}) }
+        if UiRow(ctx) { UiButton(ctx, "C", {Fixed(60), {}}); UiButton(ctx, "D", {Fixed(60), {}}) }
+    }
+    navFrame(harness, grid)
+    navFrame(harness, grid, .DOWN)
+    navFrame(harness, grid, .RIGHT)
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("B"))
+    navFrame(harness, grid, .DOWN)
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("D"))
+    navFrame(harness, grid, .LEFT)
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("C"))
+    navFrame(harness, grid, .UP)
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("A"))
+}
+
+@(test)
+test_navigation_links_and_blocks_override_the_nearest :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    menu :: proc(ctx: ^Context) {
+        UiButton(ctx, "A")
+        UiNavLink(ctx, .DOWN, UiId(ctx, "C"))               // jumps over B
+        UiNavBlock(ctx, .UP)
+        UiButton(ctx, "B")
+        UiButton(ctx, "C")
+    }
+    navFrame(harness, menu)
+    navFrame(harness, menu, .DOWN)
+    navFrame(harness, menu, .UP)                            // blocked
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("A"))
+    navFrame(harness, menu, .DOWN)
+    testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("C"))
+}
+
+@(test)
+test_activate_clicks_the_focused_widget_and_slider_takes_steps :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    @(static) clicks: int
+    @(static) volume: f32
+    clicks = 0
+    volume = 0
+    menu :: proc(ctx: ^Context) {
+        if UiButton(ctx, "Go") { clicks += 1 }
+        UiSlider(ctx, "Volume", &volume, 0, 100)
+    }
+    navFrame(harness, menu)
+    navFrame(harness, menu, .DOWN)
+    navFrame(harness, menu, activate = true)
+    testing.expect_value(t, clicks, 1)
+    navFrame(harness, menu, .DOWN)                          // on the slider
+    navFrame(harness, menu, .RIGHT)
+    navFrame(harness, menu)
+    navFrame(harness, menu, .RIGHT)
+    navFrame(harness, menu)
+    testing.expect(t, near(volume, 10), "two steps of a twentieth")
+    navFrame(harness, menu, .LEFT)
+    navFrame(harness, menu)
+    testing.expect(t, near(volume, 5))
+    testing.expect(t, .FOCUSED in seenFocusFlag(harness))
+}
+
+@(private = "file")
+seenFocusFlag :: proc(harness: ^Harness) -> Flags {
+    for command in UiCommands(&harness.ctx) {
+        if command.kind == .DRAW && command.info.kind == .SLIDER { return command.info.flags }
+    }
+    return {}
+}

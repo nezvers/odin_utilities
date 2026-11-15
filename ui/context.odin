@@ -89,7 +89,9 @@ Context :: struct {
     hover_scroll: Id,               // the scrolling container the wheel is for
     pointer_over_ui: bool,          // the pointer is over something of the ui: a game should not take the click
     active: Id,                     // the widget that holds the mouse press
-    focus: Id,                      // the widget that gets the keyboard
+    focus: Id,                      // the widget that gets the keyboard, the gamepad and the navigation (see nav.odin)
+    activate: bool,                 // UiActivate was called this frame
+    last_id: Id,                    // the last widget declared (UiNavLink works on it)
     problems: Problems,
     overflow: bool,
 }
@@ -133,6 +135,7 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
     ctx.root_count = 0
     ctx.problems = {}
     ctx.overflow = false
+    ctx.activate = false
     for i in 0 ..< len(ctx.element_slots) {
         ctx.element_slots[i] = 0
     }
@@ -171,6 +174,9 @@ UiEnd :: proc(ctx: ^Context) {
         ctx.command_count = 0
     }
     stateCollect(ctx)
+    if ctx.focus != 0 && stateFind(ctx, ctx.focus) == nil {
+        ctx.focus = 0           // the focused widget is gone
+    }
     if ctx.input.mouse_released {
         ctx.active = 0
     }

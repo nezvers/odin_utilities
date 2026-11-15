@@ -41,6 +41,13 @@ Widgets: `UiWindow UiPanel UiRow UiColumn UiBox UiScroll UiLabel UiButton UiTogg
 `UiBox` takes a whole `Decl`, `UiCustom` draws a widget of your own with a proc. A zero `Size` is what the style metrics say, `{ui.Grow(), ui.Fixed(30)}` is yours.
 Names are ids inside their container: `"Save##slot2"` shows "Save" and hashes the whole string. `UiIdPath("Settings", "Volume")` finds an id from outside.
 
+## Navigation without a pointer
+`nav.odin` is input agnostic: your code calls `UiNavigate(&ctx, .DOWN)` (arrow key, d-pad, stick, test script) and `UiActivate(&ctx)` (confirm) after `UiBegin`.
+The focus goes to the nearest interactive widget in that direction (Godot style); the style sees the `FOCUSED` flag. Overrides, right after a widget:
+`UiNavLink(&ctx, .DOWN, UiId(&ctx, "Quit"))` jumps to a given widget, `UiNavBlock(&ctx, .UP)` allows no move that way.
+A focused slider takes left/right as steps of a twentieth of its range (unless linked). `UiFocus`, `UiFocused`, `UiIsFocused` read and set the focus.
+A click focuses a widget too, so mouse and keyboard share one focus. See `demo_common/demo_navigation.odin`.
+
 ## Styles
 A `Style` is a table of procs per `StyleKind` (PANEL, LABEL, BUTTON, TOGGLE, SLIDER, PROGRESS, TEXT_FIELD, SEPARATOR, DROPDOWN, DROPDOWN_ITEM, SCROLLBAR,
 CUSTOM), a `clip` proc for the scissor (nested clips are resolved for you) and `Metrics` (font size, padding, control height).

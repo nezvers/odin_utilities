@@ -292,6 +292,9 @@ WidgetState :: struct {
     press: f32,
     cursor: int,
     open: bool,
+    nav: [Direction]Id,             // where navigation goes from here: 0 the nearest widget, NAV_BLOCK nowhere, else that widget
+    adjustable: bool,               // a slider: left and right of the navigation change its value
+    pending_adjust: int,            // steps asked by UiNavigate, taken by the widget in its next call
 }
 
 @(private)
@@ -299,6 +302,17 @@ StateSlot :: struct {
     id: Id,
     handle: StateHandle,
 }
+
+// A way to move the focus
+Direction :: enum u8 {
+    UP,
+    DOWN,
+    LEFT,
+    RIGHT,
+}
+
+// In nav links: no widget is reached from here in this direction
+NAV_BLOCK :: Id(0xFFFFFFFF)
 
 // What can go wrong in a frame: the ui carries on and tells here, so a frame is never lost to a crash
 Problem :: enum u8 {
