@@ -17,3 +17,5 @@ log.txt
 /web_build/demo_karl2d/game/bin/
 /web_build/demo_karl2d/game/build/
 /templates/demo_kit/
+/hot_reload_demo/
+/**/hot_reload_demo/

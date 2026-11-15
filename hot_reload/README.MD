@@ -29,3 +29,8 @@ Change `BOX_COLOR` or `BOX_SPEED` in `demo_game/game.odin` and press it: the box
 
 ## Tests
 `odin test hot_reload -strict-style -vet`. The reload test builds the demo game three times with `odin build`, so `odin` has to be in PATH.
+
+## Demos and tests
+`odin run demo_raylib`, `odin run demo_karl2d` (Karl2D needs to be next to the other libraries): the same demos from `demo_common`, written once against the
+demo kit (`odin_utilities/demo_kit`). Each demo has a script of simulated input with checks:
+`odin test demo_common -strict-style -vet` plays it headless, `odin run demo_raylib -define:DEMO_TEST=true` plays it in the window.
