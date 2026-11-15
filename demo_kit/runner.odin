@@ -69,7 +69,7 @@ RunnerStep :: proc(runner: ^Runner) -> bool {
 
     if demo.update != nil { demo.update(ctx) }
 
-    backend.clear(backend, RAY_WHITE)
+    backend.clear(backend, ctx.background)
     if demo.draw != nil { demo.draw(ctx) }
     if runner.show_menu { runnerMenuDraw(runner) }
     backend.end_frame(backend)
@@ -157,6 +157,7 @@ TestAll :: proc(demos: []Demo, backend: ^Backend, max_frames: int = 36000) -> (t
 runnerStartDemo :: proc(runner: ^Runner) {
     runner.started = true
     runner.ctx.frame = 0
+    runner.ctx.background = RAY_WHITE
     demo: ^Demo = &runner.demos[runner.current]
     if demo.init != nil { demo.init(&runner.ctx) }
 }

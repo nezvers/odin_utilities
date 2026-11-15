@@ -76,6 +76,7 @@ Context :: struct {
     frame: int,             // frames since the demo started
     screen: Vec2,
     ui_hover: bool,         // the mouse is over the kit's demo menu: a demo ignores clicks then
+    background: Color,      // what the screen is cleared with each frame: a demo may change it (RAY_WHITE when it starts)
 }
 
 // ------------------------------------------------------------------------------------------------------------------------

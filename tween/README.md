@@ -45,3 +45,8 @@ tw.SystemUpdate(&system, delta_time)
 - Property pointers are stored, the target has to outlive the tween. Tweens in a `TweenSystem` need targets with stable addresses.
 - Step limit per Tween is `TWEEN_STEPS_MAX` (default 8, `-define:TWEEN_STEPS_MAX=16`). `TweenProperty` and friends return `nil` when full.
 - A `TweenSystem` removes finished tweens unless `tween.keep` is set. Handles of removed tweens become invalid.
+
+## Demos and tests
+`odin run demo_raylib`, `odin run demo_karl2d` (Karl2D needs to be next to the other libraries): the same demos from `demo_common`, written once against the
+demo kit (`odin_utilities/demo_kit`). Each demo has a script of simulated input with checks:
+`odin test demo_common -strict-style -vet` plays it headless, `odin run demo_raylib -define:DEMO_TEST=true` plays it in the window.
