@@ -254,6 +254,7 @@ dragBox :: proc(ctx: ^Context, id: Id, value: ^f32, speed: f32, minimum: f32, ma
         id = id,
         layout = {size = widgetSize(size, metrics.control_width, metrics.control_height)},
         hit = {} if disabled else {.INTERACTIVE},
+        cursor = .RESIZE_HORIZONTAL,
         draw = {
             kind = .DRAG, text = UiFormat(ctx, format, value^), value = clamp((value^ - minimum) / (maximum - minimum), 0, 1) if ranged else 0.5,
             actual = value^, minimum = minimum, maximum = maximum, font_size = metrics.font_size, flags = flags,

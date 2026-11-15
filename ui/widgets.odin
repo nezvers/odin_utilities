@@ -21,7 +21,24 @@ Interaction :: struct {
     hovered: bool,
     pressed: bool,      // holds the mouse press
     clicked: bool,      // the press ended on it
+    double_clicked: bool,   // pressed a second time within 0.35 s of the first press on it
     rect: Rect,         // where it was at the end of the last frame (0 the first time)
+}
+
+// The time between two presses that makes a double click
+DOUBLE_CLICK_SECONDS :: 0.35
+
+// Everything declared inside of this block is disabled: drawn greyed out, no pointer, no focus (a group of widgets that do not apply now):
+//     if ui.UiDisabled(&ctx, !have_selection) { ui.UiButton(&ctx, "Delete") ... }
+// With `disabled` false the block is plain. Blocks nest.
+@(deferred_in = UiDisabledEnd)
+UiDisabled :: proc(ctx: ^Context, disabled: bool = true) -> bool {
+    if disabled { ctx.disabled_depth += 1 }
+    return true
+}
+
+UiDisabledEnd :: proc(ctx: ^Context, disabled: bool = true) {
+    if disabled { ctx.disabled_depth -= 1 }
 }
 
 // The id a widget with this name has in the open container (after UiEnd: directly in the root)
@@ -56,12 +73,15 @@ widgetBehavior :: proc(ctx: ^Context, id: Id, disabled: bool = false) -> Interac
     result: Interaction
     state: ^WidgetState = stateFind(ctx, id)
     if state != nil { result.rect = state.rect }
-    if disabled { return result }
+    if disabled || ctx.disabled_depth > 0 { return result }
     ctx.last_id = id
     result.hovered = ctx.hover == id && (ctx.active == 0 || ctx.active == id)
     if result.hovered && ctx.input.mouse_pressed {
         ctx.active = id
         ctx.focus = id
+        result.double_clicked = ctx.last_press_id == id && ctx.time - ctx.last_press_time <= DOUBLE_CLICK_SECONDS
+        ctx.last_press_id = id
+        ctx.last_press_time = ctx.time
     }
     if ctx.activate && ctx.focus == id {
         result.clicked = true       // the confirm key or button of a gamepad
@@ -397,6 +417,7 @@ UiSlider :: proc(ctx: ^Context, name: string, value: ^f32, minimum: f32 = 0, max
         id = id,
         layout = {size = widgetSize(size, metrics.control_width, metrics.control_height)},
         hit = hit,
+        cursor = .RESIZE_HORIZONTAL,
         draw = {
             kind = .SLIDER, name = IdSplitName(name), text = UiFormat(ctx, format, value^),
             value = normalized, actual = value^, minimum = minimum, maximum = maximum,
@@ -450,6 +471,7 @@ UiTextField :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, siz
         id = id,
         layout = {size = widgetSize(size, metrics.control_width, metrics.control_height)},
         hit = hit,
+        cursor = .TEXT,
         draw = {
             kind = .TEXT_FIELD, name = IdSplitName(name), text = string(buffer[:length^]),
             cursor = state.cursor, font_size = metrics.font_size, flags = flags,

@@ -66,6 +66,7 @@ lines: [64]f32
 histogram: [12]f32
 progress: f32
 show_second_header: bool
+disable_block: bool
 wrap_width: f32
 scroll_to: f32
 // popups
@@ -289,6 +290,14 @@ section_widgets :: proc(c: ^ui.Context) {
         }
         if ui.UiTreeNode(c, "Advanced, with Selectable nodes") {
             ui.UiLabelColored(c, "tree nodes nest as deep as the layout does", {140, 144, 160, 255})
+        }
+    }
+    if ui.UiTreeNode(c, "Disable Blocks") {
+        ui.UiToggle(c, "Disable entire section", &disable_block)
+        if ui.UiDisabled(c, disable_block) {
+            ui.UiButton(c, "Button")
+            ui.UiSlider(c, "Demo Slider", &slider_float, 0, 1)
+            ui.UiToggle(c, "Demo Checkbox", &check)
         }
     }
     if ui.UiTreeNode(c, "Collapsing Headers") {

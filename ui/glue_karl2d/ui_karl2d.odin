@@ -144,3 +144,17 @@ encodeRune :: proc(character: rune) -> (bytes: [4]u8, width: int) {
     }
     return {u8(0xF0 | value >> 18), u8(0x80 | (value >> 12) & 0x3F), u8(0x80 | (value >> 6) & 0x3F), u8(0x80 | value & 0x3F)}, 4
 }
+
+// Sets the mouse cursor to what the ui says the pointer is over (call after UiEnd)
+ApplyCursor :: proc(ctx: ^ui.Context) {
+    cursor: karl2d.Standard_Cursor
+    switch ui.UiCursor(ctx) {
+    case .ARROW: cursor = .Default
+    case .TEXT: cursor = .Text
+    case .HAND: cursor = .Hand
+    case .RESIZE_HORIZONTAL: cursor = .Resize_EW
+    case .RESIZE_VERTICAL: cursor = .Resize_NS
+    case .NOT_ALLOWED: cursor = .Not_Allowed
+    }
+    karl2d.set_cursor(cursor)
+}

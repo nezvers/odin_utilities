@@ -18,6 +18,7 @@ package ui
 
 import hm "core:container/handle_map"
 import "core:fmt"
+import "core:math"
 
 // The memory of a context, sized by the user. `ELEMENTS` is the most elements (a widget is one or two, a text line is one) in a frame,
 // `COMMANDS` the most things to draw, `LINES` the most wrapped text lines, `TEXT` the bytes UiFormat may use in a frame.
@@ -91,6 +92,12 @@ Context :: struct {
     active: Id,                     // the widget that holds the mouse press
     focus: Id,                      // the widget that gets the keyboard, the gamepad and the navigation (see nav.odin)
     hover_root: Id,                 // the floating element (popup, window) the hovered widget is in, 0 for the main layer
+    disabled_depth: int,            // UiDisabled scopes that are open
+    animating: bool,                // some fade of the last frame had not arrived yet (UiAnimating)
+    cursor: Cursor,                 // what the pointer is over (UiCursor)
+    last_press_id: Id,              // the widget of the last press and when, for double clicks
+    last_press_time: f64,
+    peak: Usage,                    // the highest use of each buffer so far (UiUsage)
     reveal_open: Id,                // the body of a header that was just opened: a scrolling container shows it (as much as fits) once it is laid out
     modal_root: Id,                 // the dialog that was open at the end of the last frame: navigation stays in it
     modal_next: Id,
@@ -148,6 +155,7 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
     ctx.problems = {}
     ctx.overflow = false
     ctx.activate = false
+    ctx.disabled_depth = 0
     ctx.menu_close = false
     ctx.menu_depth = 0
     ctx.fold_count = 0
@@ -191,6 +199,7 @@ UiEnd :: proc(ctx: ^Context) {
         ctx.open_count = 0
     }
     stateSmooth(ctx)
+    usageRecord(ctx)
     if !ctx.overflow {
         LayoutCalculate(ctx)
     } else {
@@ -246,6 +255,7 @@ UiElementRect :: proc(ctx: ^Context, id: Id) -> (rect: Rect, found: bool) {
 @(private)
 hoverUpdate :: proc(ctx: ^Context) {
     ctx.hover = 0
+    ctx.cursor = .ARROW
     ctx.hover_root = 0
     ctx.hover_scroll = 0
     ctx.pointer_over_ui = false
@@ -258,6 +268,7 @@ hoverUpdate :: proc(ctx: ^Context) {
         if .INTERACTIVE in box.kinds && ctx.hover == 0 {
             ctx.hover = box.id
             ctx.hover_root = box.root
+            ctx.cursor = box.cursor
         }
         if .SCROLL in box.kinds && ctx.hover_scroll == 0 {
             ctx.hover_scroll = box.id
@@ -314,17 +325,40 @@ stateGet :: proc(ctx: ^Context, id: Id) -> ^WidgetState {
 // The hover and press values that fade with time, for styles that animate
 @(private)
 stateSmooth :: proc(ctx: ^Context) {
-    step: f32 = min(ctx.delta_time * 14, 1)
+    step: f32 = animationStep(ctx.delta_time, ANIMATION_RATE)
+    ctx.animating = false
     it := hm.iterator_make(&ctx.states)
     for state, _ in hm.iterate(&it) {
         hover_target: f32 = 1 if ctx.hover == state.id && (ctx.active == 0 || ctx.active == state.id) else 0
         press_target: f32 = 1 if ctx.active == state.id else 0
-        state.hover += (hover_target - state.hover) * step
-        state.press += (press_target - state.press) * step
+        if follow(&state.hover, hover_target, step) { ctx.animating = true }
+        if follow(&state.press, press_target, step) { ctx.animating = true }
     }
 }
 
-// Forgets the widgets that were not declared this frame and rebuilds the table that finds the rest
+// How fast the fades of widgets arrive: the distance left is cut in half this many times a second
+ANIMATION_RATE :: 18
+
+// The part of the distance a value covers in `dt` seconds: independent of the frame rate (two frames of half the time arrive at the same place)
+animationStep :: proc(dt: f32, rate: f32) -> f32 {
+    return 1 - math.pow(2, -rate * max(dt, 0))
+}
+
+// Moves `value` towards `target` by `step` of the distance, and snaps when it is near. True while it is still moving.
+@(private)
+follow :: proc(value: ^f32, target: f32, step: f32) -> bool {
+    if abs(target - value^) < 0.004 {
+        value^ = target
+        return false
+    }
+    value^ += (target - value^) * step
+    return true
+}
+
+// Frames a widget may be left out of before the ui forgets its state
+STATE_GRACE_FRAMES :: 2
+
+// Forgets the widgets that were not declared for a few frames and rebuilds the table that finds the rest
 @(private)
 stateCollect :: proc(ctx: ^Context) {
     for i in 0 ..< len(ctx.state_slots) {
@@ -332,7 +366,8 @@ stateCollect :: proc(ctx: ^Context) {
     }
     it := hm.iterator_make(&ctx.states)
     for state, handle in hm.iterate(&it) {
-        if state.last_frame != ctx.frame {
+        // a widget that is absent for a frame or two keeps its state (a list that scrolls a row out, a header that flickers)
+        if ctx.frame - state.last_frame > STATE_GRACE_FRAMES {
             hm.remove(&ctx.states, handle)
             continue
         }
@@ -342,4 +377,64 @@ stateCollect :: proc(ctx: ^Context) {
         }
         ctx.state_slots[slot] = {state.id, handle}
     }
+}
+
+// How much of each buffer a frame used: for sizing a Storage (the numbers are in the units of its parameters)
+Usage :: struct {
+    elements: int,
+    commands: int,
+    lines: int,
+    text_bytes: int,
+    roots: int,
+    states: int,
+    hits: int,
+}
+
+// What the last frame used, and the highest of every frame so far (`peak`). Compare with the capacities of the Storage and UI_STATES.
+UiUsage :: proc(ctx: ^Context) -> (now: Usage, peak: Usage) {
+    now = {
+        elements = ctx.element_count, commands = ctx.command_count, lines = ctx.line_count, text_bytes = ctx.text_used,
+        roots = ctx.root_count, states = stateCount(ctx), hits = ctx.hit_count,
+    }
+    return now, ctx.peak
+}
+
+@(private)
+usageRecord :: proc(ctx: ^Context) {
+    now: Usage = {
+        elements = ctx.element_count, commands = ctx.command_count, lines = ctx.line_count, text_bytes = ctx.text_used,
+        roots = ctx.root_count, states = stateCount(ctx),
+    }
+    ctx.peak.elements = max(ctx.peak.elements, now.elements)
+    ctx.peak.text_bytes = max(ctx.peak.text_bytes, now.text_bytes)
+    ctx.peak.roots = max(ctx.peak.roots, now.roots)
+    ctx.peak.states = max(ctx.peak.states, now.states)
+}
+
+// True while some fade of the widgets (hover, press) has not arrived: a host that draws on demand keeps drawing frames while it is true and
+// then waits for the next input
+UiAnimating :: proc(ctx: ^Context) -> bool {
+    return ctx.animating
+}
+
+// What the mouse cursor should look like now: the glue sets the real one (raylib: SetMouseCursor)
+UiCursor :: proc(ctx: ^Context) -> Cursor {
+    return ctx.cursor
+}
+
+// A value that follows `target` in time (a fade, a slide) kept by the ui under `id` (a widget id or one made with IdFromString); a style gets the id from
+// `DrawInfo.id` and the target from what it knows. The first call starts at the target.
+UiAnimate :: proc(ctx: ^Context, id: Id, target: f32, rate: f32 = ANIMATION_RATE) -> f32 {
+    state: ^WidgetState = stateGet(ctx, id)
+    if !state.initialized {
+        state.initialized = true
+        state.anim = target
+    }
+    if follow(&state.anim, target, animationStep(ctx.delta_time, rate)) { ctx.animating = true }
+    return state.anim
+}
+
+@(private)
+stateCount :: proc(ctx: ^Context) -> int {
+    return max(int(ctx.states.used_len) - int(ctx.states.unused_len) - 1, 0)       // slot 0 is the empty handle
 }

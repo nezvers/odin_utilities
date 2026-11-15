@@ -40,7 +40,7 @@ ui.UiRender(&ctx)
 Widgets: `UiWindow UiPanel UiRow UiColumn UiBox UiScroll UiLabel UiButton UiToggle UiSlider UiProgress UiTextField UiDropdown UiSeparator UiSpacer UiCustom`.
 More widgets (`widgets_more.odin`): `UiCollapsing` / `UiTreeNode` (headers with a body; opening one scrolls the container to show what it opened, with the header kept in view), `UiRadio`, `UiSelectable`, `UiListBox`, `UiTabBar`, `UiArrowButton` (repeats),
 `UiDrag` / `UiDragInt`, `UiSliderInt` / `UiSliderAngle`, `UiInputInt` / `UiInputFloat`, `UiPlotLines` / `UiPlotHistogram`, `UiColorEdit3` / `UiColorButton`,
-`UiLabelColored` / `UiBullet` / `UiLabelText` / `UiSeparatorText`, `UiTooltip`, menus (`UiMenuBar`, `UiMenu` with submenus, `UiMenuItem` with shortcut and check),
+`UiLabelColored` / `UiBullet` / `UiLabelText` / `UiSeparatorText`, `UiTooltip`, `UiDisabled` (a block of disabled widgets), menus (`UiMenuBar`, `UiMenu` with submenus, `UiMenuItem` with shortcut and check),
 `UiModal` (a dialog over a dimmed screen that keeps the focus) and `UiWindowTitled` (a window with a title bar that is dragged).
 ``UiBox` takes a whole `Decl`, `UiCustom` draws a widget of your own with a proc. A zero `Size` is what the style metrics say, `{ui.Grow(), ui.Fixed(30)}` is yours.
 Names are ids inside their container: `"Save##slot2"` shows "Save" and hashes the whole string. `UiIdPath("Settings", "Volume")` finds an id from outside.
@@ -62,6 +62,12 @@ The focus is one id for mouse and keyboard (`UiFocused`, `UiFocus`, `UiIsFocused
 scrolling container scrolls the focused widget into view. Overrides, right after a widget: `UiNavLink(&ctx, .DOWN, UiId(&ctx, "Quit"))` jumps to a given
 widget, `UiNavBlock(&ctx, .UP)` allows no move that way. `UiAction(&ctx, .PAGE_DOWN)` does an action from code (tests, scripted input) and
 `UiNavigate` / `UiActivate` are the plain moves. See `demo_common/demo_navigation.odin`: a menu, a dropdown, a scrolling list and a dialog, driven by keys only.
+
+## Frames, animation, cursor, usage
+Widget state is kept for 2 frames after the last declaration (`STATE_GRACE_FRAMES`). Hover and press fades are frame rate independent; `UiAnimating(&ctx)` is true while any of them
+(or a `UiAnimate(&ctx, id, target)` value of a style) is still moving, so an app that draws on demand keeps drawing while it is true. `Interaction.double_clicked` reports a second press
+within 0.35 s. `UiCursor(&ctx)` is what the mouse cursor should look like (the glue's `ApplyCursor` sets it). `UiUsage(&ctx)` returns the use of the buffers now and the highest so far,
+to size a `Storage` and `UI_STATES`.
 
 ## Styles
 A `Style` is a table of procs per `StyleKind` (PANEL, LABEL, BUTTON, TOGGLE, SLIDER, PROGRESS, TEXT_FIELD, SEPARATOR, DROPDOWN, DROPDOWN_ITEM, SCROLLBAR,

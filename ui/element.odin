@@ -138,6 +138,16 @@ Clip :: struct {
     offset: Vec2,                   // where the content is moved (a scroll position, 0 or negative)
 }
 
+// What the mouse cursor looks like over a widget; the glue sets the real one (`UiCursor`)
+Cursor :: enum u8 {
+    ARROW,
+    TEXT,               // over a text field
+    HAND,               // over something that opens or follows
+    RESIZE_HORIZONTAL,  // over a value that is dragged sideways
+    RESIZE_VERTICAL,
+    NOT_ALLOWED,        // over a disabled widget
+}
+
 // Which pointer events an element takes
 HitKind :: enum u8 {
     INTERACTIVE,        // hover, press (buttons, sliders...)
@@ -153,6 +163,7 @@ Decl :: struct {
     clip: Clip,
     aspect_ratio: f32,              // width / height, 0 for none
     hit: HitKinds,
+    cursor: Cursor,                 // while the pointer is over it (an interactive element)
     draw: DrawInfo,                 // what the style gets (rect, id and the interaction flags are filled by the context)
 }
 
@@ -244,6 +255,7 @@ HitBox :: struct {
     rect: Rect,
     clip_rect: Rect,
     kinds: HitKinds,
+    cursor: Cursor,
     root: Id,                       // the floating element it lives in (0: the main layer): what tells that the pointer is inside of a popup
 }
 
@@ -321,6 +333,7 @@ WidgetState :: struct {
     initialized: bool,              // the widget was declared before (a header that starts open sets its state once)
     drag: Vec2,                     // where the pointer was in the last frame of a drag (a drag widget, a window title)
     press_time: f32,                // seconds the widget has been held (a button that repeats)
+    anim: f32,                      // UiAnimate: a value that follows a target
 }
 
 @(private)

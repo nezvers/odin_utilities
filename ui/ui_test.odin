@@ -466,11 +466,19 @@ test_state_of_widgets_that_are_gone_is_released :: proc(t: ^testing.T) {
         _ = i
     }
     testing.expect(t, stateFind(&harness.ctx, UiIdIn(&harness.ctx, "A")) != nil)
+    // B is left out: its state is kept for a frame or two (a widget that flickers keeps what it remembers), then forgotten
+    for i in 0 ..< 2 {
+        frame(harness)
+        UiButton(&harness.ctx, "A")
+        UiEnd(&harness.ctx)
+        testing.expect(t, stateFind(&harness.ctx, UiIdIn(&harness.ctx, "B")) != nil, "B is still remembered after a frame or two")
+        _ = i
+    }
     frame(harness)
     UiButton(&harness.ctx, "A")
     UiEnd(&harness.ctx)
     testing.expect(t, stateFind(&harness.ctx, UiIdIn(&harness.ctx, "A")) != nil)
-    testing.expect(t, stateFind(&harness.ctx, UiIdIn(&harness.ctx, "B")) == nil, "B was not declared this frame")
+    testing.expect(t, stateFind(&harness.ctx, UiIdIn(&harness.ctx, "B")) == nil, "B was left out for too long")
 }
 
 // The id a widget gets when it is declared directly in the root of a frame
@@ -862,4 +870,110 @@ test_opening_a_header_at_the_bottom_shows_its_body :: proc(t: ^testing.T) {
     header, _ := UiElementRect(&harness.ctx, UiIdPath("list", "More"))
     testing.expect(t, found && body.y + 20 < view.y + view.w, "the body starts inside of the view, with room for lines")
     testing.expect(t, header.y >= view.y - 1, "and the header stays in view (the body is taller than the view)")
+}
+
+@(test)
+test_a_disabled_scope_takes_no_pointer_and_no_focus :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    clicks: int
+    body :: proc(ctx: ^Context, clicks: ^int, off: bool) {
+        if UiDisabled(ctx, off) {
+            if UiButton(ctx, "Go") { clicks^ += 1 }
+        }
+    }
+    inputs: [4]Input = {pointerAt({-100, -100}), pointerAt({20, 12}), pointerAt({20, 12}, down = true, pressed = true), pointerAt({20, 12}, released = true)}
+    for input in inputs {
+        frame(harness, input)
+        body(&harness.ctx, &clicks, true)
+        UiEnd(&harness.ctx)
+        UiRender(&harness.ctx)
+    }
+    testing.expect_value(t, clicks, 0)
+    testing.expect(t, .DISABLED in seen.last[.BUTTON].flags, "drawn disabled")
+    testing.expect_value(t, UiCursor(&harness.ctx), Cursor.ARROW)
+    // not focusable by navigation either
+    harness.ctx.focus = 0
+    testing.expect(t, !UiNavigate(&harness.ctx, .DOWN))
+    // with the scope off it is a normal button again
+    for input in inputs {
+        frame(harness, input)
+        body(&harness.ctx, &clicks, false)
+        UiEnd(&harness.ctx)
+    }
+    testing.expect_value(t, clicks, 1)
+    testing.expect_value(t, harness.ctx.disabled_depth, 0)
+}
+
+@(test)
+test_double_click_and_cursor_and_usage :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    doubles: int
+    clicked_names: int
+    @(static) text: [8]u8
+    @(static) length: int
+    one :: proc(ctx: ^Context, doubles: ^int) {
+        id: Id = UiId(ctx, "Go")
+        _ = stateGet(ctx, id)
+        interaction: Interaction = widgetBehavior(ctx, id)
+        if interaction.double_clicked { doubles^ += 1 }
+        ElementOpen(ctx, {id = id, layout = {size = {Fixed(100), Fixed(30)}}, hit = {.INTERACTIVE}, draw = {kind = .BUTTON}})
+        ElementClose(ctx)
+        _, _ = UiTextField(ctx, "Name", text[:], &length)
+    }
+    press :: proc(harness: ^Harness, doubles: ^int, input: Input) {
+        frame(harness, input)
+        one(&harness.ctx, doubles)
+        UiEnd(&harness.ctx)
+    }
+    press(harness, &doubles, pointerAt({-100, -100}))
+    press(harness, &doubles, pointerAt({20, 12}))
+    press(harness, &doubles, pointerAt({20, 12}, down = true, pressed = true))
+    press(harness, &doubles, pointerAt({20, 12}, released = true))
+    press(harness, &doubles, pointerAt({20, 12}, down = true, pressed = true))        // the second press, a few frames later
+    testing.expect_value(t, doubles, 1)
+    // the text field gives the text cursor
+    press(harness, &doubles, pointerAt({20, 45}))
+    press(harness, &doubles, pointerAt({20, 45}))
+    testing.expect_value(t, UiCursor(&harness.ctx), Cursor.TEXT)
+    now, peak := UiUsage(&harness.ctx)
+    testing.expect(t, now.elements >= 3 && peak.elements >= now.elements)
+    testing.expect(t, peak.states >= 2)
+    _ = clicked_names
+}
+
+@(test)
+test_fades_are_frame_rate_independent_and_report_animating :: proc(t: ^testing.T) {
+    // two frames of 1/120 s arrive where one of 1/60 s does
+    one: f32 = animationStep(1.0 / 60, ANIMATION_RATE)
+    two: f32 = 1 - (1 - animationStep(1.0 / 120, ANIMATION_RATE)) * (1 - animationStep(1.0 / 120, ANIMATION_RATE))
+    testing.expect(t, abs(one - two) < 0.0001)
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    hover: Input = pointerAt({20, 12})
+    for i in 0 ..< 3 {
+        frame(harness, pointerAt({-100, -100}))
+        UiButton(&harness.ctx, "Go")
+        UiEnd(&harness.ctx)
+        _ = i
+    }
+    testing.expect(t, !UiAnimating(&harness.ctx), "nothing moves")
+    frame(harness, hover)
+    UiButton(&harness.ctx, "Go")
+    UiEnd(&harness.ctx)
+    frame(harness, hover)
+    UiButton(&harness.ctx, "Go")
+    UiEnd(&harness.ctx)
+    testing.expect(t, UiAnimating(&harness.ctx), "the hover fade is on its way")
+    for i in 0 ..< 120 {
+        frame(harness, hover)
+        UiButton(&harness.ctx, "Go")
+        UiEnd(&harness.ctx)
+        _ = i
+    }
+    testing.expect(t, !UiAnimating(&harness.ctx), "and it arrived")
 }

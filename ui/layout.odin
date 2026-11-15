@@ -38,6 +38,12 @@ ElementOpen :: proc(ctx: ^Context, decl: Decl) -> bool {
         clip = elementClipTop(ctx),
         root = ctx.root_stack[ctx.root_stack_count - 1] if ctx.root_stack_count > 0 else 0,
     }
+    // inside of a UiDisabled scope nothing takes the pointer or the focus and everything is drawn disabled
+    if ctx.disabled_depth > 0 {
+        if .INTERACTIVE in element.decl.hit { element.decl.cursor = .NOT_ALLOWED }
+        element.decl.hit -= {.INTERACTIVE}
+        element.decl.draw.flags += {.DISABLED}
+    }
     // the max of 0 means no limit: a number that is never reached makes the arithmetic of the layout simple
     limitSizing(&element.decl.layout.size.width)
     limitSizing(&element.decl.layout.size.height)
@@ -790,7 +796,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
     kinds: HitKinds = element.decl.hit
     if floating.attach_to != .NONE && floating.capture { kinds += {.BLOCKER} }
     if kinds != {} && ctx.hit_count < len(ctx.hits) {
-        ctx.hits[ctx.hit_count] = {id = element.id, rect = shown, clip_rect = own_clip, kinds = kinds, root = root_id}
+        ctx.hits[ctx.hit_count] = {id = element.id, rect = shown, clip_rect = own_clip, kinds = kinds, cursor = element.decl.cursor, root = root_id}
         ctx.hit_count += 1
     }
 
