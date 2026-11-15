@@ -3,7 +3,8 @@
 My Odin libraries (git repo nezvers/odin_utilities, branch main). Parent: `../CLAUDE.md` (master rules for everything under O:\Projects\Odin).
 One library per directory, all with the same structure so any of them is a reference and a template (`templates/library`).
 Shared assets: `assets/` (textures, fonts, sounds, gltf). `references/` is for reference material (git ignored: `references/clay` is the
-Clay checkout the `ui` layout is ported from). `karl2d/` is a directory junction to `../odin_plug/karl2d` (see Repository map).
+Clay checkout the `ui` layout is ported from, `references/imgui` the Dear ImGui demo the `ui` demo follows, `references/raddebugger` the RAD Debugger: its `src/ui`
+and its thread layer `src/base/base_threads*`, `base_thread_context*`, `artifact_cache/` were studied for ui and threading ideas). `karl2d/` is a directory junction to `../odin_plug/karl2d` (see Repository map).
 Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git ignored.
 
 ## Library structure (every odin_utilities library, template in odin_utilities/templates/library)
