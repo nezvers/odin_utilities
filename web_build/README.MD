@@ -39,3 +39,7 @@ Both show the same: textures, a font and a text file loaded by name.
 
 ## Tests
 `odin test web_build -strict-style -vet`. The build test runs `odin build -target:js_wasm32`, no browser is needed.
+
+## Demos and tests
+`odin run demo_raylib` and `odin run demo_karl2d` show the resources (textures, a font, a csv) through `ResourceLoad`: read from the resource folder when the file is there, from the bytes compiled into the program otherwise.
+The demo is in `demo_common` (demo kit), `odin test demo_common -strict-style -vet` plays its script headless. The web build itself is `demo_karl2d/game` (init, step, shutdown) built by `demo_karl2d/build_web`.

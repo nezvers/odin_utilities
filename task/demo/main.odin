@@ -1,4 +1,4 @@
-package demo_raylib
+package demo
 
 import "core:log"
 
