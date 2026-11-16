@@ -1,0 +1,59 @@
+{
+    "version": "2.0.0",
+    "command": "",
+    "args": [],
+    "tasks": [
+        {
+            // the build tool itself, a launch configuration runs the exe with arguments
+            "label": "Build Tool",
+            "type": "shell",
+            "command": "odin build demo/tool -strict-style -vet -out:${config:project_name}.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build demo/tool -strict-style -vet -out:${config:project_name}.bin -debug"
+            },
+            "osx": {
+                "command": "odin build demo/tool -strict-style -vet -out:${config:project_name}.bin -debug"
+            }
+        },
+        {
+            "label": "Build Extensions",
+            "type": "shell",
+            "command": "odin run demo/tool -strict-style -vet -- all",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Build and Install Chrome",
+            "type": "shell",
+            "command": "odin run demo/tool -strict-style -vet -- chrome --install",
+            "group": "build"
+        },
+        {
+            "label": "Build and Install Opera",
+            "type": "shell",
+            "command": "odin run demo/tool -strict-style -vet -- opera --install",
+            "group": "build"
+        },
+        {
+            "label": "Build and Install Edge",
+            "type": "shell",
+            "command": "odin run demo/tool -strict-style -vet -- edge --install",
+            "group": "build"
+        },
+        {
+            "label": "Build and Install Firefox",
+            "type": "shell",
+            "command": "odin run demo/tool -strict-style -vet -- firefox --install",
+            "group": "build"
+        },
+        {
+            "label": "Test",
+            "type": "shell",
+            "command": "odin test . -strict-style -vet",
+            "group": "test"
+        }
+    ]
+}

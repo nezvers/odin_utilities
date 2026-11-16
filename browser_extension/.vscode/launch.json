@@ -1,0 +1,93 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Build Extensions",
+            "request": "launch",
+            "preLaunchTask": "Build Tool",
+            "args": ["all"],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        },
+        {
+            "name": "Build and Install Chrome",
+            "request": "launch",
+            "preLaunchTask": "Build Tool",
+            "args": ["chrome", "--install"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        },
+        {
+            "name": "Build and Install Opera",
+            "request": "launch",
+            "preLaunchTask": "Build Tool",
+            "args": ["opera", "--install"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        },
+        {
+            "name": "Build and Install Edge",
+            "request": "launch",
+            "preLaunchTask": "Build Tool",
+            "args": ["edge", "--install"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        },
+        {
+            "name": "Build and Install Firefox",
+            "request": "launch",
+            "preLaunchTask": "Build Tool",
+            "args": ["firefox", "--install"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        }
+    ]
+}

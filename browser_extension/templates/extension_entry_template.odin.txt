@@ -1,0 +1,43 @@
+// Template of browser_extension: copied to <source>/build/extension and built for js_wasm32 (this file is not compiled where it is)
+// Owns the message buffers and the exports that templates/extension.js calls, the source package only has init and on_message.
+package extension_entry
+
+import ex "../.."
+import "base:runtime"
+
+INPUT_CAPACITY :: 16 * 1024
+OUTPUT_CAPACITY :: 16 * 1024
+
+ctx: runtime.Context
+input: [INPUT_CAPACITY]u8
+output: [OUTPUT_CAPACITY]u8
+
+// Runs once when the background starts
+main :: proc() {
+	ctx = context
+	ex.init()
+}
+
+@export
+input_pointer :: proc "c" () -> rawptr {
+	return &input[0]
+}
+
+@export
+input_capacity :: proc "c" () -> int {
+	return INPUT_CAPACITY
+}
+
+@export
+output_pointer :: proc "c" () -> rawptr {
+	return &output[0]
+}
+
+// The message is `length` bytes in the input buffer, the reply is written to the output buffer, its length is returned
+@export
+message :: proc "c" (length: int) -> int {
+	context = ctx
+	defer free_all(context.temp_allocator)
+	written: int = ex.on_message(string(input[:clamp(length, 0, INPUT_CAPACITY)]), output[:])
+	return clamp(written, 0, OUTPUT_CAPACITY)
+}
