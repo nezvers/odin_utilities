@@ -32,12 +32,20 @@ SelfTest :: proc(use_stun: bool) -> int {
     for !p2p.LinkGathered(host) || !p2p.LinkGathered(guest) {
         Pump(host, guest)
     }
+    // the filtering test runs after the gathering and takes up to 2 seconds
+    waited: i64 = p2p.LinkNow()
+    for host.filter_state == .BOTH || host.filter_state == .PORT_ONLY {
+        Pump(host, guest)
+        if p2p.LinkNow() - waited > 4000 {
+            break
+        }
+    }
     PrintAddresses(host)
     if host.candidate_count == 0 {
         fmt.eprintln("FAIL: no address found")
         return 1
     }
-    if use_stun && server_count > 0 && host.stun_port[0] == 0 {
+    if use_stun && server_count > 0 && !host.stun_answered[0] {
         fmt.eprintln("WARN: STUN servers did not answer (blocked network?)")
     }
 

@@ -14,26 +14,44 @@ STUN_BINDING_REQUEST :: u16(0x0001)
 STUN_BINDING_SUCCESS :: u16(0x0101)
 STUN_ATTR_MAPPED :: u16(0x0001)
 STUN_ATTR_XOR_MAPPED :: u16(0x0020)
+STUN_ATTR_SOURCE_ADDRESS :: u16(0x0004)        // RFC 3489 servers
+STUN_ATTR_CHANGED_ADDRESS :: u16(0x0005)
+STUN_ATTR_CHANGE_REQUEST :: u16(0x0003)
+STUN_ATTR_RESPONSE_ORIGIN :: u16(0x802B)       // RFC 5780 servers
+STUN_ATTR_OTHER_ADDRESS :: u16(0x802C)
+STUN_CHANGE_PORT :: u32(2)
+STUN_CHANGE_IP :: u32(4)
 
-// Free servers that answer binding requests. Several, because one of them can be down or blocked on a network.
+// Free servers that answer binding requests. Several, because one of them can be down or blocked on a network, and different
+// ones are needed to tell a symmetric NAT. The third also has a second address and honors CHANGE-REQUEST (RFC 5780), which
+// is what the NAT filtering test needs (found with tool/probe: most free servers ignore it or announce a private address).
 STUN_SERVERS := [?]string{
     "stun.l.google.com:19302",
     "stun.cloudflare.com:3478",
-    "stun1.l.google.com:19302",
+    "stun.nextcloud.com:3478",
 }
 
 StunTxId :: [12]byte
 
-// Fill `buffer` (at least STUN_HEADER_SIZE) with a binding request, returns the length to send.
-StunBuildRequest :: proc(buffer: []byte, txid: StunTxId) -> int {
-    assert(len(buffer) >= STUN_HEADER_SIZE)
+// Fill `buffer` (at least STUN_HEADER_SIZE + 8) with a binding request, returns the length to send. `change` asks the server to
+// answer from another address (STUN_CHANGE_IP / STUN_CHANGE_PORT, RFC 5780): if that answer still reaches us the NAT lets
+// strangers in, which is how the filtering behavior is measured. Only servers that support it answer.
+StunBuildRequest :: proc(buffer: []byte, txid: StunTxId, change: u32 = 0) -> int {
+    assert(len(buffer) >= STUN_HEADER_SIZE + 8)
     PutU16BE(buffer[0:], STUN_BINDING_REQUEST)
-    PutU16BE(buffer[2:], 0)
     PutU32BE(buffer[4:], STUN_MAGIC)
     for i in 0 ..< len(txid) {
         buffer[8 + i] = txid[i]
     }
-    return STUN_HEADER_SIZE
+    if change == 0 {
+        PutU16BE(buffer[2:], 0)
+        return STUN_HEADER_SIZE
+    }
+    PutU16BE(buffer[2:], 8)
+    PutU16BE(buffer[20:], STUN_ATTR_CHANGE_REQUEST)
+    PutU16BE(buffer[22:], 4)
+    PutU32BE(buffer[24:], change)
+    return STUN_HEADER_SIZE + 8
 }
 
 // Is this datagram shaped like STUN? Our own packets start with PACKET_MAGIC, so the two never mix on one socket.
@@ -41,10 +59,10 @@ StunLooksLikeStun :: proc(data: []byte) -> bool {
     return len(data) >= STUN_HEADER_SIZE && data[0] < 0x40 && GetU32BE(data[4:]) == STUN_MAGIC
 }
 
-// The address the server saw us at. Only IPv4 (the socket is IPv4). Answers for another transaction are rejected,
-// so a late or forged reply cannot overwrite a good result.
-StunParseResponse :: proc(data: []byte, txid: StunTxId) -> (endpoint: net.Endpoint, ok: bool) {
-    if !StunLooksLikeStun(data) || GetU16BE(data[0:]) != STUN_BINDING_SUCCESS {
+// Is this a message of the transaction `txid`? Returns the end of its attributes (a view limit into data).
+@(private)
+StunCheck :: proc(data: []byte, txid: StunTxId) -> (end: int, ok: bool) {
+    if !StunLooksLikeStun(data) {
         return
     }
     for i in 0 ..< len(txid) {
@@ -52,45 +70,91 @@ StunParseResponse :: proc(data: []byte, txid: StunTxId) -> (endpoint: net.Endpoi
             return
         }
     }
-    end: int = STUN_HEADER_SIZE + int(GetU16BE(data[2:]))
-    if end > len(data) {
+    end = STUN_HEADER_SIZE + int(GetU16BE(data[2:]))
+    return end, end <= len(data)
+}
+
+// The value of the first attribute of `kind`, a view into data.
+StunFindAttribute :: proc(data: []byte, kind: u16) -> (value: []byte, ok: bool) {
+    if len(data) < STUN_HEADER_SIZE {
         return
     }
-
-    plain: net.Endpoint
-    have_plain: bool
+    end: int = min(STUN_HEADER_SIZE + int(GetU16BE(data[2:])), len(data))
     offset: int = STUN_HEADER_SIZE
     for offset + 4 <= end {
-        kind: u16 = GetU16BE(data[offset:])
+        found: u16 = GetU16BE(data[offset:])
         size: int = int(GetU16BE(data[offset + 2:]))
-        value_start: int = offset + 4
-        if value_start + size > end {
+        start: int = offset + 4
+        if start + size > end {
             return
         }
-        value: []byte = data[value_start:value_start + size]
-        // attributes are padded to 4 bytes
-        offset = value_start + (size + 3) & ~int(3)
-
-        // [0] reserved, [1] family (1 = IPv4), [2:4] port, [4:8] address
-        if size < 8 || value[1] != 1 {
-            continue
+        if found == kind {
+            return data[start:start + size], true
         }
-        port: u16 = GetU16BE(value[2:])
-        address: [4]byte = {value[4], value[5], value[6], value[7]}
-        switch kind {
-        case STUN_ATTR_XOR_MAPPED:
-            port ~= u16(STUN_MAGIC >> 16)
-            for i in 0 ..< 4 {
-                address[i] ~= byte(STUN_MAGIC >> u32(24 - 8 * i))
-            }
-            return net.Endpoint{address = net.IP4_Address(address), port = int(port)}, true
-        case STUN_ATTR_MAPPED:
-            plain = {address = net.IP4_Address(address), port = int(port)}
-            have_plain = true
+        // attributes are padded to 4 bytes
+        offset = start + (size + 3) & ~int(3)
+    }
+    return
+}
+
+// [0] reserved, [1] family (1 = IPv4), [2:4] port, [4:8] address; the XOR form hides them with the magic cookie
+// (middle boxes that rewrite IP addresses in payloads would otherwise damage them). IPv4 only.
+StunReadAddress :: proc(value: []byte, xor: bool) -> (endpoint: net.Endpoint, ok: bool) {
+    if len(value) < 8 || value[1] != 1 {
+        return
+    }
+    port: u16 = GetU16BE(value[2:])
+    address: [4]byte = {value[4], value[5], value[6], value[7]}
+    if xor {
+        port ~= u16(STUN_MAGIC >> 16)
+        for i in 0 ..< 4 {
+            address[i] ~= byte(STUN_MAGIC >> u32(24 - 8 * i))
         }
     }
-    // old servers answer with the plain address only
-    return plain, have_plain
+    return net.Endpoint{address = net.IP4_Address(address), port = int(port)}, true
+}
+
+// What a binding answer tells: where the server saw us, where the answer came from and, for servers that have a second
+// address (RFC 5780 OTHER-ADDRESS, RFC 3489 CHANGED-ADDRESS), that address.
+StunResult :: struct {
+    mapped: net.Endpoint,
+    origin: net.Endpoint,
+    other: net.Endpoint,
+    has_origin: bool,
+    has_other: bool,
+}
+
+// Answers for another transaction are rejected, so a late or forged reply cannot overwrite a good result.
+StunParseResult :: proc(data: []byte, txid: StunTxId) -> (result: StunResult, ok: bool) {
+    _ = StunCheck(data, txid) or_return
+    if GetU16BE(data[0:]) != STUN_BINDING_SUCCESS {
+        return
+    }
+    if value, found := StunFindAttribute(data, STUN_ATTR_XOR_MAPPED); found {
+        result.mapped = StunReadAddress(value, true) or_return
+    } else if value, found = StunFindAttribute(data, STUN_ATTR_MAPPED); found {
+        // old servers answer with the plain address only
+        result.mapped = StunReadAddress(value, false) or_return
+    } else {
+        return
+    }
+    if value, found := StunFindAttribute(data, STUN_ATTR_RESPONSE_ORIGIN); found {
+        result.origin, result.has_origin = StunReadAddress(value, false)
+    } else if value, found = StunFindAttribute(data, STUN_ATTR_SOURCE_ADDRESS); found {
+        result.origin, result.has_origin = StunReadAddress(value, false)
+    }
+    if value, found := StunFindAttribute(data, STUN_ATTR_OTHER_ADDRESS); found {
+        result.other, result.has_other = StunReadAddress(value, false)
+    } else if value, found = StunFindAttribute(data, STUN_ATTR_CHANGED_ADDRESS); found {
+        result.other, result.has_other = StunReadAddress(value, false)
+    }
+    return result, true
+}
+
+// The address the server saw us at.
+StunParseResponse :: proc(data: []byte, txid: StunTxId) -> (endpoint: net.Endpoint, ok: bool) {
+    result := StunParseResult(data, txid) or_return
+    return result.mapped, true
 }
 
 // ============================================================ big endian helpers (the STUN wire format)
@@ -120,8 +184,12 @@ GetU32BE :: proc(buffer: []byte) -> u32 {
 @(test)
 StunRoundTripTest :: proc(t: ^testing.T) {
     txid: StunTxId = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
-    request: [STUN_HEADER_SIZE]byte
+    request: [STUN_HEADER_SIZE + 8]byte
     testing.expect_value(t, StunBuildRequest(request[:], txid), STUN_HEADER_SIZE)
+    testing.expect_value(t, StunBuildRequest(request[:], txid, STUN_CHANGE_IP | STUN_CHANGE_PORT), STUN_HEADER_SIZE + 8)
+    change, change_found := StunFindAttribute(request[:STUN_HEADER_SIZE + 8], STUN_ATTR_CHANGE_REQUEST)
+    testing.expect(t, change_found && GetU32BE(change) == 6)
+    StunBuildRequest(request[:], txid)
     testing.expect(t, StunLooksLikeStun(request[:]))
 
     // a response as a server builds it: 203.0.113.9:54321, XOR-MAPPED-ADDRESS

@@ -39,6 +39,9 @@ GATHER_RETRY_MS :: 500
 GATHER_TIMEOUT_MS :: 2500
 DATAGRAMS_PER_UPDATE :: 256
 STUN_MAX_SERVERS :: len(STUN_SERVERS)
+FILTER_STEP_MS :: 250
+FILTER_PHASE_MS :: 1000
+SPRAY_PORTS :: 32                   // ports guessed per punch round towards a peer behind a symmetric NAT
 
 PacketKind :: enum u8 {
     PUNCH = 1,                      // "I am here"
@@ -49,10 +52,26 @@ PacketKind :: enum u8 {
     CLOSE,
 }
 
-NatKind :: enum {
-    UNKNOWN,                        // fewer than two STUN answers, cannot tell
-    CONE,                           // same public port towards every server: hole punching works
-    SYMMETRIC,                      // a different port per destination: punching usually fails
+// How the NAT chooses the public port of a socket (RFC 4787 mapping behavior), measured by asking several STUN servers.
+NatMapping :: enum u8 {
+    UNKNOWN,                        // fewer than two servers answered
+    INDEPENDENT,                    // same public port towards every server: the address in the code is what the peer hits
+    DEPENDENT,                      // a new public port per destination (symmetric NAT): the peer has to guess it
+}
+
+// Who may send to the public port (filtering behavior), measured with a STUN server that can answer from another address.
+NatFiltering :: enum u8 {
+    UNKNOWN,
+    OPEN,                           // anybody (full cone)
+    ADDRESS,                        // only addresses we sent to
+    PORT,                           // only the exact address and port we sent to
+}
+
+FilterState :: enum {
+    IDLE,
+    BOTH,                           // asking for an answer from another address and port
+    PORT_ONLY,                      // asking for an answer from another port
+    DONE,
 }
 
 GatherState :: enum {
@@ -80,6 +99,7 @@ LinkEventKind :: enum {
     PEER_CONNECTED,
     PEER_FAILED,
     PEER_LOST,
+    NAT_MEASURED,                   // the filtering test finished (it runs after GATHERED)
 }
 
 LinkEvent :: struct {
@@ -90,6 +110,18 @@ LinkEvent :: struct {
 LinkConfig :: struct {
     port: u16,                      // local UDP port, 0 = any
     include_loopback: bool,         // also offer 127.0.0.1 (two programs on one computer, tests)
+    // Offer exactly these local addresses instead of the ones found on the network cards (a program that knows better, a
+    // simulated network). Zero count = look at the network cards.
+    local_addresses: [MAX_CANDIDATES]net.IP4_Address,
+    local_address_count: int,
+}
+
+// Where datagrams go in and out. The default is the UDP socket; a program (or a test with a simulated network) can put its own
+// underneath: `send` fires and forgets, `receive` returns false when nothing is waiting.
+Transport :: struct {
+    user: rawptr,
+    send: proc(user: rawptr, to: net.Endpoint, data: []byte),
+    receive: proc(user: rawptr, buffer: []byte) -> (length: int, from: net.Endpoint, ok: bool),
 }
 
 Message :: struct {
@@ -106,6 +138,10 @@ Peer :: struct {
     candidates: [MAX_CANDIDATES]net.Endpoint,
     candidate_count: int,
     endpoint: net.Endpoint,         // where it really answered from, set when connected
+    nat_mapping: NatMapping,        // from its code: how to reach it
+    nat_filtering: NatFiltering,
+    port_delta: int,                // public port step of its NAT between destinations (0 = unknown)
+    last_port: int,                 // the last public port its NAT handed out while it gathered
     punch_start_ms: i64,
     punch_last_ms: i64,
     rx_ms: i64,
@@ -135,6 +171,7 @@ Peer :: struct {
 
 Link :: struct {
     socket: net.UDP_Socket,
+    transport: Transport,           // nil procs: the socket is used
     open: bool,
     config: LinkConfig,
     role: LinkRole,
@@ -154,9 +191,20 @@ Link :: struct {
     gather_sent_ms: i64,
     stun_servers: [STUN_MAX_SERVERS]net.Endpoint,
     stun_txid: [STUN_MAX_SERVERS]StunTxId,
-    stun_port: [STUN_MAX_SERVERS]int,    // public port each server saw, 0 = no answer yet
+    stun_mapped: [STUN_MAX_SERVERS]net.Endpoint,    // what each server saw
+    stun_answered: [STUN_MAX_SERVERS]bool,
+    stun_other: [STUN_MAX_SERVERS]net.Endpoint,     // its second address, when it has one
+    stun_has_other: [STUN_MAX_SERVERS]bool,
     stun_count: int,
-    nat: NatKind,
+    nat_mapping: NatMapping,
+    nat_filtering: NatFiltering,
+    nat_port_delta: int,            // how much the public port grows per new destination, 0 = no pattern seen
+    nat_last_port: int,             // the last port allocated while gathering, the next one is probably last + delta
+    filter_state: FilterState,
+    filter_server: int,
+    filter_txid: StunTxId,
+    filter_sent_ms: i64,
+    filter_phase_ms: i64,
 
     peers: [MAX_PEERS]Peer,
     inbox: [INBOX]Message,
@@ -211,6 +259,16 @@ LinkInit :: proc(link: ^Link, config: LinkConfig = {}) -> bool {
     return true
 }
 
+// A link over your own transport instead of a socket. `local_port` is the port the transport delivers for.
+LinkInitTransport :: proc(link: ^Link, transport: Transport, local_port: int, config: LinkConfig = {}) -> bool {
+    assert(transport.send != nil && transport.receive != nil)
+    link^ = {config = config, transport = transport, open = true, local_port = local_port}
+    for link.id == 0 {
+        crypto.rand_bytes((cast([^]byte)&link.id)[:size_of(link.id)])
+    }
+    return true
+}
+
 LinkClose :: proc(link: ^Link) {
     if !link.open {
         return
@@ -220,8 +278,39 @@ LinkClose :: proc(link: ^Link) {
             LinkSendPacket(link, peer.endpoint, .CLOSE, nil)
         }
     }
-    net.close(link.socket)
+    if link.transport.send == nil {
+        net.close(link.socket)
+    }
     link.open = false
+}
+
+@(private)
+LinkSendRaw :: proc(link: ^Link, to: net.Endpoint, data: []byte) {
+    if link.transport.send != nil {
+        link.transport.send(link.transport.user, to, data)
+        return
+    }
+    net.send_udp(link.socket, data, to)
+}
+
+// 0 = nothing waiting, otherwise the length; a receive error that is not "would block" reads as an empty datagram of length -1
+// so the caller keeps reading (Windows reports an ICMP port unreachable from an earlier send as a receive error).
+@(private)
+LinkReadRaw :: proc(link: ^Link) -> (length: int, from: net.Endpoint) {
+    if link.transport.receive != nil {
+        ok: bool
+        length, from, ok = link.transport.receive(link.transport.user, link.datagram[:])
+        return length if ok else 0, from
+    }
+    error: net.UDP_Recv_Error
+    length, from, error = net.recv_udp(link.socket, link.datagram[:])
+    if error == .Would_Block {
+        return 0, from
+    }
+    if error != nil {
+        return -1, from
+    }
+    return length, from
 }
 
 // Resolves the STUN host names (a blocking DNS lookup, so do it at start, not per frame). Returns how many resolved.
@@ -268,16 +357,20 @@ LinkGatherBegin :: proc(link: ^Link, servers: []net.Endpoint, now_ms: i64) {
     link.stun_count = min(len(servers), STUN_MAX_SERVERS)
     for i in 0 ..< link.stun_count {
         link.stun_servers[i] = servers[i]
-        link.stun_port[i] = 0
+        link.stun_answered[i] = false
+        link.stun_has_other[i] = false
         crypto.rand_bytes(link.stun_txid[i][:])
     }
+    link.nat_mapping = .UNKNOWN
+    link.nat_filtering = .UNKNOWN
+    link.filter_state = .IDLE
     link.gather = .RUNNING
     link.gather_start_ms = now_ms
     link.gather_sent_ms = now_ms - GATHER_RETRY_MS
     LinkGatherLocal(link)
     LinkGatherSend(link, now_ms)
     if link.stun_count == 0 {
-        LinkGatherFinish(link)
+        LinkGatherFinish(link, now_ms)
     }
 }
 
@@ -287,6 +380,12 @@ LinkGathered :: proc(link: ^Link) -> bool {
 
 @(private)
 LinkGatherLocal :: proc(link: ^Link) {
+    if link.config.local_address_count > 0 {
+        for i in 0 ..< link.config.local_address_count {
+            LinkAddCandidate(link, {address = link.config.local_addresses[i], port = link.local_port})
+        }
+        return
+    }
     defer free_all(context.temp_allocator)
     interfaces, error := net.enumerate_interfaces(context.temp_allocator)
     if error == nil {
@@ -311,36 +410,48 @@ LinkGatherLocal :: proc(link: ^Link) {
 
 @(private)
 LinkGatherSend :: proc(link: ^Link, now_ms: i64) {
-    request: [STUN_HEADER_SIZE]byte
+    request: [STUN_HEADER_SIZE + 8]byte
     for i in 0 ..< link.stun_count {
-        if link.stun_port[i] == 0 {
-            StunBuildRequest(request[:], link.stun_txid[i])
-            net.send_udp(link.socket, request[:], link.stun_servers[i])
+        if !link.stun_answered[i] {
+            length: int = StunBuildRequest(request[:], link.stun_txid[i])
+            LinkSendRaw(link, link.stun_servers[i], request[:length])
         }
     }
     link.gather_sent_ms = now_ms
 }
 
+// An answer from a STUN server: to the gathering, or to the filtering test.
 @(private)
-LinkGatherAnswer :: proc(link: ^Link, from: net.Endpoint, data: []byte) {
+LinkStunAnswer :: proc(link: ^Link, from: net.Endpoint, data: []byte, now_ms: i64) {
+    if link.filter_state == .BOTH || link.filter_state == .PORT_ONLY {
+        if _, ok := StunParseResult(data, link.filter_txid); ok {
+            // an answer that came from another address than the one we asked got through the NAT: it let a stranger in
+            if from != link.stun_servers[link.filter_server] {
+                link.nat_filtering = .OPEN if link.filter_state == .BOTH else .ADDRESS
+                LinkFilterFinish(link)
+            }
+            return
+        }
+    }
     for i in 0 ..< link.stun_count {
-        if from != link.stun_servers[i] || link.stun_port[i] != 0 {
+        if from != link.stun_servers[i] || link.stun_answered[i] {
             continue
         }
-        mapped, ok := StunParseResponse(data, link.stun_txid[i])
+        result, ok := StunParseResult(data, link.stun_txid[i])
         if !ok {
             return
         }
-        link.stun_port[i] = mapped.port
-        LinkAddCandidateFirst(link, mapped)
+        link.stun_answered[i] = true
+        link.stun_mapped[i] = result.mapped
+        link.stun_has_other[i] = result.has_other
+        link.stun_other[i] = result.other
+        LinkAddCandidateFirst(link, result.mapped)
         answered: int
         for k in 0 ..< link.stun_count {
-            if link.stun_port[k] != 0 {
-                answered += 1
-            }
+            answered += int(link.stun_answered[k])
         }
         if answered == link.stun_count {
-            LinkGatherFinish(link)
+            LinkGatherFinish(link, now_ms)
         }
         return
     }
@@ -369,31 +480,152 @@ LinkAddCandidateFirst :: proc(link: ^Link, endpoint: net.Endpoint) {
     link.candidates[0] = endpoint
 }
 
+// A routable address: not private, not loopback, not link local, not 0.0.0.0. A STUN server that announces anything else as
+// its second address is misconfigured and its CHANGE-REQUEST answers can never arrive.
+IsPublicAddress :: proc(address: net.Address) -> bool {
+    ip, is_ip4 := address.(net.IP4_Address)
+    if !is_ip4 {
+        return false
+    }
+    switch {
+    case ip[0] == 0, ip[0] == 10, ip[0] == 127, ip[0] >= 224:
+        return false
+    case ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31, ip[0] == 192 && ip[1] == 168, ip[0] == 169 && ip[1] == 254:
+        return false
+    case ip[0] == 100 && ip[1] >= 64 && ip[1] <= 127:     // carrier grade NAT range
+        return false
+    }
+    return true
+}
+
 @(private)
-LinkGatherFinish :: proc(link: ^Link) {
+LinkGatherFinish :: proc(link: ^Link, now_ms: i64) {
     if link.gather == .DONE {
         return
     }
     link.gather = .DONE
-    first: int
-    differs: bool
-    answered: int
+    LinkMeasureMapping(link)
+    LinkPushEvent(link, {kind = .GATHERED})
+    LinkFilterBegin(link, now_ms)
+}
+
+// Mapping behavior from the servers that agree on our public address (one that saw another address, a misconfigured server
+// behind a NAT of its own, tells nothing about ours). Same port everywhere = independent. Different ports = dependent, and if
+// the step between them is constant the next port can be predicted, which is what the peer uses to guess it.
+@(private)
+LinkMeasureMapping :: proc(link: ^Link) {
+    link.nat_mapping = .UNKNOWN
+    link.nat_port_delta = 0
+    link.nat_last_port = 0
+    // the address most servers saw
+    majority: net.Address
+    best: int
     for i in 0 ..< link.stun_count {
-        if link.stun_port[i] == 0 {
+        count: int
+        for j in 0 ..< link.stun_count {
+            count += int(link.stun_answered[i] && link.stun_answered[j] && link.stun_mapped[i].address == link.stun_mapped[j].address)
+        }
+        if count > best {
+            best = count
+            majority = link.stun_mapped[i].address
+        }
+    }
+    ports: [STUN_MAX_SERVERS]int
+    count: int
+    for i in 0 ..< link.stun_count {
+        if link.stun_answered[i] && link.stun_mapped[i].address == majority {
+            ports[count] = link.stun_mapped[i].port
+            count += 1
+        }
+    }
+    if count < 2 {
+        return
+    }
+    link.nat_last_port = ports[count - 1]
+    link.nat_mapping = .INDEPENDENT
+    delta: int = ports[1] - ports[0]
+    constant: bool = true
+    for i in 1 ..< count {
+        if ports[i] != ports[0] {
+            link.nat_mapping = .DEPENDENT
+        }
+        constant &&= ports[i] - ports[i - 1] == delta
+    }
+    if link.nat_mapping == .DEPENDENT {
+        // the requests left in server order, so the ports are in allocation order
+        link.nat_port_delta = delta if constant && delta != 0 && abs(delta) <= SPRAY_PORTS else 0
+        LinkKeepOnePublicCandidate(link, majority)
+    }
+}
+
+// With a symmetric NAT every server saw another port: only the last one is next to the port the peer will get, the others
+// would just waste candidate slots and punch packets.
+@(private)
+LinkKeepOnePublicCandidate :: proc(link: ^Link, address: net.Address) {
+    kept: int
+    for i in 0 ..< link.candidate_count {
+        endpoint: net.Endpoint = link.candidates[i]
+        is_stun_port: bool
+        for k in 0 ..< link.stun_count {
+            is_stun_port ||= link.stun_answered[k] && link.stun_mapped[k] == endpoint
+        }
+        if is_stun_port && endpoint != (net.Endpoint{address = address, port = link.nat_last_port}) {
             continue
         }
-        answered += 1
-        if first == 0 {
-            first = link.stun_port[i]
-        } else if first != link.stun_port[i] {
-            differs = true
+        link.candidates[kept] = endpoint
+        kept += 1
+    }
+    link.candidate_count = kept
+}
+
+// The filtering test needs a server with a second public address (RFC 5780). It asks for an answer from another IP and port,
+// then from another port: what gets through says how open the NAT is.
+@(private)
+LinkFilterBegin :: proc(link: ^Link, now_ms: i64) {
+    link.filter_state = .DONE
+    for i in 0 ..< link.stun_count {
+        if link.stun_answered[i] && link.stun_has_other[i] && IsPublicAddress(link.stun_other[i].address) {
+            link.filter_server = i
+            link.filter_state = .BOTH
+            link.filter_phase_ms = now_ms
+            link.filter_sent_ms = now_ms - FILTER_STEP_MS
+            crypto.rand_bytes(link.filter_txid[:])
+            return
         }
     }
-    link.nat = .UNKNOWN
-    if answered >= 2 {
-        link.nat = .SYMMETRIC if differs else .CONE
+}
+
+@(private)
+LinkFilterFinish :: proc(link: ^Link) {
+    link.filter_state = .DONE
+    LinkPushEvent(link, {kind = .NAT_MEASURED})
+}
+
+@(private)
+LinkFilterUpdate :: proc(link: ^Link, now_ms: i64) {
+    if link.filter_state != .BOTH && link.filter_state != .PORT_ONLY {
+        return
     }
-    LinkPushEvent(link, {kind = .GATHERED})
+    if now_ms - link.filter_phase_ms >= FILTER_PHASE_MS {
+        if link.filter_state == .BOTH {
+            link.filter_state = .PORT_ONLY
+            link.filter_phase_ms = now_ms
+            link.filter_sent_ms = now_ms - FILTER_STEP_MS
+            crypto.rand_bytes(link.filter_txid[:])
+        } else {
+            // nothing came from another address or port: only the exact address we sent to may answer
+            link.nat_filtering = .PORT
+            LinkFilterFinish(link)
+        }
+        return
+    }
+    if now_ms - link.filter_sent_ms >= FILTER_STEP_MS {
+        link.filter_sent_ms = now_ms
+        request: [STUN_HEADER_SIZE + 8]byte
+        change: u32 = STUN_CHANGE_IP | STUN_CHANGE_PORT if link.filter_state == .BOTH else STUN_CHANGE_PORT
+        length: int = StunBuildRequest(request[:], link.filter_txid, change)
+        LinkSendRaw(link, link.stun_servers[link.filter_server], request[:length])
+    }
 }
 
 // ============================================================ session
@@ -454,6 +686,10 @@ LinkMakeInvite :: proc(link: ^Link) -> (invite: Invite) {
     invite.id = link.id
     invite.name = link.name
     invite.name_len = link.name_len
+    invite.nat_mapping = link.nat_mapping
+    invite.nat_filtering = link.nat_filtering
+    invite.port_delta = link.nat_port_delta
+    invite.last_port = link.nat_last_port
     for i in 0 ..< link.candidate_count {
         InviteAddCandidate(&invite, link.candidates[i])
     }
@@ -470,6 +706,10 @@ PeerStart :: proc(peer: ^Peer, invite: Invite, now_ms: i64) {
     peer^ = {state = .PUNCHING, id = invite.id, name = invite.name, name_len = invite.name_len}
     peer.candidates = invite.candidates
     peer.candidate_count = invite.candidate_count
+    peer.nat_mapping = invite.nat_mapping
+    peer.nat_filtering = invite.nat_filtering
+    peer.port_delta = invite.port_delta
+    peer.last_port = invite.last_port
     peer.punch_start_ms = now_ms
     peer.punch_last_ms = now_ms - PUNCH_INTERVAL_MS
 }
@@ -589,7 +829,7 @@ LinkSendPacket :: proc(link: ^Link, to: net.Endpoint, kind: PacketKind, payload:
     length += len(extra)
     copy(buffer[length:], payload)
     length += len(payload)
-    net.send_udp(link.socket, buffer[:length], to)
+    LinkSendRaw(link, to, buffer[:length])
 }
 
 // Every reliable message and every ACK carries the acknowledgement: the next sequence expected (everything before it arrived)
@@ -788,12 +1028,8 @@ PeerResendMs :: proc(peer: ^Peer, attempts: u8) -> i64 {
 LinkUpdate :: proc(link: ^Link, now_ms: i64) {
     assert(link.open)
     for _ in 0 ..< DATAGRAMS_PER_UPDATE {
-        length, from, error := net.recv_udp(link.socket, link.datagram[:])
-        if error != nil {
-            // Windows reports an ICMP "port unreachable" from an earlier send as a receive error: skip it and read on
-            if error == .Would_Block {
-                break
-            }
+        length, from := LinkReadRaw(link)
+        if length < 0 {
             continue
         }
         if length == 0 {
@@ -801,7 +1037,7 @@ LinkUpdate :: proc(link: ^Link, now_ms: i64) {
         }
         data: []byte = link.datagram[:length]
         if StunLooksLikeStun(data) {
-            LinkGatherAnswer(link, from, data)
+            LinkStunAnswer(link, from, data, now_ms)
             continue
         }
         if link.drop_percent > 0 {
@@ -813,9 +1049,10 @@ LinkUpdate :: proc(link: ^Link, now_ms: i64) {
         LinkHandleDatagram(link, from, data, now_ms)
     }
 
+    LinkFilterUpdate(link, now_ms)
     if link.gather == .RUNNING {
         if now_ms - link.gather_start_ms >= GATHER_TIMEOUT_MS {
-            LinkGatherFinish(link)
+            LinkGatherFinish(link, now_ms)
         } else if now_ms - link.gather_sent_ms >= GATHER_RETRY_MS {
             LinkGatherSend(link, now_ms)
         }
@@ -832,14 +1069,47 @@ LinkUpdate :: proc(link: ^Link, now_ms: i64) {
             } else if now_ms - peer.punch_last_ms >= PUNCH_INTERVAL_MS {
                 peer.punch_last_ms = now_ms
                 // every candidate at once: whichever route the NATs allow is the one that answers
+                // guesses first, and not the advertised port itself: every send to a new destination uses up one port of a
+                // symmetric NAT, so what is sent first decides which port the peer has to guess. Starting the guesses at the
+                // next port on both sides makes the two sequences pair up exactly.
+                spray_base: net.Endpoint = LinkSpray(link, peer)
                 for c in 0 ..< peer.candidate_count {
-                    LinkSendPacket(link, peer.candidates[c], .PUNCH, nil)
+                    if peer.candidates[c] != spray_base {
+                        LinkSendPacket(link, peer.candidates[c], .PUNCH, nil)
+                    }
                 }
             }
         case .CONNECTED:
             LinkUpdatePeer(link, i, peer, now_ms)
         }
     }
+}
+
+// A peer behind a symmetric NAT gets a new public port for us, which nobody knows. If its NAT counts up, the port is the next
+// ones after the last it handed out: a window of guesses is sent at once, and the one that lands opens the way (the peer
+// sprays at us the same way, which also opens our own filtering for its packets).
+@(private)
+LinkSpray :: proc(link: ^Link, peer: ^Peer) -> (base: net.Endpoint) {
+    if peer.nat_mapping != .DEPENDENT || peer.port_delta == 0 || peer.last_port == 0 {
+        return
+    }
+    address: net.Address
+    for c in 0 ..< peer.candidate_count {
+        if peer.candidates[c].port == peer.last_port && IsPublicAddress(peer.candidates[c].address) {
+            address = peer.candidates[c].address
+        }
+    }
+    if address == nil {
+        return
+    }
+    base = {address = address, port = peer.last_port}
+    for k in 1 ..= SPRAY_PORTS {
+        port: int = peer.last_port + peer.port_delta * k
+        if port > 0 && port < 65536 {
+            LinkSendPacket(link, {address = address, port = port}, .PUNCH, nil)
+        }
+    }
+    return
 }
 
 @(private)
@@ -932,7 +1202,7 @@ LinkGatherStunTest :: proc(t: ^testing.T) {
     testing.expect(t, link.candidate_count >= 1)
     testing.expect_value(t, link.candidates[0], net.Endpoint{address = net.IP4_Loopback, port = link.local_port})
     // one server answered: not enough to judge the NAT
-    testing.expect_value(t, link.nat, NatKind.UNKNOWN)
+    testing.expect_value(t, link.nat_mapping, NatMapping.UNKNOWN)
     event, has_event := LinkPollEvent(link)
     testing.expect(t, has_event && event.kind == .GATHERED)
 }

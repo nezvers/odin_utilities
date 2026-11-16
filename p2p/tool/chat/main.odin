@@ -124,6 +124,8 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
             }
             switch event.kind {
             case .GATHERED:
+            case .NAT_MEASURED:
+                PrintFiltering(link)
             case .PEER_CONNECTED:
                 Announce(link, is_host, fmt.tprintf("* %s connected", p2p.LinkPeerName(link, event.peer)), event.peer, now)
             case .PEER_FAILED:
@@ -242,19 +244,37 @@ PrintAddresses :: proc(link: ^p2p.Link) {
     for i in 0 ..< link.candidate_count {
         fmt.printfln("address %d: %s", i + 1, net.endpoint_to_string(link.candidates[i], context.temp_allocator))
     }
-    switch link.nat {
+    switch link.nat_mapping {
     case .UNKNOWN:
-        fmt.println("NAT: not measured (needs two STUN answers)")
-    case .CONE:
-        fmt.println("NAT: friendly (same public port towards every server), hole punching should work")
-    case .SYMMETRIC:
-        fmt.println("NAT: symmetric (a new public port for every destination), hole punching will probably fail")
+        fmt.println("NAT mapping: not measured (needs two STUN answers)")
+    case .INDEPENDENT:
+        fmt.println("NAT mapping: friendly (same public port towards every server), hole punching should work")
+    case .DEPENDENT:
+        if link.nat_port_delta != 0 {
+            fmt.printfln("NAT mapping: symmetric, but it counts up by %d per destination: the peer can guess the port", link.nat_port_delta)
+        } else {
+            fmt.println("NAT mapping: symmetric with unpredictable ports, hole punching will fail against a strict NAT")
+        }
+    }
+    PrintFiltering(link)
+}
+
+PrintFiltering :: proc(link: ^p2p.Link) {
+    switch link.nat_filtering {
+    case .UNKNOWN:
+        fmt.println("NAT filtering: not measured yet")
+    case .OPEN:
+        fmt.println("NAT filtering: open (full cone), anybody can send to your public port")
+    case .ADDRESS:
+        fmt.println("NAT filtering: address restricted, only addresses you sent to can answer")
+    case .PORT:
+        fmt.println("NAT filtering: port restricted, only the exact address and port you sent to can answer")
     }
 }
 
 PrintFailureHint :: proc(link: ^p2p.Link) {
-    if link.nat == .SYMMETRIC {
-        fmt.println("  Your router uses a different public port per destination (symmetric NAT) so the other side cannot know it.")
+    if link.nat_mapping == .DEPENDENT && link.nat_port_delta == 0 {
+        fmt.println("  Your router uses unpredictable public ports per destination (symmetric NAT), so the other side cannot know yours.")
         fmt.println("  Try another network (a phone hotspot usually works) or enable UPnP / forward the UDP port on the router.")
     } else {
         fmt.println("  Check that the codes were pasted whole, both programs are still open, and the firewall allows this program.")

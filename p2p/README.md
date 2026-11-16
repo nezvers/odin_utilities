@@ -57,7 +57,7 @@ way delivers 200 messages each way in order in about 2.5 s.
 ## What it cannot do (be honest with players)
 - **No relay.** If both sides are behind a *symmetric* NAT (a new public port per destination) or both behind carrier grade NAT (mobile data,
   some ISPs), no direct connection exists; a TURN relay would be needed and there is no free public one. The link measures it
-  (`link.nat`: friendly / symmetric / unknown) so the program can say why a punch failed. A phone hotspot on one side usually fixes it.
+  (`link.nat_mapping`, `link.nat_filtering`) so the program can say why a punch failed. A phone hotspot on one side usually fixes it.
 - **No encryption.** The random session id in the code is a shared secret that keeps strangers' packets out, not a key. Anyone who can read the
   traffic can read the chat. Do not send passwords.
 - IPv4 only. Not for the web build (`core:net` sockets): browsers need WebRTC.

@@ -14,10 +14,10 @@ import "core:net"
 import "core:testing"
 import serial "../serial"
 
-INVITE_VERSION :: u8(1)
+INVITE_VERSION :: u8(2)
 NAME_MAX :: 24
 MAX_CANDIDATES :: 6
-CODE_BINARY_MAX :: 1 + 1 + 8 + 4 + 1 + NAME_MAX + 1 + MAX_CANDIDATES * 6 + 4
+CODE_BINARY_MAX :: 1 + 1 + 8 + 4 + 1 + NAME_MAX + 1 + MAX_CANDIDATES * 6 + 5 + 4
 CODE_TEXT_MAX :: (CODE_BINARY_MAX * 8 + 4) / 5 + CODE_BINARY_MAX     // characters plus the dashes between groups of 5
 
 CODE_ALPHABET := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -35,6 +35,11 @@ Invite :: struct {
     name_len: int,
     candidates: [MAX_CANDIDATES]net.Endpoint,
     candidate_count: int,
+    // what the sender measured about its NAT, so the other side can pick a way to reach it (see LinkSpray)
+    nat_mapping: NatMapping,
+    nat_filtering: NatFiltering,
+    port_delta: int,                // public port step of a symmetric NAT, 0 = unknown
+    last_port: int,                 // the last public port it handed out while gathering
 }
 
 InviteSetName :: proc(invite: ^Invite, name: string) {
@@ -86,6 +91,10 @@ InviteEncode :: proc(invite: Invite, out: []byte) -> (text: string, ok: bool) {
         serial.WriteBytes(&writer, address[:])
         serial.WriteU16(&writer, u16(invite.candidates[i].port))
     }
+    serial.WriteU8(&writer, u8(invite.nat_mapping))
+    serial.WriteU8(&writer, u8(invite.nat_filtering))
+    serial.WriteU8(&writer, u8(i8(invite.port_delta)))
+    serial.WriteU16(&writer, u16(invite.last_port))
     // the check catches a typo or a half copied code before any packet is sent
     serial.WriteU32(&writer, hash.crc32(binary[:writer.offset]))
     if !serial.WriterOk(&writer) {
@@ -136,6 +145,15 @@ InviteDecode :: proc(text: string) -> (invite: Invite, ok: bool) {
         port: u16 = serial.ReadU16(&reader)
         InviteAddCandidate(&invite, {address = net.IP4_Address(address), port = int(port)})
     }
+    mapping: u8 = serial.ReadU8(&reader)
+    filtering: u8 = serial.ReadU8(&reader)
+    if mapping > u8(max(NatMapping)) || filtering > u8(max(NatFiltering)) {
+        return
+    }
+    invite.nat_mapping = NatMapping(mapping)
+    invite.nat_filtering = NatFiltering(filtering)
+    invite.port_delta = int(i8(serial.ReadU8(&reader)))
+    invite.last_port = int(serial.ReadU16(&reader))
     if !serial.ReaderOk(&reader) || serial.ReaderRemaining(&reader) != 0 {
         return
     }
@@ -226,6 +244,10 @@ InviteRoundTripTest :: proc(t: ^testing.T) {
     InviteSetName(&invite, "Ann the second")
     InviteAddCandidate(&invite, {address = net.IP4_Address{203, 0, 113, 9}, port = 54321})
     InviteAddCandidate(&invite, {address = net.IP4_Address{192, 168, 1, 20}, port = 40000})
+    invite.nat_mapping = .DEPENDENT
+    invite.nat_filtering = .PORT
+    invite.port_delta = -2
+    invite.last_port = 54321
     testing.expect(t, !InviteAddCandidate(&invite, invite.candidates[0]))
 
     buffer: [CODE_TEXT_MAX]byte
