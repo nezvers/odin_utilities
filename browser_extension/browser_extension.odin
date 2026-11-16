@@ -321,7 +321,8 @@ ExtensionPack :: proc(directory, package_path: string, files: []string) -> bool 
     command.allocator = context.temp_allocator
     working_directory: string
     when ODIN_OS == .Windows {
-        append(&command, "tar", "-a", "-c", "-f", package_path, "-C", directory)
+        // the format is named: with -a bsdtar takes it from the file name and writes a plain tar for ".xpi", which Firefox calls corrupt
+        append(&command, "tar", "-c", "--format", "zip", "-f", package_path, "-C", directory)
     } else {
         // GNU tar cannot write zip, `zip` runs inside of the folder so the package path has to be absolute
         absolute, _ := os.get_absolute_path(package_path, context.temp_allocator)

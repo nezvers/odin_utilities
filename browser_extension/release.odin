@@ -165,12 +165,28 @@ releaseFirefox :: proc(config: ExtensionConfig, stage, executable: string, optio
     key, has_key := os.lookup_env("WEB_EXT_API_KEY", context.temp_allocator)
     _, has_secret := os.lookup_env("WEB_EXT_API_SECRET", context.temp_allocator)
     if !has_key || len(key) == 0 || !has_secret {
-        fmt.eprintln("")
-        fmt.eprintln("A release Firefox keeps only extensions that Mozilla signed. Get a free API key (JWT issuer and secret) at")
-        fmt.eprintln("  https://addons.mozilla.org/developers/addon/api/key/")
-        fmt.eprintln("and set the environment variables WEB_EXT_API_KEY (the issuer) and WEB_EXT_API_SECRET, then run this again.")
-        fmt.eprintln("The signing is `unlisted`: no review of the code, no page on the add-ons site, the signed file is yours.")
-        return false
+        // Without a signature a release Firefox refuses the file ("could not be verified"), so nothing permanent is possible. What is possible
+        // is a temporary add-on in your profile: it works at once and is gone when Firefox closes.
+        absolute_stage, _ := os.get_absolute_path(stage, context.temp_allocator)
+        manifest: string = nativePath(fmt.tprintf("%s/manifest.json", absolute_stage))
+        clipboard_ok: bool = !options.no_open && copyToClipboard(manifest)
+        fmt.printfln("")
+        fmt.printfln("NOT permanent: no Mozilla key was found. A release Firefox keeps only extensions that Mozilla signed, so this is the temporary way")
+        fmt.printfln("(it is gone when Firefox closes; run this again after a restart):")
+        fmt.printfln("  1. about:debugging#/runtime/this-firefox  ->  Load Temporary Add-on...")
+        fmt.printfln("  2. choose this file%s:", " (it is in the clipboard)" if clipboard_ok else "")
+        fmt.printfln("     %s", manifest)
+        fmt.printfln("For a permanent install get a free API key (JWT issuer and secret) at https://addons.mozilla.org/developers/addon/api/key/ and set")
+        fmt.printfln("the environment variables WEB_EXT_API_KEY (the issuer) and WEB_EXT_API_SECRET, then run this again. The signing is `unlisted`: no")
+        fmt.printfln("review of the code, no page on the add-ons site, the signed file is yours.")
+        if !options.no_open {
+            _, error := os.process_start({command = {executable, "about:debugging#/runtime/this-firefox"}})
+            if error != nil {
+                fmt.eprintfln("browser_extension: could not start %s", executable)
+                return false
+            }
+        }
+        return true
     }
 
     artifacts: string = fmt.tprintf("%s/signed", ReleaseRoot(config, context.temp_allocator))
