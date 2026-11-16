@@ -10,7 +10,8 @@
 //     <output>/chromium/               unpacked extension for Chrome, Opera and Edge (Manifest V3, background service worker)
 //     <output>/firefox/                unpacked extension for Firefox (Manifest V3, background event page)
 //     <output>/<name>-chromium.zip     what the Chrome Web Store, Opera add-ons and Edge add-ons take
-//     <output>/<name>-firefox.xpi      what addons.mozilla.org takes (a zip, unsigned: release Firefox only loads it temporarily)
+//     <output>/<name>-firefox.zip      a plain zip too: what addons.mozilla.org takes, and what Firefox Developer Edition / Nightly / ESR install
+//                                      with signature checking off. A release Firefox needs it signed (release.odin), unsigned it is refused.
 // Chrome, Opera and Edge are all Chromium, one build serves them. Installing into a browser is install.odin.
 package browser_extension
 
@@ -312,30 +313,12 @@ ExtensionBuildOptions :: proc(config: ExtensionConfig) -> (files: []OptionsFile,
     return list[:], true
 }
 
-// A zip with the files of a directory, `tar` of Windows (bsdtar) writes zip with -a. The files are listed by name, a "." would put
-// "./" in front of every entry, which Firefox refuses.
+// The package of a target: a plain zip (zip.odin) with the files listed by name, no folder entries and no "./" in front of them (Firefox
+// refuses those). The same file serves the Chrome Web Store, the Opera and Edge add-ons, and, signed, addons.mozilla.org.
 @(private)
 ExtensionPack :: proc(directory, package_path: string, files: []string) -> bool {
     os.remove(package_path)
-    command: [dynamic]string
-    command.allocator = context.temp_allocator
-    working_directory: string
-    when ODIN_OS == .Windows {
-        // the format is named: with -a bsdtar takes it from the file name and writes a plain tar for ".xpi", which Firefox calls corrupt
-        append(&command, "tar", "-c", "--format", "zip", "-f", package_path, "-C", directory)
-    } else {
-        // GNU tar cannot write zip, `zip` runs inside of the folder so the package path has to be absolute
-        absolute, _ := os.get_absolute_path(package_path, context.temp_allocator)
-        append(&command, "zip", "-q", absolute)
-        working_directory = directory
-    }
-    append(&command, ..files)
-    state, _, errors, error := os.process_exec({working_dir = working_directory, command = command[:]}, context.temp_allocator)
-    if error != nil || state.exit_code != 0 {
-        fmt.eprintfln("browser_extension: packing %s failed\n%s", package_path, string(errors))
-        return false
-    }
-    return true
+    return ZipWriteFolder(package_path, directory, files)
 }
 
 // Build the extension for the targets. Needs `odin` in PATH. Temp allocator strings, free it afterwards.
@@ -432,9 +415,10 @@ ExtensionBuild :: proc(config: ExtensionConfig, targets: bit_set[Target] = {.CHR
             return false
         }
 
-        extension: string = "zip" if target == .CHROMIUM else "xpi"
         suffix: string = "chromium" if target == .CHROMIUM else "firefox"
-        package_path: string = fmt.tprintf("%s/%s-%s.%s", output, safe_name, suffix, extension)
+        package_path: string = fmt.tprintf("%s/%s-%s.zip", output, safe_name, suffix)
+        // an earlier version of this tool wrote a .xpi
+        os.remove(fmt.tprintf("%s/%s-%s.xpi", output, safe_name, suffix))
         if !ExtensionPack(directory, package_path, ExtensionFiles(config)) {
             return false
         }

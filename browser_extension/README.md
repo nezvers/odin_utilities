@@ -76,7 +76,7 @@ Output in `demo/bin/extension/`:
 | `chromium/` | Chrome, Opera, Edge: load unpacked |
 | `firefox/` | Firefox: load as temporary add-on |
 | `Odin_Extension_Demo-chromium.zip` | Chrome Web Store, Opera add-ons, Edge add-ons |
-| `Odin_Extension_Demo-firefox.xpi` | addons.mozilla.org (zip), signed install |
+| `Odin_Extension_Demo-firefox.zip` | a plain zip: addons.mozilla.org, or Firefox Developer Edition / Nightly / ESR with signature checking off. A release Firefox refuses it unsigned |
 
 In VS Code open the `browser_extension` folder: **Ctrl+Shift+B** runs "Build Extensions", and F5 has the launch configurations "Build Extensions", "Build and Install Chrome / Opera / Edge / Firefox" (they build the tool with the debugger attached and run it with the arguments). The tasks "Build and Install ..." do the same without the debugger.
 
@@ -96,7 +96,7 @@ odin run demo/tool -- chrome --release          # opera | edge | firefox, the sa
 ```
 (VS Code: the tasks and launch configurations "Shorts: Release ... (main profile)".) What a release browser allows decides the steps (`release.odin`):
 - **Chrome, Opera, Edge**: they take no packaged extension that is not from their store, and `--load-extension` is ignored by a profile that is already running. So the build is copied to a folder that never moves, `%LOCALAPPDATA%\<name>\chromium` (the id of an unpacked extension comes from its path, so the id is stable), the native helper is copied next to it and registered, and the browser opens on its extensions page with the folder in the clipboard. You switch **Developer mode** on and press **Load unpacked** once. It stays after restarts. An update is the same command again and the reload button of the extension card.
-- **Firefox**: a release Firefox only keeps extensions signed by Mozilla. The command signs the build as an **unlisted** add-on (no review, no listing, the signed file is yours) with `npx web-ext sign` and opens the signed `.xpi` in Firefox, which asks to add it. Needs Node.js and a free API key from https://addons.mozilla.org/developers/addon/api/key/ in the environment: `WEB_EXT_API_KEY` (the JWT issuer) and `WEB_EXT_API_SECRET`. Every release needs a new `version` in the config, Mozilla refuses one version twice. Without the key nothing permanent is possible: the command opens `about:debugging` in your Firefox, puts the path of the manifest in the clipboard and you load it as a **temporary** add-on (gone when Firefox closes). An unsigned `.xpi` cannot be added to a release Firefox at all (it says it could not be verified); the `Shorts_Helper-firefox.xpi` the build writes is for signing, for Firefox Developer Edition / Nightly / ESR with `xpinstall.signatures.required` off, or for the add-ons site.
+- **Firefox**: a release Firefox only keeps extensions signed by Mozilla. The command signs the build as an **unlisted** add-on (no review, no listing, the signed file is yours) with `npx web-ext sign` and opens the signed `.xpi` in Firefox, which asks to add it. Needs Node.js and a free API key from https://addons.mozilla.org/developers/addon/api/key/ in the environment: `WEB_EXT_API_KEY` (the JWT issuer) and `WEB_EXT_API_SECRET`. Every release needs a new `version` in the config, Mozilla refuses one version twice. Without the key nothing permanent is possible: the command opens `about:debugging` in your Firefox, puts the path of the manifest in the clipboard and you load it as a **temporary** add-on (gone when Firefox closes). An unsigned `.xpi` cannot be added to a release Firefox at all (it says it could not be verified); the `Shorts_Helper-firefox.zip` the build writes (a plain zip, written by `zip.odin`, stored entries) is for signing, for Firefox Developer Edition / Nightly / ESR with `xpinstall.signatures.required` off, or for the add-ons site.
 - `--no-open` copies and registers but does not touch the browser or the clipboard.
 - The release copy and the development build have different ids; the native host manifest allows both, so `--install` and `--release` do not take the helper from each other.
 
@@ -117,9 +117,9 @@ odin run demo/tool -- chrome --release          # opera | edge | firefox, the sa
 
 ### Firefox
 1. Open `about:debugging#/runtime/this-firefox`.
-2. **Load Temporary Add-on...**, choose `demo/bin/extension/firefox/manifest.json` (or the `.xpi`).
+2. **Load Temporary Add-on...**, choose `demo/bin/extension/firefox/manifest.json` (or the `.zip`).
 3. Temporary add-ons are removed when Firefox closes. **Inspect** next to the add-on opens the console of the background.
-4. Permanent: sign the `.xpi` (upload it to addons.mozilla.org as "On your own" for a private signed file), or use Firefox Developer Edition / Nightly / ESR with `xpinstall.signatures.required` = `false` in `about:config` and open the `.xpi` there.
+4. Permanent: sign the `.zip` (upload it to addons.mozilla.org as "On your own" for a private signed file), or use Firefox Developer Edition / Nightly / ESR with `xpinstall.signatures.required` = `false` in `about:config` and open the `.zip` there (about:addons, the gear, Install Add-on From File).
 
 Try it: pin the extension, click its icon, **Ping Odin**: the popup answers `pong N from Odin` and the toolbar icon shows N. Pages of https://example.com also log `page:<title>` in the background console (content script of the demo).
 

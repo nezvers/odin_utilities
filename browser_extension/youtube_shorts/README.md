@@ -43,7 +43,7 @@ From `odin_utilities/browser_extension`:
 odin run youtube_shorts/tool -- all                  # chrome | opera | edge | firefox | all
 odin run youtube_shorts/tool -- chrome --install     # build and start the browser with the extension
 ```
-Output in `youtube_shorts/bin/extension/` (`chromium/`, `firefox/`, `Shorts_Helper-chromium.zip`, `Shorts_Helper-firefox.xpi`). Manual install steps for each browser are in `../README.md`. VS Code: the launch configurations "Shorts: ..." and tasks "Shorts: ...".
+Output in `youtube_shorts/bin/extension/` (`chromium/`, `firefox/`, `Shorts_Helper-chromium.zip`, `Shorts_Helper-firefox.zip`). Manual install steps for each browser are in `../README.md`. VS Code: the launch configurations "Shorts: ..." and tasks "Shorts: ...".
 
 For the browser you use every day (main profile) run the same tool with `--release` instead of `--install` (VS Code: "Shorts: Release ... (main profile)"). Chrome, Opera and Edge: it copies the extension and the helper to `%LOCALAPPDATA%\Shorts_Helper`, registers the helper, opens the browser on its extensions page, and you press **Load unpacked** once (Developer mode on, the folder is in the clipboard). Firefox: it signs the build with Mozilla as an unlisted add-on and opens the signed file, which needs `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET` (free keys, see `../README.md`) and a new `version` in `tool/main.odin` for every release. A later update is the same command, then the reload button of the extension (Chrome family).
 
