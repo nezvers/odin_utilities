@@ -100,6 +100,8 @@ LinkEventKind :: enum {
     PEER_FAILED,
     PEER_LOST,
     NAT_MEASURED,                   // the filtering test finished (it runs after GATHERED)
+    RELAY_READY,                    // the TURN server gave a relayed address (now a candidate)
+    RELAY_FAILED,                   // wrong credentials, no answer, quota: link.turn.failure says why
 }
 
 LinkEvent :: struct {
@@ -114,6 +116,13 @@ LinkConfig :: struct {
     // simulated network). Zero count = look at the network cards.
     local_addresses: [MAX_CANDIDATES]net.IP4_Address,
     local_address_count: int,
+    // Put only the TURN relayed address in the code (once the relay is ready): the peer never learns this computer's own
+    // addresses, and the whole conversation goes through the relay. For privacy, and for testing a relay end to end.
+    relay_only: bool,
+    no_ipv6: bool,                  // do not open the IPv6 socket
+    // An IPv6 address to offer instead of the one found on the network cards (simulated network, tests).
+    local_v6: net.IP6_Address,
+    local_v6_set: bool,
 }
 
 // Where datagrams go in and out. The default is the UDP socket; a program (or a test with a simulated network) can put its own
@@ -138,6 +147,7 @@ Peer :: struct {
     candidates: [MAX_CANDIDATES]net.Endpoint,
     candidate_count: int,
     endpoint: net.Endpoint,         // where it really answered from, set when connected
+    via_relay: bool,                // the packets from it arrive through our TURN allocation, so they are answered through it
     nat_mapping: NatMapping,        // from its code: how to reach it
     nat_filtering: NatFiltering,
     port_delta: int,                // public port step of its NAT between destinations (0 = unknown)
@@ -171,6 +181,9 @@ Peer :: struct {
 
 Link :: struct {
     socket: net.UDP_Socket,
+    socket6: net.UDP_Socket,        // IPv6, when the computer has it: with a global address on both sides there is no NAT at all
+    has_v6: bool,
+    local_port6: int,
     transport: Transport,           // nil procs: the socket is used
     open: bool,
     config: LinkConfig,
@@ -201,6 +214,7 @@ Link :: struct {
     nat_port_delta: int,            // how much the public port grows per new destination, 0 = no pattern seen
     nat_last_port: int,             // the last port allocated while gathering, the next one is probably last + delta
     portmap: ^PortMapState,         // set by LinkPortMap, given back by LinkClose
+    turn: TurnClient,               // see LinkTurnBegin
     filter_state: FilterState,
     filter_server: int,
     filter_txid: StunTxId,
@@ -218,7 +232,7 @@ Link :: struct {
     // test hook: drop this percent of the received datagrams (pseudo random, so a pattern cannot line up with the resends)
     drop_percent: int,
     drop_state: u32,
-    datagram: [PACKET_HEADER + 4 + MAX_PAYLOAD + 16]byte,
+    datagram: [PACKET_HEADER + 8 + MAX_PAYLOAD + TURN_OVERHEAD + 16]byte,
 }
 
 // Milliseconds on a monotonic clock, what LinkUpdate wants.
@@ -254,6 +268,7 @@ LinkInit :: proc(link: ^Link, config: LinkConfig = {}) -> bool {
     link.socket = socket
     link.open = true
     link.local_port = bound.port
+    LinkOpenV6(link)
     for link.id == 0 {
         crypto.rand_bytes((cast([^]byte)&link.id)[:size_of(link.id)])
     }
@@ -263,11 +278,36 @@ LinkInit :: proc(link: ^Link, config: LinkConfig = {}) -> bool {
 // A link over your own transport instead of a socket. `local_port` is the port the transport delivers for.
 LinkInitTransport :: proc(link: ^Link, transport: Transport, local_port: int, config: LinkConfig = {}) -> bool {
     assert(transport.send != nil && transport.receive != nil)
-    link^ = {config = config, transport = transport, open = true, local_port = local_port}
+    link^ = {config = config, transport = transport, open = true, local_port = local_port, local_port6 = local_port, has_v6 = config.local_v6_set}
     for link.id == 0 {
         crypto.rand_bytes((cast([^]byte)&link.id)[:size_of(link.id)])
     }
     return true
+}
+
+// The IPv6 socket is optional: on the same port as the IPv4 one when it can (one port to forward, one number in the logs),
+// else on a port of its own (a dual stack system lets the IPv6 socket take the IPv4 port too).
+@(private)
+LinkOpenV6 :: proc(link: ^Link) {
+    if link.config.no_ipv6 {
+        return
+    }
+    socket, make_error := net.make_unbound_udp_socket(.IP6)
+    if make_error != nil {
+        return
+    }
+    if net.bind(socket, {address = net.IP6_Any, port = link.local_port}) != nil && net.bind(socket, {address = net.IP6_Any, port = 0}) != nil {
+        net.close(socket)
+        return
+    }
+    bound, bound_error := net.bound_endpoint(socket)
+    if bound_error != nil || net.set_blocking(socket, false) != nil {
+        net.close(socket)
+        return
+    }
+    link.socket6 = socket
+    link.has_v6 = true
+    link.local_port6 = bound.port
 }
 
 LinkClose :: proc(link: ^Link) {
@@ -276,11 +316,14 @@ LinkClose :: proc(link: ^Link) {
     }
     for peer in link.peers {
         if peer.state == .CONNECTED {
-            LinkSendPacket(link, peer.endpoint, .CLOSE, nil)
+            LinkSendPacket(link, peer.endpoint, .CLOSE, nil, nil, peer.via_relay)
         }
     }
     if link.transport.send == nil {
         net.close(link.socket)
+        if link.has_v6 {
+            net.close(link.socket6)
+        }
     }
     if link.portmap != nil && link.portmap.protocol != .NONE {
         PortMapClose(link.portmap)
@@ -292,6 +335,12 @@ LinkClose :: proc(link: ^Link) {
 LinkSendRaw :: proc(link: ^Link, to: net.Endpoint, data: []byte) {
     if link.transport.send != nil {
         link.transport.send(link.transport.user, to, data)
+        return
+    }
+    if _, is_v6 := to.address.(net.IP6_Address); is_v6 {
+        if link.has_v6 {
+            net.send_udp(link.socket6, data, to)
+        }
         return
     }
     net.send_udp(link.socket, data, to)
@@ -309,7 +358,13 @@ LinkReadRaw :: proc(link: ^Link) -> (length: int, from: net.Endpoint) {
     error: net.UDP_Recv_Error
     length, from, error = net.recv_udp(link.socket, link.datagram[:])
     if error == .Would_Block {
-        return 0, from
+        if !link.has_v6 {
+            return 0, from
+        }
+        length, from, error = net.recv_udp(link.socket6, link.datagram[:])
+        if error == .Would_Block {
+            return 0, from
+        }
     }
     if error != nil {
         return -1, from
@@ -336,8 +391,13 @@ LinkResolveStun :: proc(servers: []net.Endpoint) -> int {
 // Adds an address this link can be reached at. Gathering calls it for what it finds; call it yourself to add one by hand
 // (a forwarded port, a test). Duplicates are ignored.
 LinkAddCandidate :: proc(link: ^Link, endpoint: net.Endpoint) -> bool {
-    if _, is_ip4 := endpoint.address.(net.IP4_Address); !is_ip4 {
-        return false
+    if _, is_v6 := endpoint.address.(net.IP6_Address); is_v6 {
+        // codes stay short: one IPv6 address is enough, it is global (no NAT) so any one reaches
+        for i in 0 ..< link.candidate_count {
+            if _, other_v6 := link.candidates[i].address.(net.IP6_Address); other_v6 {
+                return false
+            }
+        }
     }
     for i in 0 ..< link.candidate_count {
         if link.candidates[i] == endpoint {
@@ -379,7 +439,7 @@ LinkGatherBegin :: proc(link: ^Link, servers: []net.Endpoint, now_ms: i64) {
 }
 
 LinkGathered :: proc(link: ^Link) -> bool {
-    return link.gather == .DONE
+    return link.gather == .DONE && link.turn.phase != .ALLOCATING
 }
 
 // Asks the router to forward this link's UDP port (PCP, NAT-PMP or UPnP, see portmap.odin). Call it after the gathering and
@@ -409,6 +469,9 @@ LinkGatherLocal :: proc(link: ^Link) {
         for i in 0 ..< link.config.local_address_count {
             LinkAddCandidate(link, {address = link.config.local_addresses[i], port = link.local_port})
         }
+        if link.config.local_v6_set {
+            LinkAddCandidate(link, {address = link.config.local_v6, port = link.local_port6})
+        }
         return
     }
     defer free_all(context.temp_allocator)
@@ -419,6 +482,12 @@ LinkGatherLocal :: proc(link: ^Link) {
                 continue
             }
             for lease in interface.unicast {
+                if address6, is_v6 := lease.address.(net.IP6_Address); is_v6 {
+                    if link.has_v6 && IsPublicAddress(address6) {
+                        LinkAddCandidate(link, {address = address6, port = link.local_port6})
+                    }
+                    continue
+                }
                 address, is_ip4 := lease.address.(net.IP4_Address)
                 // 169.254 is the "no network configured" address, nobody can reach it
                 if !is_ip4 || address[0] == 127 || address[0] == 169 && address[1] == 254 {
@@ -430,6 +499,9 @@ LinkGatherLocal :: proc(link: ^Link) {
     }
     if link.config.include_loopback {
         LinkAddCandidate(link, {address = net.IP4_Loopback, port = link.local_port})
+        if link.has_v6 {
+            LinkAddCandidate(link, {address = net.IP6_Loopback, port = link.local_port6})
+        }
     }
 }
 
@@ -508,6 +580,10 @@ LinkAddCandidateFirst :: proc(link: ^Link, endpoint: net.Endpoint) {
 // A routable address: not private, not loopback, not link local, not 0.0.0.0. A STUN server that announces anything else as
 // its second address is misconfigured and its CHANGE-REQUEST answers can never arrive.
 IsPublicAddress :: proc(address: net.Address) -> bool {
+    if address6, is_v6 := address.(net.IP6_Address); is_v6 {
+        // global unicast, 2000::/3
+        return u16(address6[0]) & 0xE000 == 0x2000
+    }
     ip, is_ip4 := address.(net.IP4_Address)
     if !is_ip4 {
         return false
@@ -716,6 +792,9 @@ LinkMakeInvite :: proc(link: ^Link) -> (invite: Invite) {
     invite.port_delta = link.nat_port_delta
     invite.last_port = link.nat_last_port
     for i in 0 ..< link.candidate_count {
+        if link.config.relay_only && link.turn.phase == .READY && link.candidates[i] != link.turn.relayed {
+            continue
+        }
         InviteAddCandidate(&invite, link.candidates[i])
     }
     return
@@ -800,7 +879,7 @@ LinkSend :: proc(link: ^Link, peer_index: int, data: []byte, reliable: bool, now
     }
     peer.tx_ms = now_ms
     if !reliable {
-        LinkSendPacket(link, peer.endpoint, .DATA, data)
+        LinkSendPacket(link, peer.endpoint, .DATA, data, nil, peer.via_relay)
         peer.tx_packets += 1
         return true
     }
@@ -835,7 +914,7 @@ LinkBroadcast :: proc(link: ^Link, data: []byte, reliable: bool, now_ms: i64, ex
 LinkDisconnect :: proc(link: ^Link, peer_index: int) {
     peer: ^Peer = &link.peers[peer_index]
     if peer.state == .CONNECTED {
-        LinkSendPacket(link, peer.endpoint, .CLOSE, nil)
+        LinkSendPacket(link, peer.endpoint, .CLOSE, nil, nil, peer.via_relay)
     }
     peer.state = .EMPTY
 }
@@ -843,7 +922,7 @@ LinkDisconnect :: proc(link: ^Link, peer_index: int) {
 // ============================================================ packets
 
 @(private)
-LinkSendPacket :: proc(link: ^Link, to: net.Endpoint, kind: PacketKind, payload: []byte, extra: []byte = nil) {
+LinkSendPacket :: proc(link: ^Link, to: net.Endpoint, kind: PacketKind, payload: []byte, extra: []byte = nil, relay: bool = false) {
     buffer: [PACKET_HEADER + 8 + MAX_PAYLOAD]byte
     buffer[0] = PACKET_MAGIC
     buffer[1] = u8(kind)
@@ -854,6 +933,10 @@ LinkSendPacket :: proc(link: ^Link, to: net.Endpoint, kind: PacketKind, payload:
     length += len(extra)
     copy(buffer[length:], payload)
     length += len(payload)
+    if relay {
+        LinkSendRelayed(link, to, buffer[:length])
+        return
+    }
     LinkSendRaw(link, to, buffer[:length])
 }
 
@@ -875,7 +958,7 @@ LinkSendReliable :: proc(link: ^Link, peer: ^Peer, sequence: u16, slot: int) {
     PutU16BE(extra[0:], sequence)
     PutU16BE(extra[2:], peer.recv_next)
     PutU16BE(extra[4:], PeerAckMask(peer))
-    LinkSendPacket(link, peer.endpoint, .DATA_RELIABLE, peer.send_data[slot][:peer.send_length[slot]], extra[:])
+    LinkSendPacket(link, peer.endpoint, .DATA_RELIABLE, peer.send_data[slot][:peer.send_length[slot]], extra[:], peer.via_relay)
     peer.tx_packets += 1
     peer.ack_due = false
 }
@@ -885,13 +968,13 @@ LinkSendAck :: proc(link: ^Link, peer: ^Peer, now_ms: i64) {
     extra: [4]byte
     PutU16BE(extra[0:], peer.recv_next)
     PutU16BE(extra[2:], PeerAckMask(peer))
-    LinkSendPacket(link, peer.endpoint, .ACK, nil, extra[:])
+    LinkSendPacket(link, peer.endpoint, .ACK, nil, extra[:], peer.via_relay)
     peer.ack_due = false
     peer.tx_ms = now_ms
 }
 
 @(private)
-LinkHandleDatagram :: proc(link: ^Link, from: net.Endpoint, data: []byte, now_ms: i64) {
+LinkHandleDatagram :: proc(link: ^Link, from: net.Endpoint, data: []byte, now_ms: i64, relay: bool = false) {
     if len(data) < PACKET_HEADER || data[0] != PACKET_MAGIC || GetU32BE(data[2:]) != link.tag || link.role == .NONE {
         return
     }
@@ -918,13 +1001,14 @@ LinkHandleDatagram :: proc(link: ^Link, from: net.Endpoint, data: []byte, now_ms
             // from now on the peer is whatever address this packet came from: that is the hole the NAT opened
             peer.state = .CONNECTED
             peer.endpoint = from
+            peer.via_relay = relay
             peer.rx_ms = now_ms
             peer.tx_ms = now_ms
             LinkPushEvent(link, {kind = .PEER_CONNECTED, peer = peer_index})
         }
         if kind == .PUNCH {
             // always answer, the peer may still be punching because our earlier answer was lost
-            LinkSendPacket(link, from, .PUNCH_ACK, nil)
+            LinkSendPacket(link, from, .PUNCH_ACK, nil, nil, relay)
         }
         if peer.state == .CONNECTED {
             peer.rx_ms = now_ms
@@ -935,7 +1019,12 @@ LinkHandleDatagram :: proc(link: ^Link, from: net.Endpoint, data: []byte, now_ms
     if peer.state != .CONNECTED {
         return
     }
-    peer.endpoint = from
+    // The relay is a way in, not a home: when a packet comes straight, the connection moves to the direct path. A packet
+    // through the relay while a direct path is in use is still taken, but does not move anything back.
+    if relay == peer.via_relay || !relay && peer.via_relay {
+        peer.endpoint = from
+        peer.via_relay = relay
+    }
     peer.rx_ms = now_ms
     peer.rx_packets += 1
 
@@ -1049,6 +1138,16 @@ PeerResendMs :: proc(peer: ^Peer, attempts: u8) -> i64 {
 
 // ============================================================ update
 
+// The test hook of drop_percent: true when this received datagram is to be thrown away.
+@(private)
+LinkDropped :: proc(link: ^Link) -> bool {
+    if link.drop_percent <= 0 {
+        return false
+    }
+    link.drop_state = link.drop_state * 1664525 + 1013904223
+    return int(link.drop_state >> 16) % 100 < link.drop_percent
+}
+
 // Call every frame (or at least every 50 ms): reads the socket, finishes the gathering, punches, resends, keeps alive.
 LinkUpdate :: proc(link: ^Link, now_ms: i64) {
     assert(link.open)
@@ -1061,20 +1160,25 @@ LinkUpdate :: proc(link: ^Link, now_ms: i64) {
             break
         }
         data: []byte = link.datagram[:length]
+        if link.turn.phase != .OFF && from == link.turn.server {
+            inner, peer_from, is_data := TurnReceive(link, data, now_ms)
+            if is_data && !LinkDropped(link) {
+                LinkHandleDatagram(link, peer_from, inner, now_ms, true)
+            }
+            continue
+        }
         if StunLooksLikeStun(data) {
             LinkStunAnswer(link, from, data, now_ms)
             continue
         }
-        if link.drop_percent > 0 {
-            link.drop_state = link.drop_state * 1664525 + 1013904223
-            if int(link.drop_state >> 16) % 100 < link.drop_percent {
-                continue
-            }
+        if LinkDropped(link) {
+            continue
         }
         LinkHandleDatagram(link, from, data, now_ms)
     }
 
     LinkFilterUpdate(link, now_ms)
+    TurnUpdate(link, now_ms)
     if link.gather == .RUNNING {
         if now_ms - link.gather_start_ms >= GATHER_TIMEOUT_MS {
             LinkGatherFinish(link, now_ms)

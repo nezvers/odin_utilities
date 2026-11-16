@@ -5,6 +5,8 @@
 //   odin run p2p/tool/chat -- selftest         both ends in this process over the real network (STUN included)
 //
 // flags: --no-stun (no internet lookups, same network only)  --loopback (offer 127.0.0.1, two programs on one computer)
+//        --upnp (ask the router to forward the port: PCP, NAT-PMP, UPnP)  --no-ipv6
+//        --turn host:port user password (a TURN relay from a provider with a free tier)  --relay-only (offer only the relay)
 //        --port N (fixed local UDP port)
 // In the chat: a line is sent to everybody; /code shows and copies the code again, /quit leaves.
 //
@@ -20,6 +22,12 @@ import "core:thread"
 import "core:time"
 import "core:net"
 import p2p "../.."
+
+TurnOptions :: struct {
+    host: string,
+    user: string,
+    password: string,
+}
 
 MSG_CHAT :: u8(1)
 MAX_LINE :: 512
@@ -43,6 +51,7 @@ main :: proc() {
     config: p2p.LinkConfig
     use_stun: bool = true
     use_portmap: bool
+    turn: TurnOptions
     for i := 1; i < len(os.args); i += 1 {
         argument: string = os.args[i]
         switch argument {
@@ -52,6 +61,19 @@ main :: proc() {
             config.include_loopback = true
         case "--upnp":
             use_portmap = true
+        case "--relay-only":
+            config.relay_only = true
+        case "--no-ipv6":
+            config.no_ipv6 = true
+        case "--turn":
+            if i + 3 >= len(os.args) {
+                fmt.eprintln("--turn needs: host:port username password")
+                os.exit(2)
+            }
+            turn.host = os.args[i + 1]
+            turn.user = os.args[i + 2]
+            turn.password = os.args[i + 3]
+            i += 3
         case "--port":
             i += 1
             value, ok := strconv.parse_int(os.args[i] if i < len(os.args) else "")
@@ -78,10 +100,10 @@ main :: proc() {
     if name == "" {
         name = "host" if mode == "host" else "guest"
     }
-    Chat(mode == "host", name, config, use_stun, use_portmap)
+    Chat(mode == "host", name, config, use_stun, use_portmap, turn)
 }
 
-Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool, use_portmap: bool) {
+Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool, use_portmap: bool, turn: TurnOptions) {
     link: ^p2p.Link = new(p2p.Link)
     if !p2p.LinkInit(link, config) {
         fmt.eprintln("cannot open the UDP socket (port in use?)")
@@ -94,6 +116,15 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
         server_count = p2p.LinkResolveStun(servers[:])
         if server_count == 0 {
             fmt.println("No STUN server could be resolved (offline?). Only same network connections will work.")
+        }
+    }
+    if turn.host != "" {
+        server, resolved := p2p.LinkResolve(turn.host)
+        if resolved {
+            fmt.printfln("Asking the TURN relay %s for a relayed address...", turn.host)
+            p2p.LinkTurnBegin(link, server, turn.user, turn.password, p2p.LinkNow())
+        } else {
+            fmt.printfln("Cannot resolve the TURN server %s, going without a relay.", turn.host)
         }
     }
     p2p.LinkGatherBegin(link, servers[:server_count], p2p.LinkNow())
@@ -139,6 +170,14 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
             }
             switch event.kind {
             case .GATHERED:
+            case .RELAY_READY:
+                fmt.printfln("Relay ready: %s (used only when a direct path does not work)", net.endpoint_to_string(link.turn.relayed, context.temp_allocator))
+            case .RELAY_FAILED:
+                if link.turn.failure == 401 {
+                    fmt.println("The TURN server refused the username or password.")
+                } else {
+                    fmt.println("The TURN relay could not be allocated, going without it.")
+                }
             case .NAT_MEASURED:
                 PrintFiltering(link)
             case .PEER_CONNECTED:

@@ -12,6 +12,7 @@ package p2p
 import "core:mem"
 import "core:net"
 import "core:testing"
+import "core:time"
 
 SIM_HOSTS :: 8
 SIM_NATS :: 4
@@ -71,6 +72,11 @@ SimDatagram :: struct {
 
 SimHost :: struct {
     sim: ^Sim,
+    v6: net.Endpoint,               // a global IPv6 address (no NAT), when has_v6
+    has_v6: bool,
+    firewall: bool,                 // IPv6 stateful firewall: only what it sent to may answer
+    sent_to: [32]net.Endpoint,
+    sent_count: int,
     private: net.Endpoint,          // the address the host knows itself by (its public one when there is no NAT)
     nat: int,                       // -1 = directly on the internet
     queue: [SIM_QUEUE]SimDatagram,
@@ -97,6 +103,22 @@ SimNat :: struct {
     host_count: int,
 }
 
+SIM_ALLOCATIONS :: 8
+SIM_TURN_USER :: "player"
+SIM_TURN_PASSWORD :: "secret"
+SIM_TURN_REALM :: "sim.example"
+SIM_TURN_NONCE :: "nonce123"
+
+SimAllocation :: struct {
+    used: bool,
+    client: net.Endpoint,           // the public address the client talks from
+    relayed: net.Endpoint,
+    expires_ms: i64,
+    permissions: [16]net.IP4_Address,
+    permission_expires_ms: [16]i64,
+    permission_count: int,
+}
+
 SimStun :: struct {
     endpoint: net.Endpoint,
     other: net.Endpoint,            // the second address that answers CHANGE-REQUEST
@@ -109,12 +131,18 @@ Sim :: struct {
     nat_count: int,
     stuns: [2]SimStun,
     served: int,                    // STUN requests answered
+    turn: net.Endpoint,             // the TURN server
+    turn_down: bool,                // it exists but never answers
+    allocations: [SIM_ALLOCATIONS]SimAllocation,
+    now_ms: i64,                    // set by SimPump, for the lifetimes of the relay
+    relayed_bytes: int,             // payload that went through the relay (either way)
 }
 
 SimInit :: proc(sim: ^Sim) {
     mem.zero_item(sim)
     sim.stuns[0] = {{net.IP4_Address{192, 0, 2, 1}, 3478}, {net.IP4_Address{192, 0, 2, 2}, 3479}}
     sim.stuns[1] = {{net.IP4_Address{192, 0, 2, 3}, 3478}, {net.IP4_Address{192, 0, 2, 4}, 3479}}
+    sim.turn = {net.IP4_Address{192, 0, 2, 50}, 3478}
 }
 
 SimAddNat :: proc(sim: ^Sim, config: SimNatConfig) -> int {
@@ -141,6 +169,13 @@ SimAddHost :: proc(sim: ^Sim, nat: int) -> ^SimHost {
     }
     sim.host_count += 1
     return host
+}
+
+// Gives the host a global IPv6 address, behind a stateful firewall (what home routers do) or open.
+SimGiveV6 :: proc(host: ^SimHost, firewall: bool) {
+    host.has_v6 = true
+    host.firewall = firewall
+    host.v6 = {net.IP6_Address{0x2001, 0x0db8, 0, 0, 0, 0, 0, u16be(host.private.port)}, host.private.port}
 }
 
 SimTransport :: proc(host: ^SimHost) -> Transport {
@@ -177,6 +212,21 @@ SimQueue :: proc(host: ^SimHost, from: net.Endpoint, data: []byte) {
 // What a host sends: through its NAT (creating the mapping and the permission), or straight onto the internet.
 SimSend :: proc(host: ^SimHost, to: net.Endpoint, data: []byte) {
     sim: ^Sim = host.sim
+    if _, to_v6 := to.address.(net.IP6_Address); to_v6 {
+        if !host.has_v6 {
+            return
+        }
+        known: bool
+        for i in 0 ..< min(host.sent_count, len(host.sent_to)) {
+            known ||= host.sent_to[i] == to
+        }
+        if !known {
+            host.sent_to[host.sent_count % len(host.sent_to)] = to
+            host.sent_count += 1
+        }
+        SimRoute(sim, host.v6, to, data)
+        return
+    }
     if host.nat < 0 {
         SimRoute(sim, host.private, to, data)
         return
@@ -206,6 +256,18 @@ SimSend :: proc(host: ^SimHost, to: net.Endpoint, data: []byte) {
 
 // A datagram on the internet, from a public source address to a public destination.
 SimRoute :: proc(sim: ^Sim, source: net.Endpoint, to: net.Endpoint, data: []byte) {
+    if to == sim.turn {
+        if !sim.turn_down {
+            SimTurnServe(sim, source, data)
+        }
+        return
+    }
+    for &allocation in sim.allocations {
+        if allocation.used && allocation.relayed == to {
+            SimTurnInbound(sim, &allocation, source, data)
+            return
+        }
+    }
     for i in 0 ..< len(sim.stuns) {
         if to == sim.stuns[i].endpoint || to == sim.stuns[i].other {
             SimStunServe(sim, &sim.stuns[i], to, source, data)
@@ -214,6 +276,19 @@ SimRoute :: proc(sim: ^Sim, source: net.Endpoint, to: net.Endpoint, data: []byte
     }
     to_address, is_ip4 := to.address.(net.IP4_Address)
     if !is_ip4 {
+        for i in 0 ..< sim.host_count {
+            host: ^SimHost = &sim.hosts[i]
+            if !host.has_v6 || host.v6 != to {
+                continue
+            }
+            allowed: bool = !host.firewall
+            for k in 0 ..< min(host.sent_count, len(host.sent_to)) {
+                allowed ||= host.sent_to[k] == source
+            }
+            if allowed {
+                SimQueue(host, source, data)
+            }
+        }
         return
     }
     for i in 0 ..< sim.nat_count {
@@ -356,11 +431,170 @@ SimPutAddress :: proc(buffer: []byte, offset: int, kind: u16, endpoint: net.Endp
     return offset + 12
 }
 
+// ============================================================ a TURN server
+
+SimTurnFind :: proc(sim: ^Sim, client: net.Endpoint) -> ^SimAllocation {
+    for &allocation in sim.allocations {
+        if allocation.used && allocation.client == client && allocation.expires_ms > sim.now_ms {
+            return &allocation
+        }
+    }
+    return nil
+}
+
+SimTurnPermit :: proc(sim: ^Sim, allocation: ^SimAllocation, address: net.IP4_Address) {
+    for i in 0 ..< allocation.permission_count {
+        if allocation.permissions[i] == address {
+            allocation.permission_expires_ms[i] = sim.now_ms + 300000
+            return
+        }
+    }
+    if allocation.permission_count < len(allocation.permissions) {
+        allocation.permissions[allocation.permission_count] = address
+        allocation.permission_expires_ms[allocation.permission_count] = sim.now_ms + 300000
+        allocation.permission_count += 1
+    }
+}
+
+SimTurnReply :: proc(sim: ^Sim, client: net.Endpoint, buffer: []byte, length: int) {
+    SimRoute(sim, sim.turn, client, buffer[:length])
+}
+
+SimTurnError :: proc(sim: ^Sim, client: net.Endpoint, request: []byte, code: int) {
+    txid: StunTxId
+    copy(txid[:], request[8:20])
+    buffer: [256]byte
+    offset: int = StunBegin(buffer[:], GetU16BE(request[0:]) | 0x0110, txid)
+    offset = StunAppend(buffer[:], offset, TURN_ATTR_ERROR, []byte{0, 0, byte(code / 100), byte(code % 100)})
+    offset = StunAppend(buffer[:], offset, TURN_ATTR_REALM, transmute([]byte)string(SIM_TURN_REALM))
+    offset = StunAppend(buffer[:], offset, TURN_ATTR_NONCE, transmute([]byte)string(SIM_TURN_NONCE))
+    SimTurnReply(sim, client, buffer[:], offset)
+}
+
+// Authentication, allocations, refreshes, permissions and Send indications of one client.
+SimTurnServe :: proc(sim: ^Sim, source: net.Endpoint, data: []byte) {
+    if !StunLooksLikeStun(data) || len(data) != STUN_HEADER_SIZE + int(GetU16BE(data[2:])) {
+        return
+    }
+    kind: u16 = GetU16BE(data[0:])
+    allocation: ^SimAllocation = SimTurnFind(sim, source)
+    if kind == TURN_SEND_INDICATION {
+        peer_value, found := StunFindAttribute(data, TURN_ATTR_PEER)
+        payload, has_payload := StunFindAttribute(data, TURN_ATTR_DATA)
+        peer, peer_ok := StunReadAddress(peer_value, true)
+        if allocation == nil || !found || !has_payload || !peer_ok {
+            return
+        }
+        // sending to an address also opens the permission for what comes back from it
+        SimTurnPermit(sim, allocation, peer.address.(net.IP4_Address))
+        sim.relayed_bytes += len(payload)
+        SimRoute(sim, allocation.relayed, peer, payload)
+        return
+    }
+
+    key: [16]byte = TurnKey(SIM_TURN_USER, SIM_TURN_REALM, SIM_TURN_PASSWORD)
+    if _, signed := StunFindAttribute(data, TURN_ATTR_INTEGRITY); !signed || !StunVerify(data, key[:]) {
+        SimTurnError(sim, source, data, 401)
+        return
+    }
+    nonce, _ := StunFindAttribute(data, TURN_ATTR_NONCE)
+    if string(nonce) != SIM_TURN_NONCE {
+        SimTurnError(sim, source, data, 438)
+        return
+    }
+    txid: StunTxId
+    copy(txid[:], data[8:20])
+    buffer: [256]byte
+    offset: int
+    switch kind {
+    case TURN_ALLOCATE:
+        if allocation == nil {
+            for &candidate, index in sim.allocations {
+                if !candidate.used || candidate.expires_ms <= sim.now_ms {
+                    candidate = {used = true, client = source, relayed = {net.IP4_Address{192, 0, 2, 51}, 49152 + index}}
+                    allocation = &candidate
+                    break
+                }
+            }
+        }
+        if allocation == nil {
+            SimTurnError(sim, source, data, 486)
+            return
+        }
+        allocation.expires_ms = sim.now_ms + 600000
+        offset = StunBegin(buffer[:], TURN_ALLOCATE | 0x0100, txid)
+        offset = StunAppendAddress(buffer[:], offset, TURN_ATTR_RELAYED, allocation.relayed)
+        offset = StunAppendAddress(buffer[:], offset, STUN_ATTR_XOR_MAPPED, source)
+        lifetime: [4]byte
+        PutU32BE(lifetime[:], 600)
+        offset = StunAppend(buffer[:], offset, TURN_ATTR_LIFETIME, lifetime[:])
+    case TURN_REFRESH:
+        if allocation == nil {
+            SimTurnError(sim, source, data, 437)
+            return
+        }
+        allocation.expires_ms = sim.now_ms + 600000
+        offset = StunBegin(buffer[:], TURN_REFRESH | 0x0100, txid)
+        lifetime: [4]byte
+        PutU32BE(lifetime[:], 600)
+        offset = StunAppend(buffer[:], offset, TURN_ATTR_LIFETIME, lifetime[:])
+    case TURN_CREATE_PERMISSION:
+        if allocation == nil {
+            SimTurnError(sim, source, data, 437)
+            return
+        }
+        position: int = STUN_HEADER_SIZE
+        for position + 4 <= len(data) {
+            attribute: u16 = GetU16BE(data[position:])
+            size: int = int(GetU16BE(data[position + 2:]))
+            if attribute == TURN_ATTR_PEER {
+                peer, ok := StunReadAddress(data[position + 4:position + 4 + size], true)
+                if ok {
+                    SimTurnPermit(sim, allocation, peer.address.(net.IP4_Address))
+                }
+            }
+            position += 4 + (size + 3) & ~int(3)
+        }
+        offset = StunBegin(buffer[:], TURN_CREATE_PERMISSION | 0x0100, txid)
+    case:
+        return
+    }
+    SimTurnReply(sim, source, buffer[:], offset)
+}
+
+// A datagram that reached a relayed address: forwarded to the client as a Data indication if its sender has a permission.
+SimTurnInbound :: proc(sim: ^Sim, allocation: ^SimAllocation, source: net.Endpoint, data: []byte) {
+    if allocation.expires_ms <= sim.now_ms {
+        return
+    }
+    address, is_ip4 := source.address.(net.IP4_Address)
+    if !is_ip4 {
+        return
+    }
+    allowed: bool
+    for i in 0 ..< allocation.permission_count {
+        allowed ||= allocation.permissions[i] == address && allocation.permission_expires_ms[i] > sim.now_ms
+    }
+    if !allowed {
+        return
+    }
+    buffer: [1400]byte
+    txid: StunTxId = {9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9}
+    offset: int = StunBegin(buffer[:], TURN_DATA_INDICATION, txid)
+    offset = StunAppendAddress(buffer[:], offset, TURN_ATTR_PEER, source)
+    offset = StunAppend(buffer[:], offset, TURN_ATTR_DATA, data)
+    sim.relayed_bytes += len(data)
+    SimRoute(sim, sim.turn, allocation.client, buffer[:offset])
+}
+
 // ============================================================ driving two links through the simulation
 
 SimPump :: proc(a: ^Link, b: ^Link, now: ^i64, steps: int) {
     for _ in 0 ..< steps {
         now^ += 10
+        if a.transport.user != nil {
+            (^SimHost)(a.transport.user).sim.now_ms = now^
+        }
         LinkUpdate(a, now^)
         LinkUpdate(b, now^)
     }
@@ -371,14 +605,22 @@ SimLink :: proc(host: ^SimHost) -> ^Link {
     config: LinkConfig
     config.local_addresses[0] = host.private.address.(net.IP4_Address)
     config.local_address_count = 1
+    config.local_v6 = host.v6.address.(net.IP6_Address) if host.has_v6 else {}
+    config.local_v6_set = host.has_v6
     LinkInitTransport(link, SimTransport(host), host.private.port, config)
     return link
 }
 
 // The whole flow of two people: gather, host code, guest pastes it, reply code, host pastes it, then punching.
 // Returns the milliseconds (fake clock) until both sides were connected, or -1.
-SimConnect :: proc(sim: ^Sim, a: ^Link, b: ^Link, now: ^i64, limit_ms: i64 = 30000) -> i64 {
+SimConnect :: proc(sim: ^Sim, a: ^Link, b: ^Link, now: ^i64, limit_ms: i64 = 30000, relay_a: bool = false, relay_b: bool = false, password: string = SIM_TURN_PASSWORD) -> i64 {
     servers: [2]net.Endpoint = {sim.stuns[0].endpoint, sim.stuns[1].endpoint}
+    if relay_a {
+        LinkTurnBegin(a, sim.turn, SIM_TURN_USER, password, now^)
+    }
+    if relay_b {
+        LinkTurnBegin(b, sim.turn, SIM_TURN_USER, password, now^)
+    }
     LinkGatherBegin(a, servers[:], now^)
     LinkGatherBegin(b, servers[:], now^)
     for !LinkGathered(a) || !LinkGathered(b) {
@@ -414,7 +656,7 @@ SimConnect :: proc(sim: ^Sim, a: ^Link, b: ^Link, now: ^i64, limit_ms: i64 = 300
 }
 
 // Two hosts behind NATs of the given kinds (PUBLIC = no NAT), connected through the whole flow.
-SimPair :: proc(kind_a: SimKind, kind_b: SimKind) -> (milliseconds: i64) {
+SimPair :: proc(kind_a: SimKind, kind_b: SimKind, relay_a: bool = false, relay_b: bool = false, v6_a: bool = false, v6_b: bool = false) -> (milliseconds: i64) {
     sim: ^Sim = new(Sim)
     defer free(sim)
     SimInit(sim)
@@ -422,12 +664,18 @@ SimPair :: proc(kind_a: SimKind, kind_b: SimKind) -> (milliseconds: i64) {
     nat_b: int = -1 if kind_b == .PUBLIC else SimAddNat(sim, SimConfigOf(kind_b))
     host_a: ^SimHost = SimAddHost(sim, nat_a)
     host_b: ^SimHost = SimAddHost(sim, nat_b)
+    if v6_a {
+        SimGiveV6(host_a, true)
+    }
+    if v6_b {
+        SimGiveV6(host_b, true)
+    }
     a: ^Link = SimLink(host_a)
     b: ^Link = SimLink(host_b)
     defer free(a)
     defer free(b)
     now: i64
-    return SimConnect(sim, a, b, &now)
+    return SimConnect(sim, a, b, &now, 30000, relay_a, relay_b)
 }
 
 // ============================================================ tests
@@ -572,4 +820,197 @@ IsPublicAddressTest :: proc(t: ^testing.T) {
     testing.expect(t, !IsPublicAddress(net.IP4_Address{100, 64, 0, 1}))
     testing.expect(t, !IsPublicAddress(net.IP4_Address{0, 0, 0, 0}))
     testing.expect(t, !IsPublicAddress(net.IP4_Address{127, 0, 0, 1}))
+}
+
+// With a TURN allocation on one side, every pair connects, even two symmetric NATs with unpredictable ports.
+@(test)
+SimRelayMatrixTest :: proc(t: ^testing.T) {
+    for a in SimKind {
+        for b in SimKind {
+            testing.expectf(t, SimPair(a, b, true, false) >= 0, "%v (relay) with %v: not connected", a, b)
+            testing.expectf(t, SimPair(a, b, false, true) >= 0, "%v with %v (relay): not connected", a, b)
+        }
+    }
+}
+
+// The relay is a way in, not a home: when a direct path works the connection ends up on it.
+@(test)
+SimRelayUpgradeTest :: proc(t: ^testing.T) {
+    sim: ^Sim = new(Sim)
+    defer free(sim)
+    SimInit(sim)
+    a: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.FULL_CONE))))
+    b: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.FULL_CONE))))
+    defer free(a)
+    defer free(b)
+    now: i64
+    testing.expect(t, SimConnect(sim, a, b, &now, 30000, true, false) >= 0)
+    SimPump(a, b, &now, 300)
+    testing.expect(t, !a.peers[0].via_relay)
+    testing.expect(t, !b.peers[0].via_relay)
+}
+
+// Two unpredictable symmetric NATs: only the relay carries the chat, over loss, and still works after the allocation and the
+// permissions were renewed several times (the fake server expires them like the real one).
+@(test)
+SimRelayDataAndRenewalTest :: proc(t: ^testing.T) {
+    sim: ^Sim = new(Sim)
+    defer free(sim)
+    SimInit(sim)
+    a: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.SYMMETRIC_RANDOM))))
+    b: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.SYMMETRIC_RANDOM))))
+    defer free(a)
+    defer free(b)
+    now: i64
+    testing.expect(t, SimConnect(sim, a, b, &now, 30000, true, false) >= 0)
+    testing.expect(t, a.peers[0].via_relay)
+    testing.expect(t, !b.peers[0].via_relay)
+
+    a.drop_percent = 20
+    b.drop_percent = 20
+    buffer: [MAX_PAYLOAD]byte
+    // 30 messages, then 25 simulated minutes of idle keepalives, then 30 more
+    for round in 0 ..< 2 {
+        sent, received: int
+        for _ in 0 ..< 3000 {
+            if sent < 30 {
+                message: [2]byte = {byte(round), byte(sent)}
+                if LinkSend(b, 0, message[:], true, now) {
+                    sent += 1
+                }
+            }
+            SimPump(a, b, &now, 1)
+            for {
+                _, length, ok := LinkReceive(a, buffer[:])
+                if !ok {
+                    break
+                }
+                testing.expect_value(t, int(buffer[1]), received)
+                testing.expect_value(t, length, 2)
+                received += 1
+            }
+            if received == 30 {
+                break
+            }
+        }
+        testing.expectf(t, received == 30, "round %v: %v of 30 messages", round, received)
+        if round == 0 {
+            SimPump(a, b, &now, 150000)
+        }
+    }
+    testing.expect(t, sim.relayed_bytes > 0)
+}
+
+@(test)
+SimRelayWrongPasswordTest :: proc(t: ^testing.T) {
+    sim: ^Sim = new(Sim)
+    defer free(sim)
+    SimInit(sim)
+    a: ^Link = SimLink(SimAddHost(sim, -1))
+    b: ^Link = SimLink(SimAddHost(sim, -1))
+    defer free(a)
+    defer free(b)
+    now: i64
+    // the gathering does not hang on a refused allocation: it ends, the link says why, and the connection is made without it
+    testing.expect(t, SimConnect(sim, a, b, &now, 30000, true, false, "wrong") >= 0)
+    testing.expect_value(t, a.turn.phase, TurnPhase.FAILED)
+    testing.expect_value(t, a.turn.failure, 401)
+    failed: bool
+    for {
+        event, ok := LinkPollEvent(a)
+        if !ok {
+            break
+        }
+        failed ||= event.kind == .RELAY_FAILED
+    }
+    testing.expect(t, failed)
+}
+
+@(test)
+SimRelayUnreachableServerTest :: proc(t: ^testing.T) {
+    sim: ^Sim = new(Sim)
+    defer free(sim)
+    SimInit(sim)
+    sim.turn_down = true
+    a: ^Link = SimLink(SimAddHost(sim, -1))
+    b: ^Link = SimLink(SimAddHost(sim, -1))
+    defer free(a)
+    defer free(b)
+    now: i64
+    testing.expect(t, SimConnect(sim, a, b, &now, 30000, true, false) >= 0)
+    testing.expect_value(t, a.turn.phase, TurnPhase.FAILED)
+    testing.expect_value(t, a.turn.failure, 0)
+}
+
+// With IPv6 on both sides there is no NAT in the way: even two symmetric NATs with unpredictable ports connect, through the
+// stateful firewalls, because both sides send first.
+@(test)
+SimIPv6Test :: proc(t: ^testing.T) {
+    for a in SimKind {
+        for b in SimKind {
+            testing.expectf(t, SimPair(a, b, false, false, true, true) >= 0, "%v with %v, both IPv6: not connected", a, b)
+        }
+    }
+    // only one side has it: the IPv4 path decides, as before
+    testing.expect(t, SimPair(.SYMMETRIC_RANDOM, .SYMMETRIC_RANDOM, false, false, true, false) < 0)
+    testing.expect(t, SimPair(.FULL_CONE, .PORT_RESTRICTED, false, false, true, false) >= 0)
+}
+
+@(test)
+SimIPv6IsUsedTest :: proc(t: ^testing.T) {
+    sim: ^Sim = new(Sim)
+    defer free(sim)
+    SimInit(sim)
+    host_a: ^SimHost = SimAddHost(sim, SimAddNat(sim, SimConfigOf(.SYMMETRIC_RANDOM)))
+    host_b: ^SimHost = SimAddHost(sim, SimAddNat(sim, SimConfigOf(.SYMMETRIC_RANDOM)))
+    SimGiveV6(host_a, true)
+    SimGiveV6(host_b, true)
+    a: ^Link = SimLink(host_a)
+    b: ^Link = SimLink(host_b)
+    defer free(a)
+    defer free(b)
+    now: i64
+    testing.expect(t, SimConnect(sim, a, b, &now) >= 0)
+    _, a_is_v6 := a.peers[0].endpoint.address.(net.IP6_Address)
+    _, b_is_v6 := b.peers[0].endpoint.address.(net.IP6_Address)
+    testing.expect(t, a_is_v6 && b_is_v6)
+
+    // chat over it
+    testing.expect(t, LinkSend(a, 0, transmute([]byte)string("v6 hello"), true, now))
+    SimPump(a, b, &now, 20)
+    buffer: [MAX_PAYLOAD]byte
+    _, length, ok := LinkReceive(b, buffer[:])
+    testing.expect(t, ok)
+    testing.expect_value(t, string(buffer[:length]), "v6 hello")
+}
+
+// The real IPv6 socket path: two links on this computer, a datagram over ::1 from one to the other. Skipped where the
+// computer has no IPv6.
+@(test)
+LinkIPv6LoopbackTest :: proc(t: ^testing.T) {
+    a: ^Link = new(Link)
+    b: ^Link = new(Link)
+    defer free(a)
+    defer free(b)
+    testing.expect(t, LinkInit(a))
+    testing.expect(t, LinkInit(b))
+    defer LinkClose(a)
+    defer LinkClose(b)
+    if !a.has_v6 || !b.has_v6 {
+        return
+    }
+    message: []byte = {1, 2, 3}
+    LinkSendRaw(a, {address = net.IP6_Loopback, port = b.local_port6}, message)
+    arrived: bool
+    for _ in 0 ..< 200 {
+        length, from := LinkReadRaw(b)
+        if length == 3 {
+            testing.expect_value(t, b.datagram[1], u8(2))
+            testing.expect_value(t, from.port, a.local_port6)
+            arrived = true
+            break
+        }
+        time.sleep(time.Millisecond)
+    }
+    testing.expect(t, arrived, "no datagram arrived over ::1")
 }

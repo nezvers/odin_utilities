@@ -14,10 +14,10 @@ import "core:net"
 import "core:testing"
 import serial "../serial"
 
-INVITE_VERSION :: u8(2)
+INVITE_VERSION :: u8(3)
 NAME_MAX :: 24
 MAX_CANDIDATES :: 6
-CODE_BINARY_MAX :: 1 + 1 + 8 + 4 + 1 + NAME_MAX + 1 + MAX_CANDIDATES * 6 + 5 + 4
+CODE_BINARY_MAX :: 1 + 1 + 8 + 4 + 1 + NAME_MAX + 1 + MAX_CANDIDATES * 7 + 12 + 5 + 4
 CODE_TEXT_MAX :: (CODE_BINARY_MAX * 8 + 4) / 5 + CODE_BINARY_MAX     // characters plus the dashes between groups of 5
 
 CODE_ALPHABET := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -51,10 +51,14 @@ InviteName :: proc(invite: ^Invite) -> string {
     return string(invite.name[:invite.name_len])
 }
 
-// Adds an IPv4 candidate. Duplicates and a full list are ignored (returns false).
+// Adds a candidate (IPv4, or one IPv6). Duplicates and a full list are ignored (returns false).
 InviteAddCandidate :: proc(invite: ^Invite, endpoint: net.Endpoint) -> bool {
-    if _, is_ip4 := endpoint.address.(net.IP4_Address); !is_ip4 {
-        return false
+    if _, is_v6 := endpoint.address.(net.IP6_Address); is_v6 {
+        for i in 0 ..< invite.candidate_count {
+            if _, other_v6 := invite.candidates[i].address.(net.IP6_Address); other_v6 {
+                return false
+            }
+        }
     }
     for i in 0 ..< invite.candidate_count {
         if invite.candidates[i] == endpoint {
@@ -84,11 +88,20 @@ InviteEncode :: proc(invite: Invite, out: []byte) -> (text: string, ok: bool) {
     serial.WriteBytes(&writer, name[:invite.name_len])
     serial.WriteU8(&writer, u8(invite.candidate_count))
     for i in 0 ..< invite.candidate_count {
-        address, is_ip4 := invite.candidates[i].address.(net.IP4_Address)
-        if !is_ip4 {
+        switch address in invite.candidates[i].address {
+        case net.IP4_Address:
+            serial.WriteU8(&writer, 4)
+            ip4: net.IP4_Address = address
+            serial.WriteBytes(&writer, ip4[:])
+        case net.IP6_Address:
+            serial.WriteU8(&writer, 6)
+            for part in address {
+                serial.WriteU8(&writer, u8(u16(part) >> 8))
+                serial.WriteU8(&writer, u8(u16(part)))
+            }
+        case:
             return
         }
-        serial.WriteBytes(&writer, address[:])
         serial.WriteU16(&writer, u16(invite.candidates[i].port))
     }
     serial.WriteU8(&writer, u8(invite.nat_mapping))
@@ -140,10 +153,25 @@ InviteDecode :: proc(text: string) -> (invite: Invite, ok: bool) {
         return
     }
     for _ in 0 ..< count {
-        address: [4]byte
-        copy(address[:], serial.ReadBytes(&reader, 4))
+        family: u8 = serial.ReadU8(&reader)
+        address: net.Address
+        switch family {
+        case 4:
+            ip4: [4]byte
+            copy(ip4[:], serial.ReadBytes(&reader, 4))
+            address = net.IP4_Address(ip4)
+        case 6:
+            ip6: net.IP6_Address
+            for i in 0 ..< 8 {
+                high: u16 = u16(serial.ReadU8(&reader))
+                ip6[i] = u16be(high << 8 | u16(serial.ReadU8(&reader)))
+            }
+            address = ip6
+        case:
+            return
+        }
         port: u16 = serial.ReadU16(&reader)
-        InviteAddCandidate(&invite, {address = net.IP4_Address(address), port = int(port)})
+        InviteAddCandidate(&invite, {address = address, port = int(port)})
     }
     mapping: u8 = serial.ReadU8(&reader)
     filtering: u8 = serial.ReadU8(&reader)
@@ -244,6 +272,8 @@ InviteRoundTripTest :: proc(t: ^testing.T) {
     InviteSetName(&invite, "Ann the second")
     InviteAddCandidate(&invite, {address = net.IP4_Address{203, 0, 113, 9}, port = 54321})
     InviteAddCandidate(&invite, {address = net.IP4_Address{192, 168, 1, 20}, port = 40000})
+    InviteAddCandidate(&invite, {address = net.IP6_Address{0x2001, 0x0db8, 0, 0, 0, 0, 0, 0x42}, port = 40001})
+    testing.expect(t, !InviteAddCandidate(&invite, {address = net.IP6_Address{0x2001, 0x0db8, 0, 0, 0, 0, 0, 0x43}, port = 40001}))
     invite.nat_mapping = .DEPENDENT
     invite.nat_filtering = .PORT
     invite.port_delta = -2
