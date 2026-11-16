@@ -42,6 +42,9 @@ on_message :: proc(message: string, reply: []u8) -> int {     // popup or conten
 ### A program on the computer (native messaging)
 `native_host` (a name like `com.example.helper`) adds the `nativeMessaging` permission, and `native_host_executable` is the program: `ExtensionInstall` writes its manifest and registers it for the browser (`native_host.odin`; Windows registry key of Chrome / Opera, Edge, Firefox, manifest folders on Linux and macOS, the last two untested). An on_message reply that starts with `native:` is sent to that program by `background.js`; its answer comes back to on_message as `native-reply:<text>` (`native-error:<why>` when the browser could not reach it) and the reply to that is the final one. So Odin decides what is asked and what the answer means, the JavaScript only carries it. `youtube_shorts/native_host` is a helper (stdin/stdout packets, a 4 byte length and JSON). The extension id of an unpacked Chromium extension comes from its folder, `ChromiumExtensionId` computes it for the manifest of the host.
 
+### Permissions in Firefox
+`host_permissions` (copied from `content_matches`) are optional in a Firefox Manifest V3 extension. `background.js` checks them: when they are off the toolbar button gets a "!" badge and a click asks for them (Chromium grants them at install and shows nothing).
+
 ### Content script
 `content_matches` (match patterns) adds a content script, `content_script_file` is your own JavaScript file (default `templates/content.js`), `content_run_at` its `run_at`. It sends text with `runtime.sendMessage(text)` (a promise) and gets the reply of `on_message`: the script reads the page, Odin decides (see `youtube_shorts/youtube_content.js`).
 

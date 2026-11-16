@@ -36,6 +36,33 @@ test_parse_url :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_parse_watch_url :: proc(t: ^testing.T) {
+    id, ok := ShortsParseWatchUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    testing.expect(t, ok)
+    testing.expect_value(t, id, "dQw4w9WgXcQ")
+    id, ok = ShortsParseWatchUrl("https://www.youtube.com/watch?list=PL1&v=dQw4w9WgXcQ&t=42s#c")
+    testing.expect(t, ok, "v is found between other parameters")
+    testing.expect_value(t, id, "dQw4w9WgXcQ")
+    for url in ([]string{
+        "https://www.youtube.com/watch",
+        "https://www.youtube.com/watch?v=short",
+        "https://www.youtube.com/watch?x=v=dQw4w9WgXcQ",
+        "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+        "https://example.com/watch?v=dQw4w9WgXcQ",
+    }) {
+        _, found := ShortsParseWatchUrl(url)
+        testing.expectf(t, !found, "%q is not a watch address", url)
+    }
+
+    // one entry for both kinds
+    video_id, is_short, found := ShortsParseVideoUrl("https://www.youtube.com/shorts/aaaaaaaaaaa")
+    testing.expect(t, found && is_short)
+    video_id, is_short, found = ShortsParseVideoUrl("https://www.youtube.com/watch?v=bbbbbbbbbbb")
+    testing.expect(t, found && !is_short)
+    testing.expect_value(t, video_id, "bbbbbbbbbbb")
+}
+
+@(test)
 test_watch_url :: proc(t: ^testing.T) {
     buffer: [64]u8
     testing.expect_value(t, ShortsWatchUrl("dQw4w9WgXcQ", buffer[:]), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
@@ -128,18 +155,21 @@ test_messages :: proc(t: ^testing.T) {
         return string(reply[:length]), changed
     }
 
-    text, changed := ask(&store, reply[:], "url:https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    text, changed := ask(&store, reply[:], "url:https://www.youtube.com/channel/abc")
     testing.expect_value(t, text, "ok")
     testing.expect(t, !changed)
 
     text, _ = ask(&store, reply[:], "url:https://www.youtube.com/shorts/dQw4w9WgXcQ")
-    testing.expect_value(t, text, "short:dQw4w9WgXcQ 0 1 1")
+    testing.expect_value(t, text, "video:dQw4w9WgXcQ 1 0 1 1")
+    // a normal video gets the buttons too, and is never redirected
+    text, _ = ask(&store, reply[:], "url:https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    testing.expect_value(t, text, "video:dQw4w9WgXcQ 0 0 1 1")
     ask(&store, reply[:], "toggle:dQw4w9WgXcQ	Cat")
     text, _ = ask(&store, reply[:], "url:https://www.youtube.com/shorts/dQw4w9WgXcQ")
-    testing.expect_value(t, text, "short:dQw4w9WgXcQ 1 1 1")
+    testing.expect_value(t, text, "video:dQw4w9WgXcQ 1 1 1 1")
     ask(&store, reply[:], "set:save=0")
     text, _ = ask(&store, reply[:], "url:https://www.youtube.com/shorts/dQw4w9WgXcQ")
-    testing.expect_value(t, text, "short:dQw4w9WgXcQ 1 0 1")
+    testing.expect_value(t, text, "video:dQw4w9WgXcQ 1 1 0 1")
     ask(&store, reply[:], "remove:dQw4w9WgXcQ")
     ask(&store, reply[:], "set:save=1")
 
@@ -149,8 +179,6 @@ test_messages :: proc(t: ^testing.T) {
 
     text, _ = ask(&store, reply[:], "url:https://www.youtube.com/shorts/dQw4w9WgXcQ?feature=share")
     testing.expect_value(t, text, "redirect:https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-    text, _ = ask(&store, reply[:], "url:https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-    testing.expect_value(t, text, "ok")
 
     text, changed = ask(&store, reply[:], "toggle:aaaaaaaaaaa\tA title")
     testing.expect_value(t, text, "saved:1")

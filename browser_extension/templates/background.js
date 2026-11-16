@@ -36,3 +36,30 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	// the reply comes after wasm is loaded
 	return true;
 });
+
+// Firefox treats the host permissions of a Manifest V3 extension as optional: after a normal (not temporary) install they can be off, and then
+// the content scripts do not run and the extension seems to do nothing. The toolbar button says so ("!") and a click asks for them.
+// Chromium grants them at install, there this only checks. Reload the pages after allowing.
+const hostOrigins = api.runtime.getManifest().host_permissions ?? [];
+
+async function showPermissionState() {
+	if (hostOrigins.length === 0 || !api.permissions?.contains) {
+		return;
+	}
+	try {
+		const granted = await api.permissions.contains({ origins: hostOrigins });
+		await api.action.setBadgeText({ text: granted ? "" : "!" });
+		await api.action.setTitle({ title: granted ? null : "Click to allow this extension on its sites, then reload the page" });
+	} catch (error) {
+		console.warn("[odin] permission state:", error);
+	}
+}
+
+api.action.onClicked.addListener(async () => {
+	if (hostOrigins.length > 0) {
+		await api.permissions.request({ origins: hostOrigins });
+		showPermissionState();
+	}
+});
+api.permissions?.onAdded?.addListener(showPermissionState);
+showPermissionState();

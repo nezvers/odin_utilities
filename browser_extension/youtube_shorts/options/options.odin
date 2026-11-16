@@ -97,15 +97,15 @@ draw :: proc(ctx: ^kit.Context) {
 	}
 
 	optionToggle(ctx, {30, 80, 460, 36}, "Open Shorts as a full video (watch page)", page.settings.redirect, "redirect")
-	optionToggle(ctx, {30, 126, 460, 36}, "Save button next to the Shorts buttons", page.settings.show_save, "save")
-	optionToggle(ctx, {30, 172, 460, 36}, "Download button (yt-dlp or youtube-dl)", page.settings.show_download, "download")
+	optionToggle(ctx, {30, 126, 460, 36}, "Save button on videos and shorts", page.settings.show_save, "save")
+	optionToggle(ctx, {30, 172, 460, 36}, "Download button on videos and shorts", page.settings.show_download, "download")
 	kit.DrawText(ctx, "A short opens in the normal player, with the timeline and the recommendations.", {510, 90}, 14, kit.DARK_GRAY)
-	kit.DrawText(ctx, "The Save button keeps the short in the list below.", {510, 136}, 14, kit.DARK_GRAY)
+	kit.DrawText(ctx, "The Save button keeps a video or a short in the list below.", {510, 136}, 14, kit.DARK_GRAY)
 	kit.DrawText(ctx, "Download needs yt-dlp or youtube-dl on PATH; the button offers to install it.", {510, 182}, 14, kit.DARK_GRAY)
 
-	kit.DrawText(ctx, fmt.tprintf("Saved shorts (%d of %d)", page.count, shorts.MAX_SAVED), {30, 226}, 20, kit.BLACK)
+	kit.DrawText(ctx, fmt.tprintf("Saved videos (%d of %d)", page.count, shorts.MAX_SAVED), {30, 226}, 20, kit.BLACK)
 	if page.count == 0 {
-		kit.DrawText(ctx, "Nothing saved yet. Open a short and press Save.", {30, LIST_TOP + 4}, 16, kit.GRAY)
+		kit.DrawText(ctx, "Nothing saved yet. Open a video or a short and press Save.", {30, LIST_TOP + 4}, 16, kit.GRAY)
 	}
 
 	last: int = min(page.first_row + ROWS_PER_PAGE, page.count)
@@ -116,7 +116,7 @@ draw :: proc(ctx: ^kit.Context) {
 		kit.DrawRect(ctx, text_rect, kit.WHITE)
 		kit.DrawText(ctx, title if len(title) > 0 else string(page.ids[index][:]), {text_rect.x + 8, text_rect.y + 5}, 16, kit.BLACK)
 		if kit.Button(ctx, rowRect(row, 690, 100), "Open") {
-			page.bridge.open_url(fmt.tprintf("https://www.youtube.com/shorts/%s", string(page.ids[index][:])))
+			page.bridge.open_url(fmt.tprintf("https://www.youtube.com/watch?v=%s", string(page.ids[index][:])))
 		}
 		if kit.Button(ctx, rowRect(row, 800, 100), "Remove") {
 			page.bridge.send(fmt.tprintf("remove:%s", string(page.ids[index][:])))
@@ -170,6 +170,6 @@ script: []kit.Step = {
 	kit.Click({740, 285}), // Open, first row
 	kit.Wait(2),
 	kit.Check(proc(ctx: ^kit.Context) -> bool {
-		return OptionsLoopbackOpened() == "https://www.youtube.com/shorts/bbbbbbbbbbb"
+		return OptionsLoopbackOpened() == "https://www.youtube.com/watch?v=bbbbbbbbbbb"
 	}, "Open asks the host to open the short"),
 }

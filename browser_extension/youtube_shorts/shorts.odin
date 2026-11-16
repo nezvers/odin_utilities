@@ -111,6 +111,49 @@ ShortsParseUrl :: proc(url: string) -> (id: string, ok: bool) {
     return candidate, true
 }
 
+// The id of a normal video address: "https://www.youtube.com/watch?v=<id>&t=5s" -> id
+ShortsParseWatchUrl :: proc(url: string) -> (id: string, ok: bool) {
+    rest: string = url
+    if strings.has_prefix(rest, "https://") {
+        rest = rest[len("https://"):]
+    } else if strings.has_prefix(rest, "http://") {
+        rest = rest[len("http://"):]
+    } else {
+        return
+    }
+    slash: int = strings.index_byte(rest, '/')
+    if slash < 0 {
+        return
+    }
+    host: string = rest[:slash]
+    if host != "www.youtube.com" && host != "youtube.com" && host != "m.youtube.com" {
+        return
+    }
+    path: string = rest[slash:]
+    if !strings.has_prefix(path, "/watch?") {
+        return
+    }
+    query: string = path[len("/watch?"):]
+    if end := strings.index_byte(query, '#'); end >= 0 {
+        query = query[:end]
+    }
+    for parameter in strings.split_iterator(&query, "&") {
+        if strings.has_prefix(parameter, "v=") && ShortsIsId(parameter[2:]) {
+            return parameter[2:], true
+        }
+    }
+    return
+}
+
+// Any video of YouTube: a short (is_short) or a normal one. Both can be saved and downloaded, only a short is redirected.
+ShortsParseVideoUrl :: proc(url: string) -> (id: string, is_short: bool, ok: bool) {
+    if short_id, short_ok := ShortsParseUrl(url); short_ok {
+        return short_id, true, true
+    }
+    watch_id, watch_ok := ShortsParseWatchUrl(url)
+    return watch_id, false, watch_ok
+}
+
 // The full video address of the id: the normal player, with the recommendations, the timeline and the description
 ShortsWatchUrl :: proc(id: string, buffer: []u8) -> string {
     assert(ShortsIsId(id))
@@ -240,7 +283,8 @@ StoreDecode :: proc(store: ^Store, text: string) {
 
 // What the content script and the options page send, one text each:
 //   url:<address>            -> a short and the redirect option is on: "redirect:<full video address>"
-//                               a short: "short:<id> <saved 0|1> <show Save 0|1> <show Download 0|1>", anything else: "ok"
+//                               a video (short or normal): "video:<id> <short 0|1> <saved 0|1> <show Save 0|1> <show Download 0|1>"
+//                               anything else: "ok"
 //   get                      -> the settings text
 //   set:<settings text>      -> the settings text as kept
 //   has:<id>                 -> "saved:1" or "saved:0"
@@ -259,16 +303,16 @@ StoreDecode :: proc(store: ^Store, text: string) {
 ShortsHandle :: proc(store: ^Store, message: string, reply: []u8) -> (length: int, changed: bool) {
     switch {
     case strings.has_prefix(message, "url:"):
-        id, ok := ShortsParseUrl(message[len("url:"):])
+        id, is_short, ok := ShortsParseVideoUrl(message[len("url:"):])
         if !ok {
             return reply_text(reply, "ok"), false
         }
-        if store.settings.redirect {
+        if is_short && store.settings.redirect {
             url: [64]u8
             return reply_text(reply, "redirect:", ShortsWatchUrl(id, url[:])), false
         }
-        // the Shorts player stays: the page needs to know which buttons to add and how the Save button looks
-        return reply_text(reply, "short:", id, " ", flag(StoreFind(store, id) >= 0), " ", flag(store.settings.show_save), " ", flag(store.settings.show_download)), false
+        // the player stays: the page needs to know which buttons to add and how the Save button looks
+        return reply_text(reply, "video:", id, " ", flag(is_short), " ", flag(StoreFind(store, id) >= 0), " ", flag(store.settings.show_save), " ", flag(store.settings.show_download)), false
 
     case message == "get":
         return len(ShortsSettingsEncode(store.settings, reply)), false
