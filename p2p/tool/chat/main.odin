@@ -42,6 +42,7 @@ main :: proc() {
     name: string
     config: p2p.LinkConfig
     use_stun: bool = true
+    use_portmap: bool
     for i := 1; i < len(os.args); i += 1 {
         argument: string = os.args[i]
         switch argument {
@@ -49,6 +50,8 @@ main :: proc() {
             use_stun = false
         case "--loopback":
             config.include_loopback = true
+        case "--upnp":
+            use_portmap = true
         case "--port":
             i += 1
             value, ok := strconv.parse_int(os.args[i] if i < len(os.args) else "")
@@ -66,7 +69,7 @@ main :: proc() {
         }
     }
     if mode == "selftest" {
-        os.exit(SelfTest(use_stun))
+        os.exit(SelfTest(use_stun, use_portmap))
     }
     if mode != "host" && mode != "join" {
         fmt.eprintln("usage: chat host|join [name] [--no-stun] [--loopback] [--port N]   or   chat selftest")
@@ -75,10 +78,10 @@ main :: proc() {
     if name == "" {
         name = "host" if mode == "host" else "guest"
     }
-    Chat(mode == "host", name, config, use_stun)
+    Chat(mode == "host", name, config, use_stun, use_portmap)
 }
 
-Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool) {
+Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool, use_portmap: bool) {
     link: ^p2p.Link = new(p2p.Link)
     if !p2p.LinkInit(link, config) {
         fmt.eprintln("cannot open the UDP socket (port in use?)")
@@ -97,6 +100,18 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
     for !p2p.LinkGathered(link) {
         p2p.LinkUpdate(link, p2p.LinkNow())
         time.sleep(10 * time.Millisecond)
+    }
+    if use_portmap {
+        fmt.println("Asking the router to forward the port (PCP, NAT-PMP, UPnP)...")
+        mapping: ^p2p.PortMapState = new(p2p.PortMapState)
+        if p2p.LinkPortMap(link, mapping, p2p.LinkNow()) {
+            fmt.printfln("Router forwards it: %v via %v", net.endpoint_to_string(mapping.external, context.temp_allocator), mapping.protocol)
+            fmt.println("(The filtering result below includes this PC's firewall: if it says restricted, allow the program for private networks.)")
+        } else if mapping.double_nat {
+            fmt.println("The router answered, but its own address is private (another NAT in front): not usable.")
+        } else {
+            fmt.println("The router did not forward the port (no UPnP / NAT-PMP / PCP, or it is switched off).")
+        }
     }
     PrintAddresses(link)
 

@@ -11,7 +11,7 @@ SELFTEST_MESSAGES :: 200
 // offered, so the packets take the same routes two computers would use), codes passed as text, 20% of the datagrams dropped.
 // It proves the whole chain on this machine and prints what the NAT looks like. It cannot prove a crossing of two different
 // networks: for that run host and join on two computers.
-SelfTest :: proc(use_stun: bool) -> int {
+SelfTest :: proc(use_stun: bool, use_portmap: bool) -> int {
     host: ^p2p.Link = new(p2p.Link)
     guest: ^p2p.Link = new(p2p.Link)
     if !p2p.LinkInit(host) || !p2p.LinkInit(guest) {
@@ -31,6 +31,14 @@ SelfTest :: proc(use_stun: bool) -> int {
     p2p.LinkGatherBegin(guest, servers[:server_count], p2p.LinkNow())
     for !p2p.LinkGathered(host) || !p2p.LinkGathered(guest) {
         Pump(host, guest)
+    }
+    if use_portmap {
+        mapping: ^p2p.PortMapState = new(p2p.PortMapState)
+        if p2p.LinkPortMap(host, mapping, p2p.LinkNow()) {
+            fmt.printfln("router forwards %v via %v", net.endpoint_to_string(mapping.external, context.temp_allocator), mapping.protocol)
+        } else {
+            fmt.println("router did not forward the port")
+        }
     }
     // the filtering test runs after the gathering and takes up to 2 seconds
     waited: i64 = p2p.LinkNow()

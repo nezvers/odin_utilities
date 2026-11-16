@@ -200,6 +200,7 @@ Link :: struct {
     nat_filtering: NatFiltering,
     nat_port_delta: int,            // how much the public port grows per new destination, 0 = no pattern seen
     nat_last_port: int,             // the last port allocated while gathering, the next one is probably last + delta
+    portmap: ^PortMapState,         // set by LinkPortMap, given back by LinkClose
     filter_state: FilterState,
     filter_server: int,
     filter_txid: StunTxId,
@@ -280,6 +281,9 @@ LinkClose :: proc(link: ^Link) {
     }
     if link.transport.send == nil {
         net.close(link.socket)
+    }
+    if link.portmap != nil && link.portmap.protocol != .NONE {
+        PortMapClose(link.portmap)
     }
     link.open = false
 }
@@ -376,6 +380,27 @@ LinkGatherBegin :: proc(link: ^Link, servers: []net.Endpoint, now_ms: i64) {
 
 LinkGathered :: proc(link: ^Link) -> bool {
     return link.gather == .DONE
+}
+
+// Asks the router to forward this link's UDP port (PCP, NAT-PMP or UPnP, see portmap.odin). Call it after the gathering and
+// BEFORE the code is made. It BLOCKS for up to a few seconds. On success the public address of the mapping is the first
+// candidate and the code says the NAT is open, so the peer does not have to punch (nor guess ports); the filtering test runs
+// again, from a STUN server that answers from another address: if that answer arrives, strangers really can reach the
+// mapping (`nat_filtering == .OPEN` after NAT_MEASURED), which is the proof from the outside. `state` is yours (about 16 KB)
+// and must stay alive until LinkClose, which removes the mapping.
+LinkPortMap :: proc(link: ^Link, state: ^PortMapState, now_ms: i64, timeout_ms: i64 = 1500) -> bool {
+    assert(link.open && link.gather == .DONE && link.transport.send == nil)
+    if !PortMapOpen(state, link.local_port, timeout_ms) {
+        return false
+    }
+    link.portmap = state
+    LinkAddCandidateFirst(link, state.external)
+    link.nat_mapping = .INDEPENDENT
+    link.nat_filtering = .OPEN
+    link.nat_port_delta = 0
+    link.nat_last_port = 0
+    LinkFilterBegin(link, now_ms)
+    return true
 }
 
 @(private)
