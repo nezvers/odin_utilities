@@ -173,6 +173,74 @@
                 "type": "lldb",
                 "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
             }
+        },
+        {
+            "name": "Shorts: Release Chrome (main profile)",
+            "request": "launch",
+            "preLaunchTask": "Build Shorts Tool",
+            "args": ["chrome", "--release"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_shorts.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            }
+        },
+        {
+            "name": "Shorts: Release Opera (main profile)",
+            "request": "launch",
+            "preLaunchTask": "Build Shorts Tool",
+            "args": ["opera", "--release"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_shorts.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            }
+        },
+        {
+            "name": "Shorts: Release Edge (main profile)",
+            "request": "launch",
+            "preLaunchTask": "Build Shorts Tool",
+            "args": ["edge", "--release"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_shorts.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            }
+        },
+        {
+            "name": "Shorts: Release Firefox (main profile)",
+            "request": "launch",
+            "preLaunchTask": "Build Shorts Tool",
+            "args": ["firefox", "--release"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_shorts.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            }
         }
     ]
 }

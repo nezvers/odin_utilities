@@ -1,5 +1,5 @@
 // Build the demo extension and optionally start a browser with it loaded. Run from the browser_extension directory:
-//   odin run demo/tool -- [browser ...] [--install] [--headless] [--browser-path PATH] [--firefox-port N] [-- odin arguments]
+//   odin run demo/tool -- [browser ...] [--install | --release [--no-open]] [--headless] [--browser-path PATH] [--firefox-port N] [-- odin arguments]
 //
 //   browser     chrome, opera, edge, firefox, all. Default all. chrome, opera and edge share the chromium build
 //   --install   start the browser (a profile of its own in bin/extension/profile) with the extension loaded; with several browsers each one starts
@@ -29,6 +29,8 @@ main :: proc() {
 	browsers: bit_set[extension.Browser]
 	options: extension.InstallOptions
 	install: bool
+	release: bool
+	no_open: bool
 
 	arguments: []string = os.args[1:]
 	for i := 0; i < len(arguments); i += 1 {
@@ -40,6 +42,8 @@ main :: proc() {
 		case "all": browsers += {.CHROME, .OPERA, .EDGE, .FIREFOX}
 		case "--install": install = true
 		case "--headless": options.headless = true
+		case "--release": release = true
+		case "--no-open": no_open = true
 		case "--browser-path":
 			i += 1
 			if i >= len(arguments) { usage(); return }
@@ -71,6 +75,15 @@ main :: proc() {
 	}
 	fmt.printfln("Built %s", extension.ExtensionOutputDirectory(config, context.temp_allocator))
 
+	if release {
+		// the browser of your main profile, the way a release is installed (see release.odin for what each browser allows)
+		for browser in browsers {
+			if !extension.ExtensionRelease(config, browser, {executable = options.executable, no_open = no_open}) {
+				os.exit(1)
+			}
+		}
+		return
+	}
 	if install {
 		for browser in browsers {
 			if !extension.ExtensionInstall(config, browser, options) {

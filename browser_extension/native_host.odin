@@ -60,17 +60,21 @@ NativeManifestFirefox :: struct {
     allowed_extensions: []string `json:"allowed_extensions"`,
 }
 
-// The manifest of the host: who may talk to it. `extension` is the extension id of Chromium or the add-on id of Firefox.
-NativeHostManifest :: proc(target: Target, name, description, executable, extension: string, allocator := context.temp_allocator) -> string {
+// The manifest of the host: who may talk to it. `extensions` are the extension ids of Chromium (the build in bin/ and the release copy have
+// different ids, both are allowed) or the add-on id of Firefox.
+NativeHostManifest :: proc(target: Target, name, description, executable: string, extensions: []string, allocator := context.temp_allocator) -> string {
     data: []byte
     options: json.Marshal_Options = {pretty = true, use_spaces = true, spaces = 4}
     switch target {
     case .CHROMIUM:
-        origins: [1]string = {fmt.tprintf("chrome-extension://%s/", extension)}
+        origins: [dynamic]string
+        origins.allocator = context.temp_allocator
+        for extension in extensions {
+            append(&origins, fmt.tprintf("chrome-extension://%s/", extension))
+        }
         data, _ = json.marshal(NativeManifestChromium{name, description, executable, "stdio", origins[:]}, options, allocator)
     case .FIREFOX:
-        ids: [1]string = {extension}
-        data, _ = json.marshal(NativeManifestFirefox{name, description, executable, "stdio", ids[:]}, options, allocator)
+        data, _ = json.marshal(NativeManifestFirefox{name, description, executable, "stdio", extensions}, options, allocator)
     }
     return string(data)
 }
@@ -102,28 +106,35 @@ NATIVE_HOME_FOLDERS_MAC :: [Browser]string {
     .FIREFOX = "Library/Application Support/Mozilla/NativeMessagingHosts",
 }
 
-// Writes the manifest of the host for the browser and tells the browser where it is. Called by ExtensionInstall when the config has a
-// native_host. Windows is the tested platform, Linux and macOS write the manifest to the folder the browser documents.
-NativeHostRegister :: proc(config: ExtensionConfig, browser: Browser) -> bool {
+// Writes the manifest of the host for the browser and tells the browser where it is. Called by ExtensionInstall and ExtensionRelease when the
+// config has a native_host. `executable` and `manifest_folder` are for the release copy (empty: the build in the output folder). The manifest
+// allows both extensions of Chromium, the one loaded from the output folder and the one loaded from the release folder, so a development
+// install and a release install do not take the helper from each other. Windows is the tested platform, Linux and macOS write the manifest
+// to the folder the browser documents.
+NativeHostRegister :: proc(config: ExtensionConfig, browser: Browser, executable_path: string = "", manifest_folder: string = "") -> bool {
     assert(len(config.native_host) > 0)
-    executable, executable_error := os.get_absolute_path(config.native_host_executable, context.temp_allocator)
+    executable, executable_error := os.get_absolute_path(executable_path if len(executable_path) > 0 else config.native_host_executable, context.temp_allocator)
     if executable_error != nil || !os.exists(executable) {
         fmt.eprintfln("browser_extension: the native host program %s was not built", config.native_host_executable)
         return false
     }
     target: Target = BrowserTarget(browser)
-    extension: string = config.id
+    extensions: [dynamic]string
+    extensions.allocator = context.temp_allocator
     if target == .CHROMIUM {
-        directory, directory_error := os.get_absolute_path(ExtensionTargetDirectory(config, target, context.temp_allocator), context.temp_allocator)
-        if directory_error != nil {
-            return false
+        for directory in ([2]string{ExtensionTargetDirectory(config, target, context.temp_allocator), ReleaseTargetDirectory(config, target)}) {
+            absolute, error := os.get_absolute_path(directory, context.temp_allocator)
+            if error == nil {
+                append(&extensions, ChromiumExtensionId(absolute))
+            }
         }
-        extension = ChromiumExtensionId(directory)
+    } else {
+        append(&extensions, config.id)
     }
 
-    manifest: string = NativeHostManifest(target, config.native_host, config.name, executable, extension)
+    manifest: string = NativeHostManifest(target, config.native_host, config.name, executable, extensions[:])
     when ODIN_OS == .Windows {
-        folder: string = fmt.tprintf("%s/native", ExtensionOutputDirectory(config, context.temp_allocator))
+        folder: string = manifest_folder if len(manifest_folder) > 0 else fmt.tprintf("%s/native", ExtensionOutputDirectory(config, context.temp_allocator))
     } else {
         home, _ := os.lookup_env("HOME", context.temp_allocator)
         folders := NATIVE_HOME_FOLDERS_MAC if ODIN_OS == .Darwin else NATIVE_HOME_FOLDERS
@@ -155,14 +166,15 @@ NativeHostRegister :: proc(config: ExtensionConfig, browser: Browser) -> bool {
 
 @(test)
 test_native_manifest :: proc(t: ^testing.T) {
-    chromium, _ := json.parse(transmute([]byte)NativeHostManifest(.CHROMIUM, "com.test.host", "Test", "C:\\host.exe", "abcdefghijklmnopabcdefghijklmnop"), allocator = context.temp_allocator)
+    chromium, _ := json.parse(transmute([]byte)NativeHostManifest(.CHROMIUM, "com.test.host", "Test", "C:\\host.exe", {"abcdefghijklmnopabcdefghijklmnop", "ponmlkjihgfedcbaponmlkjihgfedcba"}), allocator = context.temp_allocator)
     object: json.Object = chromium.(json.Object)
     testing.expect_value(t, string(object["type"].(json.String)), "stdio")
     testing.expect_value(t, string(object["allowed_origins"].(json.Array)[0].(json.String)), "chrome-extension://abcdefghijklmnopabcdefghijklmnop/")
+    testing.expect_value(t, len(object["allowed_origins"].(json.Array)), 2)
     testing.expect(t, "allowed_extensions" not_in object)
     testing.expect_value(t, string(object["path"].(json.String)), "C:\\host.exe")
 
-    firefox, _ := json.parse(transmute([]byte)NativeHostManifest(.FIREFOX, "com.test.host", "Test", "/bin/host", "me@example.com"), allocator = context.temp_allocator)
+    firefox, _ := json.parse(transmute([]byte)NativeHostManifest(.FIREFOX, "com.test.host", "Test", "/bin/host", {"me@example.com"}), allocator = context.temp_allocator)
     object = firefox.(json.Object)
     testing.expect_value(t, string(object["allowed_extensions"].(json.Array)[0].(json.String)), "me@example.com")
     testing.expect(t, "allowed_origins" not_in object)

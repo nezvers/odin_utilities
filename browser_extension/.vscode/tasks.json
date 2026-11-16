@@ -92,6 +92,30 @@
             "group": "build"
         },
         {
+            "label": "Shorts: Release Chrome (main profile)",
+            "type": "shell",
+            "command": "odin run youtube_shorts/tool -strict-style -vet -- chrome --release",
+            "group": "build"
+        },
+        {
+            "label": "Shorts: Release Opera (main profile)",
+            "type": "shell",
+            "command": "odin run youtube_shorts/tool -strict-style -vet -- opera --release",
+            "group": "build"
+        },
+        {
+            "label": "Shorts: Release Edge (main profile)",
+            "type": "shell",
+            "command": "odin run youtube_shorts/tool -strict-style -vet -- edge --release",
+            "group": "build"
+        },
+        {
+            "label": "Shorts: Release Firefox (main profile)",
+            "type": "shell",
+            "command": "odin run youtube_shorts/tool -strict-style -vet -- firefox --release",
+            "group": "build"
+        },
+        {
             "label": "Shorts: Options Page (raylib)",
             "type": "shell",
             "command": "odin run youtube_shorts/host_raylib -strict-style -vet",

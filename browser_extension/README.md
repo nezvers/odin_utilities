@@ -89,6 +89,17 @@ The browser is started with a profile of its own in `demo/bin/extension/profile/
 - **Chrome, Opera, Edge**: `--load-extension`. Chrome 137+ ignores it in the branded build unless `--disable-features=DisableLoadExtensionCommandLineSwitch`, which is passed. If a version still ignores it, load the folder by hand (below).
 - **Firefox**: starts Firefox with the remote debugging server (port 6000, `--firefox-port N`) and installs the folder as a temporary add-on, what `web-ext run` does. Run the tool again while that Firefox is open and the add-on is reloaded. The add-on is gone when Firefox closes, run the tool again.
 
+## Install for good in your main browser (release)
+`--install` starts a separate browser profile for development. To have the extension in the browser and the account you use every day:
+```
+odin run demo/tool -- chrome --release          # opera | edge | firefox, the same for youtube_shorts/tool
+```
+(VS Code: the tasks and launch configurations "Shorts: Release ... (main profile)".) What a release browser allows decides the steps (`release.odin`):
+- **Chrome, Opera, Edge**: they take no packaged extension that is not from their store, and `--load-extension` is ignored by a profile that is already running. So the build is copied to a folder that never moves, `%LOCALAPPDATA%\<name>\chromium` (the id of an unpacked extension comes from its path, so the id is stable), the native helper is copied next to it and registered, and the browser opens on its extensions page with the folder in the clipboard. You switch **Developer mode** on and press **Load unpacked** once. It stays after restarts. An update is the same command again and the reload button of the extension card.
+- **Firefox**: a release Firefox only keeps extensions signed by Mozilla. The command signs the build as an **unlisted** add-on (no review, no listing, the signed file is yours) with `npx web-ext sign` and opens the signed `.xpi` in Firefox, which asks to add it. Needs Node.js and a free API key from https://addons.mozilla.org/developers/addon/api/key/ in the environment: `WEB_EXT_API_KEY` (the JWT issuer) and `WEB_EXT_API_SECRET`. Every release needs a new `version` in the config, Mozilla refuses one version twice. Without the key the command copies and registers everything and tells you what is missing.
+- `--no-open` copies and registers but does not touch the browser or the clipboard.
+- The release copy and the development build have different ids; the native host manifest allows both, so `--install` and `--release` do not take the helper from each other.
+
 ## Install by hand
 ### Chrome
 1. Open `chrome://extensions`, switch **Developer mode** on (top right).
