@@ -101,6 +101,10 @@ Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git
 - Pointer is tested against the hit boxes of the last frame; a click needs a frame of layout first (scripts `Wait(3)` at the start). Ids are hashes of the name inside the container (`"Save##2"`), `UiIdPath("Window", "Widget")` finds one from outside a frame.
 - `odin test ui`, `odin test ui/demo_common`.
 
+## p2p library layout
+- Serverless connection by pasted codes: `stun.odin` (RFC 5389 binding over free public STUN servers, pure), `code.odin` (`Invite` with candidate addresses, text form = Crockford base32 + crc32 over a `serial` Writer), `link.odin` (`Link`: UDP socket, STUN gathering, hole punching, selective repeat reliable channel, events, inbox; fixed capacities, ~320 KB, heap or global; `now_ms` is a parameter; tests at the bottom incl. a fake STUN server and random loss), `tool/chat/` (terminal chat: `odin run p2p/tool/chat -- host|join|selftest`, clipboard through clip/pbcopy/xclip). No demo_kit demo: it needs a real network and two programs. Not for js (core:net), IPv4 only, no encryption, no relay (symmetric NAT fails); said in its README.
+- `odin test p2p -strict-style -vet`, `odin check p2p/tool/chat -strict-style -vet`. The `Link` is too big for a stack: `new(Link)` in tests.
+
 ## scratch and lanes (threads, no demos)
 - `scratch/scratch.odin`: two thread local `core:mem/virtual` arenas per thread (64 MB reserve), `ScratchBegin(conflicts..)` / `ScratchEnd` / `ScratchAllocator` / `ScratchRelease`: a function that writes its result into an arena names it as the conflict and gets the other arena for temporaries. For tools and loaders, not realtime.
 - `lanes/lanes.odin`: SPMD fan out, `Run(count, work, user)` runs the same proc on every lane, `LaneRange` / `LaneSync` / `LaneBroadcast`. Not realtime (`odin_plug/graph/pool.odin` is the realtime pool). Both are `#+build !js`, tests inside, `odin test scratch`, `odin test lanes`.
