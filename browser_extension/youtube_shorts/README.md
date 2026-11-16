@@ -1,0 +1,50 @@
+# youtube_shorts: Shorts Helper
+
+An example extension for `browser_extension` with most of the logic in Odin. Two things for YouTube Shorts:
+
+1. **Open Shorts as a full video.** `youtube.com/shorts/<id>` becomes `youtube.com/watch?v=<id>`: the normal player with the timeline, the description and the recommendations. An option, off by default.
+2. **A Save button in the desktop Shorts player**, next to the native buttons (like, dislike, comments, share). The mobile player has a Save button, the desktop one has not. On by default. Saved shorts are listed on the options page (Open, Remove).
+
+"Save" keeps the short in a list inside of the extension (up to 64, in the browser storage of the extension). It does not touch your YouTube playlists and it does not download the video (that is against the YouTube terms).
+
+## Where the logic is
+```
+youtube_shorts/
+├── shorts.odin              ALL decisions, no browser in it: parse a Shorts address, build the watch address, the settings, the saved list
+│                            (fixed 64 entries, newest first), the text form for the storage, ShortsHandle = the messages of the page
+├── shorts_test.odin         odin test youtube_shorts
+├── background/              the background (wasm): keeps the Store, answers messages, SaveState / on_load   (about 30 lines)
+├── options/                 the options page as a demo_kit demo: toggles and the list, the loopback "background" for the desktop and the tests
+├── host_raylib/             the options page in a raylib window (desktop preview, no browser)
+├── host_karl2d/             the options page in the extension: Karl2D in a canvas (js_wasm32), the bridge is runtime.SendMessage
+├── youtube_content.js       the content script: reads the page, moves text, adds the button. Asks the background what to do
+└── tool/main.odin           build (and install) the extension
+```
+The JavaScript only does what Odin cannot: it sees the address, the DOM and the clicks, sends `url:<address>` and gets one of `redirect:<watch address>`, `short:<id> <saved> <show the button>` or `ok`. It never decides. Messages are in the comment of `ShortsHandle`.
+
+## raylib and Karl2D for the options
+The options page is written once against `demo_kit` (`options/options.odin`) and runs on both:
+- **Karl2D**, in the extension: the options page (`options/options.html`) is a canvas, `host_karl2d` is a web_build package (`init`, `step`, `shutdown`). Messages go to the background, the replies come back to `OptionsOnReply`.
+- **raylib**, on the desktop: `odin run youtube_shorts/host_raylib` opens the same page with a loopback background that has three saved shorts, no browser needed. Fast to work on the layout.
+- The script of the page (clicks on the toggles and on Remove / Open, checks of what the page shows and what the background kept) is a test: `odin test youtube_shorts/options` headless, or in the raylib window with `-define:DEMO_TEST=true`.
+
+## Build and install
+From `odin_utilities/browser_extension`:
+```
+odin run youtube_shorts/tool -- all                  # chrome | opera | edge | firefox | all
+odin run youtube_shorts/tool -- chrome --install     # build and start the browser with the extension
+```
+Output in `youtube_shorts/bin/extension/` (`chromium/`, `firefox/`, `Shorts_Helper-chromium.zip`, `Shorts_Helper-firefox.xpi`). Manual install steps for each browser are in `../README.md`. VS Code: the launch configurations "Shorts: ..." and tasks "Shorts: ...".
+
+Using it: **Details / Extension options** of the extension opens the options page in a tab (Chrome: right click the icon, Options; Firefox: add-ons page, the extension, Preferences). Turn on "Open Shorts as a full video" and a short opens in the normal player; leave it off, open a short on desktop YouTube and the Save button is below the share button.
+
+## What was checked
+- `odin test youtube_shorts`, `odin test youtube_shorts/options`, the raylib window with `-define:DEMO_TEST=true`.
+- In Edge (Chromium) with the extension loaded, end to end: the options page (Karl2D) toggles the redirect option and the background answers; a short address is replaced by the watch address; the Save button is added before the "more" button, a click saves, a second click removes, the state is in `chrome.storage.local` and the options page lists it.
+- The YouTube pages in that test are mock pages (`#actions` with like, dislike, comments, share and menu buttons inside of `ytd-reel-video-renderer[is-active]`), served instead of youtube.com. The real page was **not** reached (the cookie consent wall of YouTube in the EU), so the selectors in `youtube_content.js` (`ytd-reel-video-renderer[is-active] #actions`, with the parent of the like button as the fallback) follow what the desktop player is known to use and may need a change when YouTube renames something. The button looks like the native ones (round, 48 px) but is not YouTube's own element.
+- Firefox accepts the add-on (`installTemporaryAddon`), its pages were not driven.
+
+## Limits
+- Saved titles are cut at 80 bytes. 64 shorts at most: the 65th Save shows "List full" instead of growing the list.
+- `m.youtube.com` gets the redirect but no Save button (its player has one).
+- The state of the background (the list) lives in the browser storage of the extension, it is not synced between browsers or devices.

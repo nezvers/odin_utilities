@@ -19,10 +19,14 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
+import web_build "../web_build"
 
 ENTRY_TEMPLATE :: #load("templates/extension_entry_template.odin.txt")
 BACKGROUND_JS :: #load("templates/background.js")
 EXTENSION_JS :: #load("templates/extension.js")
+IMPORTS_JS :: #load("templates/imports.js")
+OPTIONS_HTML :: #load("templates/options.html", string)
+OPTIONS_RUN_JS :: #load("templates/options_run.js", string)
 POPUP_HTML :: #load("templates/popup.html", string)
 POPUP_JS :: #load("templates/popup.js")
 CONTENT_JS :: #load("templates/content.js")
@@ -45,10 +49,23 @@ ExtensionConfig :: struct {
     description: string,
     id: string,                 // Firefox add-on id ("name@example.com"), required there to keep the storage between loads
     popup: bool,                // toolbar button that opens a popup (templates/popup.html, sends "ping")
-    content_matches: []string,  // match patterns ("https://example.com/*"): a content script that sends "page:<title>". Empty - none
+    content_matches: []string,  // match patterns ("https://example.com/*"): a content script. Empty - none
+    content_script_file: string,// JavaScript file of the content script, empty - templates/content.js (sends "page:<title>")
+    content_run_at: string,     // "document_start", "document_end" or "document_idle" (the default of the browser)
+    options: OptionsPage,       // a page in the extension settings, drawn by a web_build package. Empty source_directory - none
     permissions: []string,      // "storage", "tabs", ...
     odin_arguments: []string,   // passed to `odin build`: "-o:size", "-define:..."
 }
+
+// The options page is a web_build package (init, step, shutdown): Karl2D drawing into a canvas, see demo_kit for a ui that also runs on raylib.
+// `web` is passed to web_build.WebBuild, its copy_files / scripts / imports_js / start_js are what Karl2D needs on the web (audio scripts).
+// The page is opened in its own tab. It reaches the background with runtime.SendMessage.
+OptionsPage :: struct {
+    title: string,
+    web: web_build.WebBuildConfig,
+}
+
+OPTIONS_DIRECTORY :: "options"
 
 ExtensionOutputDirectory :: proc(config: ExtensionConfig, allocator := context.allocator) -> string {
     if len(config.output_directory) > 0 {
@@ -76,6 +93,12 @@ ManifestBackground :: struct {
 }
 
 @(private)
+ManifestOptions :: struct {
+    page: string `json:"page"`,
+    open_in_tab: bool `json:"open_in_tab"`,
+}
+
+@(private)
 ManifestContentSecurityPolicy :: struct {
     extension_pages: string `json:"extension_pages"`,
 }
@@ -84,6 +107,7 @@ ManifestContentSecurityPolicy :: struct {
 ManifestContentScript :: struct {
     matches: []string `json:"matches"`,
     js: []string `json:"js"`,
+    run_at: string `json:"run_at,omitempty"`,
 }
 
 @(private)
@@ -114,6 +138,8 @@ Manifest :: struct {
     content_security_policy: ManifestContentSecurityPolicy `json:"content_security_policy"`,
     content_scripts: []ManifestContentScript `json:"content_scripts,omitempty"`,
     permissions: []string `json:"permissions,omitempty"`,
+    options_ui: ManifestOptions `json:"options_ui,omitempty"`,
+    host_permissions: []string `json:"host_permissions,omitempty"`,
 }
 
 // Manifest plus what only Firefox reads (add-on id, minimum version). A copy of the fields: json.marshal writes an embedded struct as a nested object.
@@ -128,6 +154,8 @@ ManifestFirefox :: struct {
     content_security_policy: ManifestContentSecurityPolicy `json:"content_security_policy"`,
     content_scripts: []ManifestContentScript `json:"content_scripts,omitempty"`,
     permissions: []string `json:"permissions,omitempty"`,
+    options_ui: ManifestOptions `json:"options_ui,omitempty"`,
+    host_permissions: []string `json:"host_permissions,omitempty"`,
     browser_specific_settings: ManifestSpecificSettings `json:"browser_specific_settings"`,
 }
 
@@ -142,11 +170,16 @@ ExtensionManifest :: proc(config: ExtensionConfig, target: Target, allocator := 
         description = config.description,
         content_security_policy = {extension_pages = CONTENT_SECURITY_POLICY},
         permissions = config.permissions,
+        // Firefox runs a content script only on pages it has host access to, Chromium does not mind
+        host_permissions = config.content_matches,
+    }
+    if len(config.options.web.source_directory) > 0 {
+        manifest.options_ui = {page = "options/options.html", open_in_tab = true}
     }
     if config.popup {
         manifest.action.default_popup = "popup.html"
     }
-    content_script: [1]ManifestContentScript = {{matches = config.content_matches, js = {"content.js"}}}
+    content_script: [1]ManifestContentScript = {{matches = config.content_matches, js = {"content.js"}, run_at = config.content_run_at}}
     if len(config.content_matches) > 0 {
         manifest.content_scripts = content_script[:]
     }
@@ -159,11 +192,11 @@ ExtensionManifest :: proc(config: ExtensionConfig, target: Target, allocator := 
         manifest.background.service_worker = "background.js"
         data, error = json.marshal(manifest, options, allocator)
     case .FIREFOX:
-        manifest.background.scripts = {"odin.js", "extension.js", "background.js"}
+        manifest.background.scripts = {"odin.js", "imports.js", "extension.js", "background.js"}
         firefox: ManifestFirefox = {
             manifest_version = manifest.manifest_version, name = manifest.name, version = manifest.version, description = manifest.description,
             action = manifest.action, background = manifest.background, content_security_policy = manifest.content_security_policy,
-            content_scripts = manifest.content_scripts, permissions = manifest.permissions,
+            content_scripts = manifest.content_scripts, permissions = manifest.permissions, options_ui = manifest.options_ui, host_permissions = manifest.host_permissions,
             browser_specific_settings = {gecko = {id = config.id, strict_min_version = FIREFOX_MIN_VERSION, data_collection_permissions = {required = {"none"}}}},
         }
         data, error = json.marshal(firefox, options, allocator)
@@ -200,14 +233,75 @@ ExtensionWriteFile :: proc(directory, name: string, data: []byte) -> bool {
 ExtensionFiles :: proc(config: ExtensionConfig, allocator := context.temp_allocator) -> []string {
     files: [dynamic]string
     files.allocator = allocator
-    append(&files, "manifest.json", "main.wasm", "odin.js", "extension.js", "background.js")
+    append(&files, "manifest.json", "main.wasm", "odin.js", "imports.js", "extension.js", "background.js")
     if config.popup {
         append(&files, "popup.html", "popup.js")
     }
     if len(config.content_matches) > 0 {
         append(&files, "content.js")
     }
+    if len(config.options.web.source_directory) > 0 {
+        append(&files, "options/options.html", "options/options_run.js", "options/main.wasm")
+        for file in config.options.web.copy_files {
+            append(&files, fmt.tprintf("options/%s", FileName(file)))
+        }
+    }
     return files[:]
+}
+
+@(private)
+FileName :: proc(path: string) -> string {
+    return path[max(strings.last_index_byte(path, '/'), strings.last_index_byte(path, '\\')) + 1:]
+}
+
+// One file of the options page, read once and written into every target
+@(private)
+OptionsFile :: struct {
+    name: string,
+    data: []byte,
+}
+
+// Builds the web package of the options page and returns its files (names relative to the options folder)
+@(private)
+ExtensionBuildOptions :: proc(config: ExtensionConfig) -> (files: []OptionsFile, ok: bool) {
+    web: web_build.WebBuildConfig = config.options.web
+    if !web_build.WebBuild(web) {
+        return
+    }
+    paths: web_build.WebBuildPaths = web_build.WebBuildGetPaths(web, context.temp_allocator)
+    list: [dynamic]OptionsFile
+    list.allocator = context.temp_allocator
+
+    wasm, wasm_error := os.read_entire_file(fmt.tprintf("%s/main.wasm", paths.output_directory), context.temp_allocator)
+    if wasm_error != nil {
+        fmt.eprintln("browser_extension: could not read the main.wasm of the options page")
+        return
+    }
+    append(&list, OptionsFile{"main.wasm", wasm})
+    for file in web.copy_files {
+        data, error := os.read_entire_file(file, context.temp_allocator)
+        if error != nil {
+            fmt.eprintfln("browser_extension: could not read %s", file)
+            return
+        }
+        append(&list, OptionsFile{FileName(file), data})
+    }
+
+    // external script tags: an extension page may not run inline scripts
+    scripts: strings.Builder
+    strings.builder_init(&scripts, context.temp_allocator)
+    for script in web.scripts {
+        fmt.sbprintfln(&scripts, "		<script src=\"%s\"></script>", script)
+    }
+    title: string = config.options.title if len(config.options.title) > 0 else config.name
+    html, _ := strings.replace_all(OPTIONS_HTML, "{{TITLE}}", title, context.temp_allocator)
+    html, _ = strings.replace_all(html, "{{SCRIPTS}}", strings.to_string(scripts), context.temp_allocator)
+    imports: string = web.imports_js if len(web.imports_js) > 0 else "{}"
+    run, _ := strings.replace_all(OPTIONS_RUN_JS, "{{IMPORTS}}", imports, context.temp_allocator)
+    run, _ = strings.replace_all(run, "{{START}}", web.start_js, context.temp_allocator)
+    append(&list, OptionsFile{"options.html", transmute([]byte)html})
+    append(&list, OptionsFile{"options_run.js", transmute([]byte)run})
+    return list[:], true
 }
 
 // A zip with the files of a directory, `tar` of Windows (bsdtar) writes zip with -a. The files are listed by name, a "." would put
@@ -277,6 +371,24 @@ ExtensionBuild :: proc(config: ExtensionConfig, targets: bit_set[Target] = {.CHR
         return false
     }
 
+    content_script: []byte = CONTENT_JS
+    if len(config.content_script_file) > 0 {
+        read_error: os.Error
+        content_script, read_error = os.read_entire_file(config.content_script_file, context.temp_allocator)
+        if read_error != nil {
+            fmt.eprintfln("browser_extension: could not read %s", config.content_script_file)
+            return false
+        }
+    }
+    options_files: []OptionsFile
+    if len(config.options.web.source_directory) > 0 {
+        options_ok: bool
+        options_files, options_ok = ExtensionBuildOptions(config)
+        if !options_ok {
+            return false
+        }
+    }
+
     popup_html, _ := strings.replace_all(POPUP_HTML, "{{TITLE}}", config.name, context.temp_allocator)
     safe_name, _ := strings.replace_all(config.name, " ", "_", context.temp_allocator)
     for target in targets {
@@ -289,6 +401,7 @@ ExtensionBuild :: proc(config: ExtensionConfig, targets: bit_set[Target] = {.CHR
         ok: bool = ExtensionWriteFile(directory, "manifest.json", transmute([]byte)ExtensionManifest(config, target, context.temp_allocator))
         ok &&= ExtensionWriteFile(directory, "main.wasm", wasm)
         ok &&= ExtensionWriteFile(directory, "odin.js", odin_js_data)
+        ok &&= ExtensionWriteFile(directory, "imports.js", IMPORTS_JS)
         ok &&= ExtensionWriteFile(directory, "extension.js", EXTENSION_JS)
         ok &&= ExtensionWriteFile(directory, "background.js", BACKGROUND_JS)
         if config.popup {
@@ -296,7 +409,14 @@ ExtensionBuild :: proc(config: ExtensionConfig, targets: bit_set[Target] = {.CHR
             ok &&= ExtensionWriteFile(directory, "popup.js", POPUP_JS)
         }
         if len(config.content_matches) > 0 {
-            ok &&= ExtensionWriteFile(directory, "content.js", CONTENT_JS)
+            ok &&= ExtensionWriteFile(directory, "content.js", content_script)
+        }
+        if len(options_files) > 0 {
+            options_directory: string = fmt.tprintf("%s/%s", directory, OPTIONS_DIRECTORY)
+            ok &&= os.make_directory_all(options_directory) == nil
+            for file in options_files {
+                ok &&= ExtensionWriteFile(options_directory, file.name, file.data)
+            }
         }
         if !ok {
             return false
@@ -341,14 +461,25 @@ test_manifest_per_target :: proc(t: ^testing.T) {
     firefox_background: json.Object = firefox_object["background"].(json.Object)
     testing.expect(t, "service_worker" not_in firefox_background, "Firefox does not run service workers")
     scripts: json.Array = firefox_background["scripts"].(json.Array)
-    testing.expect_value(t, len(scripts), 3)
+    testing.expect_value(t, len(scripts), 4)
     testing.expect_value(t, string(scripts[0].(json.String)), "odin.js")
+    testing.expect_value(t, string(scripts[1].(json.String)), "imports.js")
+    testing.expect_value(t, len(firefox_object["host_permissions"].(json.Array)), 1)
     gecko: json.Object = firefox_object["browser_specific_settings"].(json.Object)["gecko"].(json.Object)
     testing.expect_value(t, string(gecko["id"].(json.String)), "test@example.com")
 
     testing.expect(t, strings.contains(string(json_string(chromium_object["content_security_policy"].(json.Object)["extension_pages"])), "wasm-unsafe-eval"))
     testing.expect_value(t, len(chromium_object["content_scripts"].(json.Array)), 1)
     testing.expect_value(t, string(chromium_object["action"].(json.Object)["default_popup"].(json.String)), "popup.html")
+
+    // an options page is a manifest key in both
+    with_options: ExtensionConfig = config
+    with_options.options.web.source_directory = "options_source"
+    for target in Target {
+        parsed, _ := json.parse(transmute([]byte)ExtensionManifest(with_options, target, context.temp_allocator), allocator = context.temp_allocator)
+        page: json.Object = parsed.(json.Object)["options_ui"].(json.Object)
+        testing.expect_value(t, string(page["page"].(json.String)), "options/options.html")
+    }
 
     // optional parts stay out when not asked for
     plain: json.Value

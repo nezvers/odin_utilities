@@ -7,7 +7,6 @@ package demo_kit_karl2d
 // Karl2D has to be next to the other libraries (odin_utilities/karl2d, a junction to the fork).
 
 import "base:runtime"
-import "core:os"
 import "../../karl2d"
 import kit ".."
 
@@ -226,10 +225,4 @@ keys: [kit.Key]karl2d.Keyboard_Key = {
     .COMMA = .Comma, .PERIOD = .Period, .MINUS = .Minus, .EQUAL = .Equal, .SLASH = .Slash,
     .LEFT_BRACKET = .Left_Bracket, .RIGHT_BRACKET = .Right_Bracket,
     .F1 = .F1, .F2 = .F2, .F3 = .F3, .F4 = .F4, .F5 = .F5, .F6 = .F6, .F7 = .F7, .F8 = .F8, .F9 = .F9, .F10 = .F10, .F11 = .F11, .F12 = .F12,
-}
-
-// the exit code of a test run: 0 when every check passed
-@(private)
-exit_process :: proc(passed: bool) {
-    os.exit(0 if passed else 1)
 }

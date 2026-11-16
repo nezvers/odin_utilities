@@ -70,6 +70,8 @@ Keep the positions a script clicks fixed numbers (not relative to the window siz
 - Karl2D reads the screen back through the 3D layer of the fork, so `DEMO_CAPTURE` makes `Run` start Karl2D with `depth_test`.
 - `CaptureFrame` (pixels of the frame), `PngWrite`/`PngRead` (the writer compresses flat areas, a ui frame is about 50 KB) and `ImageDifference` are plain procs for your own checks.
 
+The kit and `glue_karl2d` build for `js_wasm32` too (`capture_js.odin` and `exit_js.odin` are the stubs: no golden images, no process exit), so a demo can be a web page: `kit.RunnerInit` + `kit.RunnerStep` per frame from a web_build `init/step/shutdown` (see `browser_extension/youtube_shorts/host_karl2d`).
+
 A new framework is one more backend: fill the `Backend` table (see `glue_raylib/raylib.odin`; `capture` may stay nil).
 
 `odin test demo_kit -strict-style -vet`

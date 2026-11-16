@@ -7,23 +7,27 @@ browser_extension/
 ├── browser_extension.odin     build side: ExtensionConfig, ExtensionManifest, ExtensionBuild (packages), tests
 ├── install.odin               start Chrome / Opera / Edge / Firefox with the extension loaded
 ├── firefox_remote.odin        Firefox: installTemporaryAddon over the remote debugging protocol (what web-ext does)
-├── runtime/runtime.odin       the Odin side inside the extension: Log, SetBadge, ReplyPrint
-├── templates/                 JavaScript glue and the generated entry: background.js, extension.js, popup, content script
+├── runtime/runtime.odin       the Odin side inside the extension: Log, SetBadge, OpenUrl, SaveState, ReplyPrint, and for pages SendMessage
+├── templates/                 JavaScript glue and the generated entry: background.js, imports.js, extension.js, popup, content script, options page
 ├── demo/extension.odin        example extension: popup button -> Odin counts -> badge on the toolbar icon
 ├── demo/tool/main.odin        the build tool of the demo, copy it for your own extension
+├── youtube_shorts/            a real example, most of the logic in Odin: Shorts as full videos, a Save button on desktop, an options page
+│                              drawn by Karl2D (extension) and raylib (desktop preview). See youtube_shorts/README.md
 └── .vscode/                   tasks and launch configurations
 ```
 
 ## Write an extension
-The source directory is an Odin package with two procs (`runtime/runtime.odin`):
+The source directory is an Odin package with three procs (`runtime/runtime.odin`):
 
 ```odin
 package my_extension
 import runtime "<path to>/browser_extension/runtime"
 
-init :: proc() {                                              // once, when the background starts
+init :: proc() {                                              // every time the background starts
     runtime.Log("started")
 }
+
+on_load :: proc(state: string) {}                             // what SaveState kept, "" the first time; before the first message
 
 on_message :: proc(message: string, reply: []u8) -> int {     // popup or content script -> Odin
     if message == "ping" {
@@ -33,7 +37,15 @@ on_message :: proc(message: string, reply: []u8) -> int {     // popup or conten
 }
 ```
 
-Messages and replies are text. They go through a fixed 16 KB input buffer and a fixed 16 KB output buffer owned by the generated entry, nothing allocates per message (`ReplyPrint` cuts text that does not fit). The popup and content script of `templates/` send strings with `runtime.sendMessage`, change them to what your `on_message` understands. Add more imports to `templates/extension.js` + `runtime/runtime.odin` (module `extension`) when Odin has to call more of the `browser.*` API; `set_badge` is the example.
+`runtime.SaveState(text)` keeps up to 16 KB in the browser storage (`storage` permission), `on_load` gets it back after the browser stopped and started the background. `runtime.OpenUrl` opens a tab.
+
+### Content script
+`content_matches` (match patterns) adds a content script, `content_script_file` is your own JavaScript file (default `templates/content.js`), `content_run_at` its `run_at`. It sends text with `runtime.sendMessage(text)` (a promise) and gets the reply of `on_message`: the script reads the page, Odin decides (see `youtube_shorts/youtube_content.js`).
+
+### Options page drawn by Karl2D
+`ExtensionConfig.options` takes a `web_build` package (`init`, `step`, `shutdown`, Karl2D in a canvas, the same as a web_build demo) and makes it the options page of the extension (`options_ui`, opened in a tab). The page talks to the background with `runtime.SendMessage(text)`; the answer comes to the handler of `runtime.SetReplyHandler` (the browser is asynchronous). Extension pages may not run inline scripts, so the page is built from files (`templates/options.html`, `options_run.js`) and Karl2D needs the element id `body`. If the page is written against `demo_kit` (`youtube_shorts/options`) the same code also runs in a raylib window and in headless tests: only the bridge differs.
+
+Messages and replies are text (so are the state and the replies of the options page). They go through a fixed 16 KB input buffer and a fixed 16 KB output buffer owned by the generated entry, nothing allocates per message (`ReplyPrint` cuts text that does not fit). The popup and content script of `templates/` send strings with `runtime.sendMessage`, change them to what your `on_message` understands. Add more imports to `templates/extension.js` + `runtime/runtime.odin` (module `extension`) when Odin has to call more of the `browser.*` API; `set_badge` is the example.
 
 The build is a call (see `demo/tool/main.odin`):
 
@@ -104,11 +116,13 @@ Try it: pin the extension, click its icon, **Ping Odin**: the popup answers `pon
 - `odin.js` (the Odin JavaScript runtime, copied from your Odin install) is part of every package. In the service worker it needs `window`, `background.js` sets `self.window = self` before loading it.
 - The manifest asks for `'wasm-unsafe-eval'` in the extension page CSP, without it no browser compiles `main.wasm`. Store review accepts it for wasm.
 - The Firefox manifest has a gecko `id` (required to keep storage between loads) and `data_collection_permissions` (needs Firefox 140+, older versions only warn).
+- Extension pages (popup, options) may not run inline scripts or inline event handlers: everything is a file.
 - Not on the list: Safari (needs an Xcode project) and Manifest V2.
 
 ## Tests
 ```
 odin test . -strict-style -vet            # manifests of both targets, the Firefox protocol packets
+odin test youtube_shorts -strict-style -vet && odin test youtube_shorts/options -strict-style -vet
 odin check demo/tool -strict-style -vet
 ```
 Checked in real browsers (Windows): Edge and Opera GX load the unpacked folder, the service worker answers `ping` through the wasm; Firefox accepts the add-on through `installTemporaryAddon`. Chrome itself was not installed on the machine, it shares the Chromium path with Edge and Opera.

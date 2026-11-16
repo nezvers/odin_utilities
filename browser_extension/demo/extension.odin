@@ -14,6 +14,9 @@ init :: proc() {
 	runtime.Log("odin extension started")
 }
 
+// What SaveState kept, nothing for this demo
+on_load :: proc(state: string) {}
+
 // A message from the popup or a content script
 on_message :: proc(message: string, reply: []u8) -> int {
 	if message == "ping" {

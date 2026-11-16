@@ -18,6 +18,14 @@ main :: proc() {
 	ex.init()
 }
 
+// The state of the last SaveState (read from the browser storage by the JavaScript), before the first message
+@export
+load :: proc "c" (length: int) {
+	context = ctx
+	defer free_all(context.temp_allocator)
+	ex.on_load(string(input[:clamp(length, 0, INPUT_CAPACITY)]))
+}
+
 @export
 input_pointer :: proc "c" () -> rawptr {
 	return &input[0]

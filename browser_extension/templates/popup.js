@@ -3,7 +3,8 @@
 const api = globalThis.browser ?? globalThis.chrome;
 
 document.getElementById("ping").addEventListener("click", () => {
-	api.runtime.sendMessage("ping", (reply) => {
-		document.getElementById("reply").textContent = reply ?? String(api.runtime.lastError?.message);
-	});
+	api.runtime.sendMessage("ping").then(
+		(reply) => { document.getElementById("reply").textContent = reply; },
+		(error) => { document.getElementById("reply").textContent = String(error); },
+	);
 });

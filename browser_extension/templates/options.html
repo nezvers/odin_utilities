@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en" style="height: 100%;">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>{{TITLE}}</title>
+	</head>
+	<body id="body" style="height: 100%; padding: 0; margin: 0; overflow: hidden; background-color: black;">
+		<!-- extension pages may not run inline scripts, everything is a file -->
+		<canvas id="webgl-canvas" tabindex="0" style="touch-action: none; outline: none;"></canvas>
+{{SCRIPTS}}
+		<script src="../odin.js"></script>
+		<script src="../imports.js"></script>
+		<script src="options_run.js"></script>
+	</body>
+</html>

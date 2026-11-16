@@ -88,6 +88,91 @@
                 "type": "lldb",
                 "program": "${workspaceFolder}/${config:project_name}.bin"
             }
+        },
+        {
+            "name": "Shorts: Build Extensions",
+            "request": "launch",
+            "preLaunchTask": "Build Shorts Tool",
+            "args": ["all"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_shorts.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            }
+        },
+        {
+            "name": "Shorts: Build and Install Chrome",
+            "request": "launch",
+            "preLaunchTask": "Build Shorts Tool",
+            "args": ["chrome", "--install"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_shorts.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            }
+        },
+        {
+            "name": "Shorts: Build and Install Opera",
+            "request": "launch",
+            "preLaunchTask": "Build Shorts Tool",
+            "args": ["opera", "--install"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_shorts.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            }
+        },
+        {
+            "name": "Shorts: Build and Install Edge",
+            "request": "launch",
+            "preLaunchTask": "Build Shorts Tool",
+            "args": ["edge", "--install"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_shorts.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            }
+        },
+        {
+            "name": "Shorts: Build and Install Firefox",
+            "request": "launch",
+            "preLaunchTask": "Build Shorts Tool",
+            "args": ["firefox", "--install"],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_shorts.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_shorts.bin"
+            }
         }
     ]
 }

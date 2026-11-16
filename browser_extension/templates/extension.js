@@ -1,6 +1,6 @@
 "use strict";
-// Loads main.wasm (the Odin side of the extension) and connects it to the browser. Shared by the background of every browser.
-// Needs odin.js (the Odin JavaScript runtime) loaded before it.
+// Loads main.wasm (the Odin side of the extension) and connects it to the browser. Used by the background of every browser.
+// Needs odin.js (the Odin JavaScript runtime) and imports.js loaded before it.
 //
 // The Odin package exports a fixed input buffer and a fixed output buffer, a message is copied into the first, `message(length)`
 // is called and the reply is read from the second. Nothing is allocated on either side per message.
@@ -10,14 +10,15 @@
 	const decoder = new TextDecoder();
 	let exports = null;
 
-	// The procs of runtime/runtime.odin, module name "extension"
-	function extensionImports(memory) {
-		return {
-			extension: {
-				log: (pointer, length) => console.log("[odin]", memory.loadString(pointer, length)),
-				set_badge: (pointer, length) => api.action.setBadgeText({ text: memory.loadString(pointer, length) }),
-			},
-		};
+	function writeInput(text) {
+		const bytes = encoder.encode(text);
+		const capacity = exports.input_capacity();
+		if (bytes.length > capacity) {
+			throw new Error("text of " + bytes.length + " bytes does not fit the input buffer of " + capacity);
+		}
+		// the memory can grow, so the buffer is read again every call
+		new Uint8Array(exports.memory.buffer, exports.input_pointer(), bytes.length).set(bytes);
+		return bytes.length;
 	}
 
 	async function load() {
@@ -32,18 +33,14 @@
 		memory.setMemory(exports.memory);
 		// runs `main` of the generated entry, which is the `init` of the Odin package
 		exports._start();
+		// what SaveState kept, handed over before any message
+		const stored = await api.storage.local.get("state");
+		exports.load(writeInput(typeof stored.state === "string" ? stored.state : ""));
 	}
 
 	// Send a text to the Odin side, get its reply. Only after `loaded` resolved.
 	function message(text) {
-		const bytes = encoder.encode(text);
-		const capacity = exports.input_capacity();
-		if (bytes.length > capacity) {
-			throw new Error("message of " + bytes.length + " bytes does not fit the input buffer of " + capacity);
-		}
-		// the memory can grow, so the buffer is read again every call
-		new Uint8Array(exports.memory.buffer, exports.input_pointer(), bytes.length).set(bytes);
-		const length = exports.message(bytes.length);
+		const length = exports.message(writeInput(text));
 		return decoder.decode(new Uint8Array(exports.memory.buffer, exports.output_pointer(), length));
 	}
 

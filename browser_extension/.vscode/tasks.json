@@ -17,6 +17,18 @@
             }
         },
         {
+            "label": "Build Shorts Tool",
+            "type": "shell",
+            "command": "odin build youtube_shorts/tool -strict-style -vet -out:${config:project_name}_shorts.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build youtube_shorts/tool -strict-style -vet -out:${config:project_name}_shorts.bin -debug"
+            },
+            "osx": {
+                "command": "odin build youtube_shorts/tool -strict-style -vet -out:${config:project_name}_shorts.bin -debug"
+            }
+        },
+        {
             "label": "Build Extensions",
             "type": "shell",
             "command": "odin run demo/tool -strict-style -vet -- all",
@@ -48,6 +60,49 @@
             "type": "shell",
             "command": "odin run demo/tool -strict-style -vet -- firefox --install",
             "group": "build"
+        },
+        {
+            "label": "Shorts: Build Extensions",
+            "type": "shell",
+            "command": "odin run youtube_shorts/tool -strict-style -vet -- all",
+            "group": "build"
+        },
+        {
+            "label": "Shorts: Build and Install Chrome",
+            "type": "shell",
+            "command": "odin run youtube_shorts/tool -strict-style -vet -- chrome --install",
+            "group": "build"
+        },
+        {
+            "label": "Shorts: Build and Install Opera",
+            "type": "shell",
+            "command": "odin run youtube_shorts/tool -strict-style -vet -- opera --install",
+            "group": "build"
+        },
+        {
+            "label": "Shorts: Build and Install Edge",
+            "type": "shell",
+            "command": "odin run youtube_shorts/tool -strict-style -vet -- edge --install",
+            "group": "build"
+        },
+        {
+            "label": "Shorts: Build and Install Firefox",
+            "type": "shell",
+            "command": "odin run youtube_shorts/tool -strict-style -vet -- firefox --install",
+            "group": "build"
+        },
+        {
+            "label": "Shorts: Options Page (raylib)",
+            "type": "shell",
+            "command": "odin run youtube_shorts/host_raylib -strict-style -vet",
+            "group": "build"
+        },
+        {
+            // the Odin logic and the options page script, headless
+            "label": "Shorts: Test",
+            "type": "shell",
+            "command": "odin test youtube_shorts -strict-style -vet && odin test youtube_shorts/options -strict-style -vet",
+            "group": "test"
         },
         {
             "label": "Test",
