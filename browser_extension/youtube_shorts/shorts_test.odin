@@ -45,7 +45,7 @@ test_watch_url :: proc(t: ^testing.T) {
 test_settings_text :: proc(t: ^testing.T) {
     buffer: [32]u8
     text: string = ShortsSettingsEncode({redirect = true, show_save = false}, buffer[:])
-    testing.expect_value(t, text, "redirect=1 save=0")
+    testing.expect_value(t, text, "redirect=1 save=0 download=0")
     testing.expect_value(t, ShortsSettingsDecode(text, SETTINGS_DEFAULT), Settings{redirect = true, show_save = false})
     // a missing key keeps the base, an unknown key is ignored
     testing.expect_value(t, ShortsSettingsDecode("future=1 redirect=1", {show_save = true}), Settings{redirect = true, show_save = true})
@@ -133,18 +133,18 @@ test_messages :: proc(t: ^testing.T) {
     testing.expect(t, !changed)
 
     text, _ = ask(&store, reply[:], "url:https://www.youtube.com/shorts/dQw4w9WgXcQ")
-    testing.expect_value(t, text, "short:dQw4w9WgXcQ 0 1")
+    testing.expect_value(t, text, "short:dQw4w9WgXcQ 0 1 1")
     ask(&store, reply[:], "toggle:dQw4w9WgXcQ	Cat")
     text, _ = ask(&store, reply[:], "url:https://www.youtube.com/shorts/dQw4w9WgXcQ")
-    testing.expect_value(t, text, "short:dQw4w9WgXcQ 1 1")
+    testing.expect_value(t, text, "short:dQw4w9WgXcQ 1 1 1")
     ask(&store, reply[:], "set:save=0")
     text, _ = ask(&store, reply[:], "url:https://www.youtube.com/shorts/dQw4w9WgXcQ")
-    testing.expect_value(t, text, "short:dQw4w9WgXcQ 1 0")
+    testing.expect_value(t, text, "short:dQw4w9WgXcQ 1 0 1")
     ask(&store, reply[:], "remove:dQw4w9WgXcQ")
     ask(&store, reply[:], "set:save=1")
 
     text, changed = ask(&store, reply[:], "set:redirect=1")
-    testing.expect_value(t, text, "redirect=1 save=1")
+    testing.expect_value(t, text, "redirect=1 save=1 download=1")
     testing.expect(t, changed)
 
     text, _ = ask(&store, reply[:], "url:https://www.youtube.com/shorts/dQw4w9WgXcQ?feature=share")
@@ -169,4 +169,33 @@ test_messages :: proc(t: ^testing.T) {
     testing.expect_value(t, text, "invalid")
     text, _ = ask(&store, reply[:], "what")
     testing.expect_value(t, text, "unknown")
+
+    // download: the background asks the helper and only forwards what it answers
+    text, _ = ask(&store, reply[:], "ytdl?")
+    testing.expect_value(t, text, "native:check")
+    text, _ = ask(&store, reply[:], "native-reply:ytdl:ok yt-dlp 2026.08.19")
+    testing.expect_value(t, text, "ytdl:ok")
+    testing.expect_value(t, store.ytdl, YtdlState.OK)
+    text, _ = ask(&store, reply[:], "download:dQw4w9WgXcQ")
+    testing.expect_value(t, text, "native:download:dQw4w9WgXcQ")
+    text, _ = ask(&store, reply[:], "download:bad")
+    testing.expect_value(t, text, "invalid")
+    text, _ = ask(&store, reply[:], "native-reply:job:dQw4w9WgXcQ")
+    testing.expect_value(t, text, "job:dQw4w9WgXcQ")
+    text, _ = ask(&store, reply[:], "status:dQw4w9WgXcQ")
+    testing.expect_value(t, text, "native:status:dQw4w9WgXcQ")
+
+    // youtube-dl missing: no download is started, the page is told, install and the links are what is left
+    ask(&store, reply[:], "native-reply:ytdl:missing")
+    testing.expect_value(t, store.ytdl, YtdlState.MISSING)
+    text, _ = ask(&store, reply[:], "download:dQw4w9WgXcQ")
+    testing.expect_value(t, text, "ytdl:missing")
+    text, _ = ask(&store, reply[:], "install")
+    testing.expect_value(t, text, "native:install")
+    text, _ = ask(&store, reply[:], "links")
+    testing.expect(t, strings.contains(text, "repository=https://github.com/yt-dlp/yt-dlp alternative=https://github.com/ytdl-org/youtube-dl "))
+
+    // no helper at all
+    text, _ = ask(&store, reply[:], "native-error:Specified native messaging host not found.")
+    testing.expect_value(t, text, "ytdl:nohelper")
 }

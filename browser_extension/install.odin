@@ -116,6 +116,11 @@ ExtensionInstall :: proc(config: ExtensionConfig, browser: Browser, options: Ins
         return false
     }
 
+    // a program the background talks to has to be known to the browser before it starts
+    if len(config.native_host) > 0 && len(config.native_host_executable) > 0 && !NativeHostRegister(config, browser) {
+        return false
+    }
+
     if browser == .FIREFOX {
         return FirefoxInstall(executable, profile, directory, options)
     }

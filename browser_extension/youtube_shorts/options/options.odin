@@ -11,9 +11,9 @@ import kit "../../../demo_kit"
 import shorts ".."
 
 SCREEN_SIZE :: kit.Vec2{960, 600}
-ROWS_PER_PAGE :: 10
+ROWS_PER_PAGE :: 8
 ROW_HEIGHT :: 32
-LIST_TOP :: 236
+LIST_TOP :: 272
 
 // What the page needs of the world around it. The extension page fills it with the browser (runtime.SendMessage, OpenUrl), the desktop
 // host and the tests with a loopback.
@@ -98,10 +98,12 @@ draw :: proc(ctx: ^kit.Context) {
 
 	optionToggle(ctx, {30, 80, 460, 36}, "Open Shorts as a full video (watch page)", page.settings.redirect, "redirect")
 	optionToggle(ctx, {30, 126, 460, 36}, "Save button next to the Shorts buttons", page.settings.show_save, "save")
+	optionToggle(ctx, {30, 172, 460, 36}, "Download button (yt-dlp or youtube-dl)", page.settings.show_download, "download")
 	kit.DrawText(ctx, "A short opens in the normal player, with the timeline and the recommendations.", {510, 90}, 14, kit.DARK_GRAY)
 	kit.DrawText(ctx, "The Save button keeps the short in the list below.", {510, 136}, 14, kit.DARK_GRAY)
+	kit.DrawText(ctx, "Download needs yt-dlp or youtube-dl on PATH; the button offers to install it.", {510, 182}, 14, kit.DARK_GRAY)
 
-	kit.DrawText(ctx, fmt.tprintf("Saved shorts (%d of %d)", page.count, shorts.MAX_SAVED), {30, 190}, 20, kit.BLACK)
+	kit.DrawText(ctx, fmt.tprintf("Saved shorts (%d of %d)", page.count, shorts.MAX_SAVED), {30, 226}, 20, kit.BLACK)
 	if page.count == 0 {
 		kit.DrawText(ctx, "Nothing saved yet. Open a short and press Save.", {30, LIST_TOP + 4}, 16, kit.GRAY)
 	}
@@ -153,13 +155,19 @@ script: []kit.Step = {
 		return !page.settings.show_save && !loopback_store.settings.show_save
 	}, "the Save button option is off"),
 
-	kit.Click({850, 249}), // Remove, first row
+	kit.Click({260, 190}),
+	kit.Wait(2),
+	kit.Check(proc(ctx: ^kit.Context) -> bool {
+		return !page.settings.show_download && !loopback_store.settings.show_download
+	}, "the Download button option is off"),
+
+	kit.Click({850, 285}), // Remove, first row
 	kit.Wait(2),
 	kit.Check(proc(ctx: ^kit.Context) -> bool {
 		return page.count == 2 && loopback_store.count == 2 && string(page.ids[0][:]) == "bbbbbbbbbbb"
 	}, "the first saved short is gone and the next one moved up"),
 
-	kit.Click({740, 249}), // Open, first row
+	kit.Click({740, 285}), // Open, first row
 	kit.Wait(2),
 	kit.Check(proc(ctx: ^kit.Context) -> bool {
 		return OptionsLoopbackOpened() == "https://www.youtube.com/shorts/bbbbbbbbbbb"

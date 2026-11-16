@@ -8,6 +8,8 @@ import "core:os"
 import "core:strconv"
 import extension "../.."
 
+HELPER_EXECUTABLE :: "youtube_shorts/bin/native/shorts_helper_host.exe" when ODIN_OS == .Windows else "youtube_shorts/bin/native/shorts_helper_host"
+
 main :: proc() {
 	config: extension.ExtensionConfig = {
 		source_directory = "youtube_shorts/background",
@@ -17,6 +19,9 @@ main :: proc() {
 		description = "Open YouTube Shorts as full videos, save Shorts from the desktop player. Written in Odin.",
 		id = "shorts-helper@odin-utilities",
 		permissions = {"storage"},
+		// the Download button runs yt-dlp / youtube-dl through this program, ExtensionInstall registers it for the browser
+		native_host = "com.odin_utilities.shorts_helper",
+		native_host_executable = HELPER_EXECUTABLE,
 		// the content script asks the background what to do on every page of YouTube, at the start so a redirect is early
 		content_matches = {"https://www.youtube.com/*", "https://m.youtube.com/*", "https://youtube.com/*"},
 		content_script_file = "youtube_shorts/youtube_content.js",
@@ -76,6 +81,9 @@ main :: proc() {
 	for browser in browsers {
 		targets += {extension.BrowserTarget(browser)}
 	}
+	if !buildHelper() {
+		os.exit(1)
+	}
 	if !extension.ExtensionBuild(config, targets) {
 		os.exit(1)
 	}
@@ -94,4 +102,18 @@ main :: proc() {
 usage :: proc() {
 	fmt.eprintln("usage: odin run youtube_shorts/tool -- [chrome|opera|edge|firefox|all] [--install] [--headless] [--browser-path PATH] [--firefox-port N] [-- odin arguments]")
 	os.exit(2)
+}
+
+// The native messaging program of the Download button
+buildHelper :: proc() -> bool {
+	os.make_directory_all("youtube_shorts/bin/native")
+	command: [dynamic]string
+	command.allocator = context.temp_allocator
+	append(&command, "odin", "build", "youtube_shorts/native_host", fmt.tprintf("-out:%s", HELPER_EXECUTABLE), "-o:speed")
+	state, _, errors, error := os.process_exec({command = command[:]}, context.temp_allocator)
+	if error != nil || state.exit_code != 0 {
+		fmt.eprintfln("building the download helper failed\n%s", string(errors))
+		return false
+	}
+	return true
 }

@@ -19,9 +19,23 @@ STATE_CAPACITY :: 8 * 1024
 Settings :: struct {
     redirect: bool,     // open a short in the normal player (youtube.com/watch?v=<id>) instead of the Shorts player
     show_save: bool,    // a Save button next to the native buttons of the Shorts player
+    show_download: bool,// a Download button below it, it runs yt-dlp or youtube-dl (whichever is on PATH) through the native helper
 }
 
-SETTINGS_DEFAULT :: Settings{redirect = false, show_save = true}
+SETTINGS_DEFAULT :: Settings{redirect = false, show_save = true, show_download = true}
+
+// Where the buttons of the page send you. The addresses live here so the JavaScript has none.
+YTDL_REPOSITORY :: "https://github.com/yt-dlp/yt-dlp"
+YTDL_ALTERNATIVE :: "https://github.com/ytdl-org/youtube-dl"
+YTDL_INSTALL_GUIDE :: "https://github.com/yt-dlp/yt-dlp/wiki/Installation"
+HELPER_GUIDE :: "https://github.com/nezvers/odin_utilities/tree/main/browser_extension/youtube_shorts#download-helper"
+
+// What the native helper said about yt-dlp / youtube-dl the last time it was asked. Not kept in the storage: it is looked up again on every page.
+YtdlState :: enum {
+    UNKNOWN,
+    OK,
+    MISSING,
+}
 
 SavedShort :: struct {
     id: [SHORT_ID_LENGTH]u8,
@@ -32,6 +46,7 @@ SavedShort :: struct {
 // All the state of the extension. Plain data, no pointers: lives in a global of the background or on the stack of a test.
 Store :: struct {
     settings: Settings,
+    ytdl: YtdlState,
     saved: [MAX_SAVED]SavedShort,   // newest first
     count: int,
 }
@@ -104,9 +119,9 @@ ShortsWatchUrl :: proc(id: string, buffer: []u8) -> string {
 
 // --- Settings ---
 
-// "redirect=1 save=1"
+// "redirect=1 save=1 download=1"
 ShortsSettingsEncode :: proc(settings: Settings, buffer: []u8) -> string {
-    return fmt.bprintf(buffer, "redirect=%d save=%d", int(settings.redirect), int(settings.show_save))
+    return fmt.bprintf(buffer, "redirect=%d save=%d download=%d", int(settings.redirect), int(settings.show_save), int(settings.show_download))
 }
 
 // Keys that are not in the text keep their value of `base`, unknown keys are ignored: a newer options page can talk to an older background
@@ -122,6 +137,7 @@ ShortsSettingsDecode :: proc(text: string, base: Settings) -> Settings {
         switch field[:equals] {
         case "redirect": settings.redirect = value
         case "save": settings.show_save = value
+        case "download": settings.show_download = value
         }
     }
     return settings
@@ -189,7 +205,7 @@ StoreRemoveAt :: proc(store: ^Store, index: int) {
 // First line the settings, then one line per saved short: "<id>\t<title>". Newest first.
 StoreEncode :: proc(store: ^Store, buffer: []u8) -> string {
     builder: strings.Builder = strings.builder_from_bytes(buffer)
-    settings: [32]u8
+    settings: [48]u8
     fmt.sbprintfln(&builder, "%s", ShortsSettingsEncode(store.settings, settings[:]))
     for i in 0 ..< store.count {
         fmt.sbprintfln(&builder, "%s\t%s", string(store.saved[i].id[:]), StoreTitle(&store.saved[i]))
@@ -224,13 +240,21 @@ StoreDecode :: proc(store: ^Store, text: string) {
 
 // What the content script and the options page send, one text each:
 //   url:<address>            -> a short and the redirect option is on: "redirect:<full video address>"
-//                               a short: "short:<id> <saved 0|1> <show the Save button 0|1>", anything else: "ok"
+//                               a short: "short:<id> <saved 0|1> <show Save 0|1> <show Download 0|1>", anything else: "ok"
 //   get                      -> the settings text
 //   set:<settings text>      -> the settings text as kept
 //   has:<id>                 -> "saved:1" or "saved:0"
 //   toggle:<id>\t<title>     -> "saved:1" (added), "saved:0" (removed), "full" or "invalid"
 //   remove:<id>              -> "ok"
-//   list                     -> one line "<id>\t<title>" per saved short, newest first
+//   list                     -> "list", then one line "<id>\t<title>" per saved short, newest first
+// Download through yt-dlp or youtube-dl (the page only shows what comes back):
+//   links                    -> "repository=<yt-dlp url> alternative=<youtube-dl url> install=<url> helper=<url>"
+//   ytdl?                    -> asks the native helper; the final reply is "ytdl:ok", "ytdl:missing" or "ytdl:nohelper" (helper not installed)
+//   download:<id>            -> "job:<id>" (started), or "ytdl:missing" / "ytdl:nohelper"
+//   install                  -> "job:install": the helper installs yt-dlp (downloads the release on Windows, pip elsewhere)
+//   status:<id|install>      -> "status:running", "status:done <file>", "status:failed <code>" or "status:none"
+// A reply "native:<text>" is not for the page: the background sends the text to the native helper and hands its answer back as
+// "native-reply:<text>" (or "native-error:<why>"), the reply to that is the one the page gets.
 // Returns the length of the reply and whether the state changed (then the caller keeps it with StoreEncode).
 ShortsHandle :: proc(store: ^Store, message: string, reply: []u8) -> (length: int, changed: bool) {
     switch {
@@ -243,8 +267,8 @@ ShortsHandle :: proc(store: ^Store, message: string, reply: []u8) -> (length: in
             url: [64]u8
             return reply_text(reply, "redirect:", ShortsWatchUrl(id, url[:])), false
         }
-        // the Shorts player stays: the page needs to know whether to add the Save button and how it looks
-        return reply_text(reply, "short:", id, " ", "1" if StoreFind(store, id) >= 0 else "0", " ", "1" if store.settings.show_save else "0"), false
+        // the Shorts player stays: the page needs to know which buttons to add and how the Save button looks
+        return reply_text(reply, "short:", id, " ", flag(StoreFind(store, id) >= 0), " ", flag(store.settings.show_save), " ", flag(store.settings.show_download)), false
 
     case message == "get":
         return len(ShortsSettingsEncode(store.settings, reply)), false
@@ -276,6 +300,42 @@ ShortsHandle :: proc(store: ^Store, message: string, reply: []u8) -> (length: in
         }
         return reply_text(reply, "ok"), index >= 0
 
+    case message == "links":
+        return reply_text(reply, "repository=", YTDL_REPOSITORY, " alternative=", YTDL_ALTERNATIVE, " install=", YTDL_INSTALL_GUIDE, " helper=", HELPER_GUIDE), false
+
+    case message == "ytdl?":
+        return reply_text(reply, "native:check"), false
+
+    case strings.has_prefix(message, "download:"):
+        id: string = message[len("download:"):]
+        if !ShortsIsId(id) {
+            return reply_text(reply, "invalid"), false
+        }
+        if store.ytdl == .MISSING {
+            return reply_text(reply, "ytdl:missing"), false
+        }
+        return reply_text(reply, "native:", message), false
+
+    case message == "install":
+        return reply_text(reply, "native:install"), false
+
+    case strings.has_prefix(message, "status:"):
+        return reply_text(reply, "native:", message), false
+
+    case strings.has_prefix(message, "native-reply:"):
+        answer: string = message[len("native-reply:"):]
+        switch {
+        case strings.has_prefix(answer, "ytdl:ok"): store.ytdl = .OK
+        case strings.has_prefix(answer, "ytdl:missing"): store.ytdl = .MISSING
+        }
+        // "ytdl:ok 2026.08.19" -> "ytdl:ok": the page needs no version
+        space: int = strings.index_byte(answer, ' ')
+        return reply_text(reply, answer if space < 0 || !strings.has_prefix(answer, "ytdl:") else answer[:space]), false
+
+    case strings.has_prefix(message, "native-error:"):
+        // the browser could not reach the helper: it is not installed (or not registered for this browser)
+        return reply_text(reply, "ytdl:nohelper"), false
+
     case message == "list":
         // the first line names the reply: replies reach a page one by one and without the request they answer
         builder: strings.Builder = strings.builder_from_bytes(reply)
@@ -286,6 +346,11 @@ ShortsHandle :: proc(store: ^Store, message: string, reply: []u8) -> (length: in
         return len(strings.to_string(builder)), false
     }
     return reply_text(reply, "unknown"), false
+}
+
+@(private)
+flag :: proc(value: bool) -> string {
+    return "1" if value else "0"
 }
 
 // The parts one after the other into the reply, cut when it does not fit

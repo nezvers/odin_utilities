@@ -22,7 +22,7 @@ import "core:testing"
 import web_build "../web_build"
 
 ENTRY_TEMPLATE :: #load("templates/extension_entry_template.odin.txt")
-BACKGROUND_JS :: #load("templates/background.js")
+BACKGROUND_JS :: #load("templates/background.js", string)
 EXTENSION_JS :: #load("templates/extension.js")
 IMPORTS_JS :: #load("templates/imports.js")
 OPTIONS_HTML :: #load("templates/options.html", string)
@@ -52,6 +52,8 @@ ExtensionConfig :: struct {
     content_matches: []string,  // match patterns ("https://example.com/*"): a content script. Empty - none
     content_script_file: string,// JavaScript file of the content script, empty - templates/content.js (sends "page:<title>")
     content_run_at: string,     // "document_start", "document_end" or "document_idle" (the default of the browser)
+    native_host: string,        // name of a native messaging host ("com.example.helper"): a program the background may talk to. Empty - none
+    native_host_executable: string, // path of that program, ExtensionInstall registers it for the browser (native_host.odin)
     options: OptionsPage,       // a page in the extension settings, drawn by a web_build package. Empty source_directory - none
     permissions: []string,      // "storage", "tabs", ...
     odin_arguments: []string,   // passed to `odin build`: "-o:size", "-define:..."
@@ -163,13 +165,19 @@ ManifestFirefox :: struct {
 // target lists only what it understands.
 ExtensionManifest :: proc(config: ExtensionConfig, target: Target, allocator := context.allocator) -> string {
     assert(len(config.name) > 0 && len(config.version) > 0)
+    permissions: [dynamic]string
+    permissions.allocator = context.temp_allocator
+    append(&permissions, ..config.permissions)
+    if len(config.native_host) > 0 {
+        append(&permissions, "nativeMessaging")
+    }
     manifest: Manifest = {
         manifest_version = 3,
         name = config.name,
         version = config.version,
         description = config.description,
         content_security_policy = {extension_pages = CONTENT_SECURITY_POLICY},
-        permissions = config.permissions,
+        permissions = permissions[:],
         // Firefox runs a content script only on pages it has host access to, Chromium does not mind
         host_permissions = config.content_matches,
     }
@@ -389,6 +397,7 @@ ExtensionBuild :: proc(config: ExtensionConfig, targets: bit_set[Target] = {.CHR
         }
     }
 
+    background_js, _ := strings.replace_all(BACKGROUND_JS, "{{NATIVE_HOST}}", config.native_host, context.temp_allocator)
     popup_html, _ := strings.replace_all(POPUP_HTML, "{{TITLE}}", config.name, context.temp_allocator)
     safe_name, _ := strings.replace_all(config.name, " ", "_", context.temp_allocator)
     for target in targets {
@@ -403,7 +412,7 @@ ExtensionBuild :: proc(config: ExtensionConfig, targets: bit_set[Target] = {.CHR
         ok &&= ExtensionWriteFile(directory, "odin.js", odin_js_data)
         ok &&= ExtensionWriteFile(directory, "imports.js", IMPORTS_JS)
         ok &&= ExtensionWriteFile(directory, "extension.js", EXTENSION_JS)
-        ok &&= ExtensionWriteFile(directory, "background.js", BACKGROUND_JS)
+        ok &&= ExtensionWriteFile(directory, "background.js", transmute([]byte)background_js)
         if config.popup {
             ok &&= ExtensionWriteFile(directory, "popup.html", transmute([]byte)popup_html)
             ok &&= ExtensionWriteFile(directory, "popup.js", POPUP_JS)
