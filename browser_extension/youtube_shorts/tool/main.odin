@@ -19,6 +19,10 @@ main :: proc() {
 		description = "Open YouTube Shorts as full videos, save Shorts from the desktop player. Written in Odin.",
 		id = "shorts-helper@odin-utilities",
 		permissions = {"storage"},
+		// the toolbar button opens a small popup with the settings (the full options page is behind a button in it)
+		popup = true,
+		popup_file = "youtube_shorts/popup.html",
+		popup_script_file = "youtube_shorts/popup.js",
 		// the Download button runs yt-dlp / youtube-dl through this program, ExtensionInstall registers it for the browser
 		native_host = "com.odin_utilities.shorts_helper",
 		native_host_executable = HELPER_EXECUTABLE,

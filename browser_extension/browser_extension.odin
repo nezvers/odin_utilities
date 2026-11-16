@@ -36,6 +36,8 @@ CONTENT_JS :: #load("templates/content.js")
 CONTENT_SECURITY_POLICY :: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
 // data_collection_permissions is read from 140, older Firefox only warns about it
 FIREFOX_MIN_VERSION :: "140.0"
+// Firefox for Android learned that key in 142, the add-ons validator warns when its minimum is older
+FIREFOX_ANDROID_MIN_VERSION :: "142.0"
 
 Target :: enum {
     CHROMIUM,
@@ -50,6 +52,8 @@ ExtensionConfig :: struct {
     description: string,
     id: string,                 // Firefox add-on id ("name@example.com"), required there to keep the storage between loads
     popup: bool,                // toolbar button that opens a popup (templates/popup.html, sends "ping")
+    popup_file: string,         // HTML file of the popup, empty - templates/popup.html. {{TITLE}} becomes the name. No inline scripts: the CSP forbids them
+    popup_script_file: string,  // JavaScript file of the popup (popup.js next to the page), empty - templates/popup.js
     content_matches: []string,  // match patterns ("https://example.com/*"): a content script. Empty - none
     content_script_file: string,// JavaScript file of the content script, empty - templates/content.js (sends "page:<title>")
     content_run_at: string,     // "document_start", "document_end" or "document_idle" (the default of the browser)
@@ -126,8 +130,14 @@ ManifestGecko :: struct {
 }
 
 @(private)
+ManifestGeckoAndroid :: struct {
+    strict_min_version: string `json:"strict_min_version"`,
+}
+
+@(private)
 ManifestSpecificSettings :: struct {
     gecko: ManifestGecko `json:"gecko"`,
+    gecko_android: ManifestGeckoAndroid `json:"gecko_android"`,
 }
 
 @(private)
@@ -206,7 +216,10 @@ ExtensionManifest :: proc(config: ExtensionConfig, target: Target, allocator := 
             manifest_version = manifest.manifest_version, name = manifest.name, version = manifest.version, description = manifest.description,
             action = manifest.action, background = manifest.background, content_security_policy = manifest.content_security_policy,
             content_scripts = manifest.content_scripts, permissions = manifest.permissions, options_ui = manifest.options_ui, host_permissions = manifest.host_permissions,
-            browser_specific_settings = {gecko = {id = config.id, strict_min_version = FIREFOX_MIN_VERSION, data_collection_permissions = {required = {"none"}}}},
+            browser_specific_settings = {
+                gecko = {id = config.id, strict_min_version = FIREFOX_MIN_VERSION, data_collection_permissions = {required = {"none"}}},
+                gecko_android = {strict_min_version = FIREFOX_ANDROID_MIN_VERSION},
+            },
         }
         data, error = json.marshal(firefox, options, allocator)
     }
@@ -381,8 +394,33 @@ ExtensionBuild :: proc(config: ExtensionConfig, targets: bit_set[Target] = {.CHR
         }
     }
 
-    background_js, _ := strings.replace_all(BACKGROUND_JS, "{{NATIVE_HOST}}", config.native_host, context.temp_allocator)
-    popup_html, _ := strings.replace_all(POPUP_HTML, "{{TITLE}}", config.name, context.temp_allocator)
+    // Two things of odin.js that the add-ons validator warns about and an extension never uses: the console of a page (innerHTML, the log goes to
+    // the browser console anyway) and the `evaluate` import (eval). A runtime of another Odin version that words them differently is kept as it is.
+    odin_js_text: string = string(odin_js_data)
+    odin_js_text, _ = strings.replace(odin_js_text, "info.innerHTML = data;", "info.textContent = data;", 1, context.temp_allocator)
+    odin_js_text, _ = strings.replace(odin_js_text, "eval.call(null, wasmMemoryInterface.loadString(str_ptr, str_len));", "throw new Error(\"evaluate is not available in an extension\");", 1, context.temp_allocator)
+    odin_js_data = transmute([]byte)odin_js_text
+
+    background_js, _ := strings.replace_all(BACKGROUND_JS,"{{NATIVE_HOST}}", config.native_host, context.temp_allocator)
+    popup_source: string = POPUP_HTML
+    popup_script: []byte = POPUP_JS
+    if len(config.popup_file) > 0 {
+        data, read_error := os.read_entire_file(config.popup_file, context.temp_allocator)
+        if read_error != nil {
+            fmt.eprintfln("browser_extension: could not read %s", config.popup_file)
+            return false
+        }
+        popup_source = string(data)
+    }
+    if len(config.popup_script_file) > 0 {
+        read_error: os.Error
+        popup_script, read_error = os.read_entire_file(config.popup_script_file, context.temp_allocator)
+        if read_error != nil {
+            fmt.eprintfln("browser_extension: could not read %s", config.popup_script_file)
+            return false
+        }
+    }
+    popup_html, _ := strings.replace_all(popup_source, "{{TITLE}}", config.name, context.temp_allocator)
     safe_name, _ := strings.replace_all(config.name, " ", "_", context.temp_allocator)
     for target in targets {
         directory: string = ExtensionTargetDirectory(config, target, context.temp_allocator)
@@ -399,7 +437,7 @@ ExtensionBuild :: proc(config: ExtensionConfig, targets: bit_set[Target] = {.CHR
         ok &&= ExtensionWriteFile(directory, "background.js", transmute([]byte)background_js)
         if config.popup {
             ok &&= ExtensionWriteFile(directory, "popup.html", transmute([]byte)popup_html)
-            ok &&= ExtensionWriteFile(directory, "popup.js", POPUP_JS)
+            ok &&= ExtensionWriteFile(directory, "popup.js", popup_script)
         }
         if len(config.content_matches) > 0 {
             ok &&= ExtensionWriteFile(directory, "content.js", content_script)
@@ -461,6 +499,8 @@ test_manifest_per_target :: proc(t: ^testing.T) {
     testing.expect_value(t, len(firefox_object["host_permissions"].(json.Array)), 1)
     gecko: json.Object = firefox_object["browser_specific_settings"].(json.Object)["gecko"].(json.Object)
     testing.expect_value(t, string(gecko["id"].(json.String)), "test@example.com")
+    android: json.Object = firefox_object["browser_specific_settings"].(json.Object)["gecko_android"].(json.Object)
+    testing.expect_value(t, string(android["strict_min_version"].(json.String)), FIREFOX_ANDROID_MIN_VERSION)
 
     testing.expect(t, strings.contains(string(json_string(chromium_object["content_security_policy"].(json.Object)["extension_pages"])), "wasm-unsafe-eval"))
     testing.expect_value(t, len(chromium_object["content_scripts"].(json.Array)), 1)
