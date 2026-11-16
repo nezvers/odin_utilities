@@ -46,6 +46,8 @@ copied code is refused before any packet is sent. The host can paste more replie
 - `link.odin`: `Link`: sockets (IPv4 + IPv6), gathering, NAT measurement, punching, port guessing, reliable channel, events, inbox.
 - `portmap.odin`: PCP, NAT-PMP and UPnP IGD port forwarding (blocking, time bounded).
 - `turn.odin`: TURN client (allocation, refresh, permissions, Send/Data indications), non blocking from `LinkUpdate`.
+- `relay_find.odin`: `RelayFind`, which relay (TURN) servers answer from this network, with their free sign-up pages.
+- `wireguard/`: optional encrypted tunnel (separate package), see "Encryption with WireGuard" below.
 - `sim_test.odin`: a simulated internet for the tests: NAT boxes with every mapping and filtering behavior, LANs, hairpin, IPv6 with
   firewalls, STUN servers with a second address, a TURN server. Deterministic, no sockets, milliseconds per scenario.
 - `tool/chat`: terminal chat, the demo and the manual test. `tool/probe`: which free servers work from this network. `tool/portmap`: can this
@@ -75,6 +77,26 @@ Memory: no allocation after the `Link` exists (the interface lists read at setup
 (`MAX_PEERS`, `WINDOW`, `INBOX`, `MAX_PAYLOAD`), failures are returned (`LinkSend` false), never grown. Time is a parameter (`now_ms`), a
 `Transport` (two procs) can replace the sockets, which is how the tests run a simulated network.
 
+## Looking for a relay (`chat --find-relay`)
+`RelayFind` sends one credential-less Allocate request to the known TURN servers and reports who answers. `chat host|join --find-relay` prints the
+alive ones with the page where their free tier is made, and lets you type `host:port username password` for one you have an account at (the same as
+`--turn`). An alive relay answers `401` and wants a login; a server that allocates without one would be listed as OPEN (none was found).
+
+## Encryption with WireGuard (`chat --wireguard`, optional)
+The Link has no encryption; WireGuard adds it and a virtual LAN (10.73.82.1 / .2). It is **not a relay**: the tunnel uses the same UDP path the punch
+found, so it does not get through a NAT the punch could not pass. The sequence (`tool/chat/tunnel.odin`): the chat connects as usual, then the two sides
+exchange WireGuard public keys over the live Link, the Link closes and WireGuard takes over **the same UDP port** towards the address that just worked
+(the NAT mapping belongs to the port, so the hole stays open), and the chat continues on a second Link whose only address is the tunnel's.
+- Says first what it will do (`wireguard.Describe`) and asks; `--yes` skips the question. Every step is printed as `[wireguard] ...` before it runs.
+- Windows: downloads the official `wireguard-installer.exe` from download.wireguard.com, checks its Authenticode signature (must be "WireGuard LLC"),
+  runs it elevated (UAC), later creates and removes the tunnel service the same way. Linux: installs `wireguard-tools` with the package manager through
+  sudo (apt, dnf, yum, pacman, zypper, apk) and uses `wg-quick`; sudo is asked once at the start. macOS: not supported.
+- One guest only; not over a TURN relay (needs a direct path); keys are made in the program (core:crypto), the private key only goes into a temporary
+  config file that is deleted right after the tunnel takes it. The tunnel is removed on `/quit` (closing the window by force leaves it: remove the
+  service `WireGuardTunnel$p2pchat` / interface `p2pchat`).
+- Verified: key derivation against RFC 7748, config text, package manager choice, and `--wireguard-dry` (both programs run the whole exchange and the
+  switch, the second Link connects on loopback, the chat flows). Not verified on this machine: the installer and the real tunnel (they need administrator rights).
+
 ## Reliable channel
 Selective repeat over a window of 16: the receiver keeps messages that arrive early and reports exactly which ones it has (next expected
 sequence + a bit mask), the sender resends only the missing ones on a timer of 2x the measured round trip (doubling per resend). Messages
@@ -93,8 +115,8 @@ arrive in order in about 2 s.
 ## What it cannot do (be honest with players)
 - **No relay without an account.** The relay case needs credentials from a provider (see above); without them the last two rows of the table fail
   and the link says why (`link.nat_mapping`, `PEER_FAILED`). A phone hotspot on one side usually fixes it.
-- **No encryption.** The random session id in the code is a shared secret that keeps strangers' packets out, not a key. Anyone who can read the
-  traffic can read the chat. Do not send passwords.
+- **No encryption by default.** The random session id in the code is a shared secret that keeps strangers' packets out, not a key. Anyone who can read the
+  traffic can read the chat. Do not send passwords, or use `--wireguard` (above).
 - A random-port symmetric NAT against another strict NAT cannot be guessed (no birthday attack: it would need hundreds of sockets).
 - The CHANGE-REQUEST test measures the router **and this computer's firewall** together (an unprogrammed Windows firewall drops unsolicited UDP,
   which is correct for security and does not stop punching, because the first outgoing packet opens it).
@@ -104,11 +126,12 @@ arrive in order in about 2 s.
 
 ## Tests
 ```
-odin test p2p -strict-style -vet                 # 28 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
+odin test p2p -strict-style -vet                 # 29 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
                                                  # 36 NAT pairs, NAT measurement, relay and renewal, IPv6, loss, failure timeouts
 odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, real STUN servers, real LAN addresses, 20% loss
-odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6)
+odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)
 odin run p2p/tool/chat -- join Bob               # computer 2, on another network for the real NAT test
+odin test p2p/wireguard -strict-style -vet       # 4 tests: keys, config, package manager choice
 odin run p2p/tool/probe                          # which free STUN / TURN servers work from here, and what this NAT does
 odin run p2p/tool/portmap                        # can this router forward a port (opens one, shows it, removes it)
 odin run p2p/tool/turn -- host:port user pass --relay-test

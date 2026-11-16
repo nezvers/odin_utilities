@@ -8,6 +8,8 @@
 //        --upnp (ask the router to forward the port: PCP, NAT-PMP, UPnP)  --no-ipv6
 //        --turn host:port user password (a TURN relay from a provider with a free tier)  --relay-only (offer only the relay)
 //        --port N (fixed local UDP port)
+//        --find-relay (look for TURN relays that answer from this network and offer to use one you have an account for)
+//        --wireguard [--yes] (optional encrypted tunnel: says what it does, installs WireGuard when missing, then the chat runs inside it)
 // In the chat: a line is sent to everybody; /code shows and copies the code again, /quit leaves.
 //
 // The stdin reader is a thread (a blocked read must not stop the network), everything else is one loop.
@@ -51,6 +53,9 @@ main :: proc() {
     config: p2p.LinkConfig
     use_stun: bool = true
     use_portmap: bool
+    find_relay: bool
+    use_wireguard: bool
+    yes: bool
     turn: TurnOptions
     for i := 1; i < len(os.args); i += 1 {
         argument: string = os.args[i]
@@ -63,6 +68,15 @@ main :: proc() {
             use_portmap = true
         case "--relay-only":
             config.relay_only = true
+        case "--find-relay":
+            find_relay = true
+        case "--wireguard":
+            use_wireguard = true
+        case "--wireguard-dry":
+            use_wireguard = true
+            tunnel_dry = true
+        case "--yes":
+            yes = true
         case "--no-ipv6":
             config.no_ipv6 = true
         case "--turn":
@@ -99,6 +113,12 @@ main :: proc() {
     }
     if name == "" {
         name = "host" if mode == "host" else "guest"
+    }
+    if find_relay {
+        FindRelay(&turn)
+    }
+    if use_wireguard {
+        TunnelPrepare(yes)
     }
     Chat(mode == "host", name, config, use_stun, use_portmap, turn)
 }
@@ -162,6 +182,7 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
     for {
         now: i64 = p2p.LinkNow()
         p2p.LinkUpdate(link, now)
+        link = TunnelUpdate(link, is_host, now)
 
         for {
             event, ok := p2p.LinkPollEvent(link)
@@ -182,6 +203,9 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
                 PrintFiltering(link)
             case .PEER_CONNECTED:
                 Announce(link, is_host, fmt.tprintf("* %s connected", p2p.LinkPeerName(link, event.peer)), event.peer, now)
+                if is_host {
+                    TunnelStart(link, name, now)
+                }
             case .PEER_FAILED:
                 fmt.printfln("* could not reach %s.", p2p.LinkPeerName(link, event.peer))
                 PrintFailureHint(link)
@@ -194,6 +218,9 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
             peer, length, ok := p2p.LinkReceive(link, buffer[:])
             if !ok {
                 break
+            }
+            if TunnelHandle(link, buffer[:length], is_host, name, now) {
+                continue
             }
             if length < 2 || buffer[0] != MSG_CHAT {
                 continue
@@ -217,6 +244,7 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
             case line == "":
             case line == "/quit":
                 p2p.LinkClose(link)
+                TunnelStop()
                 os.exit(0)
             case line == "/code":
                 if link.role != .NONE {

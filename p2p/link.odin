@@ -822,6 +822,23 @@ LinkPeerName :: proc(link: ^Link, peer: int) -> string {
     return string(link.peers[peer].name[:link.peers[peer].name_len])
 }
 
+// Messages sent to the peer and not yet acknowledged. Zero means everything arrived: safe moment to close the link.
+LinkPending :: proc(link: ^Link, peer: int) -> int {
+    assert(peer >= 0 && peer < MAX_PEERS)
+    return link.peers[peer].send_count
+}
+
+// Starts the 20 s countdown of peers that are still being reached over from `now_ms`. For when the invite was handled early but the
+// path only opens later (a tunnel that needs the person to click "allow" first).
+LinkRestartPunch :: proc(link: ^Link, now_ms: i64) {
+    for &peer in link.peers {
+        if peer.state == .PUNCHING {
+            peer.punch_start_ms = now_ms
+            peer.punch_last_ms = now_ms - PUNCH_INTERVAL_MS
+        }
+    }
+}
+
 LinkPeerCount :: proc(link: ^Link) -> (count: int) {
     for peer in link.peers {
         if peer.state == .CONNECTED {
