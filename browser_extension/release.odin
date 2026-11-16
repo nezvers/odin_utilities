@@ -22,6 +22,8 @@ import "core:testing"
 ReleaseOptions :: struct {
     executable: string,     // the browser, empty - looked up in the usual install folders
     no_open: bool,          // copy and register, but do not touch the browser (tests)
+    signing_key: string,    // Mozilla JWT issuer / secret for Firefox, empty - WEB_EXT_API_KEY / WEB_EXT_API_SECRET of the environment
+    signing_secret: string,
 }
 
 // The folder of the release copy of everything: <local app data>/<name> (Windows), <home>/.local/share/<name> elsewhere
@@ -162,6 +164,11 @@ ExtensionRelease :: proc(config: ExtensionConfig, browser: Browser, options: Rel
 // Signs the Firefox build with Mozilla (unlisted) and opens the signed file in Firefox, which asks to add it
 @(private)
 releaseFirefox :: proc(config: ExtensionConfig, stage, executable: string, options: ReleaseOptions) -> bool {
+    // credentials given by the caller win; web-ext reads them from the environment of this process (and so of its child)
+    if len(options.signing_key) > 0 && len(options.signing_secret) > 0 {
+        os.set_env("WEB_EXT_API_KEY", options.signing_key)
+        os.set_env("WEB_EXT_API_SECRET", options.signing_secret)
+    }
     key, has_key := os.lookup_env("WEB_EXT_API_KEY", context.temp_allocator)
     _, has_secret := os.lookup_env("WEB_EXT_API_SECRET", context.temp_allocator)
     if !has_key || len(key) == 0 || !has_secret {

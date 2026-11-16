@@ -27,3 +27,5 @@ log.txt
 /browser_extension/youtube_shorts/background/build/
 /browser_extension/youtube_shorts/host_karl2d/build/
 /browser_extension/youtube_shorts/host_karl2d/bin/
+# Mozilla signing credentials: template committed once, local edits are never committed (git update-index --skip-worktree)
+/browser_extension/youtube_shorts/tool/signing.odin

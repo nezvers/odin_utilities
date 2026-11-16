@@ -95,8 +95,9 @@ main :: proc() {
 
 	if release {
 		// the browser of your main profile, the way a release is installed (see release.odin for what each browser allows)
+		signing_key, signing_secret := SigningCredentials()
 		for browser in browsers {
-			if !extension.ExtensionRelease(config, browser, {executable = options.executable, no_open = no_open}) {
+			if !extension.ExtensionRelease(config, browser, {executable = options.executable, no_open = no_open, signing_key = signing_key, signing_secret = signing_secret}) {
 				os.exit(1)
 			}
 		}
