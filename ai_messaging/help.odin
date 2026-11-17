@@ -1,0 +1,93 @@
+#+build !js
+// The two helps of amsg. A person gets the commands of the terminal (spawn, dismiss, group messages, trust, ...); an agent gets the tools of
+// the channel and nothing else, so that what is meant for the person at the keyboard is never in front of the agent. `amsg --help` decides
+// by the environment: the agent process is started with AMSG_AGENT=1 (agent.odin), so a program that the agent runs sees the agent's help,
+// and `amsg` itself refuses to start a second member from there.
+package ai_messaging
+
+import "core:os"
+import "core:strings"
+import "core:testing"
+
+// Is this program running inside an agent (started by an agent, or by a tool the agent was given)?
+HelpInAgent :: proc() -> bool {
+    return os.get_env("AMSG_AGENT", context.temp_allocator) != ""
+}
+
+HelpUser :: proc() -> string {
+    return `amsg: a member of a channel of people and AI agents, no server.
+
+  amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--password P]
+                 [--exclude name]... [--include-git] [--keep-exec] [--derp [N] | --derp-host name] [--derp-only] [--auto-reconnect]
+                 [--agent [model]] [--agent-model M] [--agent-cmd claude] [--agent-tools Read,Glob] [--agent-dir agent_files]
+                 [--listen mentions|all|none] [--agent-trust ask|members|name,name] [--allow-remote-agent]
+
+Lines you type (only a line that starts with "--" and a letter is a command; a space in front makes any line a plain message):
+  text                          to your agent when you have one, else to everybody
+  /command                      a slash command of Claude Code, to your agent untouched (/context, /compact, /clear, ...)
+  --group_msg text              to everybody (--group is the short form)
+  --to bob text                 private, to one member
+  --send bob path               a file or a whole folder to bob (--send all path: everybody); the receiver accepts or declines
+  --yes 3 / --no 3              answer the offer number 3        --cancel 3      stop transfer 3
+  --who  --code  --reconnect  --quit
+Your agent (Claude Code, one per terminal, private to you):
+  --spawn [model]               start it (haiku, sonnet, opus or a full model id)         --dismiss     end it
+  --agents                      yours and who else has one       --listen mentions|all|none   what the channel passes to it
+  --trust ask|members|bob,carol how far it believes what other members write
+Other members' agents (they decide, you only ask):
+  --spawn bob [model]           ask bob to start their agent     --dismiss bob   ask them to end it
+  --cmd bob /compact            ask bob to run a slash command on their agent (--private is the same)
+  --yes agent / --no agent      what you answer when somebody asks that of you
+`
+}
+
+// Only the tools of the channel, as the agent uses them, and how its messages arrive.
+HelpAgent :: proc() -> string {
+    return `You are an agent in a channel of people and agents. You act in it only through your channel tools:
+  say(text)          a message to everybody
+  tell(to, text)     a message to one member
+  send(to, path)     a file or folder from your own folder to a member (or "all")
+  inbox()            what the channel said since you last looked
+  who()              the members, and which of them have an agent
+Your person's lines arrive as "[name] text". Messages of others arrive as "[group name] text" or "[private name] text". Answer your person
+in your normal reply; use the tools to speak to the channel. Be brief.
+`
+}
+
+// The help for whoever is asking.
+HelpFor :: proc() -> string {
+    return HelpAgent() if HelpInAgent() else HelpUser()
+}
+
+// The words that only a person at the keyboard has. Nothing of the agent side may contain them.
+USER_ONLY_WORDS :: [?]string{"--spawn", "--dismiss", "--group_msg", "--group ", "--trust", "--listen", "--agents", "--allow-remote-agent", "--agent-trust", "--agent-model", "--cmd", "--private", "--yes", "--no ", "--quit", "--send", "--to "}
+
+@(test)
+HelpSplitTest :: proc(t: ^testing.T) {
+    user: string = HelpUser()
+    for word in USER_ONLY_WORDS {
+        testing.expectf(t, strings.contains(user, word), "the help of a person lacks %q", word)
+    }
+    // the agent's help names the tools and none of the commands of the keyboard
+    agent: string = HelpAgent()
+    for tool in ([?]string{"say(", "tell(", "send(", "inbox(", "who("}) {
+        testing.expectf(t, strings.contains(agent, tool), "the help of an agent lacks %q", tool)
+    }
+    for word in USER_ONLY_WORDS {
+        testing.expectf(t, !strings.contains(agent, word), "the help of an agent shows %q", word)
+    }
+    // and nothing else the agent reads: its tool descriptions, its prompt
+    for word in USER_ONLY_WORDS {
+        testing.expectf(t, !strings.contains(MCP_TOOLS, word), "an MCP tool description shows %q", word)
+    }
+    session: ^Session = new(Session)
+    defer free(session)
+    for mode in ([?]TrustMode{.ASK, .MEMBERS, .LISTED}) {
+        session.config.trust = mode
+        session.config.trusted = "bob"
+        prompt_text: string = SessionTrustPrompt(session, "alice")
+        for word in USER_ONLY_WORDS {
+            testing.expectf(t, !strings.contains(prompt_text, word), "the trust paragraph shows %q", word)
+        }
+    }
+}

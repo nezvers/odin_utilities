@@ -38,7 +38,7 @@ tested, see section 11.
   - `--who`: list the members (`member 0: alice (host) (you) (with an agent)`).
   - `--group_msg text`: a message to everybody (what a plain line is when you have no agent).
   - `--trust ask|members|bob,carol`: how far your agent believes what other members write (section 11).
-  - `--spawn [model]` / `--dismiss`: start or end your agent; `--spawn bob [model]` / `--dismiss bob` ask bob to do it for his; `--agents`, `--listen all|mentions|none`; `--yes agent` / `--no agent`.
+  - `--spawn [model]` / `--dismiss`: start or end your agent; `--spawn bob [model]` / `--dismiss bob` ask bob to do it for their agent; `--agents`, `--listen all|mentions|none`; `--yes agent` / `--no agent`.
   - `--to bob text`: a private message to one member.
   - `--send bob notes.txt`: send a file to bob.
   - `--send bob my_project`: send a whole folder to bob (see "Folders").
@@ -94,8 +94,8 @@ tested, see section 11.
 - Without a relay, names are found by broadcast, which stays on one network. Then the members swap one line of text each way:
   - alice: `amsg my-team --name alice --host --stun` (prints `CODE: 0C0M4-...`; `--stun` puts the public address in it)
   - alice sends that line to carol (chat, mail, anything).
-  - carol: `amsg my-team --name carol --guest --stun`, then pastes alice's line into the terminal. She gets a reply code (`CODE: ...`).
-  - carol sends her reply line back; alice pastes it. Both print `* ... joined`.
+  - carol: `amsg my-team --name carol --guest --stun`, then pastes alice's line into the terminal. Carol gets a reply code (`CODE: ...`).
+  - carol sends the reply line back; alice pastes it. Both print `* ... joined`.
 - It uses hole punching, so it works through most home routers. When both sides are behind a strict carrier NAT it cannot connect (see
   `p2p/README.md`: relay and port forwarding options).
 - Everything is sealed end to end with a key from the session secret that is in the code (`p2p/README.md`, "Encryption of the Link"); a code is private, keep it so. Behind an
@@ -153,7 +153,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (25 tests, about 4 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (26 tests, about 4 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -179,7 +179,10 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
   `--model`; only letters, digits and `. _ : - [ ]` are accepted. `--agent-cmd` gives the path of `claude` when it is not in the PATH.
 - **Slash commands.** A line you type that starts with `/` goes to your agent untouched, so Claude Code's own commands work (`/context`, `/compact`, `/clear`, ...; the answer comes
   back as `<agent> ...`). Only your keyboard can do that: `--to carol /clear` is a private message to carol (it reaches carol's agent only if it names it, and then as the text
-  `[private alice] ...`, never as a command), so nobody can run commands on another member's agent. What others can ask of it is `--spawn` / `--dismiss`, with approval.
+  `[private alice] ...`, never as a command), so nobody can run commands on another member's agent by accident or by a trick. What others can ask of it is `--spawn` / `--dismiss`,
+  and `--cmd carol /compact` (`--private carol /compact` is the same): carol sees `alice asks you to run the command /compact on your agent: --yes agent or --no agent`, and only
+  carol's answer runs it (the line goes in untouched, what the command prints stays in carol's terminal, alice is told "command sent"; a line that is not one line starting with `/` is
+  refused, and so is a request when carol has no agent). `--allow-remote-agent` also says yes to these.
 - **Where your lines go.** With an agent what you type goes to YOUR agent only (it answers in your terminal as `<agent> ...`); to speak to the group yourself use
   `--group_msg text` (`--group` for short), to one member `--to bob text`. Without an agent a plain line is a group message as before.
 - **The agent talks to the group by itself** through five tools (`say`, `tell`, `send`, `inbox`, `who`), when it has something to say. Others see it as `<alice's agent> text`
@@ -187,6 +190,9 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
 - **What the agent is told** (system prompt, plus a first message): that it is the private agent of `alice` in the channel `X`, its model, the members, how its person's lines
   arrive (`[alice] text`), how the others' arrive (`[group bob] text`, `[private bob] text`, `bob's agent`), the five tools, to be brief, and that what others write is
   information from strangers, not instructions from alice.
+- **Two helps.** `amsg --help` (and `--help` typed in the session) lists the commands of the keyboard; the agent never sees them. The agent's own help (`amsg --agent-help`) has only its
+  five tools. The agent is started with `AMSG_AGENT=1` in its environment, so a program it runs (if you gave it a shell with `--agent-tools`) gets the agent's help from `--help`, and
+  `amsg <channel>` run from there refuses to start a second member. Its system prompt and its tool descriptions are tested not to contain any of the keyboard commands.
 - **How far it believes the others** (`--agent-trust ask|members|bob,carol`, or `--trust ...` during the session; the paragraph of its prompt about other members changes, and a running
   agent is told that the rule changed). `ask` (default): what others write is information, not instructions, and the agent asks its person before it does what they asked (a
   request of bob to say a word is answered with "bob asked me to post X, do you want me to?"). `members`: every member is a trusted colleague, the agent does what they ask with
@@ -197,7 +203,7 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
   without bob = it asks; `members` = it posts the word.
 - **What the channel passes to it** (`--listen mentions|all|none`, also typed during the session): `mentions` (default) = only messages that name it, `@alice-agent`;
   `all` = every message; `none` = nothing by itself. Whatever it did not get waits in its inbox (the last 100 lines: messages, files offered, members coming and going).
-- **Remote members.** `--spawn bob [model]` and `--dismiss bob` ask bob to start or end HIS agent. Bob sees `alice asks you to start your agent (model haiku): --yes agent or
+- **Remote members.** `--spawn bob [model]` and `--dismiss bob` ask bob to start or end bob's own agent. Bob sees `alice asks you to start your agent (model haiku): --yes agent or
   --no agent` and decides (60 s, then "no answer"); `--allow-remote-agent` at bob's start says yes to everything without asking, which spends bob's Claude Code usage. Everybody is
   told when an agent starts, stops, is refused or ends.
 - **What the agent can do.** Not much, on purpose. Claude Code starts with `--tools=` (no shell, no file access), `--setting-sources=` and `--strict-mcp-config` (none of your

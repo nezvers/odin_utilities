@@ -106,6 +106,8 @@ Handle :: proc(line: string, address: string, token: string, prompt_path: string
         if text, error := os.read_entire_file(prompt_path, context.temp_allocator); error == nil {
             Say(string(text))
         }
+    case command == "env":
+        Say(fmt.tprintf("env AMSG_AGENT=%s", os.get_env("AMSG_AGENT", context.temp_allocator)))
     case command == "die":
         os.exit(3)
     }

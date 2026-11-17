@@ -115,6 +115,7 @@ Event :: struct {
 
 AGENT_NOTE_MAX :: 120
 AGENT_MODEL_MAX :: 64
+AGENT_COMMAND_MAX :: 200
 
 EventText :: proc(event: ^Event) -> string {
     return string(event.text[:event.text_length])
@@ -757,10 +758,11 @@ MessengerSendText :: proc(m: ^Messenger, to: u8, text: string, now_ms: i64, agen
     return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
 }
 
-// Asks a member to start (SPAWN, with the model wanted, "" = its own default) or dismiss (DISMISS) its agent. The member decides: the answer
-// is an AGENT_STATUS event.
+// Asks a member to start (SPAWN, with the model wanted, "" = its own default) or dismiss (DISMISS) its agent, or to run a slash command on it
+// (COMMAND, `model` holds the command). The member decides: the answer is an AGENT_STATUS event.
 MessengerSendAgentRequest :: proc(m: ^Messenger, to: u8, action: AgentAction, model: string, now_ms: i64) -> bool {
-    if to == ALL || len(model) > AGENT_MODEL_MAX || !MessengerReady(m) {
+    limit: int = AGENT_COMMAND_MAX if action == .COMMAND else AGENT_MODEL_MAX
+    if to == ALL || len(model) > limit || !MessengerReady(m) {
         return false
     }
     writer: serial.Writer
@@ -904,7 +906,8 @@ Deliver :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
     case .AGENT_REQUEST:
         action: u8 = serial.ReadU8(&frame.body)
         model: string = serial.ReadString(&frame.body)
-        if serial.ReaderOk(&frame.body) && (action == u8(AgentAction.SPAWN) || action == u8(AgentAction.DISMISS)) && len(model) <= AGENT_MODEL_MAX {
+        limit: int = AGENT_COMMAND_MAX if action == u8(AgentAction.COMMAND) else AGENT_MODEL_MAX
+        if serial.ReaderOk(&frame.body) && action >= u8(AgentAction.SPAWN) && action <= u8(AgentAction.COMMAND) && len(model) <= limit {
             event: ^Event = EventPush(m, .AGENT_REQUEST, frame.from, model)
             event.action = AgentAction(action)
             event.to = frame.to

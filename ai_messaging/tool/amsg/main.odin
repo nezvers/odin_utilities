@@ -13,7 +13,8 @@
 //   hello                        to your agent (no agent: to all members)      --group_msg hello   to all members
 //   --to bob text                to one member                                 --send bob path     a file or a whole folder (all = everybody)
 //   --spawn [model]              start your agent (model: haiku, sonnet, opus or a full id)   --dismiss   end it
-//   --spawn bob [model]          ask bob to start his agent  --dismiss bob   ask him to end it (bob decides: --yes agent / --no agent)
+//   --spawn bob [model]          ask bob to start their agent  --dismiss bob   ask them to end it (bob decides: --yes agent / --no agent)
+//   --cmd bob /compact           ask bob to run a slash command on their agent (--private is the same; they decide)
 //   --agents                     who has an agent         --listen all|mentions|none   what the channel passes to your agent
 //   --trust ask|members|bob,carol   how far your agent believes other members: ask (default) = it asks you first, members = it does what
 //                                any member asks with its tools, a list = only those members
@@ -74,6 +75,22 @@ main :: proc() {
     if len(os.args) == 2 && os.args[1] == "--mcp-bridge" {
         ai.McpServe()                                  // started by the agent's Claude Code: the channel as tools, nothing else on stdout
         return
+    }
+    // two helps: a person gets the commands of the keyboard, an agent only its tools (help.odin)
+    for argument in os.args[1:] {
+        switch argument {
+        case "--help", "-h":
+            fmt.print(ai.HelpFor())
+            return
+        case "--agent-help":
+            fmt.print(ai.HelpAgent())
+            return
+        }
+    }
+    if ai.HelpInAgent() {
+        // run from inside an agent (it was given a shell): this program is for people, an agent has its channel tools
+        fmt.eprint(ai.HelpAgent())
+        os.exit(2)
     }
     config: ai.MessengerConfig
     session_config: ai.SessionConfig = {agent_command = "claude", agent_dir = "agent_files"}
@@ -202,7 +219,7 @@ main :: proc() {
         config.password = os.get_env("AMSG_PASSWORD", context.allocator)
     }
     if config.channel == "" {
-        fmt.eprintln("usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--exclude name] [--include-git] [--keep-exec] [--derp [N] | --derp-host name] [--derp-only] [--auto-reconnect] [--password P] [--agent [model]] [--agent-model M] [--agent-cmd claude] [--agent-tools Read,Glob] [--agent-dir agent_files] [--listen mentions|all|none] [--agent-trust ask|members|name,name] [--allow-remote-agent]")
+        fmt.eprintln("amsg --help lists everything. usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--exclude name] [--include-git] [--keep-exec] [--derp [N] | --derp-host name] [--derp-only] [--auto-reconnect] [--password P] [--agent [model]] [--agent-model M] [--agent-cmd claude] [--agent-tools Read,Glob] [--agent-dir agent_files] [--listen mentions|all|none] [--agent-trust ask|members|name,name] [--allow-remote-agent]")
         os.exit(2)
     }
     if include_git {
@@ -471,6 +488,23 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
         AgentCommand(m, strings.trim_space(line[len("--spawn"):]), true, now)
     case line == "--dismiss" || strings.has_prefix(line, "--dismiss "):
         AgentCommand(m, strings.trim_space(line[len("--dismiss"):]), false, now)
+    case line == "--help":
+        for text in strings.split_lines(ai.HelpUser(), context.temp_allocator) {
+            fmt.println(text)
+        }
+    case line == "--cmd" || line == "--private" || strings.has_prefix(line, "--cmd ") || strings.has_prefix(line, "--private "):
+        // a slash command for the agent of another member: they see it and decide
+        rest: string = strings.trim_space(line[strings.index_byte(line, ' ') + 1:]) if strings.contains_rune(line, ' ') else ""
+        space: int = strings.index_byte(rest, ' ')
+        member: u8 = ai.MessengerFindMember(m, rest[:space]) if space > 0 else ai.UNKNOWN_ID
+        command: string = strings.trim_space(rest[space + 1:]) if space > 0 else ""
+        if member == ai.UNKNOWN_ID || member == ai.MessengerSelf(m) || !ai.SlashCommandValid(command) {
+            Info("usage: --cmd <member> /command   (asks that member to run a slash command on their agent; for your own agent just type the command)")
+        } else if ai.SessionAsk(session, member, .COMMAND, command, now) {
+            Info(fmt.tprintf("asked %s to run %s on their agent, waiting for the answer", ai.MessengerName(m, member), command))
+        } else {
+            Info("not sent (not connected yet?)")
+        }
     case line == "--agents":
         for text in strings.split_lines(ai.SessionStatus(session), context.temp_allocator) {
             Info(text)
@@ -559,7 +593,7 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
             Info("no such transfer")
         }
     case IsToolCommand(line):
-        Info("commands: --group_msg text  --to name text  --send name|all path  --spawn [bob] [model]  --dismiss [bob]  --agents  --listen all|mentions|none  --trust ask|members|name,name  --yes n|agent  --no n|agent  --cancel n  --who  --code  --reconnect  --quit   (a line starting with a space is always a message; with an agent a plain line goes to it, without one to the group)")
+        Info("unknown command; --help lists them (a line starting with a space is always a message)")
     case LooksLikeCode(line):
         ok, message := ai.MessengerUseCode(m, line, now)
         _ = ok

@@ -33,7 +33,7 @@ Kind :: enum u8 {
     FILE_DONE,                          // [transfer u16][ok bool][message]: the receiver's verdict
     FILE_CANCEL,                        // [transfer u16][reason]: either side stops the transfer
     AGENT_TEXT,                         // [text]: like TEXT, said by the agent of the member (shown as the agent of `from`, not as `from`)
-    AGENT_REQUEST,                      // [action u8: 1 start, 2 dismiss][model]: asks the member to start or dismiss its own agent (it decides)
+    AGENT_REQUEST,                      // [action u8: 1 start, 2 dismiss, 3 slash command][model or the command]: asks the member to start or dismiss its own agent, or to run a slash command on it (it decides)
     AGENT_STATUS,                       // [running bool][model][note]: the agent of `from` started, stopped or was refused (`note` says why)
 }
 
@@ -41,6 +41,7 @@ AgentAction :: enum u8 {
     NONE,
     SPAWN,
     DISMISS,
+    COMMAND,                            // a slash command of Claude Code for the agent ("/compact"): the member sees it and decides
 }
 
 Frame :: struct {

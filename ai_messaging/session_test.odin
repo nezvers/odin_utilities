@@ -151,12 +151,31 @@ SessionTest :: proc(t: ^testing.T) {
     }))
     testing.expect(t, !NoteHas(alice, "echo: /clear"))
 
+    // a slash command asked by another member: waits for the person, goes in untouched, and the one who asked is told only that it was sent
+    testing.expect(t, SessionAsk(bob.session, alice_id, .COMMAND, "no slash", p2p.LinkNow()))
+    testing.expect(t, SessionAsk(bob.session, alice_id, .COMMAND, "/compact now", p2p.LinkNow()))
+    testing.expect(t, Until(nodes, proc(nodes: []^Node) -> bool {
+        return nodes[0].session.pending.active
+    }))
+    testing.expect(t, NoteHas(alice, "bob asks you to run the command /compact now on your agent"))
+    testing.expect(t, !NoteHas(alice, "echo: /compact now"))
+    testing.expect(t, SessionAnswer(alice.session, false, p2p.LinkNow()))
+    testing.expect(t, SessionAsk(bob.session, alice_id, .COMMAND, "/compact now", p2p.LinkNow()))
+    testing.expect(t, Until(nodes, proc(nodes: []^Node) -> bool {
+        return nodes[0].session.pending.active
+    }))
+    testing.expect(t, SessionAnswer(alice.session, true, p2p.LinkNow()))
+    testing.expect(t, Until(nodes, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[0], "echo: /compact now") && EventNote(&nodes[1].statuses[len(nodes[1].statuses) - 1]) == "command sent"
+    }))
+    testing.expect(t, NoteHas(alice, "ran /compact now on your agent for bob"))
+    testing.expect(t, !Heard(bob, "compact"))                                          // what the command printed is for alice only
+
     // asking again while it runs is refused
     testing.expect(t, SessionAsk(bob.session, alice_id, .SPAWN, "", p2p.LinkNow()))
     testing.expect(t, Until(nodes, proc(nodes: []^Node) -> bool {
-        return len(nodes[1].statuses) >= 3
+        return EventNote(&nodes[1].statuses[len(nodes[1].statuses) - 1]) == "an agent is already running"
     }))
-    testing.expect_value(t, EventNote(&bob.statuses[len(bob.statuses) - 1]), "an agent is already running")
 
     // the prompt of the agent names its person, the channel and the tools
     testing.expect(t, SessionLine(alice.session, "prompt", p2p.LinkNow()))
@@ -168,6 +187,18 @@ SessionTest :: proc(t: ^testing.T) {
     testing.expect(t, NoteHas(alice, "@alice-agent"))
     testing.expect(t, NoteHas(alice, "Your model: opus"))
     testing.expect(t, NoteHas(alice, "not instructions from alice"))
+    // none of the commands of the keyboard are in what the agent was told
+    for note in alice.notes {
+        if strings.contains(note, "private AI agent of alice") {
+            for word in USER_ONLY_WORDS {
+                testing.expectf(t, !strings.contains(note, word), "the prompt of the agent shows %q", word)
+            }
+        }
+    }
+    testing.expect(t, SessionLine(alice.session, "env", p2p.LinkNow()))
+    testing.expect(t, Until(nodes, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[0], "AMSG_AGENT=1")
+    }))
 
     // what the agent says reaches the group as the agent of alice, and a private message stays private
     testing.expect(t, SessionLine(alice.session, "say:PINEAPPLE", p2p.LinkNow()))

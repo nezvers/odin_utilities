@@ -145,8 +145,15 @@ AgentStart :: proc(agent: ^Agent, config: AgentConfig) -> (error: string, ok: bo
     if config.log_file != "" {
         agent.log, _ = os.open(config.log_file, {.Write, .Create, .Trunc})
     }
+    // the environment of the agent is ours plus a mark: a program run in it (amsg, if the agent were given a shell) knows it is not a person
+    environment, _ := os.environ(context.temp_allocator)
+    marked: [dynamic]string
+    marked.allocator = context.temp_allocator
+    append(&marked, ..environment)
+    append(&marked, "AMSG_AGENT=1")
     process, start_error := os.process_start({
         working_dir = config.working_dir,
+        env = marked[:],
         command = AgentCommand(config),
         stdin = stdin_read,
         stdout = stdout_write,

@@ -87,8 +87,8 @@ PendingRequest :: struct {
     active: bool,
     member: u8,
     action: AgentAction,
-    model: [AGENT_MODEL_MAX]byte,
-    model_length: int,
+    argument: [AGENT_COMMAND_MAX]byte,   // the model of a SPAWN, the slash command of a COMMAND
+    argument_length: int,
     since_ms: i64,
 }
 
@@ -464,7 +464,7 @@ SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
             copy(member.model[:member.model_length], text)
             note: string = EventNote(event)
             if event.ok {
-                SessionNote(s, .INFO, fmt.tprintf("%s's agent is running (%s)", name, text))
+                SessionNote(s, .INFO, fmt.tprintf("%s's agent is running (%s)%s", name, text, fmt.tprintf(": %s", note) if note != "" && note != "started" && note != "running" else ""))
             } else {
                 SessionNote(s, .INFO, fmt.tprintf("%s's agent is not running%s", name, fmt.tprintf(": %s", note) if note != "" else ""))
             }
@@ -481,13 +481,18 @@ SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
 @(private)
 SessionRequest :: proc(s: ^Session, event: ^Event, now_ms: i64) {
     requester: string = MessengerName(s.m, event.member)
-    model: string = EventText(event)
+    model: string = EventText(event)                  // the command of a COMMAND
     running: bool = AgentRunning(&s.agent)
     current: string = string(s.running_model[:s.running_model_length])
     refuse :: proc(s: ^Session, event: ^Event, running: bool, current: string, note: string, now_ms: i64) {
         MessengerSendAgentStatus(s.m, event.member, running, current, note, now_ms)
     }
-    if !AgentModelValid(model) || strings.has_prefix(model, "-") {
+    if event.action == .COMMAND {
+        if !SlashCommandValid(model) {
+            refuse(s, event, running, current, "that is not a slash command (one line that starts with /)", now_ms)
+            return
+        }
+    } else if !AgentModelValid(model) || strings.has_prefix(model, "-") {
         refuse(s, event, running, current, "that is not a model name", now_ms)
         return
     }
@@ -495,7 +500,7 @@ SessionRequest :: proc(s: ^Session, event: ^Event, now_ms: i64) {
     case event.action == .SPAWN && running:
         refuse(s, event, running, current, "an agent is already running", now_ms)
         return
-    case event.action == .DISMISS && !running:
+    case (event.action == .DISMISS || event.action == .COMMAND) && !running:
         refuse(s, event, running, current, "no agent is running", now_ms)
         return
     case s.pending.active:
@@ -507,9 +512,30 @@ SessionRequest :: proc(s: ^Session, event: ^Event, now_ms: i64) {
         return
     }
     s.pending = {active = true, member = event.member, action = event.action, since_ms = now_ms}
-    s.pending.model_length = copy(s.pending.model[:], model)
-    what: string = fmt.tprintf("start your agent (model %s)", model if model != "" else "of your choice") if event.action == .SPAWN else "dismiss your agent"
+    s.pending.argument_length = copy(s.pending.argument[:], model)
+    what: string
+    switch event.action {
+    case .SPAWN:
+        what = fmt.tprintf("start your agent (model %s)", model if model != "" else "of your choice")
+    case .COMMAND:
+        what = fmt.tprintf("run the command %s on your agent", model)
+    case .DISMISS, .NONE:
+        what = "dismiss your agent"
+    }
     SessionNote(s, .INFO, fmt.tprintf("%s asks you to %s: --yes agent  or  --no agent", requester, what))
+}
+
+// One line, starts with "/", no control characters: what can be handed to Claude Code as a command.
+SlashCommandValid :: proc(text: string) -> bool {
+    if len(text) < 2 || len(text) > AGENT_COMMAND_MAX || text[0] != '/' {
+        return false
+    }
+    for c in transmute([]byte)text {
+        if c < 32 || c == 127 {
+            return false
+        }
+    }
+    return true
 }
 
 // Does what was asked and tells the one who asked.
@@ -517,10 +543,18 @@ SessionRequest :: proc(s: ^Session, event: ^Event, now_ms: i64) {
 SessionDo :: proc(s: ^Session, requester: u8, action: AgentAction, model: string, now_ms: i64) {
     message: string
     ok: bool
-    if action == .SPAWN {
+    switch action {
+    case .SPAWN:
         message, ok = SessionSpawn(s, model, now_ms)
-    } else {
+    case .DISMISS, .NONE:
         message, ok = SessionDismiss(s, now_ms)
+    case .COMMAND:
+        // the command goes in as the whole line (see SessionLine); what it prints is for the person of this agent, not for who asked
+        ok = AgentRunning(&s.agent) && AgentSend(&s.agent, model)
+        message = fmt.tprintf("ran %s on your agent for %s", model, MessengerName(s.m, requester)) if ok else "your agent is not running"
+        if ok {
+            MessengerSendAgentStatus(s.m, requester, true, string(s.running_model[:s.running_model_length]), "command sent", now_ms)
+        }
     }
     SessionNote(s, .INFO, message)
     if !ok {
@@ -536,7 +570,7 @@ SessionAnswer :: proc(s: ^Session, accept: bool, now_ms: i64) -> bool {
     pending: PendingRequest = s.pending
     s.pending = {}
     if accept {
-        SessionDo(s, pending.member, pending.action, string(pending.model[:pending.model_length]), now_ms)
+        SessionDo(s, pending.member, pending.action, string(pending.argument[:pending.argument_length]), now_ms)
     } else {
         MessengerSendAgentStatus(s.m, pending.member, AgentRunning(&s.agent), string(s.running_model[:s.running_model_length]), "declined", now_ms)
         SessionNote(s, .INFO, "declined")
