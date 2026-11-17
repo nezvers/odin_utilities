@@ -17,7 +17,7 @@ import serial "../serial"
 INVITE_VERSION :: u8(4)
 NAME_MAX :: 24
 MAX_CANDIDATES :: 6
-CODE_BINARY_MAX :: 1 + 1 + 8 + 4 + 1 + NAME_MAX + 1 + MAX_CANDIDATES * 7 + 12 + 5 + 1 + 32 + 4
+CODE_BINARY_MAX :: 1 + 1 + 8 + 4 + 1 + NAME_MAX + 1 + MAX_CANDIDATES * 7 + 12 + 5 + 1 + 1 + DERP_HOST_MAX + 32 + 4
 CODE_TEXT_MAX :: (CODE_BINARY_MAX * 8 + 4) / 5 + CODE_BINARY_MAX     // characters plus the dashes between groups of 5
 
 CODE_ALPHABET := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -42,8 +42,21 @@ Invite :: struct {
     last_port: int,                 // the last public port it handed out while gathering
     // A DERP relay both sides can use (see derp.odin): the index in DERP_SERVERS plus one (0 = none) and the sender's public key there.
     // With it the code can be short (no candidates): the rest travels through the relay.
-    derp_server: u8,
+    derp_server: u8,                // DERP_CUSTOM: a relay that is not in the list, its name is in derp_host
+    derp_host: [DERP_HOST_MAX]byte,
+    derp_host_length: int,
     derp_key: [32]byte,
+}
+
+// The relay an invite names ("" when none).
+InviteDerpHost :: proc(invite: ^Invite) -> string {
+    switch {
+    case invite.derp_server == DERP_CUSTOM:
+        return string(invite.derp_host[:invite.derp_host_length])
+    case invite.derp_server != 0 && int(invite.derp_server) <= len(DERP_SERVERS):
+        return DERP_SERVERS[invite.derp_server - 1].host
+    }
+    return ""
 }
 
 InviteSetName :: proc(invite: ^Invite, name: string) {
@@ -112,6 +125,11 @@ InviteToBinary :: proc(invite: Invite, binary: []byte) -> int {
     serial.WriteU8(&writer, u8(i8(invite.port_delta)))
     serial.WriteU16(&writer, u16(invite.last_port))
     serial.WriteU8(&writer, invite.derp_server)
+    if invite.derp_server == DERP_CUSTOM {
+        serial.WriteU8(&writer, u8(invite.derp_host_length))
+        host: [DERP_HOST_MAX]byte = invite.derp_host
+        serial.WriteBytes(&writer, host[:invite.derp_host_length])
+    }
     if invite.derp_server != 0 {
         key: [32]byte = invite.derp_key
         serial.WriteBytes(&writer, key[:])
@@ -207,7 +225,13 @@ InviteFromBinary :: proc(binary: []byte) -> (invite: Invite, ok: bool) {
     invite.last_port = int(serial.ReadU16(&reader))
     invite.derp_server = serial.ReadU8(&reader)
     if invite.derp_server != 0 {
-        if int(invite.derp_server) > len(DERP_SERVERS) {
+        if invite.derp_server == DERP_CUSTOM {
+            invite.derp_host_length = int(serial.ReadU8(&reader))
+            if invite.derp_host_length == 0 || invite.derp_host_length > DERP_HOST_MAX {
+                return
+            }
+            copy(invite.derp_host[:], serial.ReadBytes(&reader, invite.derp_host_length))
+        } else if int(invite.derp_server) > len(DERP_SERVERS) {
             return
         }
         copy(invite.derp_key[:], serial.ReadBytes(&reader, 32))

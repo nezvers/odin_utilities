@@ -76,6 +76,10 @@ provider inside `amsg`) is **not built yet**, see "Next".
   when it cannot (two strict NATs). Without a number the fastest relay is looked for, which can differ between members: pass the number. Start the first
   member before the others (or force `--host` / `--guest`). `--derp-only` sends everything through the relay. The relay is Tailscale's free public service (no
   account), it may change or limit use; the channel name is the secret, anybody who knows it can join.
+- If the relays are down or changed: the tool says why and what to do, and the relay reconnects by itself. `--derp-host name` uses any DERP server (your own, or a
+  current one from `odin run p2p/tool/derp -- map`), `odin run p2p/tool/derp -- diagnose` explains the situation. When the HOST is lost, `--reconnect` (a command, or
+  `--auto-reconnect` by itself) closes this member and joins again: whoever searches first takes over as the host and the others find it (tested live: the host quit,
+  a guest took over, a later member joined it). See `p2p/README.md`, "If the relays go away or change".
 - Without a relay, names are found by broadcast, which stays on one network. Then the members swap one line of text each way:
   - alice: `amsg my-team --name alice --host --stun` (prints `CODE: 0C0M4-...`; `--stun` puts the public address in it)
   - alice sends that line to carol (chat, mail, anything).

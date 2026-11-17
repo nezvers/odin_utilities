@@ -60,7 +60,9 @@ MessengerConfig :: struct {
     // of p2p.DERP_SERVERS, all members must use the same one), 0 = off. The host sits at the relay under a key derived from the channel name,
     // guests ask that key and join; nothing is pasted. The relay carries the connection when no direct path works and the members move to a
     // direct path when one does. The name is the secret: anybody who knows it can join.
+    // 255 (p2p.DERP_CUSTOM) with `derp_host`: any DERP server by name (a relay of your own, or one that is not in the built in list).
     derp_server: int,
+    derp_host: string,
     use_stun: bool,                      // look up the public address for codes that are sent over the internet (blocking at open)
     receive_dir: string,                 // incoming files go here ("" refuses all)
     auto_accept: bool,                   // accept offers without asking (else a FILE_OFFERED event, then MessengerFileAnswer)
@@ -177,6 +179,8 @@ Messenger :: struct {
     channel_buffer: [64]byte,
     name_buffer: [NAME_MAX]byte,
     dir_buffer: [PATH_MAX]byte,
+    derp_host_buffer: [p2p.DERP_HOST_MAX]byte,
+    ended: bool,                         // a guest lost its host (or the channel was never reachable): the program may MessengerClose and MessengerOpen again
     link: p2p.Link,
     phase: Phase,
     is_host: bool,
@@ -196,6 +200,7 @@ Messenger :: struct {
     channel_private: p2p.BoxKey,         // the channel's identity at the relay (derived from its name)
     channel_public: p2p.BoxKey,
     derp_finding: bool,
+    derp_was_lost: bool,
     events: [EVENTS]Event,
     event_head: int,
     event_count: int,
@@ -217,6 +222,7 @@ MessengerOpen :: proc(m: ^Messenger, config: MessengerConfig, now_ms: i64) -> bo
     m.config.channel = StringKeep(m.channel_buffer[:], config.channel)
     m.config.name = StringKeep(m.name_buffer[:], config.name)
     MessengerSetReceiveDir(m, config.receive_dir)
+    m.config.derp_host = StringKeep(m.derp_host_buffer[:], config.derp_host)
     if m.config.max_file_size == 0 {
         m.config.max_file_size = DEFAULT_MAX_FILE
     }
@@ -235,12 +241,20 @@ MessengerOpen :: proc(m: ^Messenger, config: MessengerConfig, now_ms: i64) -> bo
     if config.use_stun {
         m.stun_count = p2p.LinkResolveStun(m.stun[:])
     }
-    if config.derp_server != 0 && !p2p.LinkDerpBegin(&m.link, config.derp_server, now_ms) {
+    if config.derp_server != 0 && !DerpStart(m, now_ms) {
         return false
     }
     p2p.LinkGatherBegin(&m.link, m.stun[:m.stun_count], now_ms)
     m.phase = .GATHERING
     return true
+}
+
+@(private)
+DerpStart :: proc(m: ^Messenger, now_ms: i64) -> bool {
+    if m.config.derp_server == p2p.DERP_CUSTOM {
+        return p2p.LinkDerpBeginHost(&m.link, m.config.derp_host, now_ms)
+    }
+    return p2p.LinkDerpBegin(&m.link, m.config.derp_server, now_ms)
 }
 
 @(private)
@@ -401,7 +415,9 @@ Start :: proc(m: ^Messenger, now_ms: i64) {
     crypto.rand_bytes(jitter[:])
     m.search_ms = SEARCH_MS + i64(jitter[0]) * 700 / 255
     if m.config.derp_server != 0 {
-        m.search_ms += 3000                  // the relay needs its round trips: do not take over a channel whose host just has not answered yet
+        // the relay needs its round trips: do not take over a channel whose host just has not answered yet. The spread is wide so that,
+        // when a host is lost and everybody searches again, one member finishes first and the others find it instead of all hosting.
+        m.search_ms += 3000 + i64(jitter[0]) * 3000 / 255
     }
     m.ask_ms = now_ms - ASK_INTERVAL_MS
 }
@@ -445,7 +461,7 @@ Search :: proc(m: ^Messenger, now_ms: i64) {
             m.link.config.derp_private = m.channel_private
             m.link.config.derp_private_set = true
             m.derp_finding = false
-            if p2p.LinkDerpBegin(&m.link, m.config.derp_server, now_ms) {
+            if DerpStart(m, now_ms) {
                 m.phase = .HOSTING_WAIT
                 return
             }
@@ -570,7 +586,15 @@ LinkEvents :: proc(m: ^Messenger, now_ms: i64) {
                 m.phase = .RUNNING
             }
         case .DERP_FAILED:
-            EventPush(m, .ERROR, 0, fmt.tprintf("the relay cannot be used: %s", m.link.derp.failure))
+            EventPush(m, .ERROR, 0, fmt.tprintf("the relay cannot be used: %s. %s (it keeps trying in the background)", m.link.derp.failure, p2p.DerpAdvice(m.link.derp.failure_kind)))
+        case .DERP_LOST:
+            m.derp_was_lost = true
+            EventPush(m, .ERROR, 0, "the relay connection was lost, reconnecting by itself")
+        case .DERP_READY:
+            if m.derp_was_lost {
+                m.derp_was_lost = false
+                EventPush(m, .ERROR, 0, "the relay is back")
+            }
         case .PEER_FAILED:
             if !m.is_host {
                 EventPush(m, .ERROR, HOST_ID, "could not reach the host (is it still running? firewall? same network?)")
@@ -592,7 +616,8 @@ LinkEvents :: proc(m: ^Messenger, now_ms: i64) {
                         m.members[id] = {}
                     }
                 }
-                EventPush(m, .ERROR, HOST_ID, "the host is gone, the channel ended")
+                m.ended = true
+                EventPush(m, .ERROR, HOST_ID, "the host is gone, the channel ended (MessengerClose and MessengerOpen again to rejoin or take over)")
             }
         }
     }

@@ -31,15 +31,16 @@ SelfTest :: proc(use_stun: bool, use_portmap: bool, derp: DerpOptions) -> int {
     }
     if derp.enabled {
         server: int = derp.server
-        if server == 0 {
+        if derp.host == "" && server == 0 {
             candidates: [6]int = {4, 8, 1, 14, 22, 2}
             server = p2p.DerpRace(candidates[:], 6000)
         }
-        if server == 0 || !p2p.LinkDerpBegin(host, server, p2p.LinkNow()) || !p2p.LinkDerpBegin(guest, server, p2p.LinkNow()) {
+        started: bool = p2p.LinkDerpBeginHost(host, derp.host, p2p.LinkNow()) && p2p.LinkDerpBeginHost(guest, derp.host, p2p.LinkNow()) if derp.host != "" else server != 0 && p2p.LinkDerpBegin(host, server, p2p.LinkNow()) && p2p.LinkDerpBegin(guest, server, p2p.LinkNow())
+        if !started {
             fmt.eprintln("FAIL: no DERP relay could be used")
             return 1
         }
-        fmt.printfln("DERP relay: %s (%s)%s", p2p.DERP_SERVERS[server - 1].host, p2p.DERP_SERVERS[server - 1].place, ", no addresses offered: everything goes through it" if derp.only else "")
+        fmt.printfln("DERP relay: %s%s", derp.host if derp.host != "" else p2p.DERP_SERVERS[server - 1].host, ", no addresses offered: everything goes through it" if derp.only else "")
     }
     p2p.LinkGatherBegin(host, servers[:server_count], p2p.LinkNow())
     p2p.LinkGatherBegin(guest, servers[:server_count], p2p.LinkNow())

@@ -106,7 +106,8 @@ LinkEventKind :: enum {
     RELAY_READY,                    // the TURN server gave a relayed address (now a candidate)
     RELAY_FAILED,                   // wrong credentials, no answer, quota: link.turn.failure says why
     DERP_READY,                     // the DERP relay connection is up (codes made from now on carry it)
-    DERP_FAILED,                    // link.derp.failure says why
+    DERP_FAILED,                    // link.derp.failure says why (and link.derp.failure_kind, DerpAdvice(kind) what to do)
+    DERP_LOST,                      // a working relay connection ended: it is reconnected by itself (DERP_READY comes again)
     DERP_HOST_FOUND,                // LinkDerpFind got an answer: link.derp.found is the host's invite, LinkJoin it
 }
 
@@ -460,7 +461,7 @@ LinkGatherBegin :: proc(link: ^Link, servers: []net.Endpoint, now_ms: i64) {
 }
 
 LinkGathered :: proc(link: ^Link) -> bool {
-    return link.gather == .DONE && link.turn.phase != .ALLOCATING && link.derp.state != .CONNECTING
+    return link.gather == .DONE && link.turn.phase != .ALLOCATING && !(link.derp.state == .CONNECTING && !link.derp.reconnecting)
 }
 
 // Asks the router to forward this link's UDP port (PCP, NAT-PMP or UPnP, see portmap.odin). Call it after the gathering and
@@ -816,6 +817,10 @@ LinkMakeInvite :: proc(link: ^Link, short: bool = false) -> (invite: Invite) {
     if link.derp.state == .READY {
         invite.derp_server = u8(link.derp.server)
         invite.derp_key = link.derp.public
+        if link.derp.server == DERP_CUSTOM {
+            invite.derp_host_length = link.derp.host_length
+            copy(invite.derp_host[:], link.derp.host[:link.derp.host_length])
+        }
     }
     for i in 0 ..< link.candidate_count {
         if short || link.config.derp_only && link.derp.state == .READY {
@@ -847,7 +852,7 @@ PeerStart :: proc(link: ^Link, slot: int, invite: Invite, now_ms: i64) {
     peer.punch_start_ms = now_ms
     peer.punch_last_ms = now_ms - PUNCH_INTERVAL_MS
     // the same relay on both sides: its key is one more candidate, and the way to signal
-    if invite.derp_server != 0 && link.derp.state == .READY && int(invite.derp_server) == link.derp.server {
+    if link.derp.state == .READY && DerpSameRelay(&link.derp, invite) {
         peer.has_derp = true
         peer.derp_key = invite.derp_key
         PeerAddDerpCandidate(peer, slot)

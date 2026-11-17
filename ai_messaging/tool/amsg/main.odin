@@ -2,7 +2,7 @@
 // part that talks to the channel and to the person at the keyboard.
 //
 //   amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N]
-//                  [--json] [--exclude name]... [--include-git] [--keep-exec] [--derp [N]] [--derp-only]
+//                  [--json] [--exclude name]... [--include-git] [--keep-exec] [--derp [N]] [--derp-host name] [--derp-only] [--auto-reconnect]
 //
 // The first one to open a channel hosts it; the others find it by the channel name on the same computer or network. Over the
 // internet one pastes the code of the other (--code shows yours). Lines typed here:
@@ -15,6 +15,9 @@
 // --derp: find the others over the internet by the channel name alone, through a free Tailscale DERP relay (no account, nothing to paste).
 // Everybody uses the same relay: N is its number (see p2p/tool/derp), without N the fastest one is looked for (so give N when members start
 // at different places). --derp-only sends everything through the relay (no addresses offered): for tests and privacy.
+// --derp-host name: any DERP server by name instead of the built in list (a relay of your own, or a current one from `derp -- map`).
+// --reconnect (a command) closes this member and joins the channel again; --auto-reconnect does it by itself when the host is lost, so
+// the channel finds a new host (whoever searches first takes over) and everybody comes back.
 // A folder is sent as one new folder at the receiver, all or nothing, without .git, node_modules, __pycache__, .DS_Store and
 // whatever --exclude names (a name, or *.ext); --include-git keeps .git. Received folders keep executable bits only with --keep-exec.
 //
@@ -47,6 +50,8 @@ LineQueue :: struct {
 
 lines: LineQueue
 json_mode: bool
+auto_reconnect: bool
+reopen_requested: bool
 excludes: [MAX_EXCLUDES]string
 exclude_count: int
 
@@ -88,6 +93,17 @@ main :: proc() {
                     i += 1
                 }
             }
+        case "--derp-host":
+            i += 1
+            if i >= len(os.args) {
+                fmt.eprintln("--derp-host needs a name, for example derp.example.com or derp.example.com:8443")
+                os.exit(2)
+            }
+            use_derp = true
+            config.derp_server = p2p.DERP_CUSTOM
+            config.derp_host = os.args[i]
+        case "--auto-reconnect":
+            auto_reconnect = true
         case "--derp-only":
             use_derp = true
             config.link.derp_only = true
@@ -122,7 +138,7 @@ main :: proc() {
         }
     }
     if config.channel == "" {
-        fmt.eprintln("usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--exclude name] [--include-git] [--keep-exec]")
+        fmt.eprintln("usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--exclude name] [--include-git] [--keep-exec] [--derp [N] | --derp-host name] [--derp-only] [--auto-reconnect]")
         os.exit(2)
     }
     if include_git {
@@ -153,7 +169,7 @@ main :: proc() {
         } else {
             Info(fmt.tprintf("using the relay %s (%s); other members must pass --derp %d", p2p.DERP_SERVERS[config.derp_server - 1].host, p2p.DERP_SERVERS[config.derp_server - 1].place, config.derp_server))
         }
-    } else if use_derp && (config.derp_server < 1 || config.derp_server > len(p2p.DERP_SERVERS)) {
+    } else if use_derp && config.derp_server != p2p.DERP_CUSTOM && (config.derp_server < 1 || config.derp_server > len(p2p.DERP_SERVERS)) {
         fmt.eprintfln("--derp N: N is 1..%d", len(p2p.DERP_SERVERS))
         os.exit(2)
     }
@@ -291,8 +307,25 @@ ShowEventJson :: proc(m: ^ai.Messenger, event: ^ai.Event, text: string, name: st
 
 Loop :: proc(m: ^ai.Messenger, config: ai.MessengerConfig) {
     announced_code: bool
+    reconnect_at: i64
     for {
         now: i64 = p2p.LinkNow()
+        if m.ended && auto_reconnect && reconnect_at == 0 {
+            // a little time and a spread, so that not everybody tries to take over the channel at the same instant
+            reconnect_at = now + 1500 + i64(os.get_pid() % 7) * 400
+            Info("the host is gone: rejoining the channel by itself in a moment (whoever is first takes over as the host)")
+        }
+        if reopen_requested || reconnect_at != 0 && now >= reconnect_at {
+            reopen_requested = false
+            reconnect_at = 0
+            Info("reconnecting to the channel...")
+            ai.MessengerClose(m)
+            if !ai.MessengerOpen(m, config, now) {
+                Info("cannot reopen the socket")
+                os.exit(1)
+            }
+            announced_code = false
+        }
         ai.MessengerUpdate(m, now)
         for {
             event, ok := ai.MessengerPoll(m)
@@ -341,6 +374,8 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
         os.exit(0)
     case line == "--code":
         ShowCode(m, "your code")
+    case line == "--reconnect":
+        reopen_requested = true
     case line == "--who":
         for id in 0 ..< ai.MAX_MEMBERS {
             name: string = ai.MessengerName(m, u8(id))
@@ -405,7 +440,7 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
             Info("no such transfer")
         }
     case IsToolCommand(line):
-        Info("commands: --to name text  --send name|all path  --yes n  --no n  --cancel n  --who  --code  --quit   (a line starting with a space is always a message)")
+        Info("commands: --to name text  --send name|all path  --yes n  --no n  --cancel n  --who  --code  --reconnect  --quit   (a line starting with a space is always a message)")
     case LooksLikeCode(line):
         ok, message := ai.MessengerUseCode(m, line, now)
         _ = ok

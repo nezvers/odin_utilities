@@ -38,6 +38,7 @@ TurnOptions :: struct {
 DerpOptions :: struct {
     enabled: bool,
     server: int,                        // 1 = first of p2p.DERP_SERVERS, 0 = look for the fastest
+    host: string,                       // --derp-host: any DERP server by name (a relay of your own, or one that is not in the list)
     only: bool,
     short: bool,
     disabled: bool,                     // --no-derp
@@ -105,6 +106,14 @@ main :: proc() {
                     i += 1
                 }
             }
+        case "--derp-host":
+            i += 1
+            if i >= len(os.args) {
+                fmt.eprintln("--derp-host needs a name, for example derp.example.com or derp.example.com:8443")
+                os.exit(2)
+            }
+            derp.enabled = true
+            derp.host = os.args[i]
         case "--derp-only":
             derp.enabled = true
             derp.only = true
@@ -184,7 +193,12 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
             fmt.printfln("Cannot resolve the TURN server %s, going without a relay.", turn.host)
         }
     }
-    if derp.enabled && is_host {
+    if derp.enabled && is_host && derp.host != "" {
+        fmt.printfln("Using the DERP relay %s.", derp.host)
+        if !p2p.LinkDerpBeginHost(link, derp.host, p2p.LinkNow()) {
+            fmt.println("That relay name cannot be used (empty or longer than 48 characters).")
+        }
+    } else if derp.enabled && is_host {
         server: int = derp.server
         if server == 0 {
             fmt.println("Looking for the fastest DERP relay (free Tailscale relays, no account)...")
@@ -254,9 +268,14 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
             switch event.kind {
             case .GATHERED:
             case .DERP_READY:
-                fmt.printfln("DERP relay ready: %s (%s), our key there %s...", p2p.DERP_SERVERS[link.derp.server - 1].host, p2p.DERP_SERVERS[link.derp.server - 1].place, KeyStart(link.derp.public))
+                fmt.printfln("DERP relay ready: %s, our key there %s...", p2p.LinkDerpHost(link), KeyStart(link.derp.public))
             case .DERP_FAILED:
                 fmt.printfln("The DERP relay could not be used: %s", link.derp.failure)
+                fmt.printfln("  %s", p2p.DerpAdvice(link.derp.failure_kind))
+                fmt.println("  It keeps trying in the background; codes made now have no relay in them. `odin run p2p/tool/derp -- diagnose` tells more.")
+            case .DERP_HOST_FOUND:                        // channel rendezvous is for programs (ai_messaging), not this chat
+            case .DERP_LOST:
+                fmt.printfln("The DERP relay connection was lost (%s): reconnecting by itself.", link.derp.failure)
             case .RELAY_READY:
                 fmt.printfln("Relay ready: %s (used only when a direct path does not work)", net.endpoint_to_string(link.turn.relayed, context.temp_allocator))
             case .RELAY_FAILED:
@@ -330,8 +349,9 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
                         }
                     } else if !is_host && invite.kind == .INVITE && link.role == .NONE && !has_pending {
                         if invite.derp_server != 0 && link.derp.state == .OFF && !derp.disabled {
-                            fmt.printfln("The code names the DERP relay %s: connecting to it first...", p2p.DERP_SERVERS[invite.derp_server - 1].host)
-                            p2p.LinkDerpBegin(link, int(invite.derp_server), now)
+                            invite_copy: p2p.Invite = invite
+                            fmt.printfln("The code names the DERP relay %s: connecting to it first...", p2p.InviteDerpHost(&invite_copy))
+                            p2p.LinkDerpBeginInvite(link, invite, now)
                             pending_invite = invite
                             has_pending = true
                         } else {

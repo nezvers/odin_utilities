@@ -64,6 +64,10 @@ SimDerpStatus :: proc(user: rawptr) -> DerpPathState {
 }
 
 // Connects a link to the fake relay with a key made from `seed` (the simulation needs no randomness).
+// "Reconnecting" in the simulation: nothing to rebuild, the relay answers again when it is up (see SimDerpStatus).
+SimDerpRestart :: proc(path: ^DerpPath) {
+}
+
 SimDerpAttach :: proc(host: ^SimHost, link: ^Link, seed: u8, now_ms: i64) {
     private: BoxKey
     for i in 0 ..< 32 {
@@ -76,7 +80,7 @@ SimDerpAttach :: proc(host: ^SimHost, link: ^Link, seed: u8, now_ms: i64) {
 
 SimDerpAttachKey :: proc(host: ^SimHost, link: ^Link, private: BoxKey, now_ms: i64) {
     link.derp = {}
-    LinkDerpTransport(link, 8, private, host, SimDerpSend, SimDerpPoll, SimDerpStatus, now_ms)
+    LinkDerpTransport(link, 8, private, host, SimDerpSend, SimDerpPoll, SimDerpStatus, now_ms, SimDerpRestart)
     host.derp.registered = true
     host.derp.key = link.derp.public
 }
@@ -274,7 +278,7 @@ SimDerpDownTest :: proc(t: ^testing.T) {
     defer free(b)
     now: i64
     testing.expect(t, SimConnectDerp(sim, a, b, &now, .FULL_CODES) >= 0)
-    testing.expect_value(t, a.derp.state, DerpPathState.FAILED)
+    testing.expect(t, a.derp.state != DerpPathState.READY)
     failed: bool
     for {
         event, ok := LinkPollEvent(a)
@@ -407,4 +411,98 @@ SimDerpChannelTest :: proc(t: ^testing.T) {
     }
     testing.expect(t, c.derp.find)
     testing.expect_value(t, c.role, LinkRole.NONE)
+}
+
+// The relay goes away for a few seconds in the middle of a chat and comes back: the link reports DERP_LOST, reconnects by itself, the
+// reliable channel resends what was lost meanwhile, nothing arrives twice or out of order, the peers never notice more than a pause.
+@(test)
+SimDerpReconnectTest :: proc(t: ^testing.T) {
+    sim: ^Sim = new(Sim)
+    defer free(sim)
+    SimInit(sim)
+    a: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.SYMMETRIC_RANDOM))))
+    b: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.SYMMETRIC_RANDOM))))
+    defer free(a)
+    defer free(b)
+    now: i64
+    testing.expect(t, SimConnectDerp(sim, a, b, &now, .SHORT) >= 0)
+    sent, received: int
+    buffer: [MAX_PAYLOAD]byte
+    lost, recovered: bool
+    for step in 0 ..< 2500 {
+        if step == 300 {
+            sim.derp_down = true
+        }
+        if step == 700 {
+            sim.derp_down = false                       // 4 s of nothing
+        }
+        if sent < 200 {
+            message: [4]byte = {byte(sent), byte(sent >> 8), 0, 0}
+            if LinkSend(a, 0, message[:], true, now) {
+                sent += 1
+            }
+        }
+        SimPump(a, b, &now, 1)
+        for {
+            _, length, ok := LinkReceive(b, buffer[:])
+            if !ok {
+                break
+            }
+            testing.expect_value(t, length, 4)
+            testing.expect_value(t, int(buffer[0]) | int(buffer[1]) << 8, received)      // in order, none twice
+            received += 1
+        }
+        for {
+            event, ok := LinkPollEvent(a)
+            if !ok {
+                break
+            }
+            lost ||= event.kind == .DERP_LOST
+            recovered ||= event.kind == .DERP_READY && lost
+            testing.expect(t, event.kind != .PEER_LOST)
+        }
+    }
+    testing.expect(t, lost)
+    testing.expect(t, recovered)
+    testing.expect_value(t, a.derp.state, DerpPathState.READY)
+    testing.expect_value(t, received, 200)
+    testing.expect_value(t, LinkPeerCount(a), 1)
+}
+
+// A relay that is down from the start: gathering does not wait for it, the link says why, keeps trying, and a relay that comes up later
+// is used by the codes made after that.
+@(test)
+SimDerpLateTest :: proc(t: ^testing.T) {
+    sim: ^Sim = new(Sim)
+    defer free(sim)
+    SimInit(sim)
+    sim.derp_down = true
+    a: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.FULL_CONE))))
+    b: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.FULL_CONE))))
+    defer free(a)
+    defer free(b)
+    now: i64
+    servers: [2]net.Endpoint = {sim.stuns[0].endpoint, sim.stuns[1].endpoint}
+    SimDerpAttach((^SimHost)(a.transport.user), a, 1, now)
+    LinkGatherBegin(a, servers[:], now)
+    LinkGatherBegin(b, servers[:], now)
+    for !LinkGathered(a) {
+        SimPump(a, b, &now, 1)
+        testing.expect(t, now < 5000)
+    }
+    LinkHost(a, "A")
+    testing.expect_value(t, LinkMakeInvite(a).derp_server, u8(0))     // no relay in the code
+    sim.derp_down = false
+    SimPump(a, b, &now, 800)                                          // the retry (a few seconds at most)
+    testing.expect_value(t, a.derp.state, DerpPathState.READY)
+    ready: bool
+    for {
+        event, ok := LinkPollEvent(a)
+        if !ok {
+            break
+        }
+        ready ||= event.kind == .DERP_READY
+    }
+    testing.expect(t, ready)
+    testing.expect(t, LinkMakeInvite(a).derp_server != 0)
 }

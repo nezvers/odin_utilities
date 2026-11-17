@@ -126,6 +126,30 @@ exchange WireGuard public keys over the live Link, the Link closes and WireGuard
   The TLS to the relay does not check its certificate, so someone in the middle can pretend to be the relay: they still cannot read the sealed packets, they can
   drop them. A relay sees who talks to whom and how much.
 
+## If the relays go away or change (Tailscale can do either at any time)
+Nothing here depends on one company: the relay is one candidate path among others, and everything below keeps working without it.
+- **What you see.** Events `DERP_FAILED` (never worked), `DERP_LOST` (a working connection ended), `DERP_READY` (back). `link.derp.failure` says what happened in words
+  and `link.derp.failure_kind` classifies it: `NO_NETWORK` (no DNS / TCP), `TLS`, `TIMEOUT`, `NOT_DERP` (it answered, but not DERP: it moved, an error page, the protocol
+  changed; the HTTP status is reported), `REFUSED` (DERP, but it will not take this client: for example it now only accepts its own network's devices), `CLOSED`.
+  `DerpAdvice(kind)` returns the sentence to show the person: what it means and what to do. The chat and amsg print it.
+- **It reconnects by itself**, same identity, no program action needed: tries every 0.5 s at first (peers talking through the relay give up after 6 to 8 s of
+  silence), then slower, up to one try every 30 s, and never gives up. A short outage costs a pause: the reliable channel resends what was lost, in order
+  (tested: the relay gone for 4 s in the middle of 200 messages, nothing lost, doubled or reordered). A relay that was down from the start is retried too, and codes
+  made after it came up carry it. Gathering never waits for a dead relay longer than 10 s.
+- **Find out what is wrong:** `odin run p2p/tool/derp -- diagnose` checks the internet first (so a dead network is not mistaken for a dead relay), probes the relays,
+  gives a verdict with the reason, fetches the current list from Tailscale and lists what to do. `odin run p2p/tool/derp -- map derpmap.txt` fetches the live list
+  (about 95 servers in 28 regions on 2026-11-17, several per region) with our own HTTPS client and saves it; `probe derpmap.txt` (or `probe name1 name2`) tests those.
+- **Use any relay by name:** `chat --derp-host derp.example.com[:port]`, `LinkDerpBeginHost(link, "name", now)`, `amsg <channel> --derp-host name`. The code carries the
+  name (invite format 4: server number 255 + name, up to 48 characters), so the other side needs nothing else. Names from the list that `map` fetched work, so a
+  renamed or moved Tailscale relay is a one word change, and a server that does not use fast start (it answers `101 Switching Protocols` first) is understood.
+- **A relay of your own** (free, accepts anybody by default; verified here only against the public relays, not against a self-hosted one, follow Tailscale's current
+  documentation for `derper`): a small server with a domain name and ports 443 and 80 open: `go install tailscale.com/cmd/derper@latest`, then
+  `derper --hostname=derp.yourdomain.example`; every member passes `--derp-host derp.yourdomain.example`. Its certificate is not checked by the client (see tls13.odin).
+- **Without any relay:** the same network works (LAN addresses), hole punching works through most home routers, pasted codes need no relay, TURN works with credentials
+  (`chat --turn host:port user password`), a router with UPnP can forward the port (`--upnp`). Only the case of two strict carrier NATs needs a relay.
+- **What breaks for good:** if TLS 1.3 were dropped or the DERP framing changed incompatibly, the client needs an update (the detection above tells the difference
+  between "moved" and "changed protocol"). The TLS client does not check certificates, so a relay that only accepts verified clients is not usable either.
+
 ## Reliable channel
 Selective repeat over a window of 16: the receiver keeps messages that arrive early and reports exactly which ones it has (next expected
 sequence + a bit mask), the sender resends only the missing ones on a timer of 2x the measured round trip (doubling per resend). Messages
@@ -155,7 +179,7 @@ arrive in order in about 2 s.
 
 ## Tests
 ```
-odin test p2p -strict-style -vet                 # 42 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
+odin test p2p -strict-style -vet                 # 47 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
                                                  # 36 NAT pairs, NAT measurement, relay and renewal, IPv6, loss, failure timeouts
 odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, real STUN servers, real LAN addresses, 20% loss
 odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)

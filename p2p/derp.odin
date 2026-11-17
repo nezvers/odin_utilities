@@ -21,6 +21,7 @@ package p2p
 
 import "core:fmt"
 import "core:net"
+import "core:strings"
 import "core:os"
 import "core:sync"
 import "core:testing"
@@ -84,6 +85,37 @@ DERP_SERVERS := [?]DerpServer{
     {"derp28b.tailscale.com", "Helsinki"},
 }
 
+// Why a connection failed, so a program (and the person) can tell "my network" from "the relay is gone or changed".
+DerpFailure :: enum {
+    NONE,
+    NO_NETWORK,                          // the name does not resolve or TCP to the relay did not connect
+    TLS,                                 // connected, but no TLS 1.3 handshake
+    TIMEOUT,                             // it stopped answering
+    NOT_DERP,                            // an answer, but not the DERP protocol (it moved, an error page, no longer offered there)
+    REFUSED,                             // DERP, but it did not accept this client
+    CLOSED,                              // an established connection ended
+}
+
+DerpAdvice :: proc(kind: DerpFailure) -> string {
+    switch kind {
+    case .NONE:
+        return ""
+    case .NO_NETWORK:
+        return "No connection to the relay. Check the network: a firewall or proxy must allow outgoing TCP 443, and the name must resolve. If this relay is gone, use another one (--derp N, or --derp-host name for any DERP server)."
+    case .TLS:
+        return "The relay did not complete a TLS 1.3 handshake. It may be down, overloaded, or something on the network interferes with HTTPS. Try another relay."
+    case .TIMEOUT:
+        return "The relay stopped answering in time. It may be overloaded or the network drops this traffic. Try another relay."
+    case .NOT_DERP:
+        return "The server answered, but not with the DERP protocol: it has moved or no longer offers DERP at that address. Get the current list with `odin run p2p/tool/derp -- map`, or run your own relay (derper, see p2p/README.md) and pass it with --derp-host."
+    case .REFUSED:
+        return "The relay speaks DERP but refused this client, possibly because it now only accepts devices of its own network. A relay of your own (derper accepts anybody by default) or another public one will work; direct connections and pasted codes still work without any relay."
+    case .CLOSED:
+        return "The relay connection ended. It is reconnected automatically; if that keeps failing the relay is down or the network changed."
+    }
+    return ""
+}
+
 DerpState :: enum {
     IDLE,
     CONNECTING,                          // the thread is doing DNS / TCP / TLS / handshake
@@ -107,6 +139,8 @@ Derp :: struct {
     host: [64]byte,
     host_length: int,
     failure: string,
+    failure_kind: DerpFailure,
+    http_status: int,                    // when the server answered HTTP instead of DERP: its status code
     thread: ^thread.Thread,
     frame: [5 + DERP_FRAME_MAX]byte,     // the frame being assembled
     frame_length: int,
@@ -180,12 +214,17 @@ DerpOpen :: proc(derp: ^Derp, host: string, private: BoxKey) -> bool {
 // The connection itself, for the host and key already stored in `derp` (DerpOpen and the thread of DerpBegin both end up here).
 @(private)
 DerpConnect :: proc(derp: ^Derp) -> bool {
-    host: string = string(derp.host[:derp.host_length])
+    host_and_port: string = string(derp.host[:derp.host_length])
+    host, port := DerpSplitHost(host_and_port)
     derp.public = BoxPublicKey(derp.private)
+    derp.failure = ""
+    derp.failure_kind = .NONE
+    derp.http_status = 0
     DerpSetState(derp, .CONNECTING)
     start: time.Tick = time.tick_now()
-    fail :: proc(derp: ^Derp, why: string) -> bool {
+    fail :: proc(derp: ^Derp, kind: DerpFailure, why: string) -> bool {
         derp.failure = why
+        derp.failure_kind = kind
         if derp.tls.socket != {} {
             net.close(derp.tls.socket)
         }
@@ -193,9 +232,9 @@ DerpConnect :: proc(derp: ^Derp) -> bool {
         return false
     }
 
-    socket, dial_error := net.dial_tcp_from_hostname_with_port_override(host, 443)
+    socket, dial_error := net.dial_tcp_from_hostname_with_port_override(host, port)
     if dial_error != nil {
-        return fail(derp, fmt.aprintf("cannot connect to the relay: %v (offline, blocked, or the name does not resolve)", dial_error))
+        return fail(derp, .NO_NETWORK, fmt.aprintf("cannot connect to %s: %v", host_and_port, dial_error))
     }
     derp.socket = socket
     net.set_option(socket, .Receive_Timeout, time.Millisecond * DERP_TIMEOUT_MS)
@@ -204,37 +243,45 @@ DerpConnect :: proc(derp: ^Derp) -> bool {
     if !TlsConnect(tls, socket, host) {
         net.close(socket)
         derp.failure = tls.failure
+        derp.failure_kind = .TIMEOUT if strings.contains(tls.failure, "stopped answering") else .TLS
         DerpSetState(derp, .FAILED)
         return false
     }
-    request: string = fmt.tprintf("GET /derp HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: DERP\r\nDerp-Fast-Start: 1\r\n\r\n", host)
+    request: string = fmt.tprintf("GET /derp HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: DERP\r\nDerp-Fast-Start: 1\r\n\r\n", host_and_port)
     if !TlsWrite(tls, transmute([]byte)request) {
-        return fail(derp, "cannot send the upgrade request")
+        return fail(derp, .CLOSED, "cannot send the upgrade request")
     }
 
     // ServerKey
-    kind, length, ok := DerpReadFrameBlocking(derp)
+    kind, length, ok := DerpReadFirst(derp)
+    if derp.http_status != 0 && derp.http_status != 101 {
+        return fail(derp, .NOT_DERP, fmt.aprintf("the server answered HTTP %d instead of DERP", derp.http_status))
+    }
+    if !ok && tls.failure != "" && strings.contains(tls.failure, "stopped answering") {
+        return fail(derp, .TIMEOUT, "the relay did not send its key in time")
+    }
     if !ok || kind != DERP_FRAME_SERVER_KEY || length < 8 + 32 || string(derp.frame[5:13]) != DERP_MAGIC {
-        return fail(derp, "the relay did not send its key (not a DERP server?)")
+        return fail(derp, .NOT_DERP, "the server did not send a DERP key (not a DERP server, or the protocol changed)")
     }
     copy(derp.server_public[:], derp.frame[13:13 + 32])
 
     info: [5 + 32 + BOX_NONCE_SIZE + BOX_AUTH_SIZE + 32]byte
     info_length: int = DerpClientInfo(info[:], derp.private, derp.public, derp.server_public, BoxNonce())
     if !TlsWrite(tls, info[:info_length]) {
-        return fail(derp, "cannot send our key to the relay")
+        return fail(derp, .CLOSED, "cannot send our key to the relay")
     }
 
     // ServerInfo: opening it proves the server owns the key it announced (and that ours was accepted)
+    derp.frame_length = 0
     kind, length, ok = DerpReadFrameBlocking(derp)
     if !ok || kind != DERP_FRAME_SERVER_INFO || length < BOX_NONCE_SIZE + BOX_AUTH_SIZE {
-        return fail(derp, "the relay refused our key")
+        return fail(derp, .REFUSED, "the relay refused our key (it closed the connection or sent no ServerInfo)")
     }
     nonce: [BOX_NONCE_SIZE]byte
     copy(nonce[:], derp.frame[5:5 + BOX_NONCE_SIZE])
     opened: [DERP_FRAME_MAX]byte
     if !BoxOpen(opened[:], derp.frame[5 + BOX_NONCE_SIZE:5 + length], nonce, BoxShared(derp.private, derp.server_public)) {
-        return fail(derp, "the relay answer does not verify")
+        return fail(derp, .REFUSED, "the relay answer does not verify")
     }
     derp.frame_length = 0
     net.set_blocking(socket, false)
@@ -249,10 +296,82 @@ DerpNow :: proc() -> i64 {
     return LinkNow()
 }
 
+// "name" or "name:port" (443 when no port).
+DerpSplitHost :: proc(host_and_port: string) -> (host: string, port: int) {
+    colon: int = strings.last_index_byte(host_and_port, ':')
+    if colon <= 0 || colon == len(host_and_port) - 1 {
+        return host_and_port, 443
+    }
+    number: int
+    for c in host_and_port[colon + 1:] {
+        if c < '0' || c > '9' || number > 65535 {
+            return host_and_port, 443
+        }
+        number = number * 10 + int(c - '0')
+    }
+    return host_and_port[:colon], number if number > 0 && number < 65536 else 443
+}
+
+// The status code of an HTTP answer ("HTTP/1.1 302 Found"), 0 when it is not one.
+DerpHttpStatus :: proc(head: []byte) -> int {
+    if len(head) < 12 || string(head[:5]) != "HTTP/" {
+        return 0
+    }
+    space: int = -1
+    for i in 5 ..< len(head) {
+        if head[i] == ' ' {
+            space = i
+            break
+        }
+    }
+    if space < 0 || space + 4 > len(head) {
+        return 0
+    }
+    status: int
+    for i in space + 1 ..< space + 4 {
+        if head[i] < '0' || head[i] > '9' {
+            return 0
+        }
+        status = status * 10 + int(head[i] - '0')
+    }
+    return status
+}
+
+// The first thing a relay sends. Normally a ServerKey frame (we asked for "fast start"), but a server without that feature answers
+// "101 Switching Protocols" first, and a server that changed or moved answers an error page: both are recognised and reported.
+@(private)
+DerpReadFirst :: proc(derp: ^Derp) -> (kind: u8, length: int, ok: bool) {
+    derp.frame_length = 0
+    for derp.frame_length < 5 {
+        count: int = TlsRead(&derp.tls, derp.frame[derp.frame_length:5], true)
+        if count <= 0 {
+            return
+        }
+        derp.frame_length += count
+    }
+    if string(derp.frame[:4]) == "HTTP" {
+        head: [2048]byte
+        copy(head[:5], derp.frame[:5])
+        used: int = 5
+        for used < len(head) && !(used >= 4 && string(head[used - 4:used]) == "\r\n\r\n") {
+            count: int = TlsRead(&derp.tls, head[used:used + 1], true)
+            if count <= 0 {
+                return
+            }
+            used += count
+        }
+        derp.http_status = DerpHttpStatus(head[:used])
+        if derp.http_status != 101 {
+            return
+        }
+        derp.frame_length = 0
+    }
+    return DerpReadFrameBlocking(derp)
+}
+
 // One whole frame into derp.frame (header included), waiting for it. Only for the handshake.
 @(private)
 DerpReadFrameBlocking :: proc(derp: ^Derp) -> (kind: u8, length: int, ok: bool) {
-    derp.frame_length = 0
     for derp.frame_length < 5 {
         count: int = TlsRead(&derp.tls, derp.frame[derp.frame_length:5], true)
         if count <= 0 {
