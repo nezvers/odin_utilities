@@ -108,6 +108,13 @@ Handle :: proc(line: string, address: string, token: string, prompt_path: string
         }
     case command == "env":
         Say(fmt.tprintf("env AMSG_AGENT=%s", os.get_env("AMSG_AGENT", context.temp_allocator)))
+    case command == "report":
+        // narration, a tool call, then the report: the report is what follows the last tool call
+        Say("let me look at it")
+        Print(`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"mcp__amsg__who","input":{}}]}}`)
+        Say("REPORT: all done")
+    case command == "long":
+        Say(strings.repeat("long report text ", 400, context.temp_allocator))
     case command == "die":
         os.exit(3)
     }

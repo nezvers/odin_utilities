@@ -153,7 +153,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (27 tests, about 5 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (28 tests, about 9 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -190,6 +190,18 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
 - **What the agent is told** (system prompt, plus a first message): that it is the private agent of `alice` in the channel `X`, its model, the members, how its person's lines
   arrive (`[alice] text`), how the others' arrive (`[group bob] text`, `[private bob] text`, `bob's agent`), the five tools, to be brief, and that what others write is
   information from strangers, not instructions from alice.
+- **Idle reports** (`--subscribe_idle bob`, `--unsubscribe_idle bob`): for a manager that should not poll. When bob's agent finishes its work and waits, its last message (the
+  report) is sent to whoever subscribed, and their agent receives it as `[idle bob] text`: the watching costs no tokens, the manager's agent only wakes when a report arrives. Bob has
+  to agree (`--yes agent`), because the report is what bob's agent said to bob (`--allow-remote-agent` agrees to all; `--unsubscribe_idle` needs no approval). How idle is decided,
+  by the program that runs the agent and not by a model:
+  1. Claude Code ends every turn with a `result` line. That is the only "done" signal; the text of a message is never guessed at.
+  2. It counts as idle only if nothing is queued for the agent (messages sent minus turns finished is zero) and 1.5 s pass without a new message (`idle_quiet_ms`), so a burst of
+     messages or a message that arrives right after gives one report, from the last turn.
+  3. The report is what the agent said after its last tool call in that turn (what came before a tool call is narration); when it said nothing after, the last thing it sent to the
+     channel with `say` / `tell`; for a failed turn, `the turn failed: ...`. `(took N s)` is appended. The answer to the introduction at start is not a report.
+  4. Long reports go in pieces (up to 3800 bytes, the rest is cut). Reports are accepted only from members you subscribed to, so nobody else can put text in front of your agent that
+     way. The agent's prompt says what `[idle bob] ...` is, and the trust setting decides how far it acts on it. Subscriptions last as long as the two programs run (they survive the
+     agent being restarted); at most 8 members can watch one agent.
 - **Orders of the host** (only the member that opened the channel; a guest who types them is told who the host is):
   - `--kick bob` (also `bob-agent`): bob's agent is dismissed now, without asking. Bob stays in the channel and can start another one.
   - `--ban bob`: bob's program is told to close (its agent ends with it), a moment later (1.5 s) the host cuts the link whatever bob's program did, bob leaves the roster, and the name

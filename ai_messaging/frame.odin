@@ -36,6 +36,7 @@ Kind :: enum u8 {
     AGENT_REQUEST,                      // [action u8: 1 start, 2 dismiss, 3 slash command][model or the command]: asks the member to start or dismiss its own agent, or to run a slash command on it (it decides)
     AGENT_STATUS,                       // [running bool][model][note]: the agent of `from` started, stopped or was refused (`note` says why)
     MODERATE,                           // [action u8: 1 dismiss the agent, 2 close the program][reason]: only from the host (id 0), obeyed by the member's program
+    AGENT_REPORT,                       // [more bool][text]: the last message of the agent of `from` when it went idle, in pieces (more = another piece follows); only for who subscribed
 }
 
 ModerationAction :: enum u8 {
@@ -49,6 +50,8 @@ AgentAction :: enum u8 {
     SPAWN,
     DISMISS,
     COMMAND,                            // a slash command of Claude Code for the agent ("/compact"): the member sees it and decides
+    SUBSCRIBE_IDLE,                     // tell me (the sender) when your agent goes idle, with its last message: the member decides
+    UNSUBSCRIBE_IDLE,                   // stop telling me
 }
 
 Frame :: struct {

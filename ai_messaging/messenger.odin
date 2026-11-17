@@ -93,6 +93,7 @@ EventKind :: enum {
     AGENT_REQUEST,                       // `member` asks this member to start or dismiss its agent: `action`, text = the model asked for (may be empty)
     AGENT_STATUS,                        // the agent of `member`: `ok` = running, text = its model, `note` = what happened ("started", "declined", ...)
     MODERATION,                          // the host orders this member: `moderation` (dismiss the agent, close the program), text = the reason
+    AGENT_REPORT,                        // a piece of the last message of the agent of `member` that went idle; `more` = another piece follows (idle reports are only for who asked)
 }
 
 Event :: struct {
@@ -109,6 +110,7 @@ Event :: struct {
     agent: bool,                         // TEXT: said by the agent of `member`
     action: AgentAction,                 // AGENT_REQUEST
     moderation: ModerationAction,        // MODERATION
+    more: bool,                          // AGENT_REPORT
     text: [MAX_TEXT]byte,
     text_length: int,
     note: [AGENT_NOTE_MAX]byte,          // AGENT_STATUS
@@ -116,6 +118,8 @@ Event :: struct {
 }
 
 AGENT_NOTE_MAX :: 120
+AGENT_REPORT_PIECE :: 760                // bytes of a report in one frame
+AGENT_REPORT_MAX :: 5 * AGENT_REPORT_PIECE
 MAX_BANS :: 16
 BAN_DROP_MS :: 1500                      // after the order to close, the link of a banned member is cut (the order needs a moment to arrive)
 AGENT_MODEL_MAX :: 64
@@ -861,6 +865,32 @@ MessengerSendAgentRequest :: proc(m: ^Messenger, to: u8, action: AgentAction, mo
     return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
 }
 
+// A report in pieces (the last message of an agent that went idle): up to AGENT_REPORT_MAX bytes, the rest is cut. To one member.
+MessengerSendAgentReport :: proc(m: ^Messenger, to: u8, report: string, now_ms: i64) -> bool {
+    if to == ALL || !MessengerReady(m) {
+        return false
+    }
+    rest: string = report[:min(len(report), AGENT_REPORT_MAX)]
+    for {
+        // never in the middle of a UTF-8 sequence
+        piece: int = min(len(rest), AGENT_REPORT_PIECE)
+        for piece > 0 && piece < len(rest) && rest[piece] & 0xC0 == 0x80 {
+            piece -= 1
+        }
+        writer: serial.Writer
+        FrameBegin(&writer, m.scratch[:], .AGENT_REPORT, m.self_id, to)
+        serial.WriteBool(&writer, piece < len(rest))
+        serial.WriteBytes(&writer, transmute([]byte)rest[:piece])
+        if !FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true) {
+            return false
+        }
+        rest = rest[piece:]
+        if len(rest) == 0 {
+            return true
+        }
+    }
+}
+
 // Tells one member (or ALL) what the agent of this member is doing.
 MessengerSendAgentStatus :: proc(m: ^Messenger, to: u8, running: bool, model: string, note: string, now_ms: i64) -> bool {
     if len(model) > AGENT_MODEL_MAX || len(note) > AGENT_NOTE_MAX || !MessengerReady(m) {
@@ -1000,11 +1030,17 @@ Deliver :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
             event: ^Event = EventPush(m, .MODERATION, HOST_ID, reason)
             event.moderation = ModerationAction(action)
         }
+    case .AGENT_REPORT:
+        more: bool = serial.ReadBool(&frame.body)
+        if text := serial.ReaderRemaining(&frame.body); serial.ReaderOk(&frame.body) && text <= AGENT_REPORT_PIECE {
+            event: ^Event = EventPush(m, .AGENT_REPORT, frame.from, string(serial.ReadBytes(&frame.body, text)))
+            event.more = more
+        }
     case .AGENT_REQUEST:
         action: u8 = serial.ReadU8(&frame.body)
         model: string = serial.ReadString(&frame.body)
         limit: int = AGENT_COMMAND_MAX if action == u8(AgentAction.COMMAND) else AGENT_MODEL_MAX
-        if serial.ReaderOk(&frame.body) && action >= u8(AgentAction.SPAWN) && action <= u8(AgentAction.COMMAND) && len(model) <= limit {
+        if serial.ReaderOk(&frame.body) && action >= u8(AgentAction.SPAWN) && action <= u8(AgentAction.UNSUBSCRIBE_IDLE) && len(model) <= limit {
             event: ^Event = EventPush(m, .AGENT_REQUEST, frame.from, model)
             event.action = AgentAction(action)
             event.to = frame.to

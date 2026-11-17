@@ -26,6 +26,12 @@ AGENT_EVENTS :: 64
 AGENT_TEXT_MAX :: 1800                   // one event carries at most this much text; a longer answer comes as several events
 AGENT_LINE_MAX :: 1 << 20                // a longer line of output is skipped (the init line with a big skill list is about 5 KB)
 
+// Starting a process hands it every inheritable handle that exists at that moment, also the ends of the pipes that another thread has just
+// made for ITS child: the pipe then never ends while that other process lives (the reader waits for ever). One start at a time, from making
+// the pipes to closing our copies of the child's ends, keeps the pipes of two agents apart. Anything else that starts a process in this
+// program while agents may start (the build of a test helper) takes it too.
+agent_spawn_mutex: sync.Mutex
+
 AgentState :: enum {
     NONE,
     RUNNING,
@@ -137,6 +143,8 @@ AgentStart :: proc(agent: ^Agent, config: AgentConfig) -> (error: string, ok: bo
     }
     agent^ = {}
     agent.model_length = copy(agent.model[:], config.model)
+    sync.mutex_lock(&agent_spawn_mutex)
+    defer sync.mutex_unlock(&agent_spawn_mutex)
     stdin_read, stdin_write, stdin_error := os.pipe()
     stdout_read, stdout_write, stdout_error := os.pipe()
     if stdin_error != nil || stdout_error != nil {

@@ -22,6 +22,7 @@ import "core:os"
 import "core:crypto"
 import "core:strings"
 import "core:testing"
+import p2p "../p2p"
 
 INBOX_LINES :: 100
 INBOX_LINE_MAX :: 900
@@ -47,8 +48,11 @@ TrustMode :: enum {
 
 SESSION_TRUSTED_MAX :: 200
 SESSION_STRING_MAX :: 300
+MAX_WATCHERS :: 8                        // members that may get the idle reports of this member's agent
+IDLE_QUIET_MS :: 1500                    // the agent is idle when its turn is over, nothing is queued for it, and this long passed without a new message
 
 SessionConfig :: struct {
+    idle_quiet_ms: i64,                  // quiet time before an agent counts as idle (0 = IDLE_QUIET_MS)
     trust: TrustMode,
     trusted: string,                     // LISTED: names separated by commas ("bob,carol")
     agent_command: string,               // Claude Code: "claude" or a path
@@ -101,6 +105,22 @@ Session :: struct {
     strings: [5][SESSION_STRING_MAX]byte,      // copies of the strings of the config
     trusted_text: [SESSION_TRUSTED_MAX]byte,   // the names of a LISTED trust set at run time (config.trusted points here then)
     trusted_text_length: int,
+    // idle reports: when the agent finishes its work and waits, the members that asked get its last message (decided here, no model involved)
+    watchers: [MAX_WATCHERS]u8,          // members that get the idle reports of MY agent
+    watcher_count: int,
+    watching: [MAX_MEMBERS]bool,         // members whose idle reports I get (they agreed)
+    turn_text: [AGENT_REPORT_MAX]byte,   // what the agent said since its last tool call: the end of its turn
+    turn_text_length: int,
+    turn_said: [INBOX_LINE_MAX]byte,     // the last thing it sent to the channel in this turn (when it said nothing else)
+    turn_said_length: int,
+    turn_start_ms: i64,
+    idle_pending: bool,                  // a turn ended and the quiet time is running
+    idle_since_ms: i64,
+    idle_report: [AGENT_REPORT_MAX + 64]byte,
+    idle_report_length: int,
+    intro_done: bool,                    // the first turn (its answer to the introduction) is not a report
+    report_in: [MAX_MEMBERS][AGENT_REPORT_MAX]byte,   // reports arriving in pieces
+    report_in_length: [MAX_MEMBERS]int,
     folder: string,                      // the private folder of the running agent (config for Claude Code with the token, prompt, log)
     closing: bool,                       // the host ordered this program to close (or this host closed the group): the program ends
     ready: bool,                         // the agent said it is up
@@ -229,7 +249,7 @@ SessionPrompt :: proc(s: ^Session, model: string) -> string {
 How you are used:
 - Lines that %s types arrive as "[%s] text". They are for you alone: answer in your normal reply and it is shown in their terminal. The rest of the channel does not see your replies.
 - To talk to the channel use the tool say (everybody) or tell (one member by name). To offer a file or folder use send (only from your own folder, %s). To see who is there use who. To read what the channel said since you last looked use inbox. Be brief: everybody reads it and other agents may answer you.
-- Messages of other members arrive as "[group bob] text" or "[private bob] text" ("bob's agent" when it is their agent speaking). %s
+- Messages of other members arrive as "[group bob] text" or "[private bob] text" ("bob's agent" when it is their agent speaking). "[idle bob] text" is the last message of bob's agent when it finished its work and went idle (you asked to be told). %s
 - %s
 - You have no shell and no file access%s Say so plainly when asked to do something you cannot do.
 - Your name in the channel is "%s's agent"; others call you with @%s-agent.`,
@@ -302,7 +322,7 @@ SessionSetTrust :: proc(s: ^Session, text: string) -> (message: string, ok: bool
     s.config.trusted = string(s.trusted_text[:s.trusted_text_length])
     if AgentRunning(&s.agent) {
         name: string = MessengerName(s.m, MessengerSelf(s.m))
-        AgentSend(&s.agent, fmt.tprintf("[amsg] The trust policy changed. New rule about messages of other members: %s", SessionTrustPrompt(s, name)))
+        SessionToAgent(s, fmt.tprintf("[amsg] The trust policy changed. New rule about messages of other members: %s", SessionTrustPrompt(s, name)))
     }
     return fmt.tprintf("trust: %s", SessionTrustText(s)), true
 }
@@ -373,7 +393,7 @@ SessionSpawn :: proc(s: ^Session, model: string, now_ms: i64) -> (message: strin
     s.running_model_length = 0
     // the first message: the membership, who is there
     name: string = MessengerName(s.m, MessengerSelf(s.m))
-    AgentSend(&s.agent, fmt.tprintf("[amsg] You are online in the channel \"%s\" as the agent of %s. Members now: %s. Answer ONLY to %s, in one short line (a normal reply, not the say tool): that you are ready. Do not write to the channel yet.", s.m.config.channel, name, SessionMemberList(s, context.temp_allocator), name))
+    SessionToAgent(s, fmt.tprintf("[amsg] You are online in the channel \"%s\" as the agent of %s. Members now: %s. Answer ONLY to %s, in one short line (a normal reply, not the say tool): that you are ready. Do not write to the channel yet.", s.m.config.channel, name, SessionMemberList(s, context.temp_allocator), name))
     return fmt.tprintf("starting your agent (%s)...", chosen if chosen != "" else "default model"), true
 }
 
@@ -416,6 +436,22 @@ SessionMemberList :: proc(s: ^Session, allocator := context.allocator) -> string
     return strings.to_string(builder)
 }
 
+// A message for the agent. It starts a turn: whatever was waiting to be reported as idle is not idle any more.
+@(private)
+SessionToAgent :: proc(s: ^Session, text: string) -> bool {
+    busy: bool = AgentBusy(&s.agent)
+    if !AgentSend(&s.agent, text) {
+        return false
+    }
+    s.idle_pending = false
+    if !busy {
+        s.turn_start_ms = p2p.LinkNow()
+        s.turn_text_length = 0
+        s.turn_said_length = 0
+    }
+    return true
+}
+
 // A line typed by the person: to the agent when there is one. False: there is no agent, the line is for the group.
 SessionLine :: proc(s: ^Session, text: string, now_ms: i64) -> bool {
     if !AgentRunning(&s.agent) {
@@ -425,7 +461,7 @@ SessionLine :: proc(s: ^Session, text: string, now_ms: i64) -> bool {
     // a slash command of Claude Code (/context, /compact, /clear, ...) only works as the whole line: it goes in untouched. Only the person at
     // this keyboard gets that: what other members write always arrives wrapped, as "[group bob] ...", and is never a command.
     line: string = text if strings.has_prefix(text, "/") else fmt.tprintf("[%s] %s", name, text)
-    if !AgentSend(&s.agent, line) {
+    if !SessionToAgent(s, line) {
         SessionNote(s, .INFO, "the agent does not take messages any more (it ended?)")
     }
     return true
@@ -448,6 +484,9 @@ SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
         InboxAdd(s, fmt.tprintf("* %s left the channel", text))
         if int(event.member) < MAX_MEMBERS {
             s.members[event.member] = {}
+            s.watching[event.member] = false
+            s.report_in_length[event.member] = 0
+            SessionWatcherRemove(s, event.member)
         }
     case .TEXT:
         if self {
@@ -460,7 +499,7 @@ SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
         if AgentRunning(&s.agent) && s.config.listen != .NONE {
             if s.config.listen == .ALL || SessionMentions(text, MessengerName(s.m, MessengerSelf(s.m))) {
                 // it has this one: counts as read when everything before it was read too (else the inbox shows it again, harmlessly)
-                if AgentSend(&s.agent, line) && s.inbox_read == s.inbox_total - 1 {
+                if SessionToAgent(s, line) && s.inbox_read == s.inbox_total - 1 {
                     s.inbox_read = s.inbox_total
                 }
             }
@@ -478,6 +517,11 @@ SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
             member.model_length = min(event.text_length, AGENT_MODEL_MAX)
             copy(member.model[:member.model_length], text)
             note: string = EventNote(event)
+            if strings.has_prefix(note, "idle reports") {
+                s.watching[event.member] = note == "idle reports on"
+                SessionNote(s, .INFO, fmt.tprintf("%s: %s", name, note))
+                return
+            }
             if event.ok {
                 SessionNote(s, .INFO, fmt.tprintf("%s's agent is running (%s)%s", name, text, fmt.tprintf(": %s", note) if note != "" && note != "started" && note != "running" else ""))
             } else {
@@ -489,6 +533,22 @@ SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
         }
     case .AGENT_REQUEST:
         SessionRequest(s, event, now_ms)
+    case .AGENT_REPORT:
+        // only from members that agreed to send them to me: anything else is a stranger putting words in front of my agent
+        if int(event.member) >= MAX_MEMBERS || !s.watching[event.member] {
+            return
+        }
+        incoming: ^[AGENT_REPORT_MAX]byte = &s.report_in[event.member]
+        length: ^int = &s.report_in_length[event.member]
+        length^ += copy(incoming[length^:], text)
+        if !event.more {
+            report: string = string(incoming[:length^])
+            line: string = fmt.tprintf("[idle %s] %s", name, report)
+            InboxAdd(s, line)
+            SessionToAgent(s, line)
+            SessionNote(s, .INFO, fmt.tprintf("%s's agent is idle. Its last message: %s", name, report))
+            length^ = 0
+        }
     case .MODERATION:
         reason: string = text if text != "" else "no reason given"
         switch event.moderation {
@@ -599,7 +659,19 @@ SessionRequest :: proc(s: ^Session, event: ^Event, now_ms: i64) {
     refuse :: proc(s: ^Session, event: ^Event, running: bool, current: string, note: string, now_ms: i64) {
         MessengerSendAgentStatus(s.m, event.member, running, current, note, now_ms)
     }
-    if event.action == .COMMAND {
+    if event.action == .UNSUBSCRIBE_IDLE {
+        SessionWatcherRemove(s, event.member)                          // nothing to approve: it is a withdrawal
+        MessengerSendAgentStatus(s.m, event.member, running, current, "idle reports off", now_ms)
+        return
+    }
+    if event.action == .SUBSCRIBE_IDLE {
+        for i in 0 ..< s.watcher_count {
+            if s.watchers[i] == event.member {
+                MessengerSendAgentStatus(s.m, event.member, running, current, "idle reports on", now_ms)
+                return
+            }
+        }
+    } else if event.action == .COMMAND {
         if !SlashCommandValid(model) {
             refuse(s, event, running, current, "that is not a slash command (one line that starts with /)", now_ms)
             return
@@ -631,10 +703,96 @@ SessionRequest :: proc(s: ^Session, event: ^Event, now_ms: i64) {
         what = fmt.tprintf("start your agent (model %s)", model if model != "" else "of your choice")
     case .COMMAND:
         what = fmt.tprintf("run the command %s on your agent", model)
+    case .SUBSCRIBE_IDLE:
+        what = fmt.tprintf("be told when your agent goes idle: %s would get its last message (what it said to you)", requester)
+    case .UNSUBSCRIBE_IDLE:
+        what = "stop the idle reports"
     case .DISMISS, .NONE:
         what = "dismiss your agent"
     }
     SessionNote(s, .INFO, fmt.tprintf("%s asks you to %s: --yes agent  or  --no agent", requester, what))
+}
+
+@(private)
+SessionWatcherAdd :: proc(s: ^Session, member: u8) -> bool {
+    for i in 0 ..< s.watcher_count {
+        if s.watchers[i] == member {
+            return true
+        }
+    }
+    if s.watcher_count >= MAX_WATCHERS {
+        return false
+    }
+    s.watchers[s.watcher_count] = member
+    s.watcher_count += 1
+    return true
+}
+
+@(private)
+SessionWatcherRemove :: proc(s: ^Session, member: u8) {
+    for i in 0 ..< s.watcher_count {
+        if s.watchers[i] == member {
+            s.watchers[i] = s.watchers[s.watcher_count - 1]
+            s.watcher_count -= 1
+            return
+        }
+    }
+}
+
+// A turn of the agent ended (Claude Code's result line). It is idle when nothing else is queued for it: the quiet time starts now and
+// SessionUpdate fires the report when it has passed without a new message.
+@(private)
+SessionTurnEnded :: proc(s: ^Session, event: ^AgentEvent, now_ms: i64) {
+    if !s.intro_done {
+        s.intro_done = true                                        // its answer to the introduction is not a report
+        s.turn_text_length = 0
+        s.turn_said_length = 0
+        return
+    }
+    report: string = strings.trim_space(string(s.turn_text[:s.turn_text_length]))
+    if event.is_error {
+        report = fmt.tprintf("the turn failed: %s", AgentEventText(event))
+    } else if report == "" {
+        report = string(s.turn_said[:s.turn_said_length])
+    }
+    if report == "" {
+        report = "(it finished without a message)"
+    }
+    took: f64 = f64(max(now_ms - s.turn_start_ms, 0)) / 1000
+    s.idle_report_length = copy(s.idle_report[:], fmt.tprintf("%s\n(took %.0f s)", report, took))
+    s.turn_text_length = 0
+    s.turn_said_length = 0
+    s.idle_since_ms = now_ms
+    s.idle_pending = s.watcher_count > 0
+}
+
+// Sends the report of the finished turn to the members that asked.
+@(private)
+SessionIdleFire :: proc(s: ^Session, now_ms: i64) {
+    report: string = string(s.idle_report[:s.idle_report_length])
+    for i in 0 ..< s.watcher_count {
+        MessengerSendAgentReport(s.m, s.watchers[i], report, now_ms)
+    }
+}
+
+// `--subscribe_idle name` / `--unsubscribe_idle name`: ask that member to tell this one (its agent, when there is one) whenever the agent of
+// that member goes idle, with the last message it wrote. The member decides (the message is what the agent said to its person).
+SessionSubscribe :: proc(s: ^Session, name: string, subscribe: bool, now_ms: i64) -> (message: string, ok: bool) {
+    member: u8 = SessionMemberOf(s, name)
+    if member == UNKNOWN_ID {
+        return fmt.tprintf("no member called %s (see --who)", strings.trim_space(name)), false
+    }
+    if !subscribe {
+        s.watching[member] = false
+    }
+    action: AgentAction = .SUBSCRIBE_IDLE if subscribe else .UNSUBSCRIBE_IDLE
+    if !SessionAsk(s, member, action, "", now_ms) {
+        return "not sent (not connected yet?)", false
+    }
+    if subscribe {
+        return fmt.tprintf("asked %s to send you the idle reports of their agent, waiting for the answer", MessengerName(s.m, member)), true
+    }
+    return fmt.tprintf("you will not get the idle reports of %s any more", MessengerName(s.m, member)), true
 }
 
 // One line, starts with "/", no control characters: what can be handed to Claude Code as a command.
@@ -660,9 +818,18 @@ SessionDo :: proc(s: ^Session, requester: u8, action: AgentAction, model: string
         message, ok = SessionSpawn(s, model, now_ms)
     case .DISMISS, .NONE:
         message, ok = SessionDismiss(s, now_ms)
+    case .SUBSCRIBE_IDLE, .UNSUBSCRIBE_IDLE:
+        if action == .SUBSCRIBE_IDLE {
+            ok = SessionWatcherAdd(s, requester)
+            message = fmt.tprintf("%s will be told when your agent goes idle", MessengerName(s.m, requester)) if ok else "too many members already get the idle reports of your agent"
+        } else {
+            SessionWatcherRemove(s, requester)
+            ok, message = true, "idle reports stopped"
+        }
+        MessengerSendAgentStatus(s.m, requester, AgentRunning(&s.agent), string(s.running_model[:s.running_model_length]), "idle reports on" if ok && action == .SUBSCRIBE_IDLE else "idle reports off", now_ms)
     case .COMMAND:
         // the command goes in as the whole line (see SessionLine); what it prints is for the person of this agent, not for who asked
-        ok = AgentRunning(&s.agent) && AgentSend(&s.agent, model)
+        ok = AgentRunning(&s.agent) && SessionToAgent(s, model)
         message = fmt.tprintf("ran %s on your agent for %s", model, MessengerName(s.m, requester)) if ok else "your agent is not running"
         if ok {
             MessengerSendAgentStatus(s.m, requester, true, string(s.running_model[:s.running_model_length]), "command sent", now_ms)
@@ -726,8 +893,15 @@ SessionUpdate :: proc(s: ^Session, now_ms: i64) {
             MessengerSendAgentStatus(s.m, ALL, true, text, "started", now_ms)
         case .TEXT:
             SessionNote(s, .REPLY, text)
+            // the end of the turn: what it says after its last tool call
+            if s.turn_text_length > 0 && s.turn_text_length < len(s.turn_text) {
+                s.turn_text[s.turn_text_length] = '\n'
+                s.turn_text_length += 1
+            }
+            s.turn_text_length += copy(s.turn_text[s.turn_text_length:], text)
         case .TOOL:
             SessionNote(s, .TOOL, text)
+            s.turn_text_length = 0                                  // what came before a tool call was only narration
         case .TOOL_ERROR:
             SessionNote(s, .INFO, fmt.tprintf("a tool of the agent failed: %s", text))
         case .DONE:
@@ -735,6 +909,7 @@ SessionUpdate :: proc(s: ^Session, now_ms: i64) {
             if event.is_error {
                 SessionNote(s, .INFO, fmt.tprintf("the agent could not finish: %s", text))
             }
+            SessionTurnEnded(s, &event, now_ms)
         case .ENDED:
             was_ready: bool = s.ready
             s.ready = false
@@ -752,6 +927,13 @@ SessionUpdate :: proc(s: ^Session, now_ms: i64) {
                 delete(s.folder)
                 s.folder = ""
             }
+        }
+    }
+    // idle: the turn is over, nothing was sent to the agent since, and the quiet time passed
+    if s.idle_pending && now_ms - s.idle_since_ms >= (s.config.idle_quiet_ms if s.config.idle_quiet_ms > 0 else IDLE_QUIET_MS) {
+        s.idle_pending = false
+        if AgentRunning(&s.agent) && !AgentBusy(&s.agent) {
+            SessionIdleFire(s, now_ms)
         }
     }
     if s.pending.active && now_ms - s.pending.since_ms > REQUEST_WAIT_MS {
@@ -791,6 +973,7 @@ SessionControl :: proc(s: ^Session, command: string, args: string, now_ms: i64) 
             return "error: not sent (nobody else in the channel yet, or the queue is full)"
         }
         SessionNote(s, .SAID, fmt.tprintf("to everybody: %s", args))
+        s.turn_said_length = copy(s.turn_said[:], args)
         return "sent to everybody"
     case "tell":
         split: int = strings.index_byte(args, '\n')
@@ -813,6 +996,7 @@ SessionControl :: proc(s: ^Session, command: string, args: string, now_ms: i64) 
             return "error: not sent"
         }
         SessionNote(s, .SAID, fmt.tprintf("to %s: %s", MessengerName(s.m, member), text))
+        s.turn_said_length = copy(s.turn_said[:], text)
         return fmt.tprintf("sent to %s", MessengerName(s.m, member))
     case "send":
         split: int = strings.index_byte(args, '\n')
