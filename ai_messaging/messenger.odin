@@ -22,6 +22,7 @@
 // Fixed capacities, failures are returned (false) or reported as events, nothing grows.
 package ai_messaging
 
+import "base:runtime"
 import "core:crypto"
 import "core:crypto/sha2"
 import "core:fmt"
@@ -32,11 +33,11 @@ import p2p "../p2p"
 import serial "../serial"
 
 EVENTS :: 64
-FORWARDS :: 64
+FORWARDS :: 96
 MAX_OUT :: 4
 MAX_IN :: 4
-FILE_WINDOW :: 8 * FILE_CHUNK            // bytes a sender may have sent beyond what the receiver credited
-CREDIT_EVERY :: 4 * FILE_CHUNK
+FILE_WINDOW :: 12 * FILE_CHUNK           // bytes a sender may have sent beyond what the receiver credited (the link window holds 16 frames)
+CREDIT_EVERY :: 3 * FILE_CHUNK
 OFFER_TIMEOUT_MS :: 30000
 STALL_TIMEOUT_MS :: 30000
 SEARCH_MS :: 1500                        // how long a newcomer asks around before it becomes the host (plus up to 700 ms of jitter)
@@ -58,7 +59,8 @@ MessengerConfig :: struct {
     use_stun: bool,                      // look up the public address for codes that are sent over the internet (blocking at open)
     receive_dir: string,                 // incoming files go here ("" refuses all)
     auto_accept: bool,                   // accept offers without asking (else a FILE_OFFERED event, then MessengerFileAnswer)
-    max_file_size: u64,                  // 0 = DEFAULT_MAX_FILE
+    max_file_size: u64,                  // 0 = DEFAULT_MAX_FILE (a folder counts its whole stream)
+    keep_executable: bool,               // folders: set the executable bit on files that had it (off: received files never run by themselves)
     link: p2p.LinkConfig,
 }
 
@@ -83,6 +85,8 @@ Event :: struct {
     ok: bool,
     size: u64,
     done: u64,
+    files: u32,                          // FILE_OFFERED / FILE_DONE of a folder: how many files it holds (0 for a single file)
+    folder: bool,
     text: [MAX_TEXT]byte,
     text_length: int,
 }
@@ -116,6 +120,9 @@ OutTransfer :: struct {
     active_ms: i64,                      // last sign of life, for the timeouts
     progress_ms: i64,
     hash: sha2.Context_256,
+    bundle: ^Bundle,                     // a folder: the stream comes from here instead of the file
+    pending: [FILE_CHUNK]byte,           // the next chunk, read already, waiting for room in the window
+    pending_length: int,
 }
 
 InState :: enum {
@@ -139,6 +146,9 @@ InTransfer :: struct {
     part_path: [FILE_NAME_MAX + 256]byte,
     part_length: int,
     hash: sha2.Context_256,
+    folder: bool,
+    files: u32,
+    reader: BundleReader,
 }
 
 Forward :: struct {
@@ -650,16 +660,38 @@ Receive :: proc(m: ^Messenger, now_ms: i64) {
             case frame.to == ALL:
                 for other in 0 ..< p2p.MAX_PEERS {
                     if other != peer && m.link.peers[other].state == .CONNECTED {
-                        ForwardPush(m, other, buffer[:length], now_ms)
+                        if !ForwardPush(m, other, buffer[:length], now_ms) {
+                            ForwardDropped(m, &frame, now_ms)
+                        }
                     }
                 }
                 Deliver(m, &frame, now_ms)
             case int(frame.to) < MAX_MEMBERS && m.members[frame.to].used && frame.to != frame.from:
-                ForwardPush(m, int(frame.to) - 1, buffer[:length], now_ms)
+                if !ForwardPush(m, int(frame.to) - 1, buffer[:length], now_ms) {
+                    ForwardDropped(m, &frame, now_ms)
+                }
             }
         } else if frame.kind == .ROSTER || frame.to == m.self_id || frame.to == ALL {
             Deliver(m, &frame, now_ms)
         }
+    }
+}
+
+// The host could not pass a frame on (the receiver's queue is full). Silently losing a frame of a reliable stream would corrupt a
+// file, so a file frame ends that transfer for the sender, and the host reports it.
+@(private)
+ForwardDropped :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
+    EventPush(m, .ERROR, frame.from, "a message could not be passed on (queue full), dropped")
+    #partial switch frame.kind {
+    case .FILE_OFFER, .FILE_CHUNK, .FILE_END, .FILE_ACCEPT, .FILE_CREDIT:
+        reader: serial.Reader = frame.body
+        reader.offset = 0
+        id: u16 = serial.ReadU16(&reader)
+        writer: serial.Writer
+        FrameBegin(&writer, m.scratch[:], .FILE_CANCEL, HOST_ID, frame.from)
+        serial.WriteU16(&writer, id)
+        serial.WriteString(&writer, "the host was overloaded and dropped a frame")
+        FrameSend(m, frame.from, serial.WriterBytes(&writer), now_ms, true)
     }
 }
 
@@ -681,6 +713,8 @@ Deliver :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
         OfferReceive(m, frame, now_ms)
     case .FILE_ACCEPT, .FILE_REJECT, .FILE_CREDIT, .FILE_DONE:
         OutReceive(m, frame, now_ms)
+    case .FILE_CANCEL:
+        CancelReceive(m, frame)
     case .FILE_CHUNK, .FILE_END:
         InReceive(m, frame, now_ms)
     }
@@ -719,18 +753,49 @@ RosterReceive :: proc(m: ^Messenger, frame: ^Frame) {
 
 // ============================================================================================ files: sending
 
-// Offers a file to one member. Returns the transfer id (events carry it); false when it cannot start (no such file, no free slot).
-MessengerSendFile :: proc(m: ^Messenger, to: u8, path: string, now_ms: i64) -> (transfer: u16, ok: bool) {
-    if !MessengerReady(m) || to == ALL || to == m.self_id || int(to) >= MAX_MEMBERS || !m.members[to].used {
-        return
-    }
-    slot: ^OutTransfer
+@(private)
+OutSlot :: proc(m: ^Messenger) -> ^OutTransfer {
     for &out in m.outs {
         if out.state == .FREE {
-            slot = &out
-            break
+            return &out
         }
     }
+    return nil
+}
+
+@(private)
+OutOffer :: proc(m: ^Messenger, out: ^OutTransfer, name: string, folder: bool, files: u32, now_ms: i64) -> bool {
+    safe: [FILE_NAME_MAX]byte
+    writer: serial.Writer
+    FrameBegin(&writer, m.scratch[:], .FILE_OFFER, m.self_id, out.to)
+    serial.WriteU16(&writer, out.id)
+    serial.WriteU64(&writer, out.size)
+    serial.WriteU8(&writer, 1 if folder else 0)
+    serial.WriteU32(&writer, files)
+    serial.WriteString(&writer, FileNameSafe(safe[:], name))
+    return FrameSend(m, out.to, serial.WriterBytes(&writer), now_ms, true)
+}
+
+@(private)
+TransferTargetOk :: proc(m: ^Messenger, to: u8) -> bool {
+    return MessengerReady(m) && to != ALL && to != m.self_id && int(to) < MAX_MEMBERS && m.members[to].used
+}
+
+@(private)
+TransferId :: proc(m: ^Messenger) -> u16 {
+    m.next_transfer += 1
+    if m.next_transfer == 0 {
+        m.next_transfer = 1
+    }
+    return m.next_transfer
+}
+
+// Offers a file to one member. Returns the transfer id (events carry it); false when it cannot start (no such file, no free slot).
+MessengerSendFile :: proc(m: ^Messenger, to: u8, path: string, now_ms: i64) -> (transfer: u16, ok: bool) {
+    if !TransferTargetOk(m, to) {
+        return
+    }
+    slot: ^OutTransfer = OutSlot(m)
     if slot == nil {
         return
     }
@@ -743,18 +808,43 @@ MessengerSendFile :: proc(m: ^Messenger, to: u8, path: string, now_ms: i64) -> (
         os.close(file)
         return
     }
-    m.next_transfer += 1
-    slot^ = {state = .OFFERED, id = m.next_transfer, to = to, file = file, size = u64(size), active_ms = now_ms, progress_ms = now_ms}
+    slot^ = {state = .OFFERED, id = TransferId(m), to = to, file = file, size = u64(size), active_ms = now_ms, progress_ms = now_ms}
     sha2.init_256(&slot.hash)
-
-    name: [FILE_NAME_MAX]byte
-    writer: serial.Writer
-    FrameBegin(&writer, m.scratch[:], .FILE_OFFER, m.self_id, to)
-    serial.WriteU16(&writer, slot.id)
-    serial.WriteU64(&writer, slot.size)
-    serial.WriteString(&writer, FileNameSafe(name[:], path))
-    if !FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true) {
+    if !OutOffer(m, slot, path, false, 0, now_ms) {
         os.close(file)
+        slot^ = {}
+        return
+    }
+    return slot.id, true
+}
+
+// Offers a whole folder (see bundle.odin): the receiver gets it as one new folder named like this one, all or nothing. `excludes` are
+// names left out anywhere in the tree (".git", "node_modules", "*.tmp"). The file list lives in `allocator` until the transfer ends.
+MessengerSendFolder :: proc(m: ^Messenger, to: u8, path: string, excludes: []string, now_ms: i64, allocator := context.allocator) -> (transfer: u16, ok: bool) {
+    if !TransferTargetOk(m, to) {
+        return
+    }
+    slot: ^OutTransfer = OutSlot(m)
+    if slot == nil {
+        return
+    }
+    bundle: ^Bundle = new(Bundle, allocator)
+    if !BundleScan(bundle, path, excludes, allocator) {
+        free(bundle, allocator)
+        return
+    }
+    slot^ = {state = .OFFERED, id = TransferId(m), to = to, size = bundle.total, bundle = bundle, active_ms = now_ms, progress_ms = now_ms}
+    sha2.init_256(&slot.hash)
+    base: string = path
+    trimmed: string = strings.trim_right(path, "/\\")
+    for i in 0 ..< len(trimmed) {
+        if trimmed[i] == '/' || trimmed[i] == '\\' {
+            base = trimmed[i + 1:]
+        }
+    }
+    if !OutOffer(m, slot, base, true, u32(bundle.files), now_ms) {
+        BundleDestroy(bundle)
+        free(bundle, allocator)
         slot^ = {}
         return
     }
@@ -779,11 +869,21 @@ OutFinish :: proc(m: ^Messenger, out: ^OutTransfer, ok: bool, reason: string) {
     if out.file != nil {
         os.close(out.file)
     }
+    folder: bool = out.bundle != nil
+    files: u32
+    if folder {
+        files = u32(out.bundle.files)
+        allocator: runtime.Allocator = out.bundle.allocator
+        BundleDestroy(out.bundle)
+        free(out.bundle, allocator)
+    }
     event: ^Event = EventPush(m, .FILE_DONE, out.to, reason)
     event.transfer = out.id
     event.ok = ok
     event.size = out.size
     event.done = out.sent
+    event.folder = folder
+    event.files = files
     out^ = {}
 }
 
@@ -811,22 +911,66 @@ OutReceive :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
     }
 }
 
+// Stops a transfer in either direction (the other side is told). `member` is the other end.
+MessengerCancel :: proc(m: ^Messenger, member: u8, transfer: u16, now_ms: i64) -> bool {
+    found: bool
+    if out: ^OutTransfer = OutFind(m, member, transfer); out != nil {
+        OutFinish(m, out, false, "cancelled")
+        found = true
+    }
+    for &in_ in m.ins {
+        if in_.state != .FREE && in_.from == member && in_.id == transfer {
+            InFinish(m, &in_, false, "cancelled")
+            found = true
+        }
+    }
+    if found {
+        writer: serial.Writer
+        FrameBegin(&writer, m.scratch[:], .FILE_CANCEL, m.self_id, member)
+        serial.WriteU16(&writer, transfer)
+        serial.WriteString(&writer, "cancelled by the other member")
+        FrameSend(m, member, serial.WriterBytes(&writer), now_ms, true)
+    }
+    return found
+}
+
+@(private)
+CancelReceive :: proc(m: ^Messenger, frame: ^Frame) {
+    id: u16 = serial.ReadU16(&frame.body)
+    reason: string = serial.ReadString(&frame.body)
+    if !serial.ReaderOk(&frame.body) {
+        return
+    }
+    if out: ^OutTransfer = OutFind(m, frame.from, id); out != nil {
+        OutFinish(m, out, false, reason)
+    }
+    for &in_ in m.ins {
+        if in_.state != .FREE && in_.from == frame.from && in_.id == id {
+            InFinish(m, &in_, false, reason)
+        }
+    }
+}
+
 // ============================================================================================ files: receiving
+
+@(private)
+OfferReject :: proc(m: ^Messenger, to: u8, id: u16, reason: string, now_ms: i64) {
+    writer: serial.Writer
+    FrameBegin(&writer, m.scratch[:], .FILE_REJECT, m.self_id, to)
+    serial.WriteU16(&writer, id)
+    serial.WriteString(&writer, reason)
+    FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
+}
 
 @(private)
 OfferReceive :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
     id: u16 = serial.ReadU16(&frame.body)
     size: u64 = serial.ReadU64(&frame.body)
+    kind: u8 = serial.ReadU8(&frame.body)
+    files: u32 = serial.ReadU32(&frame.body)
     wanted: string = serial.ReadString(&frame.body)
-    if !serial.ReaderOk(&frame.body) {
+    if !serial.ReaderOk(&frame.body) || kind > 1 {
         return
-    }
-    reject := proc(m: ^Messenger, to: u8, id: u16, reason: string, now_ms: i64) {
-        writer: serial.Writer
-        FrameBegin(&writer, m.scratch[:], .FILE_REJECT, m.self_id, to)
-        serial.WriteU16(&writer, id)
-        serial.WriteString(&writer, reason)
-        FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
     }
     slot: ^InTransfer
     for &in_ in m.ins {
@@ -839,16 +983,19 @@ OfferReceive :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
     }
     switch {
     case m.config.receive_dir == "":
-        reject(m, frame.from, id, "this member does not receive files", now_ms)
+        OfferReject(m, frame.from, id, "this member does not receive files", now_ms)
         return
     case size > m.config.max_file_size:
-        reject(m, frame.from, id, fmt.tprintf("too big (limit %d bytes)", m.config.max_file_size), now_ms)
+        OfferReject(m, frame.from, id, fmt.tprintf("too big (limit %d bytes)", m.config.max_file_size), now_ms)
+        return
+    case kind == 1 && files > BUNDLE_MAX_FILES:
+        OfferReject(m, frame.from, id, "too many files in the folder", now_ms)
         return
     case slot == nil:
-        reject(m, frame.from, id, "too many transfers at once", now_ms)
+        OfferReject(m, frame.from, id, "too many transfers at once", now_ms)
         return
     }
-    slot^ = {state = .PENDING, from = frame.from, id = id, size = size, active_ms = now_ms, progress_ms = now_ms}
+    slot^ = {state = .PENDING, from = frame.from, id = id, size = size, active_ms = now_ms, progress_ms = now_ms, folder = kind == 1, files = files}
     name: [FILE_NAME_MAX]byte
     safe: string = FileNameSafe(name[:], wanted)
     slot.name_length = len(safe)
@@ -861,6 +1008,8 @@ OfferReceive :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
     event.transfer = id
     event.size = size
     event.incoming = true
+    event.folder = slot.folder
+    event.files = files
 }
 
 // The program's answer to a FILE_OFFERED event.
@@ -870,11 +1019,7 @@ MessengerFileAnswer :: proc(m: ^Messenger, member: u8, transfer: u16, accept: bo
             if accept {
                 InAccept(m, &in_, now_ms)
             } else {
-                writer: serial.Writer
-                FrameBegin(&writer, m.scratch[:], .FILE_REJECT, m.self_id, member)
-                serial.WriteU16(&writer, transfer)
-                serial.WriteString(&writer, "declined")
-                FrameSend(m, member, serial.WriterBytes(&writer), now_ms, true)
+                OfferReject(m, member, transfer, "declined", now_ms)
                 in_ = {}
             }
             return
@@ -886,22 +1031,28 @@ MessengerFileAnswer :: proc(m: ^Messenger, member: u8, transfer: u16, accept: bo
 InAccept :: proc(m: ^Messenger, in_: ^InTransfer, now_ms: i64) {
     os.make_directory_all(m.config.receive_dir)
     path: string = FileUniquePath(m.config.receive_dir, string(in_.name[:in_.name_length]), ".part")
-    file, error := os.open(path, {.Write, .Create, .Trunc})
-    writer: serial.Writer
-    if error != nil {
-        FrameBegin(&writer, m.scratch[:], .FILE_REJECT, m.self_id, in_.from)
-        serial.WriteU16(&writer, in_.id)
-        serial.WriteString(&writer, "cannot write the file here")
-        FrameSend(m, in_.from, serial.WriterBytes(&writer), now_ms, true)
-        in_^ = {}
-        return
+    if in_.folder {
+        BundleReaderInit(&in_.reader, path, m.config.keep_executable)
+        if !os.is_dir(path) {
+            OfferReject(m, in_.from, in_.id, "cannot write the folder here", now_ms)
+            in_^ = {}
+            return
+        }
+    } else {
+        file, error := os.open(path, {.Write, .Create, .Trunc})
+        if error != nil {
+            OfferReject(m, in_.from, in_.id, "cannot write the file here", now_ms)
+            in_^ = {}
+            return
+        }
+        in_.file = file
     }
-    in_.file = file
     in_.part_length = min(len(path), len(in_.part_path))
     copy(in_.part_path[:in_.part_length], path)
     in_.state = .RECEIVING
     in_.active_ms = now_ms
     sha2.init_256(&in_.hash)
+    writer: serial.Writer
     FrameBegin(&writer, m.scratch[:], .FILE_ACCEPT, m.self_id, in_.from)
     serial.WriteU16(&writer, in_.id)
     FrameSend(m, in_.from, serial.WriterBytes(&writer), now_ms, true)
@@ -916,8 +1067,16 @@ InFinish :: proc(m: ^Messenger, in_: ^InTransfer, ok: bool, text: string) {
         os.close(in_.file)
         in_.file = nil
     }
+    if in_.folder {
+        BundleReaderClose(&in_.reader)
+    }
     if !ok && in_.part_length > 0 {
-        os.remove(string(in_.part_path[:in_.part_length]))
+        part: string = string(in_.part_path[:in_.part_length])
+        if in_.folder {
+            os.remove_all(part)
+        } else {
+            os.remove(part)
+        }
     }
     if in_.state == .RECEIVING || ok {
         event: ^Event = EventPush(m, .FILE_DONE, in_.from, text)
@@ -926,8 +1085,26 @@ InFinish :: proc(m: ^Messenger, in_: ^InTransfer, ok: bool, text: string) {
         event.ok = ok
         event.size = in_.size
         event.done = in_.received
+        event.folder = in_.folder
+        event.files = u32(in_.reader.files) if in_.folder else 0
     }
     in_^ = {}
+}
+
+@(private)
+InVerdict :: proc(m: ^Messenger, in_: ^InTransfer, ok: bool, message: string, now_ms: i64) {
+    writer: serial.Writer
+    FrameBegin(&writer, m.scratch[:], .FILE_DONE, m.self_id, in_.from)
+    serial.WriteU16(&writer, in_.id)
+    serial.WriteBool(&writer, ok)
+    serial.WriteString(&writer, message)
+    FrameSend(m, in_.from, serial.WriterBytes(&writer), now_ms, true)
+}
+
+@(private)
+InFail :: proc(m: ^Messenger, in_: ^InTransfer, message: string, now_ms: i64) {
+    InVerdict(m, in_, false, message, now_ms)
+    InFinish(m, in_, false, message)
 }
 
 @(private)
@@ -943,26 +1120,21 @@ InReceive :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
         return
     }
     in_.active_ms = now_ms
-    done := proc(m: ^Messenger, in_: ^InTransfer, ok: bool, message: string, now_ms: i64) {
-        writer: serial.Writer
-        FrameBegin(&writer, m.scratch[:], .FILE_DONE, m.self_id, in_.from)
-        serial.WriteU16(&writer, in_.id)
-        serial.WriteBool(&writer, ok)
-        serial.WriteString(&writer, message)
-        FrameSend(m, in_.from, serial.WriterBytes(&writer), now_ms, true)
-    }
     #partial switch frame.kind {
     case .FILE_CHUNK:
         offset: u64 = serial.ReadU64(&frame.body)
         bytes: []byte = serial.ReadBytes(&frame.body, serial.ReaderRemaining(&frame.body))
         if !serial.ReaderOk(&frame.body) || offset != in_.received || in_.received + u64(len(bytes)) > in_.size {
-            done(m, in_, false, "chunk out of order or too much data", now_ms)
-            InFinish(m, in_, false, "chunk out of order or too much data")
+            InFail(m, in_, "chunk out of order or too much data", now_ms)
             return
         }
-        if _, error := os.write(in_.file, bytes); error != nil {
-            done(m, in_, false, "cannot write the file", now_ms)
-            InFinish(m, in_, false, "cannot write the file")
+        if in_.folder {
+            if !BundleFeed(&in_.reader, bytes) {
+                InFail(m, in_, in_.reader.failure, now_ms)
+                return
+            }
+        } else if _, error := os.write(in_.file, bytes); error != nil {
+            InFail(m, in_, "cannot write the file", now_ms)
             return
         }
         sha2.update(&in_.hash, bytes)
@@ -983,22 +1155,23 @@ InReceive :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
         }
         actual: [HASH_SIZE]byte
         sha2.final(&in_.hash, actual[:])
-        if in_.received != in_.size || string(actual[:]) != string(expected) {
-            done(m, in_, false, "the file arrived damaged (size or sha256 differ)", now_ms)
-            InFinish(m, in_, false, "the file arrived damaged (size or sha256 differ)")
+        if in_.received != in_.size || string(actual[:]) != string(expected) || in_.folder && !in_.reader.ended {
+            InFail(m, in_, "arrived damaged (size or sha256 differ)", now_ms)
             return
         }
-        os.close(in_.file)
-        in_.file = nil
+        if in_.file != nil {
+            os.close(in_.file)
+            in_.file = nil
+        }
+        BundleReaderClose(&in_.reader)
         final: string = FileUniquePath(m.config.receive_dir, string(in_.name[:in_.name_length]))
         part: string = string(in_.part_path[:in_.part_length])
         if os.rename(part, final) != nil {
-            done(m, in_, false, "cannot save the file", now_ms)
-            InFinish(m, in_, false, "cannot save the file")
+            InFail(m, in_, "cannot save it", now_ms)
             return
         }
         in_.part_length = 0
-        done(m, in_, true, "received and verified", now_ms)
+        InVerdict(m, in_, true, "received and verified", now_ms)
         InFinish(m, in_, true, final)
     }
 }
@@ -1043,33 +1216,56 @@ TransfersPump :: proc(m: ^Messenger, now_ms: i64) {
         }
     }
     for &in_ in m.ins {
-        if in_.state != .FREE && now_ms - in_.active_ms > OFFER_TIMEOUT_MS * 2 {
-            InFinish(m, &in_, false, "the sender stopped sending")
+        if in_.state == .PENDING && now_ms - in_.active_ms > OFFER_TIMEOUT_MS * 2 {
+            OfferReject(m, in_.from, in_.id, "nobody answered the offer in time", now_ms)
+            in_ = {}
+        } else if in_.state == .RECEIVING && now_ms - in_.active_ms > STALL_TIMEOUT_MS {
+            InFail(m, &in_, "the sender stopped sending", now_ms)
         }
     }
+}
+
+// The next chunk of the file or folder stream, read once: it stays in `pending` until the link took it.
+@(private)
+OutFill :: proc(m: ^Messenger, out: ^OutTransfer) -> bool {
+    if out.pending_length > 0 {
+        return true
+    }
+    count: int = int(min(u64(FILE_CHUNK), out.size - out.sent))
+    if out.bundle != nil {
+        read: int = BundleRead(out.bundle, out.pending[:count])
+        if read != count {
+            return false
+        }
+    } else {
+        read, error := os.read_at(out.file, out.pending[:count], i64(out.sent))
+        if error != nil || read != count {
+            return false
+        }
+    }
+    out.pending_length = count
+    return true
 }
 
 // Chunks while the credit window has room and the link takes them.
 @(private)
 OutPump :: proc(m: ^Messenger, out: ^OutTransfer, now_ms: i64) {
-    chunk: [FILE_CHUNK]byte
     for out.sent < out.size && out.sent - out.credited < FILE_WINDOW {
-        count: int = int(min(u64(FILE_CHUNK), out.size - out.sent))
-        read, error := os.read_at(out.file, chunk[:count], i64(out.sent))
-        if error != nil || read != count {
-            OutFinish(m, out, false, "cannot read the file")
+        if !OutFill(m, out) {
+            OutFinish(m, out, false, "cannot read the file (changed while sending?)")
             return
         }
         writer: serial.Writer
         FrameBegin(&writer, m.scratch[:], .FILE_CHUNK, m.self_id, out.to)
         serial.WriteU16(&writer, out.id)
         serial.WriteU64(&writer, out.sent)
-        serial.WriteBytes(&writer, chunk[:count])
+        serial.WriteBytes(&writer, out.pending[:out.pending_length])
         if !FrameSend(m, out.to, serial.WriterBytes(&writer), now_ms, false) {
-            return                                   // window full, next update
+            return                                   // window full, the chunk waits in `pending`
         }
-        sha2.update(&out.hash, chunk[:count])
-        out.sent += u64(count)
+        sha2.update(&out.hash, out.pending[:out.pending_length])
+        out.sent += u64(out.pending_length)
+        out.pending_length = 0
         Progress(m, out.to, out.id, false, out.sent, out.size, &out.progress_ms, now_ms)
     }
     if out.sent == out.size {

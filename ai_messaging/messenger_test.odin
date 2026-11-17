@@ -287,3 +287,128 @@ MessengerDiscoveryTest :: proc(t: ^testing.T) {
     }
     testing.expect(t, PumpUntil(nodes[:2], gone))
 }
+
+// A whole project folder from one member to another (and from a guest to a guest through the host): hidden files, empty folders and
+// exclusions survive, it arrives as one new folder named like the source, a second send does not overwrite it.
+@(test)
+MessengerFolderTest :: proc(t: ^testing.T) {
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("folder-%x", random)
+    defer delete(channel)
+    folder: string = TempFolder("folder")
+    defer os.remove_all(folder)
+    defer delete(folder)
+    source: string = fmt.aprintf("%s/project", folder)           // not tprintf: the temp buffer is reused by the calls below
+    defer delete(source)
+    WriteTree(source)
+
+    host: ^Node = NodeOpen({channel = channel, name = "host", role = .HOST, lan = true, receive_dir = fmt.tprintf("%s/host_in", folder), auto_accept = true})
+    a: ^Node = NodeOpen({channel = channel, name = "a", role = .GUEST, lan = true, receive_dir = fmt.tprintf("%s/a_in", folder)})
+    b: ^Node = NodeOpen({channel = channel, name = "b", role = .GUEST, lan = true, receive_dir = fmt.tprintf("%s/b_in", folder), auto_accept = true})
+    defer NodeClose(host)
+    defer NodeClose(a)
+    defer NodeClose(b)
+    nodes: []^Node = {host, a, b}
+    everybody := proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 2 && MessengerReady(nodes[1].m) && MessengerReady(nodes[2].m) && MessengerFindMember(nodes[1].m, "b") != UNKNOWN_ID
+    }
+    testing.expect(t, PumpUntil(nodes, everybody))
+
+    excludes: []string = {".git", "node_modules", "*.tmp"}
+    _, bad := MessengerSendFolder(a.m, 2, fmt.tprintf("%s/does-not-exist", folder), excludes, p2p.LinkNow())
+    testing.expect(t, !bad)
+    _, started := MessengerSendFolder(a.m, 2, source, excludes, p2p.LinkNow())          // guest to guest through the host
+    testing.expect(t, started)
+    done := proc(nodes: []^Node) -> bool {
+        return len(nodes[1].done) == 1 && len(nodes[2].done) == 1
+    }
+    testing.expect(t, PumpUntil(nodes, done))
+    if len(b.done) == 1 {
+        testing.expect(t, b.done[0].ok && b.done[0].folder)
+        testing.expect_value(t, b.done[0].files, u32(5))
+    }
+    target: string = fmt.tprintf("%s/b_in/project", folder)
+    testing.expect(t, SameFile(fmt.tprintf("%s/sub/big.bin", source), fmt.tprintf("%s/sub/big.bin", target)))
+    testing.expect(t, SameFile(fmt.tprintf("%s/.gitignore", source), fmt.tprintf("%s/.gitignore", target)))
+    testing.expect(t, os.is_dir(fmt.tprintf("%s/empty_dir", target)))
+    testing.expect(t, !os.exists(fmt.tprintf("%s/.git", target)))
+    testing.expect(t, !os.exists(fmt.tprintf("%s/project.part", fmt.tprintf("%s/b_in", folder))))   // no staging folder left behind
+
+    // again: a second folder next to the first, the first is untouched
+    _, started = MessengerSendFolder(a.m, 2, source, excludes, p2p.LinkNow())
+    testing.expect(t, started)
+    done2 := proc(nodes: []^Node) -> bool {
+        return len(nodes[1].done) == 2 && len(nodes[2].done) == 2
+    }
+    testing.expect(t, PumpUntil(nodes, done2))
+    testing.expect(t, os.is_dir(fmt.tprintf("%s/b_in/project (1)", folder)))
+
+    // the host asks nobody (auto accept), a has to answer: the offer comes with its size and file count
+    _, started = MessengerSendFolder(host.m, 1, source, excludes, p2p.LinkNow())
+    testing.expect(t, started)
+    offered := proc(nodes: []^Node) -> bool {
+        return len(nodes[1].offered) == 1
+    }
+    testing.expect(t, PumpUntil(nodes, offered))
+    if len(a.offered) == 1 {
+        testing.expect(t, a.offered[0].folder)
+        testing.expect_value(t, a.offered[0].files, u32(5))
+        MessengerFileAnswer(a.m, 0, a.offered[0].transfer, false, p2p.LinkNow())
+    }
+    declined := proc(nodes: []^Node) -> bool {
+        return len(nodes[0].done) == 1
+    }
+    testing.expect(t, PumpUntil(nodes, declined))
+    if len(host.done) == 1 {
+        testing.expect(t, !host.done[0].ok)
+        testing.expect(t, strings.contains(string(host.done[0].text[:host.done[0].text_length]), "declined"))
+    }
+}
+
+// Stopping a transfer: the sender cancels a big file in flight, the receiver loses its half written file, both are told, the slot is
+// free again for the next one.
+@(test)
+MessengerCancelTest :: proc(t: ^testing.T) {
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("cancel-%x", random)
+    defer delete(channel)
+    folder: string = TempFolder("cancel")
+    defer os.remove_all(folder)
+    defer delete(folder)
+    host: ^Node = NodeOpen({channel = channel, name = "host", role = .HOST, lan = true, receive_dir = fmt.tprintf("%s/in", folder), auto_accept = true})
+    guest: ^Node = NodeOpen({channel = channel, name = "guest", role = .GUEST, lan = true})
+    defer NodeClose(host)
+    defer NodeClose(guest)
+    nodes: []^Node = {host, guest}
+    ready := proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 1 && MessengerReady(nodes[1].m)
+    }
+    testing.expect(t, PumpUntil(nodes, ready))
+
+    source: string = fmt.tprintf("%s/huge.bin", folder)
+    FillTestFile(source, 20_000_000)
+    transfer, started := MessengerSendFile(guest.m, HOST_ID, source, p2p.LinkNow())
+    testing.expect(t, started)
+    flowing := proc(nodes: []^Node) -> bool {
+        for &in_ in nodes[0].m.ins {
+            if in_.state == .RECEIVING && in_.received > 20_000 {
+                return true
+            }
+        }
+        return false
+    }
+    testing.expect(t, PumpUntil(nodes, flowing))
+    testing.expect(t, MessengerCancel(guest.m, HOST_ID, transfer, p2p.LinkNow()))
+    cancelled := proc(nodes: []^Node) -> bool {
+        return len(nodes[0].done) == 1 && len(nodes[1].done) == 1
+    }
+    testing.expect(t, PumpUntil(nodes, cancelled))
+    if len(host.done) == 1 && len(guest.done) == 1 {
+        testing.expect(t, !host.done[0].ok && !guest.done[0].ok)
+    }
+    testing.expect(t, !os.exists(fmt.tprintf("%s/in/huge.bin.part", folder)))
+    testing.expect(t, !os.exists(fmt.tprintf("%s/in/huge.bin", folder)))
+    testing.expect(t, !MessengerCancel(guest.m, HOST_ID, transfer, p2p.LinkNow()))     // already gone
+}

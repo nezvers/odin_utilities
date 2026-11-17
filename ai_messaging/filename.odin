@@ -8,8 +8,8 @@ import "core:os"
 import "core:strings"
 import "core:testing"
 
-// Writes the safe name into `buffer` and returns it. Never empty.
-FileNameSafe :: proc(buffer: []byte, wanted: string) -> string {
+// Writes the safe name into `buffer` and returns it. Never empty. `keep_leading_dot` is for names inside a folder (".gitignore").
+FileNameSafe :: proc(buffer: []byte, wanted: string, keep_leading_dot: bool = false) -> string {
     start: int
     for i in 0 ..< len(wanted) {
         if wanted[i] == '/' || wanted[i] == '\\' {
@@ -32,7 +32,7 @@ FileNameSafe :: proc(buffer: []byte, wanted: string) -> string {
         length -= 1
     }
     first: int
-    for first < length && (buffer[first] == '.' || buffer[first] == ' ') {
+    for !keep_leading_dot && first < length && (buffer[first] == '.' || buffer[first] == ' ') {
         first += 1
     }
     if first > 0 {

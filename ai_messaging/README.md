@@ -12,6 +12,7 @@ ai.MessengerUpdate(m, p2p.LinkNow())
 for event in ai.MessengerPoll(m) ...                  // CONNECTED, MEMBER_JOINED/LEFT, TEXT, FILE_OFFERED/PROGRESS/DONE, ERROR
 ai.MessengerSendText(m, ai.ALL, "hello", now)         // or a member id (MessengerFindMember)
 ai.MessengerSendFile(m, member, "build/game.zip", now)
+ai.MessengerSendFolder(m, member, "my_project", {".git", "node_modules", "*.tmp"}, now)   // a whole folder, all or nothing
 ```
 
 ## How members find each other
@@ -29,15 +30,40 @@ Offer, accept (or reject with a reason), chunks of 800 bytes over the reliable c
 whole file at the end, verdict back to the sender. Receiving is the receiver's decision: `auto_accept` into `receive_dir`, or a
 `FILE_OFFERED` event and `MessengerFileAnswer`. Names that arrive are reduced to one safe file name (no path, no `..`, no reserved Windows
 names), written as `name.part` and renamed when the hash matches, never overwriting (`name (1).ext`). Default limit 1 GiB (`max_file_size`).
-Up to 4 outgoing and 4 incoming transfers at once. Guest to guest goes through the host.
+Up to 4 outgoing and 4 incoming transfers at once. Guest to guest goes through the host. `MessengerCancel` stops a transfer from either side.
+
+### Folders (`bundle.odin`)
+`MessengerSendFolder` sends a whole folder as ONE stream (records of folder / file with relative path, executable flag and size, then an end mark), so it
+uses the same chunks, credit window and sha256 as a file and arrives all or nothing: the receiver builds `<name>.part/` and renames it to `<name>`
+(or `<name> (1)`) when the hash matched; a failure deletes the staging folder. Hidden files and empty folders are kept, symbolic links are skipped,
+`excludes` (names or `*.ext`) are left out anywhere in the tree (the tool excludes `.git node_modules __pycache__ .DS_Store` unless told otherwise).
+A hostile sender is limited: every path component is cleaned (no `..`, no absolute path, no names Windows refuses), depth 24, path 240 bytes, 20000
+entries, the size limit counts the whole stream, and executable bits are only applied with `keep_executable`. Setting up a coworker's project is
+`/send name my_project`.
+
+### Bugs found and fixed in review
+- A frame the host could not forward (receiver queue full) was silently lost, which corrupts a reliable stream: now the transfer is cancelled for the
+  sender and an ERROR event is raised (the queue also grew from 64 to 96).
+- A chunk that did not fit the window was read again from the file next time (and could hash twice): it is read once and waits in `pending`.
+- A receiver that stalled in the middle of a transfer kept its `.part` for ever: it fails after 30 s; an unanswered offer is refused after 60 s.
+- No way to stop a transfer: `MessengerCancel` / `/cancel n`. A cancelled or failed receive never leaves a `.part` file or staging folder.
+- The window was 8 chunks (about 130 KB/s at 50 ms): now 12 of the 16 the link holds.
+- Strings in the config were kept by reference (a temporary string dangled): copied now.
+
+### Still open (known)
+- No resume: a transfer that breaks starts again from zero. A symlink INSIDE the receive folder that points outside is followed by the OS.
+- One file at a time per transfer slot and no compression; a huge folder is limited by the 20000 entries.
 
 ## Tool
-`odin run ai_messaging/tool/amsg -- <channel> [--name N] [--dir received] [--auto-accept] [--host|--guest] [--no-lan] [--stun]`
-Typed lines go to everybody; `/to name text`, `/send name|all path`, `/yes n` `/no n`, `/who`, `/code`, `/quit`; a pasted code joins or accepts.
-Output is one event per line (`<name> text`, `<name> (to you) text`, `* ...`) so a program or an agent can read it.
+`odin run ai_messaging/tool/amsg -- <channel> [--name N] [--dir received] [--auto-accept] [--host|--guest] [--no-lan] [--stun] [--json] [--exclude name] [--include-git] [--keep-exec]`
+Typed lines go to everybody; `/to name text`, `/send name|all path` (a file or a folder), `/yes n` `/no n`, `/cancel n`, `/who`, `/code`, `/quit`; a pasted
+code joins or accepts. Output is one event per line: text mode `<name> text`, `<name> (to you) text`, `* ...`; with `--json` every line is one JSON object
+(`{"event":"text","from":"bob","to":"all","text":"..."}`, events: info, code, connected, joined, left, text, member, file_offered, file_progress,
+file_done with `path` and `message`, error), so a program or an agent parses it without guessing.
 
 ## Tests
-`odin test ai_messaging -strict-style -vet` (5 tests, ~0.1 s, real loopback sockets): frame codec, safe file names, discovery beacon,
+`odin test ai_messaging -strict-style -vet` (10 tests, ~0.3 s, real loopback sockets): frame codec, safe file names, folder stream round trip in any
+chunking and hostile streams, discovery beacon, folders between members, cancel,
 pasted codes + text + a 300 KB file both ways, three members found by name with forwarding, unique names, a file between guests through
 the host with the ask/answer flow, a refusal with its reason, a member leaving. Also run by hand: three `amsg` processes, a 200 KB file
 received byte for byte identical.

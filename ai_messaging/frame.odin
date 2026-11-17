@@ -24,13 +24,14 @@ Kind :: enum u8 {
     NONE,
     ROSTER,                             // host to a guest: [count u8]{[id u8][name]}, `to` is the receiver's own id
     TEXT,                               // [text]
-    FILE_OFFER,                         // [transfer u16][size u64][name]
+    FILE_OFFER,                         // [transfer u16][size u64][kind u8: 0 file, 1 folder][files u32][name]
     FILE_ACCEPT,                        // [transfer u16]
     FILE_REJECT,                        // [transfer u16][reason]
     FILE_CHUNK,                         // [transfer u16][offset u64][bytes...]
     FILE_CREDIT,                        // [transfer u16][bytes received u64]: the sender may go on up to this + the window
     FILE_END,                           // [transfer u16][sha256 32]
     FILE_DONE,                          // [transfer u16][ok bool][message]: the receiver's verdict
+    FILE_CANCEL,                        // [transfer u16][reason]: either side stops the transfer
 }
 
 Frame :: struct {

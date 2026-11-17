@@ -2,14 +2,19 @@
 // part that talks to the channel and to the person at the keyboard.
 //
 //   amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N]
+//                  [--json] [--exclude name]... [--include-git] [--keep-exec]
 //
 // The first one to open a channel hosts it; the others find it by the channel name on the same computer or network. Over the
 // internet one pastes the code of the other (/code shows yours). Lines typed here:
 //   hello everybody              to all members            /to bob text        to one member
-//   /send bob path/to/file       send a file (bob, or all) /yes 3  /no 3       answer a file offer
-//   /who                         list the members          /code               show this member's code
-//   <a pasted code>              joins / accepts a reply   /quit
-// Output lines are one event each, easy to parse: "<name> text", "<name> (to you) text", "* ..." for everything else.
+//   /send bob path               a file or a whole folder  /send all path      to everybody
+//   /yes 3  /no 3                answer an offer           /cancel 3           stop a transfer
+//   /who  /code  /quit           <a pasted code> joins or accepts a reply
+// A folder is sent as one new folder at the receiver, all or nothing, without .git, node_modules, __pycache__, .DS_Store and
+// whatever --exclude names (a name, or *.ext); --include-git keeps .git. Received folders keep executable bits only with --keep-exec.
+//
+// Output: one event per line. Text mode: "<name> text", "<name> (to you) text", "* ..." for everything else. With --json every line
+// is one JSON object ({"event":"text","from":"bob","to":"all","text":"..."}), for programs and agents to read.
 package main
 
 import "core:fmt"
@@ -24,6 +29,7 @@ import p2p "../../../p2p"
 
 MAX_LINE :: 1024
 LINE_QUEUE :: 32
+MAX_EXCLUDES :: 32
 
 LineQueue :: struct {
     mutex: sync.Mutex,
@@ -35,12 +41,19 @@ LineQueue :: struct {
 }
 
 lines: LineQueue
+json_mode: bool
+excludes: [MAX_EXCLUDES]string
+exclude_count: int
 
 main :: proc() {
     config: ai.MessengerConfig
     config.lan = true
     config.receive_dir = "received"
-    config.link.no_ipv6 = false
+    include_git: bool
+    for name in ([?]string{".git", "node_modules", "__pycache__", ".DS_Store"}) {
+        excludes[exclude_count] = name
+        exclude_count += 1
+    }
     for i := 1; i < len(os.args); i += 1 {
         argument: string = os.args[i]
         switch argument {
@@ -60,6 +73,20 @@ main :: proc() {
             config.lan = false
         case "--stun":
             config.use_stun = true
+        case "--json":
+            json_mode = true
+        case "--keep-exec":
+            config.keep_executable = true
+        case "--include-git":
+            include_git = true
+        case "--exclude":
+            i += 1
+            if i >= len(os.args) || exclude_count >= MAX_EXCLUDES {
+                fmt.eprintln("--exclude needs a name (or *.ext), at most 28 of them")
+                os.exit(2)
+            }
+            excludes[exclude_count] = os.args[i]
+            exclude_count += 1
         case "--max-mb":
             i += 1
             megabytes, ok := strconv.parse_int(os.args[i] if i < len(os.args) else "")
@@ -77,8 +104,17 @@ main :: proc() {
         }
     }
     if config.channel == "" {
-        fmt.eprintln("usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N]")
+        fmt.eprintln("usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--exclude name] [--include-git] [--keep-exec]")
         os.exit(2)
+    }
+    if include_git {
+        for i in 0 ..< exclude_count {
+            if excludes[i] == ".git" {
+                excludes[i] = excludes[exclude_count - 1]
+                exclude_count -= 1
+                break
+            }
+        }
     }
     if config.name == "" {
         config.name = os.get_env("USERNAME", context.temp_allocator)
@@ -95,10 +131,132 @@ main :: proc() {
         fmt.eprintln("cannot open the UDP socket")
         os.exit(1)
     }
-    fmt.printfln("* channel \"%s\" as %s, finding addresses%s...", config.channel, config.name, " and looking for a host" if config.role != .HOST else "")
+    Info(fmt.tprintf("channel \"%s\" as %s, finding addresses%s...", config.channel, config.name, " and looking for a host" if config.role != .HOST else ""))
     thread.create_and_start(ReadLines, context)
     Loop(m, config)
 }
+
+// ============================================================ output: text lines or JSON objects
+
+// A string as a JSON string literal (temp allocator).
+Json :: proc(text: string) -> string {
+    builder: strings.Builder
+    strings.builder_init(&builder, context.temp_allocator)
+    strings.write_byte(&builder, '"')
+    for i in 0 ..< len(text) {
+        c: u8 = text[i]
+        switch c {
+        case '"':
+            strings.write_string(&builder, `\"`)
+        case '\\':
+            strings.write_string(&builder, `\\`)
+        case '\n':
+            strings.write_string(&builder, `\n`)
+        case '\r':
+            strings.write_string(&builder, `\r`)
+        case '\t':
+            strings.write_string(&builder, `\t`)
+        case:
+            if c < 32 {
+                fmt.sbprintf(&builder, `\u%04x`, int(c))
+            } else {
+                strings.write_byte(&builder, c)
+            }
+        }
+    }
+    strings.write_byte(&builder, '"')
+    return strings.to_string(builder)
+}
+
+// Something the tool says (not a message from a member).
+Info :: proc(text: string) {
+    if json_mode {
+        fmt.printfln(`{{"event":"info","text":%s}}`, Json(text))
+    } else {
+        fmt.printfln("* %s", text)
+    }
+}
+
+ShowCode :: proc(m: ^ai.Messenger, title: string) {
+    buffer: [p2p.CODE_TEXT_MAX]byte
+    code: string = ai.MessengerCode(m, buffer[:])
+    if code == "" {
+        Info("no code yet (still looking for a host, or finding addresses)")
+        return
+    }
+    if json_mode {
+        fmt.printfln(`{{"event":"code","code":%s,"note":%s}}`, Json(code), Json(title))
+    } else {
+        fmt.printfln("* %s:", title)
+        fmt.printfln("CODE: %s", code)
+    }
+}
+
+ShowEvent :: proc(m: ^ai.Messenger, event: ^ai.Event) {
+    text: string = ai.EventText(event)
+    name: string = ai.MessengerName(m, event.member)
+    if json_mode {
+        ShowEventJson(m, event, text, name)
+        return
+    }
+    switch event.kind {
+    case .NONE:
+    case .CONNECTED:
+        fmt.printfln("* connected as %s (member %d)%s", ai.MessengerName(m, ai.MessengerSelf(m)), ai.MessengerSelf(m), ", hosting" if m.is_host else "")
+    case .MEMBER_JOINED:
+        fmt.printfln("* %s joined", text)
+    case .MEMBER_LEFT:
+        fmt.printfln("* %s left", text)
+    case .TEXT:
+        if event.to == ai.ALL {
+            fmt.printfln("<%s> %s", name, text)
+        } else {
+            fmt.printfln("<%s> (to you) %s", name, text)
+        }
+    case .FILE_OFFERED:
+        what: string = fmt.tprintf("the folder \"%s\" (%d files, %d bytes)", text, event.files, event.size) if event.folder else fmt.tprintf("the file \"%s\" (%d bytes)", text, event.size)
+        fmt.printfln("* %s offers %s: /yes %d or /no %d", name, what, event.transfer, event.transfer)
+    case .FILE_PROGRESS:
+        fmt.printfln("* transfer %d %s: %d of %d bytes", event.transfer, "incoming" if event.incoming else "outgoing", event.done, event.size)
+    case .FILE_DONE:
+        direction: string = "from" if event.incoming else "to"
+        kind: string = "folder" if event.folder else "file"
+        if event.ok {
+            saved: string = fmt.tprintf(", saved as %s", text) if event.incoming else ""
+            fmt.printfln("* %s transfer %d %s %s done, %d bytes%s", kind, event.transfer, direction, name, event.size, saved)
+        } else {
+            fmt.printfln("* %s transfer %d %s %s FAILED: %s", kind, event.transfer, direction, name, text)
+        }
+    case .ERROR:
+        fmt.printfln("* error: %s", text)
+    }
+}
+
+ShowEventJson :: proc(m: ^ai.Messenger, event: ^ai.Event, text: string, name: string) {
+    switch event.kind {
+    case .NONE:
+    case .CONNECTED:
+        fmt.printfln(`{{"event":"connected","id":%d,"name":%s,"host":%v}}`, ai.MessengerSelf(m), Json(ai.MessengerName(m, ai.MessengerSelf(m))), m.is_host)
+    case .MEMBER_JOINED:
+        fmt.printfln(`{{"event":"joined","id":%d,"name":%s}}`, event.member, Json(text))
+    case .MEMBER_LEFT:
+        fmt.printfln(`{{"event":"left","id":%d,"name":%s}}`, event.member, Json(text))
+    case .TEXT:
+        fmt.printfln(`{{"event":"text","from":%s,"from_id":%d,"to":%s,"text":%s}}`, Json(name), event.member, `"all"` if event.to == ai.ALL else `"you"`, Json(text))
+    case .FILE_OFFERED:
+        fmt.printfln(`{{"event":"file_offered","from":%s,"from_id":%d,"transfer":%d,"name":%s,"size":%d,"folder":%v,"files":%d}}`, Json(name), event.member, event.transfer, Json(text), event.size, event.folder, event.files)
+    case .FILE_PROGRESS:
+        fmt.printfln(`{{"event":"file_progress","member":%s,"transfer":%d,"incoming":%v,"done":%d,"size":%d}}`, Json(name), event.transfer, event.incoming, event.done, event.size)
+    case .FILE_DONE:
+        path: string = text if event.ok && event.incoming else ""
+        message: string = "" if event.ok else text
+        fmt.printfln(`{{"event":"file_done","member":%s,"transfer":%d,"incoming":%v,"ok":%v,"folder":%v,"files":%d,"size":%d,"path":%s,"message":%s}}`, Json(name), event.transfer, event.incoming, event.ok, event.folder, event.files, event.size, Json(path), Json(message))
+    case .ERROR:
+        fmt.printfln(`{{"event":"error","text":%s}}`, Json(text))
+    }
+}
+
+// ============================================================ the loop and the commands
 
 Loop :: proc(m: ^ai.Messenger, config: ai.MessengerConfig) {
     announced_code: bool
@@ -126,50 +284,6 @@ Loop :: proc(m: ^ai.Messenger, config: ai.MessengerConfig) {
     }
 }
 
-ShowCode :: proc(m: ^ai.Messenger, title: string) {
-    buffer: [p2p.CODE_TEXT_MAX]byte
-    code: string = ai.MessengerCode(m, buffer[:])
-    if code == "" {
-        fmt.println("* no code yet (still looking for a host, or finding addresses)")
-        return
-    }
-    fmt.printfln("* %s:", title)
-    fmt.printfln("CODE: %s", code)
-}
-
-ShowEvent :: proc(m: ^ai.Messenger, event: ^ai.Event) {
-    text: string = ai.EventText(event)
-    name: string = ai.MessengerName(m, event.member)
-    switch event.kind {
-    case .NONE:
-    case .CONNECTED:
-        fmt.printfln("* connected as %s (member %d)%s", ai.MessengerName(m, ai.MessengerSelf(m)), ai.MessengerSelf(m), ", hosting" if m.is_host else "")
-    case .MEMBER_JOINED:
-        fmt.printfln("* %s joined", text)
-    case .MEMBER_LEFT:
-        fmt.printfln("* %s left", text)
-    case .TEXT:
-        if event.to == ai.ALL {
-            fmt.printfln("<%s> %s", name, text)
-        } else {
-            fmt.printfln("<%s> (to you) %s", name, text)
-        }
-    case .FILE_OFFERED:
-        fmt.printfln("* %s offers the file \"%s\" (%d bytes): /yes %d or /no %d  (from %s)", name, text, event.size, event.transfer, event.transfer, name)
-    case .FILE_PROGRESS:
-        fmt.printfln("* file %d %s: %d of %d bytes", event.transfer, "incoming" if event.incoming else "outgoing", event.done, event.size)
-    case .FILE_DONE:
-        direction: string = "from" if event.incoming else "to"
-        if event.ok {
-            fmt.printfln("* file %d %s %s done, %d bytes%s", event.transfer, direction, name, event.size, fmt.tprintf(", saved as %s", text) if event.incoming else "")
-        } else {
-            fmt.printfln("* file %d %s %s FAILED: %s", event.transfer, direction, name, text)
-        }
-    case .ERROR:
-        fmt.printfln("* error: %s", text)
-    }
-}
-
 Command :: proc(m: ^ai.Messenger, line: string, now: i64) {
     switch {
     case line == "":
@@ -181,7 +295,12 @@ Command :: proc(m: ^ai.Messenger, line: string, now: i64) {
     case line == "/who":
         for id in 0 ..< ai.MAX_MEMBERS {
             name: string = ai.MessengerName(m, u8(id))
-            if name != "" {
+            if name == "" {
+                continue
+            }
+            if json_mode {
+                fmt.printfln(`{{"event":"member","id":%d,"name":%s,"host":%v,"you":%v}}`, id, Json(name), id == 0, u8(id) == ai.MessengerSelf(m))
+            } else {
                 fmt.printfln("* member %d: %s%s%s", id, name, " (host)" if id == 0 else "", " (you)" if u8(id) == ai.MessengerSelf(m) else "")
             }
         }
@@ -189,7 +308,7 @@ Command :: proc(m: ^ai.Messenger, line: string, now: i64) {
         rest: string = strings.trim_space(line[4:])
         space: int = strings.index_byte(rest, ' ')
         if space < 0 {
-            fmt.println("* usage: /to <name> <text>")
+            Info("usage: /to <name> <text>")
             return
         }
         Say(m, ai.MessengerFindMember(m, rest[:space]), strings.trim_space(rest[space + 1:]), now)
@@ -197,7 +316,7 @@ Command :: proc(m: ^ai.Messenger, line: string, now: i64) {
         rest: string = strings.trim_space(line[6:])
         space: int = strings.index_byte(rest, ' ')
         if space < 0 {
-            fmt.println("* usage: /send <name|all> <path>")
+            Info("usage: /send <name|all> <path to a file or a folder>")
             return
         }
         Send(m, rest[:space], strings.trim_space(rest[space + 1:]), now)
@@ -205,24 +324,43 @@ Command :: proc(m: ^ai.Messenger, line: string, now: i64) {
         accept: bool = strings.has_prefix(line, "/yes ")
         number, ok := strconv.parse_int(strings.trim_space(line[5 if accept else 4:]))
         if !ok {
-            fmt.println("* usage: /yes <transfer number>")
+            Info("usage: /yes <transfer number>")
             return
         }
-        // the offer is identified by number; the sender is whoever offered it
+        // the offer is identified by its number; the sender is whoever offered it
         for &in_ in m.ins {
             if in_.state == .PENDING && int(in_.id) == number {
                 ai.MessengerFileAnswer(m, in_.from, in_.id, accept, now)
-                fmt.printfln("* %s", "accepted" if accept else "declined")
+                Info("accepted" if accept else "declined")
                 return
             }
         }
-        fmt.println("* no such offer")
+        Info("no such offer")
+    case strings.has_prefix(line, "/cancel "):
+        number, ok := strconv.parse_int(strings.trim_space(line[8:]))
+        cancelled: bool
+        if ok {
+            // the transfer number is looked up on both directions; the other end is whoever it is with
+            for &out in m.outs {
+                if out.state != .FREE && int(out.id) == number {
+                    cancelled = ai.MessengerCancel(m, out.to, out.id, now) || cancelled
+                }
+            }
+            for &in_ in m.ins {
+                if in_.state != .FREE && int(in_.id) == number {
+                    cancelled = ai.MessengerCancel(m, in_.from, in_.id, now) || cancelled
+                }
+            }
+        }
+        if !cancelled {
+            Info("no such transfer")
+        }
     case strings.has_prefix(line, "/"):
-        fmt.println("* commands: /to name text  /send name|all path  /yes n  /no n  /who  /code  /quit")
+        Info("commands: /to name text  /send name|all path  /yes n  /no n  /cancel n  /who  /code  /quit")
     case len(line) > 40 && !strings.contains_rune(line, ' '):
         ok, message := ai.MessengerUseCode(m, line, now)
         _ = ok
-        fmt.printfln("* %s", message)
+        Info(message)
         if ok && !m.is_host {
             ShowCode(m, "send this reply code back to the host")
         }
@@ -233,21 +371,22 @@ Command :: proc(m: ^ai.Messenger, line: string, now: i64) {
 
 Say :: proc(m: ^ai.Messenger, to: u8, text: string, now: i64) {
     if to == ai.UNKNOWN_ID {
-        fmt.println("* no such member (see /who)")
+        Info("no such member (see /who)")
         return
     }
     if !ai.MessengerReady(m) {
-        fmt.println("* not in a channel yet, nobody got that")
+        Info("not in a channel yet, nobody got that")
         return
     }
     if !ai.MessengerSendText(m, to, text, now) {
-        fmt.println("* not sent (too long, nobody there, or too many messages waiting)")
+        Info("not sent (too long, nobody there, or too many messages waiting)")
     }
 }
 
 Send :: proc(m: ^ai.Messenger, target: string, path: string, now: i64) {
-    if !os.exists(path) {
-        fmt.printfln("* no such file: %s", path)
+    is_folder: bool = os.is_dir(path)
+    if !is_folder && !os.exists(path) {
+        Info(fmt.tprintf("no such file or folder: %s", path))
         return
     }
     sent: int
@@ -256,18 +395,25 @@ Send :: proc(m: ^ai.Messenger, target: string, path: string, now: i64) {
         if name == "" || u8(id) == ai.MessengerSelf(m) {
             continue
         }
-        if strings.equal_fold(target, "all") || strings.equal_fold(target, name) {
-            transfer, ok := ai.MessengerSendFile(m, u8(id), path, now)
-            if ok {
-                fmt.printfln("* offering %s to %s (file %d)", path, name, transfer)
-                sent += 1
-            } else {
-                fmt.printfln("* could not start sending to %s (no free slot, or not connected)", name)
-            }
+        if !strings.equal_fold(target, "all") && !strings.equal_fold(target, name) {
+            continue
+        }
+        transfer: u16
+        ok: bool
+        if is_folder {
+            transfer, ok = ai.MessengerSendFolder(m, u8(id), path, excludes[:exclude_count], now)
+        } else {
+            transfer, ok = ai.MessengerSendFile(m, u8(id), path, now)
+        }
+        if ok {
+            Info(fmt.tprintf("offering %s %s to %s (transfer %d)", "the folder" if is_folder else "the file", path, name, transfer))
+            sent += 1
+        } else {
+            Info(fmt.tprintf("could not start sending to %s (no free slot, too many files, or not connected)", name))
         }
     }
     if sent == 0 {
-        fmt.println("* nobody to send it to (see /who)")
+        Info("nobody to send it to (see /who)")
     }
 }
 
