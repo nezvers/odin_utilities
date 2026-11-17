@@ -51,7 +51,7 @@ copied code is refused before any packet is sent. The host can paste more replie
 - `link.odin`: `Link`: sockets (IPv4 + IPv6), gathering, NAT measurement, punching, port guessing, reliable channel, events, inbox.
 - `portmap.odin`: PCP, NAT-PMP and UPnP IGD port forwarding (blocking, time bounded).
 - `derp.odin`: the DERP client (frames, handshake, send / poll, a race to find the fastest relay), `derp_link.odin`: DERP inside the Link (relay candidate,
-  SIGNAL packets, short codes), `tls13.odin`: a small TLS 1.3 client (Odin has none in core; certificates are NOT checked, see its header: fine for DERP
+  SIGNAL packets, short codes), `tls13.odin`: a small TLS 1.3 client (Odin has none in core; the server certificate is checked by `tls_verify.odin`, see "Certificate checking" below: fine for DERP
   because the payload is sealed end to end, not for anything else), `nacl.odin`: NaCl box (X25519 + XSalsa20 + Poly1305) checked against the derpnet C code.
 - `turn.odin`: TURN client (allocation, refresh, permissions, Send/Data indications), non blocking from `LinkUpdate`.
 - `relay_find.odin`: `RelayFind`, which relay (TURN) servers answer from this network, with their free sign-up pages.
@@ -137,8 +137,8 @@ exchange WireGuard public keys over the live Link, the Link closes and WireGuard
   that is down, forged signals), and live: two clients through the real relay, interop in BOTH directions with the derpnet C example, `chat selftest --derp-only
   --short` (200 messages each way over 20% loss through Warsaw), two `chat` processes with one code. `P2P_LIVE=1 odin test p2p` also runs a live relay test.
 - Limits: relays are run by Tailscale for their own service and may change or limit use at any time; this is for connecting people, not for bulk transfer.
-  The TLS to the relay does not check its certificate, so someone in the middle can pretend to be the relay: they still cannot read the sealed packets, they can
-  drop them. A relay sees who talks to whom and how much.
+  The TLS to the relay checks its certificate (section "Certificate checking"); a relay still sees who talks to whom and how much, and the packets are sealed end to end
+  on top of it.
 
 ## If the relays go away or change (Tailscale can do either at any time)
 Nothing here depends on one company: the relay is one candidate path among others, and everything below keeps working without it.
@@ -158,7 +158,7 @@ Nothing here depends on one company: the relay is one candidate path among other
   renamed or moved Tailscale relay is a one word change, and a server that does not use fast start (it answers `101 Switching Protocols` first) is understood.
 - **A relay of your own** (free, accepts anybody by default; verified here only against the public relays, not against a self-hosted one, follow Tailscale's current
   documentation for `derper`): a small server with a domain name and ports 443 and 80 open: `go install tailscale.com/cmd/derper@latest`, then
-  `derper --hostname=derp.yourdomain.example`; every member passes `--derp-host derp.yourdomain.example`. Its certificate is not checked by the client (see tls13.odin).
+  `derper --hostname=derp.yourdomain.example`; every member passes `--derp-host derp.yourdomain.example`. Its certificate is checked like every relay's: derper gets a Let's Encrypt one (built-in roots), a private authority or a self-signed certificate needs `P2P_CA_FILE=<its pem file>`.
 - **A relay that stays down is replaced.** A relay of the built in list that has been down for 12 s is replaced by the next one of a fixed walk
   (`DERP_FALLBACK`: 4, 8, 1, 14, 22, 2, ... never the starting one), then again after 12 s, and so on; `DERP_SWITCHED` says it. Both ends of a connection do the same after the
   same time, so they meet on the same relay without being able to talk (the relay was the only way): the identities (keys) are the same on every relay. Peers that can only be
@@ -172,7 +172,7 @@ Nothing here depends on one company: the relay is one candidate path among other
 - **Without any relay:** the same network works (LAN addresses), hole punching works through most home routers, pasted codes need no relay, TURN works with credentials
   (`chat --turn host:port user password`), a router with UPnP can forward the port (`--upnp`). Only the case of two strict carrier NATs needs a relay.
 - **What breaks for good:** if TLS 1.3 were dropped or the DERP framing changed incompatibly, the client needs an update (the detection above tells the difference
-  between "moved" and "changed protocol"). The TLS client does not check certificates, so a relay that only accepts verified clients is not usable either.
+  between "moved" and "changed protocol"). A relay that demands something this client does not have (a client certificate, a login) is not usable.
 
 ## Reliable channel
 Selective repeat over a window of 16: the receiver keeps messages that arrive early and reports exactly which ones it has (next expected
@@ -200,11 +200,30 @@ arrive in order in about 2 s.
 - The simulation proves the logic, not the real world: NAT counters shared with other devices on the same router, carrier NAT quirks and
   provider TURN servers can differ. The guessing in particular assumes the NAT port counter is not touched between the measurement and the punch.
 
+## Certificate checking (TLS to the relay)
+`tls13.odin` verifies the relay the way a browser does (`tls_verify.odin`, built on `core:crypto/x509`): the chain the server sends must end at a root we trust, every
+certificate must be valid today, the leaf must be issued for the name we asked for (subject alternative names, server authentication), and the server must prove with its
+CertificateVerify signature (ECDSA P-256 / P-384, RSA-PSS, Ed25519) that it holds the key of that certificate, over the handshake transcript.
+- **Roots:** two are built in (`trust/isrg_root_x1.pem`, `isrg_root_x2.pem`, fingerprints checked against the published ones), which is what the Tailscale relays chain to (Let's
+  Encrypt, 2026: leaf, YE1, Root YE, ISRG Root X2, cross signed by X1), so the relays work on a computer without any root store; plus the store of the system: Windows
+  (CryptoAPI `ROOT` and `AuthRoot`, current user; Windows fetches the rest on demand, so a rarely used authority may be missing there), Linux and macOS (the usual PEM bundle
+  files); plus `P2P_CA_FILE` / `SSL_CERT_FILE` (a PEM file with one or more certificates: a company proxy that inspects HTTPS, a private authority, the self-signed
+  certificate of your own `derper`). `P2P_TLS_VERIFY=off` switches the checking off for one run.
+- **When it fails** the relay failure says why in words (`link.derp.failure`): not for this name, expired / not valid yet (**the clock of the computer must be right**), not signed
+  by an authority this computer trusts, the server did not prove its key. The kind is `TLS`, with advice.
+- **Verified:** a real relay chain captured on 2026-11-17 (accepted for its name, refused for another name, after expiry, one byte changed, without intermediates, for an address);
+  the RFC 8448 CertificateVerify signature (accepted; refused when damaged, for the wrong scheme, and over another transcript); 27 of the 28 relays connect with the check on (the
+  28th did not answer in time, as before); a Windows root store of 90 certificates loaded; `example.com` (its authority was not in the local store) is refused with the
+  explanation, which is the behaviour wanted.
+- **Not covered:** revocation (no OCSP or CRL), certificate transparency, name constraints beyond what the x509 package enforces, pinning. A relay is still only a carrier: the
+  packets inside are sealed end to end whatever the TLS says.
+
 ## When it does not connect: what to check
 | What you see | Likely cause | What to do |
 |---|---|---|
 | `DERP_FAILED` `NO_NETWORK` | no TCP 443 out, or a proxy is needed | set `HTTPS_PROXY`; `derp diagnose` |
 | `NOT_DERP`, `TLS`, `REFUSED` | the relay moved or changed | `derp map` for the current list, `--derp-host`, your own `derper` |
+| `TLS` with "certificate" in the text | wrong date on this computer, a proxy that inspects HTTPS, a private authority | fix the clock; `P2P_CA_FILE=<pem>`; as a last resort `P2P_TLS_VERIFY=off` |
 | relay fine, `PEER_FAILED` on direct | UDP blocked by a firewall (company network, Windows Firewall prompt declined), or two strict NATs | the relay carries it; allow the program in Windows Firewall |
 | LAN discovery finds nobody | Wi-Fi client isolation, a VPN adapter took the broadcast, another subnet | paste the code, or use the relay (`--derp N`) |
 | a code is refused | typo (crc), a code from an older version (format 4 or older: make a new one), or somebody else's session | make a new code |
@@ -214,7 +233,7 @@ arrive in order in about 2 s.
 
 ## Tests
 ```
-odin test p2p -strict-style -vet                 # 52 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
+odin test p2p -strict-style -vet                 # 53 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
                                                  # 36 NAT pairs, NAT measurement, relay and renewal, IPv6, loss, failure timeouts
 odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, real STUN servers, real LAN addresses, 20% loss
 odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)

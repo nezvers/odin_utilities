@@ -1,12 +1,12 @@
 // A small TLS 1.3 client, because public DERP relays (and most of the internet) only speak TLS and Odin has no TLS in core. Same code on
 // Windows, Linux and macOS: X25519 key exchange, TLS_AES_128_GCM_SHA256 or TLS_CHACHA20_POLY1305_SHA256, all from core:crypto.
 //
-// READ THIS BEFORE USING IT FOR ANYTHING ELSE: THE SERVER CERTIFICATE IS NOT CHECKED. The handshake is authenticated (the server proves it
-// holds the key it sent, Finished messages are verified), the traffic is encrypted, but nobody checks that the key belongs to the name
-// that was asked for (that needs X.509 chains and a root store, which is a library of its own). Whoever sits in the middle of the
-// connection can therefore pretend to be the server. This is acceptable for what it is used for here, DERP: everything of value inside is
-// already sealed end to end between the two peers (nacl box), the relay only learns who talks to whom. For anything else use a
-// platform TLS (SChannel, Security.framework, OpenSSL).
+// The server certificate IS checked (tls_verify.odin): the chain must end at a root we trust, be valid today and be issued for the name that
+// was asked for, and the server must prove with its CertificateVerify signature that it holds the key of the certificate. Roots: two built
+// in, the system store, and what P2P_CA_FILE adds; P2P_TLS_VERIFY=off switches the checking off. Not checked: revocation. With the check
+// off (or in the RFC 8448 test, whose certificate nobody trusts) the handshake is still authenticated by its Finished messages but anybody in
+// the middle can pose as the server; inside DERP everything of value is sealed end to end anyway. It is a client for what this library needs,
+// for anything else use a platform TLS (SChannel, Security.framework, OpenSSL).
 //
 // Layout: pure pieces first (key schedule, record protection, the handshake as a message driven state machine, all tested against the
 // RFC 8448 trace), then the socket part (TlsConnect, TlsRead, TlsWrite). Fixed buffers, no allocation. Not thread safe, one owner.
@@ -210,7 +210,14 @@ TlsHandshake :: struct {
     server_application: TlsHash,
     client_finished: [4 + TLS_HASH_SIZE]byte,       // the message to send once the server's Finished checked out
     failure: string,
+    verify: bool,                                   // check the certificate (set by TlsConnect after the hello)
+    host: [TLS_HOST_MAX]byte,                       // the name the certificate has to be for
+    host_length: int,
+    leaf: [TLS_LEAF_MAX]byte,                       // the server's certificate, kept for the CertificateVerify check
+    leaf_length: int,
 }
+
+TLS_HOST_MAX :: 64
 
 @(private)
 TlsFail :: proc(handshake: ^TlsHandshake, why: string) -> bool {
@@ -270,11 +277,13 @@ TlsClientHello :: proc(handshake: ^TlsHandshake, out: []byte, hostname: string, 
     put16(out, &at, 4)
     put16(out, &at, 2)
     put16(out, &at, 0x001d)
-    // signature_algorithms: what a server may sign with (not checked, but it has to be a list it can answer)
+    // signature_algorithms: what a server may sign with, and what its chain may be signed with (the same list in TLS 1.3): ECDSA P-256 / P-384,
+    // RSA-PSS, Ed25519 and RSA PKCS#1 for the certificates above the leaf (all of them verified by core:crypto/x509)
+    SIGNATURE_ALGORITHMS :: [?]int{0x0403, 0x0503, 0x0804, 0x0805, 0x0806, 0x0807, 0x0401, 0x0501}
     put16(out, &at, 13)
-    put16(out, &at, 2 + 10)
-    put16(out, &at, 10)
-    for algorithm in ([?]int{0x0403, 0x0804, 0x0807, 0x0805, 0x0401}) {
+    put16(out, &at, 2 + 2 * len(SIGNATURE_ALGORITHMS))
+    put16(out, &at, 2 * len(SIGNATURE_ALGORITHMS))
+    for algorithm in SIGNATURE_ALGORITHMS {
         put16(out, &at, algorithm)
     }
     // supported_versions: TLS 1.3 only
@@ -376,8 +385,8 @@ TlsServerHello :: proc(handshake: ^TlsHandshake, message: []byte) -> bool {
 }
 
 // One handshake message (header included) that came in encrypted: EncryptedExtensions, Certificate, CertificateVerify, Finished.
-// The certificate is only skipped over (see the warning at the top of the file). After the server Finished the application secrets
-// are ready and `client_finished` holds the message to send.
+// With `handshake.verify` the Certificate is checked against the trust store and the name, and CertificateVerify against its key. After the
+// server Finished the application secrets are ready and `client_finished` holds the message to send.
 TlsServerMessage :: proc(handshake: ^TlsHandshake, message: []byte) -> bool {
     if len(message) < 4 {
         return TlsFail(handshake, "handshake message too short")
@@ -396,10 +405,24 @@ TlsServerMessage :: proc(handshake: ^TlsHandshake, message: []byte) -> bool {
         if kind != 11 {
             return TlsFail(handshake, "expected Certificate")
         }
+        if handshake.verify && !TlsCheckCertificate(handshake, message) {
+            return false
+        }
         handshake.state = .WAIT_CERTIFICATE_VERIFY
     case .WAIT_CERTIFICATE_VERIFY:
         if kind != 15 {
             return TlsFail(handshake, "expected CertificateVerify")
+        }
+        if handshake.verify {
+            // the transcript so far ends with the Certificate message: that is what the server signed
+            if len(message) < 8 || int(message[6]) << 8 | int(message[7]) != len(message) - 8 {
+                return TlsFail(handshake, "CertificateVerify is malformed")
+            }
+            transcript: TlsHash = TlsTranscriptHash(handshake)
+            why, ok := TlsVerifyCertificateSignature(handshake.leaf[:handshake.leaf_length], u16(message[4]) << 8 | u16(message[5]), message[8:], transcript[:])
+            if !ok {
+                return TlsFail(handshake, why)
+            }
         }
         handshake.state = .WAIT_FINISHED
     case .WAIT_FINISHED:
@@ -425,6 +448,53 @@ TlsServerMessage :: proc(handshake: ^TlsHandshake, message: []byte) -> bool {
         return TlsFail(handshake, "handshake message at the wrong time")
     }
     sha2.update(&handshake.transcript, message)
+    return true
+}
+
+// The Certificate message: [11][len 3][context len 1 + context][list len 3]{[cert len 3][DER][extensions len 2 + extensions]}...
+// The chain is checked now (the name, the dates, the authority), the first certificate is kept for the CertificateVerify.
+@(private)
+TlsCheckCertificate :: proc(handshake: ^TlsHandshake, message: []byte) -> bool {
+    at: int = 4
+    if len(message) < at + 1 {
+        return TlsFail(handshake, "Certificate is malformed")
+    }
+    at += 1 + int(message[at])
+    if len(message) < at + 3 {
+        return TlsFail(handshake, "Certificate is malformed")
+    }
+    list_end: int = at + 3 + (int(message[at]) << 16 | int(message[at + 1]) << 8 | int(message[at + 2]))
+    at += 3
+    if list_end != len(message) {
+        return TlsFail(handshake, "Certificate is malformed")
+    }
+    chain: [TLS_CHAIN_MAX][]byte
+    count: int
+    for at < list_end {
+        if at + 3 > list_end {
+            return TlsFail(handshake, "Certificate is malformed")
+        }
+        size: int = int(message[at]) << 16 | int(message[at + 1]) << 8 | int(message[at + 2])
+        at += 3
+        if at + size + 2 > list_end || size == 0 {
+            return TlsFail(handshake, "Certificate is malformed")
+        }
+        if count < TLS_CHAIN_MAX {
+            chain[count] = message[at:at + size]
+            count += 1
+        }
+        at += size
+        at += 2 + (int(message[at]) << 8 | int(message[at + 1]))        // the extensions of this entry (OCSP, timestamps): not used
+    }
+    if count == 0 || len(chain[0]) > TLS_LEAF_MAX {
+        return TlsFail(handshake, "the server sent no usable certificate")
+    }
+    why, ok := TlsVerifyChain(chain[:count], string(handshake.host[:handshake.host_length]))
+    if !ok {
+        return TlsFail(handshake, why)
+    }
+    copy(handshake.leaf[:], chain[0])
+    handshake.leaf_length = len(chain[0])
     return true
 }
 
@@ -547,13 +617,22 @@ TlsSendAll :: proc(tls: ^Tls, data: []byte) -> bool {
 }
 
 // Runs the handshake on a connected TCP socket. Blocking: set a receive timeout first (net.set_option(.Receive_Timeout)).
-// On success the connection is ready for TlsWrite / TlsRead.
-TlsConnect :: proc(tls: ^Tls, socket: net.TCP_Socket, hostname: string) -> bool {
+// On success the connection is ready for TlsWrite / TlsRead. `verify` = check the certificate against `hostname` (see tls_verify.odin;
+// P2P_TLS_VERIFY=off overrides it).
+TlsConnect :: proc(tls: ^Tls, socket: net.TCP_Socket, hostname: string, verify: bool = true) -> bool {
     tls^ = {socket = socket}
     handshake: ^TlsHandshake = new(TlsHandshake)
     defer free(handshake)
     hello: [512]byte
     hello_length: int = TlsRandomHello(handshake, hello[:], hostname)
+    handshake.verify = verify && TlsVerifyEnabled()
+    if handshake.verify {
+        if len(hostname) > TLS_HOST_MAX {
+            tls.failure = "the name of the server is too long to check its certificate"
+            return false
+        }
+        handshake.host_length = copy(handshake.host[:], hostname)
+    }
     record: [5 + 512]byte
     record[0] = TLS_TYPE_HANDSHAKE
     record[1] = 3
@@ -795,9 +874,31 @@ TlsRfc8448Test :: proc(t: ^testing.T) {
     payload: []byte = record[5:5 + length]
     testing.expect_value(t, string(payload), string(HexBytes(RFC8448_SERVER_PAYLOAD)))
     offset: int
+    leaf: []byte
     for offset < len(payload) {
         size: int = 4 + (int(payload[offset + 1]) << 16 | int(payload[offset + 2]) << 8 | int(payload[offset + 3]))
-        testing.expect(t, TlsServerMessage(handshake, payload[offset:offset + size]))
+        message: []byte = payload[offset:offset + size]
+        if message[0] == 11 {
+            leaf = message[11:11 + (int(message[8]) << 16 | int(message[9]) << 8 | int(message[10]))]
+        }
+        if message[0] == 15 {
+            // the signature of the trace (rsa_pss_rsae_sha256) over its transcript: our check accepts it, and refuses it damaged
+            transcript: TlsHash = TlsTranscriptHash(handshake)
+            scheme: u16 = u16(message[4]) << 8 | u16(message[5])
+            why, signature_ok := TlsVerifyCertificateSignature(leaf, scheme, message[8:], transcript[:])
+            testing.expect(t, signature_ok, why)
+            damaged: [512]byte
+            copy(damaged[:], message[8:])
+            damaged[10] ~= 1
+            _, damaged_ok := TlsVerifyCertificateSignature(leaf, scheme, damaged[:len(message) - 8], transcript[:])
+            testing.expect(t, !damaged_ok)
+            _, other_ok := TlsVerifyCertificateSignature(leaf, 0x0403, message[8:], transcript[:])     // a scheme that does not fit the key
+            testing.expect(t, !other_ok)
+            transcript[0] ~= 1
+            _, replay_ok := TlsVerifyCertificateSignature(leaf, scheme, message[8:], transcript[:])    // signed over another conversation
+            testing.expect(t, !replay_ok)
+        }
+        testing.expect(t, TlsServerMessage(handshake, message))
         offset += size
     }
     testing.expect_value(t, handshake.state, TlsState.CONNECTED)

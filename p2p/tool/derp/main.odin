@@ -25,9 +25,9 @@ main :: proc() {
     mode: string = os.args[1] if len(os.args) > 1 else "probe"
     switch mode {
     case "probe":
-        Probe(os.args[2:])
+        Probe(os.args[2:] if len(os.args) > 2 else nil)
     case "diagnose":
-        Diagnose(os.args[2:])
+        Diagnose(os.args[2:] if len(os.args) > 2 else nil)
     case "map":
         os.exit(0 if FetchMap(false, os.args[2] if len(os.args) > 2 else "") else 1)
     case "pair":
@@ -209,7 +209,7 @@ Diagnose :: proc(arguments: []string) {
     fmt.println("  d) No relay at all: the same network works, a direct path works through most routers (hole punching), and pasted codes need no relay.")
 }
 
-// GET https://host/path with the TLS client of p2p (no certificate check, fine for a public list). Returns the body.
+// GET https://host/path with the TLS client of p2p (its certificate is checked like the relays'). Returns the body.
 HttpsGet :: proc(host: string, path: string) -> (body: []byte, status: int, ok: bool) {
     socket, _, dial_ok := p2p.TcpDial(host, 443)
     if !dial_ok {
