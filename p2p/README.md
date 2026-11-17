@@ -206,15 +206,15 @@ certificate must be valid today, the leaf must be issued for the name we asked f
 CertificateVerify signature (ECDSA P-256 / P-384, RSA-PSS, Ed25519) that it holds the key of that certificate, over the handshake transcript.
 - **Roots:** two are built in (`trust/isrg_root_x1.pem`, `isrg_root_x2.pem`, fingerprints checked against the published ones), which is what the Tailscale relays chain to (Let's
   Encrypt, 2026: leaf, YE1, Root YE, ISRG Root X2, cross signed by X1), so the relays work on a computer without any root store; plus the store of the system: Windows
-  (CryptoAPI `ROOT` and `AuthRoot`, current user; Windows fetches the rest on demand, so a rarely used authority may be missing there), Linux and macOS (the usual PEM bundle
+  (CryptoAPI `ROOT` and `AuthRoot`, current user; Windows fetches the rest on demand, so a rarely used authority is missing there until it was used: when our roots do not reach a chain, `TlsSystemTrust` hands the chain to CryptoAPI (`CertGetCertificateChain`, no revocation, 8 s limit), which fetches the root from the Microsoft program and says which root it ends at and whether Windows trusts it; that root is one more anchor for the one check, and the chain, name and dates are still verified here), Linux and macOS (the usual PEM bundle
   files); plus `P2P_CA_FILE` / `SSL_CERT_FILE` (a PEM file with one or more certificates: a company proxy that inspects HTTPS, a private authority, the self-signed
   certificate of your own `derper`). `P2P_TLS_VERIFY=off` switches the checking off for one run.
 - **When it fails** the relay failure says why in words (`link.derp.failure`): not for this name, expired / not valid yet (**the clock of the computer must be right**), not signed
   by an authority this computer trusts, the server did not prove its key. The kind is `TLS`, with advice.
 - **Verified:** a real relay chain captured on 2026-11-17 (accepted for its name, refused for another name, after expiry, one byte changed, without intermediates, for an address);
   the RFC 8448 CertificateVerify signature (accepted; refused when damaged, for the wrong scheme, and over another transcript); 27 of the 28 relays connect with the check on (the
-  28th did not answer in time, as before); a Windows root store of 90 certificates loaded; `example.com` (its authority was not in the local store) is refused with the
-  explanation, which is the behaviour wanted.
+  28th did not answer in time, as before); a Windows root store of 90 certificates loaded; `example.com` (its authority was not in the local store) is refused by our roots alone
+  and accepted through the Windows lookup (`TlsSystemTrustLiveTest`, P2P_LIVE=1). On Linux and macOS there is no such lookup: a missing authority needs the PEM bundle or `P2P_CA_FILE`.
 - **Not covered:** revocation (no OCSP or CRL), certificate transparency, name constraints beyond what the x509 package enforces, pinning. A relay is still only a carrier: the
   packets inside are sealed end to end whatever the TLS says.
 
@@ -233,7 +233,7 @@ CertificateVerify signature (ECDSA P-256 / P-384, RSA-PSS, Ed25519) that it hold
 
 ## Tests
 ```
-odin test p2p -strict-style -vet                 # 53 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
+odin test p2p -strict-style -vet                 # 54 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
                                                  # 36 NAT pairs, NAT measurement, relay and renewal, IPv6, loss, failure timeouts
 odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, real STUN servers, real LAN addresses, 20% loss
 odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)

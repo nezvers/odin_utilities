@@ -7,6 +7,9 @@
 //   1. two roots built in (ISRG Root X1 and X2, the authority of Let's Encrypt, which signs the certificates of the Tailscale relays and of a
 //      relay run with derper): the relays work on a machine with no root store at all, and these two are enough for them;
 //   2. the root store of the system: Windows (CryptoAPI "ROOT"), Linux and macOS (the usual PEM bundle files);
+//   2b. an authority that is missing from all of these, but that the system vouches for: on Windows the chain is handed to CryptoAPI, which
+//      fetches the root from Microsoft's program when it trusts it (the store only holds the roots that were used before), and the root
+//      it ends at is used as one more anchor for this one check;
 //   3. what the person adds: the file named by P2P_CA_FILE or SSL_CERT_FILE (PEM, may hold several certificates), for example the certificate
 //      of a relay with a private authority or a self-signed certificate of a derper of your own.
 // P2P_TLS_VERIFY=off switches the checking off (a relay with a certificate nobody can vouch for, or a clock that cannot be corrected).
@@ -171,6 +174,22 @@ TlsVerifyChain :: proc(chain: [][]byte, host: string, now: time.Time = {}) -> (w
         required_eku = .Server_Auth,
     }
     verified, error := x509.verify_chain(&certs[0], options)
+    if error == .Unknown_Authority {
+        // the roots we loaded do not reach this chain: the system may know the authority without having it in the store yet (Windows fetches
+        // the roots it trusts on demand). It only names the root; the chain, the name and the dates are checked here all the same.
+        if root_der, found := TlsSystemTrust(chain[:count]); found {
+            defer delete(root_der)
+            if root, root_error := x509.parse(root_der); root_error == .None {
+                defer x509.destroy(&root)
+                extended: []^x509.Certificate = make([]^x509.Certificate, len(tls_roots.pointers) + 1)
+                defer delete(extended)
+                copy(extended, tls_roots.pointers[:])
+                extended[len(extended) - 1] = &root
+                options.roots = extended
+                verified, error = x509.verify_chain(&certs[0], options)
+            }
+        }
+    }
     if error != .None {
         text: string
         #partial switch error {
@@ -318,4 +337,29 @@ strings_contain :: proc(text: string, part: string) -> bool {
         }
     }
     return false
+}
+
+// A site whose authority Windows does not keep in its store until it has used it (example.com, only when asked for: P2P_LIVE=1). Windows
+// names the root, the rest is checked here. Elsewhere there is no such help, so a refusal is not a failure.
+@(test)
+TlsSystemTrustLiveTest :: proc(t: ^testing.T) {
+    if os.get_env("P2P_LIVE", context.temp_allocator) == "" {
+        return
+    }
+    socket, dial_error, dial_ok := TcpDial("example.com", 443)
+    testing.expect(t, dial_ok, dial_error)
+    if !dial_ok {
+        delete(dial_error)
+        return
+    }
+    tls: Tls
+    connected: bool = TlsConnect(&tls, socket, "example.com")
+    when ODIN_OS == .Windows {
+        testing.expect(t, connected, tls.failure)
+    }
+    if connected {
+        TlsClose(&tls)
+    } else {
+        net.close(socket)
+    }
 }

@@ -7,3 +7,9 @@ package p2p
 TlsSystemStore :: proc(roots: ^TlsRoots) -> (added: int) {
     return 0
 }
+
+// Only Windows keeps roots it fetches on demand: there is nobody to ask here.
+@(private)
+TlsSystemTrust :: proc(chain: [][]byte) -> (root: []byte, ok: bool) {
+    return nil, false
+}
