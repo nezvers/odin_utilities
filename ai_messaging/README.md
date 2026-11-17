@@ -66,9 +66,12 @@ provider inside `amsg`) is **not built yet**, see "Next".
   - Left out by default: `.git`, `node_modules`, `__pycache__`, `.DS_Store`. Add more with `--exclude target` or `--exclude *.tmp` (repeat the flag).
     `--include-git` keeps `.git`.
   - Executable bits are only restored with `--keep-exec` (received files never run by themselves otherwise).
-- A file that was cut (the other member left, the link broke, the program closed) leaves `name.part` in the receive folder. Send the same file to the same member again: the receiver
-  tells how many bytes it has and the sha256 of them, the sender checks them against its own file and goes on from there (`* continuing an interrupted transfer ...`). If the
-  start differs the transfer stops and the part is deleted, the next send starts clean. Folders are not resumed (they start again). Remove old `.part` files by hand.
+- A file or folder that was cut (the other member left, the link broke, the program closed) leaves `name.part` in the receive folder (a folder: the staging folder `name.part` and
+  `name.part.manifest`, the headers of the records that came). Send the same one to the same member again: the receiver
+  tells how many bytes it has and the sha256 of them, the sender checks them against its own file (a folder: against its stream, read up to there) and goes on from there (`* continuing
+  an interrupted transfer ...`). If the start differs the transfer stops and the part is deleted, the next send starts clean. A folder continues inside the file it was writing and
+  keeps every file that was whole; the receiver rebuilds the prefix of the stream from the manifest and the files on disk, so a staging folder that lost or changed a file is
+  thrown away. Remove old `.part` files by hand.
 - Limits (change with `--max-mb 200`): 1 GiB per transfer, 20000 files per folder, 4 transfers at a time in each direction.
 - Setting up a new coworker or agent from scratch is one command: `--send carol my_project`.
 
@@ -147,7 +150,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (14 tests, about 3 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (16 tests, about 3 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -157,7 +160,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Also run by hand with real `amsg` processes: three members, folders and files received byte for byte identical.
 
 ## 10. Known limits
-- Resume is for single files (above); a folder starts again.
+- Resume needs the same name and the same member to send again; a folder whose files changed on the sender in the meantime starts again (the prefix hash differs).
 - A symbolic link already inside the receive folder that points outside is followed by the operating system.
 - No compression, so a huge folder takes as long as its size; throughput is one window per round trip (fine on a LAN, roughly 300 KB/s at 50 ms).
 - The host is the single point of failure (no host migration). One channel per `Messenger`.

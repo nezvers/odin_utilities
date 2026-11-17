@@ -1065,13 +1065,15 @@ OutReceive :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
     }
 }
 
-// The receiver kept `offset` bytes of an earlier attempt and says what they hash to. If this file starts with exactly those bytes the
-// transfer goes on from there, else it is stopped (the receiver throws its start away: send again to start over).
+// The receiver kept `offset` bytes of an earlier attempt and says what they hash to. If this file (or the stream of this folder) starts with
+// exactly those bytes the transfer goes on from there, else it is stopped (the receiver throws its start away: send again to start over).
 @(private)
 OutResume :: proc(m: ^Messenger, out: ^OutTransfer, offset: u64, theirs: []byte, now_ms: i64) {
-    ok: bool = out.bundle == nil && offset <= out.size && len(theirs) == HASH_SIZE
+    ok: bool = offset <= out.size && len(theirs) == HASH_SIZE
     mine: [HASH_SIZE]byte
-    if ok {
+    if ok && out.bundle != nil {
+        ok = BundleSkip(out.bundle, offset, &out.hash)         // reads the stream up to there: the next chunk follows from it
+    } else if ok {
         ok = PartHash(out.file, offset, &out.hash)
     }
     if ok {
@@ -1083,7 +1085,7 @@ OutResume :: proc(m: ^Messenger, out: ^OutTransfer, offset: u64, theirs: []byte,
         writer: serial.Writer
         FrameBegin(&writer, m.scratch[:], .FILE_CANCEL, m.self_id, out.to)
         serial.WriteU16(&writer, out.id)
-        serial.WriteString(&writer, "the part that arrived before is not the start of this file")
+        serial.WriteString(&writer, "the part that arrived before is not the start of this file or folder")
         FrameSend(m, out.to, serial.WriterBytes(&writer), now_ms, true)
         OutFinish(m, out, false, "the receiver's earlier part does not match this file: it was thrown away, send again")
         return
@@ -1241,11 +1243,33 @@ InAccept :: proc(m: ^Messenger, in_: ^InTransfer, now_ms: i64) {
     os.make_directory_all(m.config.receive_dir)
     path: string = FileUniquePath(m.config.receive_dir, string(in_.name[:in_.name_length]), ".part")
     if in_.folder {
-        BundleReaderInit(&in_.reader, path, m.config.keep_executable)
-        if !os.is_dir(path) {
-            OfferReject(m, in_.from, in_.id, "cannot write the folder here", now_ms)
-            in_^ = {}
-            return
+        // the leftover of an interrupted transfer of this folder: its staging folder and the manifest of the headers that came
+        stage: string = fmt.tprintf("%s/%s.part", m.config.receive_dir, string(in_.name[:in_.name_length]))
+        manifest: string = fmt.tprintf("%s.manifest", stage)
+        resumed: bool
+        if os.is_dir(stage) && os.is_file(manifest) && !PartInUse(m, in_, stage) {
+            sha2.init_256(&in_.hash)
+            offset, resume_ok := BundleReaderResume(&in_.reader, stage, m.config.keep_executable, manifest, &in_.hash)
+            if resume_ok && offset > 0 && offset <= in_.size {
+                in_.received = offset
+                in_.credited = offset
+                path = stage
+                resumed = true
+            } else {
+                BundleReaderClose(&in_.reader)
+                in_.reader = {}
+                os.remove_all(stage)
+                os.remove(manifest)
+            }
+        }
+        if !resumed {
+            path = FileUniquePath(m.config.receive_dir, string(in_.name[:in_.name_length]), ".part")
+            BundleReaderInit(&in_.reader, path, m.config.keep_executable, fmt.tprintf("%s.manifest", path))
+            if !os.is_dir(path) {
+                OfferReject(m, in_.from, in_.id, "cannot write the folder here", now_ms)
+                in_^ = {}
+                return
+            }
         }
     } else {
         // the leftover of an interrupted transfer of this name: continue it (the sender checks the start against its own file)
@@ -1282,7 +1306,7 @@ InAccept :: proc(m: ^Messenger, in_: ^InTransfer, now_ms: i64) {
     copy(in_.part_path[:in_.part_length], path)
     in_.state = .RECEIVING
     in_.active_ms = now_ms
-    if in_.folder {
+    if in_.folder && in_.received == 0 {
         sha2.init_256(&in_.hash)
     }
     writer: serial.Writer
@@ -1311,11 +1335,12 @@ InFinish :: proc(m: ^Messenger, in_: ^InTransfer, ok: bool, text: string, keep_p
     if in_.folder {
         BundleReaderClose(&in_.reader)
     }
-    // an interrupted file (the link was lost, the program closed) keeps what arrived: sending the same file again continues there
-    if !ok && in_.part_length > 0 && !(keep_part && !in_.folder) {
+    // an interrupted file or folder (the link was lost, the program closed) keeps what arrived: sending the same one again continues there
+    if !ok && in_.part_length > 0 && !keep_part {
         part: string = string(in_.part_path[:in_.part_length])
         if in_.folder {
             os.remove_all(part)
+            os.remove(fmt.tprintf("%s.manifest", part))
         } else {
             os.remove(part)
         }
@@ -1411,6 +1436,9 @@ InReceive :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
         if os.rename(part, final) != nil {
             InFail(m, in_, "cannot save it", now_ms)
             return
+        }
+        if in_.folder {
+            os.remove(fmt.tprintf("%s.manifest", part))
         }
         in_.part_length = 0
         InVerdict(m, in_, true, "received and verified", now_ms)

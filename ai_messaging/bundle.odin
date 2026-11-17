@@ -14,6 +14,7 @@
 package ai_messaging
 
 import "base:runtime"
+import "core:crypto/sha2"
 import "core:fmt"
 import "core:os"
 import "core:strings"
@@ -227,6 +228,23 @@ BundleRead :: proc(bundle: ^Bundle, out: []byte) -> int {
     return count
 }
 
+// Reads (and hashes) the first `count` bytes of the stream, so that the next BundleRead goes on from there: what a resumed transfer needs
+// on the sending side. False when the folder no longer has that many bytes (it changed since).
+BundleSkip :: proc(bundle: ^Bundle, count: u64, hash: ^sha2.Context_256) -> bool {
+    piece: [16 * 1024]byte
+    done: u64
+    for done < count {
+        want: int = int(min(u64(len(piece)), count - done))
+        read: int = BundleRead(bundle, piece[:want])
+        if read != want {
+            return false
+        }
+        sha2.update(hash, piece[:want])
+        done += u64(want)
+    }
+    return true
+}
+
 // ---------------------------------------------------------------------------------------------------------------- receiver
 
 BundleReader :: struct {
@@ -243,6 +261,7 @@ BundleReader :: struct {
     entries: int,
     ended: bool,
     failure: string,
+    manifest: ^os.File,                  // the headers of the records so far, in order (see BundleReaderResume); nil = not kept
 }
 
 BundleReadState :: enum {
@@ -280,11 +299,15 @@ BundlePathSafe :: proc(buffer: []byte, wanted: string) -> (path: string, ok: boo
     return string(buffer[:length]), true
 }
 
-BundleReaderInit :: proc(reader: ^BundleReader, root: string, keep_executable: bool) {
+// `manifest_path`: a file that gets the header of every record as it is accepted, which lets an interrupted folder be continued later.
+BundleReaderInit :: proc(reader: ^BundleReader, root: string, keep_executable: bool, manifest_path: string = "") {
     reader^ = {keep_executable = keep_executable}
     reader.root_length = min(len(root), len(reader.root))
     copy(reader.root[:reader.root_length], root)
     os.make_directory_all(root)
+    if manifest_path != "" {
+        reader.manifest, _ = os.open(manifest_path, {.Write, .Create, .Trunc})
+    }
 }
 
 BundleReaderClose :: proc(reader: ^BundleReader) {
@@ -292,6 +315,94 @@ BundleReaderClose :: proc(reader: ^BundleReader) {
         os.close(reader.file)
         reader.file = nil
     }
+    if reader.manifest != nil {
+        os.close(reader.manifest)
+        reader.manifest = nil
+    }
+}
+
+// Picks up an interrupted folder: the staging folder `root` holds what arrived, `manifest_path` the headers of the records in the order they
+// came. The prefix of the stream is rebuilt from them (headers, and the bytes of every file as it is on the disk), hashed into `hash`, and the
+// reader is left exactly where the stream stopped: after the last whole record, or inside the file that was being written (appending to it).
+// `offset` is how many bytes of the stream that is. False (nothing usable, or the folder does not match the manifest): start over.
+BundleReaderResume :: proc(reader: ^BundleReader, root: string, keep_executable: bool, manifest_path: string, hash: ^sha2.Context_256) -> (offset: u64, ok: bool) {
+    data, read_error := os.read_entire_file(manifest_path, context.allocator)
+    if read_error != nil {
+        return
+    }
+    defer delete(data)
+    // the records that are whole (a header cut off by the interruption at the end of the manifest is dropped)
+    records: [dynamic][]byte
+    defer delete(records)
+    valid_end: int
+    for valid_end + 3 <= len(data) {
+        path_length: int = int(data[valid_end + 1]) | int(data[valid_end + 2]) << 8
+        total: int = 3 + path_length + 1 + 8
+        if (data[valid_end] != 1 && data[valid_end] != 2) || path_length == 0 || path_length > BUNDLE_PATH_MAX || valid_end + total > len(data) || len(records) >= BUNDLE_MAX_FILES {
+            break
+        }
+        append(&records, data[valid_end:valid_end + total])
+        valid_end += total
+    }
+    if len(records) == 0 {
+        return
+    }
+    reader^ = {keep_executable = keep_executable}
+    reader.root_length = min(len(root), len(reader.root))
+    copy(reader.root[:reader.root_length], root)
+    for record, index in records {
+        path_length: int = len(record) - 3 - 1 - 8
+        safe: [BUNDLE_PATH_MAX + 32]byte
+        relative, path_ok := BundlePathSafe(safe[:], string(record[3:3 + path_length]))
+        if !path_ok {
+            return 0, false
+        }
+        size: u64
+        for i in 0 ..< 8 {
+            size |= u64(record[3 + path_length + 1 + i]) << uint(8 * i)
+        }
+        sha2.update(hash, record)
+        offset += u64(len(record))
+        reader.entries += 1
+        if record[0] == 2 {
+            if !os.is_dir(fmt.tprintf("%s/%s", root, relative)) {
+                return 0, false
+            }
+            continue
+        }
+        reader.files += 1
+        if size == 0 {
+            continue
+        }
+        full: string = fmt.tprintf("%s/%s", root, relative)
+        file, open_error := os.open(full, {.Read, .Write})
+        if open_error != nil {
+            return 0, false
+        }
+        on_disk, size_error := os.file_size(file)
+        last: bool = index == len(records) - 1
+        // every file but the last one must be whole; the last one may be cut anywhere, never longer than it says
+        if size_error != nil || u64(on_disk) > size || (!last && u64(on_disk) != size) || !PartHash(file, u64(on_disk), hash) {
+            os.close(file)
+            return 0, false
+        }
+        offset += u64(on_disk)
+        if last && u64(on_disk) < size {
+            os.seek(file, 0, .End)
+            reader.file = file
+            reader.data_left = size - u64(on_disk)
+            reader.state = .DATA
+        } else {
+            os.close(file)
+        }
+    }
+    // the manifest goes on from the last whole record
+    if os.write_entire_file(manifest_path, data[:valid_end]) != nil {
+        BundleReaderClose(reader)
+        return 0, false
+    }
+    reader.manifest, _ = os.open(manifest_path, {.Write, .Append})
+    return offset, reader.manifest != nil
 }
 
 @(private)
@@ -350,6 +461,14 @@ BundleFeed :: proc(reader: ^BundleReader, data: []byte) -> bool {
     return true
 }
 
+// The header of the record that was just accepted, still in `reader.header`.
+@(private)
+BundleManifestAdd :: proc(reader: ^BundleReader, length: int) {
+    if reader.manifest != nil {
+        os.write(reader.manifest, reader.header[:length])
+    }
+}
+
 @(private)
 BundleRecord :: proc(reader: ^BundleReader) -> bool {
     path_length: int = reader.header_need - 3 - 1 - 8
@@ -360,6 +479,7 @@ BundleRecord :: proc(reader: ^BundleReader) -> bool {
         size |= u64(reader.header[3 + path_length + 1 + i]) << uint(8 * i)
     }
     kind: u8 = reader.header[0]
+    raw_length: int = reader.header_need
     reader.header_length = 0
     reader.entries += 1
     if reader.entries > BUNDLE_MAX_FILES {
@@ -376,6 +496,7 @@ BundleRecord :: proc(reader: ^BundleReader) -> bool {
             return BundleFail(reader, "damaged folder record")
         }
         os.make_directory_all(full)
+        BundleManifestAdd(reader, raw_length)
         return true
     }
     parent_end: int = strings.last_index_byte(full, '/')
@@ -387,6 +508,7 @@ BundleRecord :: proc(reader: ^BundleReader) -> bool {
         return BundleFail(reader, "cannot create a file of the folder")
     }
     reader.files += 1
+    BundleManifestAdd(reader, raw_length)
     if size == 0 {
         os.close(file)
     } else {
@@ -534,4 +656,80 @@ BundleHostileTest :: proc(t: ^testing.T) {
     reader = {}
     BundleReaderInit(&reader, fmt.tprintf("%s/stage4", folder), false)
     testing.expect(t, !BundleFeed(&reader, stream[:]))
+}
+
+// A folder cut off anywhere (inside a header, inside a file, between records) is picked up from its manifest and staging folder: the
+// reader says how much of the stream it holds and the hash of that prefix, and the rest of the stream finishes the same folder.
+@(test)
+BundleResumeTest :: proc(t: ^testing.T) {
+    folder: string = TempFolder("bundle_resume")
+    defer os.remove_all(folder)
+    defer delete(folder)
+    source: string = fmt.tprintf("%s/project", folder)
+    WriteTree(source)
+    bundle: Bundle
+    testing.expect(t, BundleScan(&bundle, source, {".git", "node_modules", "*.tmp"}, context.allocator))
+    defer BundleDestroy(&bundle)
+    stream: [dynamic]byte
+    defer delete(stream)
+    piece: [1000]byte
+    for {
+        count: int = BundleRead(&bundle, piece[:])
+        append(&stream, ..piece[:max(count, 0)])
+        if count < len(piece) {
+            break
+        }
+    }
+
+    for cut, index in ([?]int{5, 20, 40, 1000, 60_000, 150_000, len(stream) - 3}) {
+        stage: string = fmt.tprintf("%s/stage_%d", folder, index)
+        manifest: string = fmt.tprintf("%s.manifest", stage)
+        first: BundleReader
+        BundleReaderInit(&first, stage, false, manifest)
+        testing.expect(t, BundleFeed(&first, stream[:cut]))
+        BundleReaderClose(&first)                                   // the interruption: the staging folder and the manifest stay
+
+        again: BundleReader
+        hash: sha2.Context_256
+        sha2.init_256(&hash)
+        offset, ok := BundleReaderResume(&again, stage, false, manifest, &hash)
+        testing.expectf(t, ok || offset == 0, "cut %d", cut)
+        if !ok {
+            // nothing whole had arrived (a cut inside the first header): the sender starts the folder again
+            testing.expect(t, cut < 40)
+            BundleReaderClose(&again)
+            continue
+        }
+        testing.expectf(t, offset > 0 && offset <= u64(cut), "cut %d: offset %d", cut, offset)
+        expected: sha2.Context_256
+        sha2.init_256(&expected)
+        sha2.update(&expected, stream[:offset])
+        got, want: [HASH_SIZE]byte
+        sha2.final(&hash, got[:])
+        sha2.final(&expected, want[:])
+        testing.expectf(t, string(got[:]) == string(want[:]), "cut %d: the prefix hash differs", cut)
+
+        testing.expectf(t, BundleFeed(&again, stream[offset:]), "cut %d: %s", cut, again.failure)
+        testing.expect(t, again.ended)
+        BundleReaderClose(&again)
+        testing.expect(t, SameFile(fmt.tprintf("%s/sub/big.bin", source), fmt.tprintf("%s/sub/big.bin", stage)))
+        testing.expect(t, SameFile(fmt.tprintf("%s/sub/deep/c.txt", source), fmt.tprintf("%s/sub/deep/c.txt", stage)))
+        testing.expect(t, os.is_dir(fmt.tprintf("%s/empty_dir", stage)))
+        testing.expect(t, os.exists(fmt.tprintf("%s/zero.bin", stage)))
+    }
+
+    // a staging folder that lost a file the manifest names: not usable
+    stage: string = fmt.tprintf("%s/stage_lost", folder)
+    manifest: string = fmt.tprintf("%s.manifest", stage)
+    first: BundleReader
+    BundleReaderInit(&first, stage, false, manifest)
+    testing.expect(t, BundleFeed(&first, stream[:100_000]))
+    BundleReaderClose(&first)
+    os.remove(fmt.tprintf("%s/a.txt", stage))
+    again: BundleReader
+    hash: sha2.Context_256
+    sha2.init_256(&hash)
+    _, ok := BundleReaderResume(&again, stage, false, manifest, &hash)
+    testing.expect(t, !ok)
+    BundleReaderClose(&again)
 }

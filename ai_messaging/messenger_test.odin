@@ -677,3 +677,134 @@ MessengerResumeTest :: proc(t: ^testing.T) {
     }, 20000))
     testing.expect(t, SameFile(source, fmt.tprintf("%s/big.bin", receive)))
 }
+
+// A folder cut off in the middle (the sender closes) is kept as a staging folder with its manifest; sending the same folder again continues
+// from there, and a leftover of a different folder is refused, thrown away, and the next send starts clean.
+@(test)
+MessengerFolderResumeTest :: proc(t: ^testing.T) {
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("folderresume-%x", random)
+    defer delete(channel)
+    folder: string = TempFolder("folderresume")
+    defer os.remove_all(folder)
+    defer delete(folder)
+    receive: string = fmt.aprintf("%s/in", folder)
+    defer delete(receive)
+    source: string = fmt.aprintf("%s/proj", folder)
+    defer delete(source)
+    stage: string = fmt.aprintf("%s/proj.part", receive)
+    defer delete(stage)
+    manifest: string = fmt.aprintf("%s.manifest", stage)
+    defer delete(manifest)
+    os.make_directory_all(fmt.tprintf("%s/sub", source))
+    _ = os.write_entire_file(fmt.tprintf("%s/a.txt", source), "first file")
+    FillTestFile(fmt.tprintf("%s/sub/big.bin", source), 6_000_000)
+
+    host: ^Node = NodeOpen({channel = channel, name = "receiver", role = .HOST, lan = true, receive_dir = receive, auto_accept = true})
+    testing.expect(t, host != nil)
+    defer NodeClose(host)
+    sender_config: MessengerConfig = {channel = channel, name = "sender", role = .GUEST, lan = true}
+    sender: ^Node = NodeOpen(sender_config)
+    testing.expect(t, sender != nil)
+    testing.expect(t, PumpUntil([]^Node{host, sender}, proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 1 && nodes[1].connected
+    }))
+    _, started := MessengerSendFolder(sender.m, 0, source, {}, p2p.LinkNow())
+    testing.expect(t, started)
+
+    // cut it when part of the big file has arrived
+    big: string = fmt.tprintf("%s/sub/big.bin", stage)
+    cut: bool
+    for _ in 0 ..< 8000 {
+        NodeUpdate(host)
+        NodeUpdate(sender)
+        if size, size_ok := PathSize(big); size_ok && size > 200_000 && size < 5_000_000 {
+            cut = true
+            break
+        }
+        time.sleep(time.Millisecond)
+    }
+    testing.expect(t, cut)
+    NodeClose(sender)
+    testing.expect(t, PumpUntil([]^Node{host}, proc(nodes: []^Node) -> bool {
+        return nodes[0].left == 1
+    }))
+    testing.expect(t, os.is_dir(stage) && os.is_file(manifest))                      // both stay
+
+    // the same folder again: it continues from what is there
+    sender = NodeOpen(sender_config)
+    testing.expect(t, sender != nil)
+    defer NodeClose(sender)
+    nodes: []^Node = {host, sender}
+    testing.expect(t, PumpUntil(nodes, proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 2 && nodes[1].connected
+    }))
+    done_before: int = len(host.done)
+    _, started = MessengerSendFolder(sender.m, 0, source, {}, p2p.LinkNow())
+    testing.expect(t, started)
+    testing.expect(t, PumpUntil(nodes, proc(nodes: []^Node) -> bool {
+        return len(nodes[1].done) == 1 && len(nodes[0].done) >= 1
+    }, 20000))
+    testing.expect_value(t, len(host.done), done_before + 1)
+    testing.expect(t, host.done[len(host.done) - 1].ok)
+    final: string = fmt.tprintf("%s/proj", receive)
+    testing.expect(t, SameFile(fmt.tprintf("%s/sub/big.bin", source), fmt.tprintf("%s/sub/big.bin", final)))
+    testing.expect(t, SameFile(fmt.tprintf("%s/a.txt", source), fmt.tprintf("%s/a.txt", final)))
+    testing.expect(t, !os.exists(stage) && !os.exists(manifest))
+    continued: bool
+    for line in host.errors {
+        continued ||= strings.contains(line, "continuing an interrupted transfer")
+    }
+    testing.expect(t, continued)
+
+    // a leftover of another folder of the same name (its big file differs in the first byte): the sender notices, nothing of it is kept
+    os.remove_all(final)
+    alternative: string = fmt.tprintf("%s/alt/proj", folder)
+    os.make_directory_all(fmt.tprintf("%s/sub", alternative))
+    _ = os.write_entire_file(fmt.tprintf("%s/a.txt", alternative), "first file")
+    FillTestFile(fmt.tprintf("%s/sub/big.bin", alternative), 6_000_000)
+    if bytes, read_error := os.read_entire_file(fmt.tprintf("%s/sub/big.bin", alternative), context.allocator); read_error == nil {
+        bytes[0] ~= 0xFF
+        _ = os.write_entire_file(fmt.tprintf("%s/sub/big.bin", alternative), bytes)
+        delete(bytes)
+    }
+    other: Bundle
+    testing.expect(t, BundleScan(&other, alternative, {}, context.allocator))
+    leftover: [dynamic]byte
+    defer delete(leftover)
+    chunk: [4096]byte
+    for len(leftover) < 1_000_000 {
+        count: int = BundleRead(&other, chunk[:])
+        append(&leftover, ..chunk[:max(count, 0)])
+        if count < len(chunk) {
+            break
+        }
+    }
+    BundleDestroy(&other)
+    stale: BundleReader
+    BundleReaderInit(&stale, stage, false, manifest)
+    testing.expect(t, BundleFeed(&stale, leftover[:]))
+    BundleReaderClose(&stale)
+    sender_done: int = len(sender.done)
+    _, started = MessengerSendFolder(sender.m, 0, source, {}, p2p.LinkNow())
+    testing.expect(t, started)
+    testing.expect(t, PumpUntil(nodes, proc(nodes: []^Node) -> bool {
+        return len(nodes[1].done) == 2
+    }, 20000))
+    testing.expect(t, sender_done == 1 && len(sender.done) == 2 && !sender.done[1].ok)
+    for _ in 0 ..< 200 {
+        NodeUpdate(host)
+        NodeUpdate(sender)
+        time.sleep(time.Millisecond)
+    }
+    testing.expect(t, !os.exists(stage) && !os.exists(manifest))
+    // and the next send starts clean
+    _, started = MessengerSendFolder(sender.m, 0, source, {}, p2p.LinkNow())
+    testing.expect(t, started)
+    testing.expect(t, PumpUntil(nodes, proc(nodes: []^Node) -> bool {
+        return len(nodes[1].done) == 3
+    }, 20000))
+    testing.expect(t, sender.done[2].ok)
+    testing.expect(t, SameFile(fmt.tprintf("%s/sub/big.bin", source), fmt.tprintf("%s/sub/big.bin", final)))
+}
