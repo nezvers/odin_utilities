@@ -93,7 +93,7 @@ provider inside `amsg`) is **not built yet**, see "Next".
 - It uses hole punching, so it works through most home routers. When both sides are behind a strict carrier NAT it cannot connect (see
   `p2p/README.md`: relay and port forwarding options).
 - Everything is sealed end to end with a key from the session secret that is in the code (`p2p/README.md`, "Encryption of the Link"); a code is private, keep it so. Behind an
-  proxy set `HTTPS_PROXY` (or `ALL_PROXY=socks5://...`) (the relay then works through it).
+  proxy set `HTTPS_PROXY` (or `ALL_PROXY=socks5://...`, `https://...`, `socks4://...`; NTLM and Windows logins, see p2p/README.md) (the relay then works through it).
 
 ## 6. For programs and agents: `--json`
 - `amsg my-team --name alice --json` prints one JSON object per line, easy to parse.

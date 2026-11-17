@@ -147,23 +147,29 @@ Probe :: proc(arguments: []string) {
 }
 
 // Is the internet there at all? (a TCP connection to a few well known places)
-InternetReachable :: proc() -> bool {
+InternetReachable :: proc() -> (reachable: bool, why: string) {
     for target in ([?]string{"1.1.1.1", "8.8.8.8", "www.cloudflare.com"}) {
-        socket, _, ok := p2p.TcpDial(target, 443)           // through the proxy of the environment, when there is one
+        socket, dial_error, ok := p2p.TcpDial(target, 443)           // through the proxy of the environment, when there is one
         if ok {
             net.close(socket)
-            return true
+            return true, ""
+        }
+        if why == "" {
+            why = dial_error                                  // the first one: with a proxy it says what the proxy did
         }
     }
-    return false
+    return false, why
 }
 
 // Tells the person what is wrong and what to do: is it this network, one relay, or all relays (Tailscale changed or went away)?
 Diagnose :: proc(arguments: []string) {
     fmt.println("1. Is the internet reachable from here?")
-    internet: bool = InternetReachable()
+    internet, why := InternetReachable()
     fmt.printfln("   %s", "yes (TCP 443 to a public address works)" if internet else "NO: no TCP connection to 1.1.1.1, 8.8.8.8 or cloudflare.com on port 443")
     if !internet {
+        if why != "" {
+            fmt.printfln("   first error: %s", why)
+        }
         fmt.println("   Nothing can be relayed without a connection. Check the network, a proxy or a firewall that blocks outgoing 443.")
         fmt.println("   The same network (LAN) still works without any relay: `chat host|join`, `amsg <channel>`.")
         return

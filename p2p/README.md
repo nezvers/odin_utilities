@@ -166,9 +166,21 @@ Nothing here depends on one company: the relay is one candidate path among other
   messages, both ends on relay 4, nothing lost). A code made before names the old relay; an invite that names the relay the session started on is still accepted.
   Limits: it assumes both sides see the same relays as down (if only one side cannot reach it, they end on different ones); a relay of your own (`--derp-host`) is never
   replaced, `LinkConfig.derp_no_failover` turns it off for the list too.
-- **Behind an HTTP proxy.** The relay connection (and `derp map` / `diagnose`) goes through `HTTPS_PROXY` / `https_proxy` / `ALL_PROXY` (`http://[user:password@]host:port`,
-  Basic authentication, `NO_PROXY` respected) with the CONNECT method (`proxy.odin`, tested against a fake proxy: header, credentials, 407, 403, and that no tunnel bytes are eaten).
-  SOCKS5 works too (`ALL_PROXY=socks5://[user:password@]host:port`, `socks5h://` the same: the name always goes to the proxy; no authentication or user name and password). Not covered: HTTPS proxies, SOCKS4, NTLM/Kerberos. UDP (STUN, hole punching) cannot pass a proxy: behind one only the relay works, which is what it is for.
+- **Behind a proxy.** The relay connection (and `derp map` / `diagnose`) goes through `HTTPS_PROXY` / `https_proxy` / `ALL_PROXY` (`NO_PROXY` respected); the scheme of the URL
+  says which kind (user name and password may be percent encoded, `%5C` = backslash), `proxy.odin`:
+  - `http://[user:password@]host[:3128]`: CONNECT, Basic with the first request. When the proxy asks for **NTLM** or **Negotiate** instead: with `DOMAIN\user:password` in the URL
+    NTLMv2 is done by hand on every platform (`proxy_ntlm.odin`, MD4 included; checked against the MS-NLMP example and a fake proxy that verifies the response); **on Windows
+    without credentials in the URL** the login of the user goes through SSPI (`proxy_sspi_windows.odin`: Negotiate = Kerberos with NTLM as the fallback, the service name is
+    `HTTP/<proxy host>`; tested against this computer's accounts through `AcceptSecurityContext`, NTLM only, a real Kerberos domain was not available). Kerberos needs Windows:
+    no GSSAPI is used elsewhere, there the message asks for `DOMAIN\user:password`. The login runs on one connection (the 407 bodies are read and dropped); a proxy that closes it
+    after each 407 cannot be used for NTLM (the message says so).
+  - `https://[user:password@]host[:443]`: the same CONNECT inside TLS to the proxy, its certificate checked like a relay's (`P2P_CA_FILE` for a company authority; the name must be
+    a name, not an address). TLS goes inside TLS through a loopback pair and a thread (`proxy_tunnel.odin`): callers see an ordinary socket. Verified against a real TLS server
+    (a Python proxy with its own authority): `derp diagnose` reached 17 relays through it, `chat selftest --derp-only` passed (200 messages over 20% loss), and it is refused
+    without the authority with the reason. No offline test of the success path (there is no TLS server in the library), only of the failure.
+  - `socks5://` / `socks5h://[user:password@]host[:1080]` (RFC 1928, no login or user name and password) and `socks4://` / `socks4a://[ident@]host[:1080]`: the name is always sent to
+    the proxy (an address goes as itself in SOCKS4). Tested against fake servers.
+  Not covered: PAC / WPAD, authentication schemes other than the four. UDP (STUN, hole punching) cannot pass a proxy: behind one only the relay works, which is what it is for.
 - **Without any relay:** the same network works (LAN addresses), hole punching works through most home routers, pasted codes need no relay, TURN works with credentials
   (`chat --turn host:port user password`), a router with UPnP can forward the port (`--upnp`). Only the case of two strict carrier NATs needs a relay.
 - **What breaks for good:** if TLS 1.3 were dropped or the DERP framing changed incompatibly, the client needs an update (the detection above tells the difference
@@ -233,7 +245,7 @@ CertificateVerify signature (ECDSA P-256 / P-384, RSA-PSS, Ed25519) that it hold
 
 ## Tests
 ```
-odin test p2p -strict-style -vet                 # 55 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
+odin test p2p -strict-style -vet                 # 61 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
                                                  # 36 NAT pairs, NAT measurement, relay and renewal, IPv6, loss, failure timeouts
 odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, real STUN servers, real LAN addresses, 20% loss
 odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)
