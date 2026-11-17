@@ -177,6 +177,9 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
   `--agents` shows yours (model, working or waiting, what it hears, cost so far) and who else has one (`--who` marks them too).
 - **Which model.** `--agent haiku`, `--agent-model sonnet` (the default for a `--spawn` without one), `--spawn opus`, or a full id (`--spawn claude-opus-5-5`). It goes to Claude Code as
   `--model`; only letters, digits and `. _ : - [ ]` are accepted. `--agent-cmd` gives the path of `claude` when it is not in the PATH.
+- **Slash commands.** A line you type that starts with `/` goes to your agent untouched, so Claude Code's own commands work (`/context`, `/compact`, `/clear`, ...; the answer comes
+  back as `<agent> ...`). Only your keyboard can do that: `--to carol /clear` is a private message to carol (it reaches carol's agent only if it names it, and then as the text
+  `[private alice] ...`, never as a command), so nobody can run commands on another member's agent. What others can ask of it is `--spawn` / `--dismiss`, with approval.
 - **Where your lines go.** With an agent what you type goes to YOUR agent only (it answers in your terminal as `<agent> ...`); to speak to the group yourself use
   `--group_msg text` (`--group` for short), to one member `--to bob text`. Without an agent a plain line is a group message as before.
 - **The agent talks to the group by itself** through five tools (`say`, `tell`, `send`, `inbox`, `who`), when it has something to say. Others see it as `<alice's agent> text`

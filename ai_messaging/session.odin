@@ -407,7 +407,10 @@ SessionLine :: proc(s: ^Session, text: string, now_ms: i64) -> bool {
         return false
     }
     name: string = MessengerName(s.m, MessengerSelf(s.m))
-    if !AgentSend(&s.agent, fmt.tprintf("[%s] %s", name, text)) {
+    // a slash command of Claude Code (/context, /compact, /clear, ...) only works as the whole line: it goes in untouched. Only the person at
+    // this keyboard gets that: what other members write always arrives wrapped, as "[group bob] ...", and is never a command.
+    line: string = text if strings.has_prefix(text, "/") else fmt.tprintf("[%s] %s", name, text)
+    if !AgentSend(&s.agent, line) {
         SessionNote(s, .INFO, "the agent does not take messages any more (it ended?)")
     }
     return true

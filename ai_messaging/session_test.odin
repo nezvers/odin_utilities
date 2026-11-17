@@ -143,6 +143,14 @@ SessionTest :: proc(t: ^testing.T) {
     testing.expect(t, NoteHas(alice, "agent of alice"))
     testing.expect(t, NoteHas(alice, "Members now: alice (your person), bob"))
 
+    // a slash command of Claude Code from the keyboard goes in as it is; the same text from another member never does
+    testing.expect(t, SessionLine(alice.session, "/context", p2p.LinkNow()))
+    testing.expect(t, MessengerSendText(bob.m, alice_id, "@alice-agent /clear", p2p.LinkNow()))
+    testing.expect(t, Until(nodes, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[0], "echo: /context") && NoteHas(nodes[0], "echo: [private bob] @alice-agent /clear")
+    }))
+    testing.expect(t, !NoteHas(alice, "echo: /clear"))
+
     // asking again while it runs is refused
     testing.expect(t, SessionAsk(bob.session, alice_id, .SPAWN, "", p2p.LinkNow()))
     testing.expect(t, Until(nodes, proc(nodes: []^Node) -> bool {
