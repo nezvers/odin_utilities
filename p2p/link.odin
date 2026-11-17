@@ -10,12 +10,17 @@
 // the heap once). Nothing is allocated per frame; failures are reported (send returns false when the window is full) instead of
 // growing. Time is passed in (`now_ms`, see LinkNow) so tests can run a fake clock.
 //
-// Not covered, on purpose and stated in the README: no encryption (the session id is a shared secret, not a key), IPv4 only,
-// and no relay: two peers behind symmetric NATs (or CGNAT on both sides) cannot reach each other without a TURN server, which
-// has no free public offer. The Link tells (`link.nat`) so the program can say why a connection failed.
+// Every packet after the header is sealed (XSalsa20-Poly1305, see nacl.odin) with a key made from the secret that only the invite
+// carries, so the route (a free relay, a TURN server, the open internet) sees sizes and timing but nothing else, cannot forge a
+// packet and cannot replay one. The key is per pair of ids and the packet counter in the nonce is checked against a window.
+//
+// Not covered, on purpose and stated in the README: the invite itself must reach the other person privately (a code in a public
+// place gives the channel away), IPv4 only, and two peers behind symmetric NATs (or CGNAT on both sides) need a relay: DERP or TURN.
+// The Link tells (`link.nat`) so the program can say why a connection failed.
 package p2p
 
 import "core:crypto"
+import "core:crypto/sha2"
 import "core:net"
 import "core:testing"
 import "core:time"
@@ -27,6 +32,7 @@ INBOX :: 64                         // received messages waiting for LinkReceive
 EVENTS :: 32
 PACKET_MAGIC :: u8(0xD7)            // STUN messages start with 0x00..0x3F, so the two never get mixed up
 PACKET_HEADER :: 10                 // magic, kind, session tag (u32), id of the sender (u32)
+PACKET_CRYPTO :: 8 + 1 + BOX_AUTH_SIZE     // counter (u64), kind inside the seal, authenticator: what sealing adds after the header
 PUNCH_INTERVAL_MS :: 200
 PUNCH_TIMEOUT_MS :: 20000
 RESEND_FIRST_MS :: 250              // resend timeout until a round trip was measured
@@ -107,6 +113,7 @@ LinkEventKind :: enum {
     RELAY_FAILED,                   // wrong credentials, no answer, quota: link.turn.failure says why
     DERP_READY,                     // the DERP relay connection is up (codes made from now on carry it)
     DERP_FAILED,                    // link.derp.failure says why (and link.derp.failure_kind, DerpAdvice(kind) what to do)
+    DERP_SWITCHED,                  // the relay stayed down and the link moved to another one (link.derp.server): codes made before name the old one
     DERP_LOST,                      // a working relay connection ended: it is reconnected by itself (DERP_READY comes again)
     DERP_HOST_FOUND,                // LinkDerpFind got an answer: link.derp.found is the host's invite, LinkJoin it
 }
@@ -135,6 +142,7 @@ LinkConfig :: struct {
     derp_private_set: bool,
     // Offer only the DERP relay (no addresses): everything goes through it. For privacy and for testing the relay end to end.
     derp_only: bool,
+    derp_no_failover: bool,         // stay on the relay that was chosen however long it is down (a relay in the list is otherwise replaced after DERP_FAILOVER_MS)
 }
 
 // Where datagrams go in and out. The default is the UDP socket; a program (or a test with a simulated network) can put its own
@@ -193,6 +201,13 @@ Peer :: struct {
     rx_packets: u64,
     tx_packets: u64,
     resent: u64,
+
+    key: BoxKey,                    // seals the packets with this peer, see PeerKeyMake
+    send_counter: u64,              // next nonce counter, starts at a random value so a restarted peer never repeats a nonce
+    recv_top: u64,                  // the highest counter that opened; recv_seen bit k = counter recv_top - k opened (replay window)
+    recv_seen: u64,
+    recv_any: bool,
+    rejected: u64,                  // packets that did not open: forged, damaged or sealed for another session
 }
 
 Link :: struct {
@@ -206,6 +221,7 @@ Link :: struct {
     role: LinkRole,
     id: u32,                        // identifies this link in punch packets
     session: u64,
+    secret: [SECRET_SIZE]byte,      // the host makes it, the invite hands it on
     tag: u32,                       // session as sent in every packet
     name: [NAME_MAX]byte,
     name_len: int,
@@ -249,7 +265,7 @@ Link :: struct {
     // test hook: drop this percent of the received datagrams (pseudo random, so a pattern cannot line up with the resends)
     drop_percent: int,
     drop_state: u32,
-    datagram: [PACKET_HEADER + 8 + MAX_PAYLOAD + TURN_OVERHEAD + 16]byte,
+    datagram: [PACKET_HEADER + PACKET_CRYPTO + 8 + MAX_PAYLOAD + TURN_OVERHEAD + 16]byte,
 }
 
 // Milliseconds on a monotonic clock, what LinkUpdate wants.
@@ -332,9 +348,9 @@ LinkClose :: proc(link: ^Link) {
     if !link.open {
         return
     }
-    for peer in link.peers {
+    for &peer in link.peers {
         if peer.state == .CONNECTED {
-            LinkSendPacket(link, peer.endpoint, .CLOSE, nil, nil, peer.via_relay)
+            LinkSendPacket(link, &peer, peer.endpoint, .CLOSE, nil, nil, peer.via_relay)
         }
     }
     if link.transport.send == nil {
@@ -757,6 +773,7 @@ LinkFilterUpdate :: proc(link: ^Link, now_ms: i64) {
 LinkHost :: proc(link: ^Link, name: string) {
     assert(link.open && link.role == .NONE)
     link.role = .HOST
+    crypto.rand_bytes(link.secret[:])
     crypto.rand_bytes((cast([^]byte)&link.session)[:size_of(link.session)])
     link.tag = SessionTag(link.session)
     link.name_len = min(len(name), NAME_MAX)
@@ -771,6 +788,7 @@ LinkJoin :: proc(link: ^Link, invite: Invite, name: string, now_ms: i64) -> bool
         return false
     }
     link.role = .GUEST
+    link.secret = invite.secret
     link.session = invite.session
     link.tag = SessionTag(link.session)
     link.name_len = min(len(name), NAME_MAX)
@@ -808,6 +826,9 @@ LinkMakeInvite :: proc(link: ^Link, short: bool = false) -> (invite: Invite) {
     invite.kind = .INVITE if link.role == .HOST else .REPLY
     invite.session = link.session
     invite.id = link.id
+    if link.role == .HOST {
+        invite.secret = link.secret
+    }
     invite.name = link.name
     invite.name_len = link.name_len
     invite.nat_mapping = link.nat_mapping
@@ -851,6 +872,7 @@ PeerStart :: proc(link: ^Link, slot: int, invite: Invite, now_ms: i64) {
     peer.last_port = invite.last_port
     peer.punch_start_ms = now_ms
     peer.punch_last_ms = now_ms - PUNCH_INTERVAL_MS
+    PeerKeyMake(link, peer)
     // the same relay on both sides: its key is one more candidate, and the way to signal
     if link.derp.state == .READY && DerpSameRelay(&link.derp, invite) {
         peer.has_derp = true
@@ -937,7 +959,7 @@ LinkSend :: proc(link: ^Link, peer_index: int, data: []byte, reliable: bool, now
     }
     peer.tx_ms = now_ms
     if !reliable {
-        LinkSendPacket(link, peer.endpoint, .DATA, data, nil, peer.via_relay)
+        LinkSendPacket(link, peer, peer.endpoint, .DATA, data, nil, peer.via_relay)
         peer.tx_packets += 1
         return true
     }
@@ -972,30 +994,103 @@ LinkBroadcast :: proc(link: ^Link, data: []byte, reliable: bool, now_ms: i64, ex
 LinkDisconnect :: proc(link: ^Link, peer_index: int) {
     peer: ^Peer = &link.peers[peer_index]
     if peer.state == .CONNECTED {
-        LinkSendPacket(link, peer.endpoint, .CLOSE, nil, nil, peer.via_relay)
+        LinkSendPacket(link, peer, peer.endpoint, .CLOSE, nil, nil, peer.via_relay)
     }
     peer.state = .EMPTY
 }
 
 // ============================================================ packets
 
+// The key of one pair of peers: it depends on the session secret and on both ids, so every pair (and the reply code of a guest, which
+// has no secret of its own) gets a different key and the nonce counters of two senders never meet.
 @(private)
-LinkSendPacket :: proc(link: ^Link, to: net.Endpoint, kind: PacketKind, payload: []byte, extra: []byte = nil, relay: bool = false) {
-    buffer: [PACKET_HEADER + 8 + MAX_PAYLOAD]byte
-    buffer[0] = PACKET_MAGIC
-    buffer[1] = u8(kind)
-    PutU32BE(buffer[2:], link.tag)
-    PutU32BE(buffer[6:], link.id)
-    length: int = PACKET_HEADER
-    copy(buffer[length:], extra)
-    length += len(extra)
-    copy(buffer[length:], payload)
-    length += len(payload)
+PeerKeyMake :: proc(link: ^Link, peer: ^Peer) {
+    low: u32 = min(link.id, peer.id)
+    high: u32 = max(link.id, peer.id)
+    context_256: sha2.Context_256
+    sha2.init_256(&context_256)
+    sha2.update(&context_256, transmute([]byte)string("p2p-link-v1:"))
+    sha2.update(&context_256, link.secret[:])
+    ids: [8]byte
+    PutU32BE(ids[0:], low)
+    PutU32BE(ids[4:], high)
+    sha2.update(&context_256, ids[:])
+    sha2.final(&context_256, peer.key[:])
+    crypto.rand_bytes((cast([^]byte)&peer.send_counter)[:size_of(peer.send_counter)])
+    peer.send_counter &= 0x7FFF_FFFF_FFFF_FFFF
+}
+
+// counter (8 bytes) and direction: the two ends of a pair never use the same nonce
+@(private)
+PacketNonce :: proc(counter: u64, from_higher_id: bool) -> (nonce: [BOX_NONCE_SIZE]byte) {
+    PutU32BE(nonce[0:], u32(counter >> 32))
+    PutU32BE(nonce[4:], u32(counter))
+    nonce[8] = 1 if from_higher_id else 0
+    return
+}
+
+// Opens a received datagram: returns the length of [kind][body] written into `plain`, 0 when it is not from this peer's key, is
+// damaged, or was seen before.
+@(private)
+PeerOpen :: proc(link: ^Link, peer: ^Peer, data: []byte, plain: []byte) -> int {
+    if len(data) < PACKET_HEADER + PACKET_CRYPTO || len(data) - PACKET_HEADER - 8 - BOX_AUTH_SIZE > len(plain) {
+        return 0
+    }
+    counter: u64 = u64(GetU32BE(data[PACKET_HEADER:])) << 32 | u64(GetU32BE(data[PACKET_HEADER + 4:]))
+    if peer.recv_any && counter <= peer.recv_top && (peer.recv_top - counter >= 64 || peer.recv_seen >> (peer.recv_top - counter) & 1 != 0) {
+        return 0                          // too old, or already seen
+    }
+    sealed: []byte = data[PACKET_HEADER + 8:]
+    if !BoxOpen(plain, sealed, PacketNonce(counter, peer.id > link.id), peer.key) {
+        return 0
+    }
+    if !peer.recv_any {
+        peer.recv_any = true
+        peer.recv_top = counter
+        peer.recv_seen = 1
+    } else if counter > peer.recv_top {
+        shift: u64 = counter - peer.recv_top
+        peer.recv_seen = 0 if shift >= 64 else peer.recv_seen << shift
+        peer.recv_seen |= 1
+        peer.recv_top = counter
+    } else {
+        peer.recv_seen |= 1 << (peer.recv_top - counter)
+    }
+    return len(sealed) - BOX_AUTH_SIZE
+}
+
+@(private)
+LinkSendPacket :: proc(link: ^Link, peer: ^Peer, to: net.Endpoint, kind: PacketKind, payload: []byte, extra: []byte = nil, relay: bool = false) {
+    buffer: [PACKET_HEADER + PACKET_CRYPTO + 8 + MAX_PAYLOAD]byte
+    length: int = PeerSeal(link, peer, kind, payload, extra, buffer[:])
     if relay {
         LinkSendRelayed(link, to, buffer[:length])
         return
     }
     LinkSendRaw(link, to, buffer[:length])
+}
+
+// The datagram for `peer`: header, counter, [kind][extra][payload] sealed. Returns its length.
+@(private)
+PeerSeal :: proc(link: ^Link, peer: ^Peer, kind: PacketKind, payload: []byte, extra: []byte, buffer: []byte) -> int {
+    buffer[0] = PACKET_MAGIC
+    buffer[1] = u8(kind)
+    PutU32BE(buffer[2:], link.tag)
+    PutU32BE(buffer[6:], link.id)
+    // the kind is inside the seal too: the header is not covered by the authenticator, so a changed header kind must not pass
+    plain: [1 + 8 + MAX_PAYLOAD]byte
+    plain[0] = u8(kind)
+    plain_length: int = 1
+    copy(plain[plain_length:], extra)
+    plain_length += len(extra)
+    copy(plain[plain_length:], payload)
+    plain_length += len(payload)
+    counter: u64 = peer.send_counter
+    peer.send_counter += 1
+    PutU32BE(buffer[PACKET_HEADER:], u32(counter >> 32))
+    PutU32BE(buffer[PACKET_HEADER + 4:], u32(counter))
+    BoxSeal(buffer[PACKET_HEADER + 8:], plain[:plain_length], PacketNonce(counter, link.id > peer.id), peer.key)
+    return PACKET_HEADER + 8 + plain_length + BOX_AUTH_SIZE
 }
 
 // Every reliable message and every ACK carries the acknowledgement: the next sequence expected (everything before it arrived)
@@ -1016,7 +1111,7 @@ LinkSendReliable :: proc(link: ^Link, peer: ^Peer, sequence: u16, slot: int) {
     PutU16BE(extra[0:], sequence)
     PutU16BE(extra[2:], peer.recv_next)
     PutU16BE(extra[4:], PeerAckMask(peer))
-    LinkSendPacket(link, peer.endpoint, .DATA_RELIABLE, peer.send_data[slot][:peer.send_length[slot]], extra[:], peer.via_relay)
+    LinkSendPacket(link, peer, peer.endpoint, .DATA_RELIABLE, peer.send_data[slot][:peer.send_length[slot]], extra[:], peer.via_relay)
     peer.tx_packets += 1
     peer.ack_due = false
 }
@@ -1026,7 +1121,7 @@ LinkSendAck :: proc(link: ^Link, peer: ^Peer, now_ms: i64) {
     extra: [4]byte
     PutU16BE(extra[0:], peer.recv_next)
     PutU16BE(extra[2:], PeerAckMask(peer))
-    LinkSendPacket(link, peer.endpoint, .ACK, nil, extra[:], peer.via_relay)
+    LinkSendPacket(link, peer, peer.endpoint, .ACK, nil, extra[:], peer.via_relay)
     peer.ack_due = false
     peer.tx_ms = now_ms
 }
@@ -1038,7 +1133,6 @@ LinkHandleDatagram :: proc(link: ^Link, from: net.Endpoint, data: []byte, now_ms
     }
     kind: PacketKind = PacketKind(data[1])
     sender: u32 = GetU32BE(data[6:])
-    body: []byte = data[PACKET_HEADER:]
 
     // The peer is found by the id in the packet, not by the address it came from: a computer with several network cards
     // answers from whichever address its routing picks, and a NAT can change the public port in the middle of a session.
@@ -1054,6 +1148,14 @@ LinkHandleDatagram :: proc(link: ^Link, from: net.Endpoint, data: []byte, now_ms
     }
     peer: ^Peer = &link.peers[peer_index]
 
+    plain: [1 + 8 + MAX_PAYLOAD]byte
+    plain_length: int = PeerOpen(link, peer, data, plain[:])
+    if plain_length < 1 || plain[0] != u8(kind) {
+        peer.rejected += 1
+        return
+    }
+    body: []byte = plain[1:plain_length]
+
     if kind == .PUNCH || kind == .PUNCH_ACK {
         if peer.state == .PUNCHING {
             // from now on the peer is whatever address this packet came from: that is the hole the NAT opened
@@ -1066,7 +1168,7 @@ LinkHandleDatagram :: proc(link: ^Link, from: net.Endpoint, data: []byte, now_ms
         }
         if kind == .PUNCH {
             // always answer, the peer may still be punching because our earlier answer was lost
-            LinkSendPacket(link, from, .PUNCH_ACK, nil, nil, relay)
+            LinkSendPacket(link, peer, from, .PUNCH_ACK, nil, nil, relay)
         } else if peer.state == .CONNECTED && peer.via_relay && !relay {
             // our direct punch was answered: the direct path works both ways, leave the relay
             peer.endpoint = from
@@ -1268,7 +1370,7 @@ LinkUpdate :: proc(link: ^Link, now_ms: i64) {
                 spray_base: net.Endpoint = LinkSpray(link, peer)
                 for c in 0 ..< peer.candidate_count {
                     if peer.candidates[c] != spray_base {
-                        LinkSendPacket(link, peer.candidates[c], .PUNCH, nil)
+                        LinkSendPacket(link, peer, peer.candidates[c], .PUNCH, nil)
                     }
                 }
             }
@@ -1299,7 +1401,7 @@ LinkSpray :: proc(link: ^Link, peer: ^Peer) -> (base: net.Endpoint) {
     for k in 1 ..= SPRAY_PORTS {
         port: int = peer.last_port + peer.port_delta * k
         if port > 0 && port < 65536 {
-            LinkSendPacket(link, {address = address, port = port}, .PUNCH, nil)
+            LinkSendPacket(link, peer, {address = address, port = port}, .PUNCH, nil)
         }
     }
     return
@@ -1307,7 +1409,11 @@ LinkSpray :: proc(link: ^Link, peer: ^Peer) -> (base: net.Endpoint) {
 
 @(private)
 LinkUpdatePeer :: proc(link: ^Link, index: int, peer: ^Peer, now_ms: i64) {
-    if now_ms - peer.rx_ms >= SILENCE_MS || peer.send_count > 0 && now_ms - peer.send_progress_ms >= STALL_MS {
+    // a peer that can only be reached through the relay is not given up while the relay is being replaced: it comes back on the new one
+    grace: bool = peer.via_relay && peer.has_derp && link.derp.state != .READY && link.derp.state != .OFF
+    silence: i64 = DERP_OUTAGE_GRACE_MS if grace else SILENCE_MS
+    stall: i64 = DERP_OUTAGE_GRACE_MS if grace else STALL_MS
+    if now_ms - peer.rx_ms >= silence || peer.send_count > 0 && now_ms - peer.send_progress_ms >= stall {
         peer.state = .LOST
         LinkPushEvent(link, {kind = .PEER_LOST, peer = index})
         return
@@ -1332,7 +1438,7 @@ LinkUpdatePeer :: proc(link: ^Link, index: int, peer: ^Peer, now_ms: i64) {
         peer.upgrade_ms = now_ms
         for c in 0 ..< peer.candidate_count {
             if _, is_derp := DerpEndpointSlot(peer.candidates[c]); !is_derp {
-                LinkSendPacket(link, peer.candidates[c], .PUNCH, nil)
+                LinkSendPacket(link, peer, peer.candidates[c], .PUNCH, nil)
             }
         }
     }
@@ -1442,6 +1548,84 @@ TestConnect :: proc(t: ^testing.T, host: ^Link, guest: ^Link, now: ^i64) -> bool
     testing.expect_value(t, LinkPeerName(host, peer), "Guest")
     testing.expect_value(t, LinkPeerName(guest, 0), "Host")
     return LinkPeerCount(host) == 1 && LinkPeerCount(guest) == 1
+}
+
+// Sealing without any socket: two Links that only hold ids, a secret and one peer each.
+@(test)
+LinkSealTest :: proc(t: ^testing.T) {
+    a := new(Link)
+    b := new(Link)
+    other := new(Link)
+    defer free(a)
+    defer free(b)
+    defer free(other)
+    a.id = 5
+    b.id = 9
+    other.id = 9
+    for i in 0 ..< SECRET_SIZE {
+        a.secret[i] = u8(i + 1)
+        b.secret[i] = u8(i + 1)
+        other.secret[i] = u8(i + 100)                                // a stranger that does not have the code
+    }
+    a.peers[0] = {state = .CONNECTED, id = b.id}
+    b.peers[0] = {state = .CONNECTED, id = a.id}
+    other.peers[0] = {state = .CONNECTED, id = a.id}
+    PeerKeyMake(a, &a.peers[0])
+    PeerKeyMake(b, &b.peers[0])
+    PeerKeyMake(other, &other.peers[0])
+    testing.expect(t, a.peers[0].key == b.peers[0].key)
+    testing.expect(t, a.peers[0].key != other.peers[0].key)
+
+    datagram: [PACKET_HEADER + PACKET_CRYPTO + 8 + MAX_PAYLOAD]byte
+    plain: [1 + 8 + MAX_PAYLOAD]byte
+    secret_text: string = "attack at dawn"
+    length: int = PeerSeal(a, &a.peers[0], .DATA, transmute([]byte)secret_text, nil, datagram[:])
+    testing.expect(t, !contains(datagram[:length], transmute([]byte)secret_text))      // not readable on the wire
+
+    // the intended receiver opens it once, and only once (a replay is refused)
+    opened: int = PeerOpen(b, &b.peers[0], datagram[:length], plain[:])
+    testing.expect_value(t, opened, 1 + len(secret_text))
+    testing.expect_value(t, string(plain[1:opened]), secret_text)
+    testing.expect_value(t, PeerOpen(b, &b.peers[0], datagram[:length], plain[:]), 0)
+
+    // a bit flipped anywhere after the header: refused. The kind in the header is not covered by the tag, but the kind inside is.
+    for position in PACKET_HEADER ..< length {
+        copy_of: [PACKET_HEADER + PACKET_CRYPTO + 8 + MAX_PAYLOAD]byte = datagram
+        copy_of[position] ~= 1
+        fresh := PeerOpen(b, &b.peers[0], copy_of[:length], plain[:])
+        testing.expect_value(t, fresh, 0)
+    }
+
+    // the one that does not hold the code cannot make a packet that opens, and cannot open ours
+    forged: int = PeerSeal(other, &other.peers[0], .DATA, transmute([]byte)secret_text, nil, datagram[:])
+    testing.expect_value(t, PeerOpen(b, &b.peers[0], datagram[:forged], plain[:]), 0)
+    mine: int = PeerSeal(a, &a.peers[0], .DATA, transmute([]byte)secret_text, nil, datagram[:])
+    testing.expect_value(t, PeerOpen(other, &other.peers[0], datagram[:mine], plain[:]), 0)
+    // our own packet sent back to us is not accepted either (the direction is part of the nonce)
+    testing.expect_value(t, PeerOpen(a, &a.peers[0], datagram[:mine], plain[:]), 0)
+
+    // the replay window: out of order inside 64 is fine, once each; far behind is refused
+    a.peers[0].send_counter = 1000
+    b.peers[0].recv_any = false
+    packets: [70][PACKET_HEADER + PACKET_CRYPTO + 8 + MAX_PAYLOAD]byte
+    lengths: [70]int
+    for i in 0 ..< 70 {
+        lengths[i] = PeerSeal(a, &a.peers[0], .DATA, nil, nil, packets[i][:])
+    }
+    testing.expect(t, PeerOpen(b, &b.peers[0], packets[69][:lengths[69]], plain[:]) > 0)
+    testing.expect(t, PeerOpen(b, &b.peers[0], packets[40][:lengths[40]], plain[:]) > 0)
+    testing.expect_value(t, PeerOpen(b, &b.peers[0], packets[40][:lengths[40]], plain[:]), 0)
+    testing.expect_value(t, PeerOpen(b, &b.peers[0], packets[3][:lengths[3]], plain[:]), 0)          // 66 behind the newest
+    testing.expect(t, PeerOpen(b, &b.peers[0], packets[6][:lengths[6]], plain[:]) > 0)               // 63 behind
+}
+
+contains :: proc(haystack: []byte, needle: []byte) -> bool {
+    for i in 0 ..= len(haystack) - len(needle) {
+        if string(haystack[i:i + len(needle)]) == string(needle) {
+            return true
+        }
+    }
+    return false
 }
 
 @(test)

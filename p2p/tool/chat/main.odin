@@ -276,6 +276,8 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
             case .DERP_HOST_FOUND:                        // channel rendezvous is for programs (ai_messaging), not this chat
             case .DERP_LOST:
                 fmt.printfln("The DERP relay connection was lost (%s): reconnecting by itself.", link.derp.failure)
+            case .DERP_SWITCHED:
+                fmt.printfln("The DERP relay stayed down: moved to %s. The person on the other end moves the same way after the same time; a code made before this names the old relay (an invite that names the starting relay is still accepted).", p2p.LinkDerpHost(link))
             case .RELAY_READY:
                 fmt.printfln("Relay ready: %s (used only when a direct path does not work)", net.endpoint_to_string(link.turn.relayed, context.temp_allocator))
             case .RELAY_FAILED:

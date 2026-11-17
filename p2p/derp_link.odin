@@ -24,6 +24,13 @@ DERP_CONNECT_GIVE_UP_MS :: 10000         // LinkGathered does not wait longer th
 DERP_SIGNAL_MS :: 1000
 DERP_CUSTOM :: 255                       // invite.derp_server for a relay that is not in DERP_SERVERS (its name travels in the code)
 DERP_HOST_MAX :: 48
+DERP_FAILOVER_MS :: 12000                // a relay of the list that stays down this long is replaced by the next one (see DerpFailoverServer)
+DERP_OUTAGE_GRACE_MS :: 45000            // peers that are only reachable through a relay that is down are not given up for this long
+
+// The order in which the members of a session move when their relay stays down: well connected regions first. Everybody walks the same
+// order from the same starting relay, so after the same time they meet on the same relay without asking each other (they cannot: the
+// relay is the only way they talk). The starting relay is never in the walk.
+DERP_FALLBACK := [?]int{4, 8, 1, 14, 22, 2, 3, 5, 6, 7}
 
 // Time to wait before the next reconnect after a relay connection was lost or could not be made. Quick at first, because peers that talk
 // through the relay give up after 6 to 8 seconds of silence, then slower and slower up to one try every 30 s (it never gives up).
@@ -43,6 +50,10 @@ DerpPath :: struct {
     server: int,                         // index in DERP_SERVERS plus one, or DERP_CUSTOM
     host: [DERP_HOST_MAX]byte,           // the relay's name (also for built in servers: reconnecting needs it)
     host_length: int,
+    primary: int,                        // the relay the session started on (DERP_CUSTOM: a relay of the person, never replaced)
+    failover_step: int,                  // how many times the relay was replaced
+    down_ms: i64,                        // since when it does not work, 0 = it works
+    no_failover: bool,
     reconnecting: bool,                  // the current attempt is a reconnect, not the first connection
     attempt: int,
     next_ms: i64,
@@ -63,6 +74,39 @@ DerpPath :: struct {
     find_key: BoxKey,
     find_ms: i64,
     found: Invite,
+}
+
+// The relay after `step` replacements, counting from the starting relay `primary`.
+DerpFailoverServer :: proc(primary: int, step: int) -> int {
+    if step <= 0 || primary < 1 || primary > len(DERP_SERVERS) {
+        return primary
+    }
+    candidates: [len(DERP_FALLBACK)]int
+    count: int
+    for server in DERP_FALLBACK {
+        if server != primary {
+            candidates[count] = server
+            count += 1
+        }
+    }
+    return candidates[(step - 1) % count]
+}
+
+// The relay stays down: both ends of a connection that talk through it do the same after the same time, so they meet again.
+@(private)
+DerpFailover :: proc(link: ^Link, now_ms: i64) {
+    derp: ^DerpPath = &link.derp
+    if derp.no_failover || derp.primary < 1 || derp.down_ms == 0 || now_ms - derp.down_ms < DERP_FAILOVER_MS {
+        return
+    }
+    derp.failover_step += 1
+    server: int = DerpFailoverServer(derp.primary, derp.failover_step)
+    derp.server = server
+    derp.host_length = min(len(DERP_SERVERS[server - 1].host), DERP_HOST_MAX)
+    copy(derp.host[:derp.host_length], DERP_SERVERS[server - 1].host)
+    derp.down_ms = now_ms
+    derp.attempt = 0
+    LinkPushEvent(link, {kind = .DERP_SWITCHED})
 }
 
 @(private)
@@ -96,7 +140,7 @@ DerpEndpointSlot :: proc(endpoint: net.Endpoint) -> (slot: int, ok: bool) {
 // Uses a relay through any three procs (the simulation does). The state starts as CONNECTING until `status` says otherwise.
 LinkDerpTransport :: proc(link: ^Link, server: int, private: BoxKey, user: rawptr, send: proc(user: rawptr, peer: BoxKey, data: []byte) -> bool, poll: proc(user: rawptr, out: []byte) -> (from: BoxKey, length: int, ok: bool), status: proc(user: rawptr) -> DerpPathState, now_ms: i64, restart: proc(path: ^DerpPath) = nil) {
     assert(link.open && server >= 1 && server <= len(DERP_SERVERS))
-    link.derp = {state = .CONNECTING, server = server, private = private, public = BoxPublicKey(private), user = user, send = send, poll = poll, status = status, restart = restart, begin_ms = now_ms}
+    link.derp = {state = .CONNECTING, server = server, primary = server, no_failover = link.config.derp_no_failover, private = private, public = BoxPublicKey(private), user = user, send = send, poll = poll, status = status, restart = restart, begin_ms = now_ms}
     link.derp.host_length = min(len(DERP_SERVERS[server - 1].host), DERP_HOST_MAX)
     copy(link.derp.host[:link.derp.host_length], DERP_SERVERS[server - 1].host)
 }
@@ -104,7 +148,8 @@ LinkDerpTransport :: proc(link: ^Link, server: int, private: BoxKey, user: rawpt
 // Is the relay of this invite the one we are connected to?
 DerpSameRelay :: proc(path: ^DerpPath, invite: Invite) -> bool {
     invite: Invite = invite
-    if invite.derp_server == 0 || int(invite.derp_server) != path.server {
+    // an invite that names the relay the session started on still counts after the move: the other side moves the same way
+    if invite.derp_server == 0 || int(invite.derp_server) != path.server && (path.server == DERP_CUSTOM || int(invite.derp_server) != path.primary) {
         return false
     }
     if path.server == DERP_CUSTOM {
@@ -182,7 +227,7 @@ LinkDerpBeginHost :: proc(link: ^Link, host: string, now_ms: i64, server: int = 
     }
     derp: ^Derp = new(Derp)
     DerpBegin(derp, host, private)
-    link.derp = {state = .CONNECTING, server = server, private = private, public = BoxPublicKey(private), user = derp, real = derp, begin_ms = now_ms}
+    link.derp = {state = .CONNECTING, server = server, primary = server, no_failover = link.config.derp_no_failover || server == DERP_CUSTOM, private = private, public = BoxPublicKey(private), user = derp, real = derp, begin_ms = now_ms}
     link.derp.host_length = len(host)
     copy(link.derp.host[:], host)
     link.derp.send = DerpPathSendReal
@@ -279,8 +324,21 @@ LinkDerpUpdate :: proc(link: ^Link, now_ms: i64) {
             derp.state = .READY
             derp.reconnecting = false
             derp.attempt = 0
+            if derp.down_ms != 0 {
+                // the peers that were only reachable through it have been silent for as long as it was down: start their clocks again
+                for &peer in link.peers {
+                    if peer.state == .CONNECTED && peer.via_relay {
+                        peer.rx_ms = now_ms
+                        peer.send_progress_ms = now_ms
+                    }
+                }
+            }
+            derp.down_ms = 0
             LinkPushEvent(link, {kind = .DERP_READY})
         } else if status == .FAILED {
+            if derp.down_ms == 0 {
+                derp.down_ms = derp.begin_ms
+            }
             if derp.real != nil && derp.failure == "" {
                 derp.failure = derp.real.failure
                 derp.failure_kind = derp.real.failure_kind
@@ -302,6 +360,7 @@ LinkDerpUpdate :: proc(link: ^Link, now_ms: i64) {
     if derp.state == .RECONNECTING || derp.state == .FAILED && derp.reconnecting {
         if now_ms >= derp.next_ms && derp.restart != nil {
             derp.failure = ""
+            DerpFailover(link, now_ms)
             derp.restart(derp)
             derp.state = .CONNECTING
             derp.begin_ms = now_ms
@@ -315,6 +374,7 @@ LinkDerpUpdate :: proc(link: ^Link, now_ms: i64) {
         derp.failure = derp.real.failure if derp.real != nil && derp.real.failure != "" else "the relay connection ended"
         derp.failure_kind = .CLOSED
         derp.lost_ms = now_ms
+        derp.down_ms = now_ms
         LinkPushEvent(link, {kind = .DERP_LOST})
         if derp.restart != nil {
             derp.reconnecting = true
@@ -330,7 +390,7 @@ LinkDerpUpdate :: proc(link: ^Link, now_ms: i64) {
         derp.find_ms = now_ms
         LinkSendRendezvous(link, derp.find_key, .WHO, nil)
     }
-    buffer: [PACKET_HEADER + 8 + MAX_PAYLOAD + 64]byte
+    buffer: [PACKET_HEADER + PACKET_CRYPTO + 8 + MAX_PAYLOAD + 64]byte
     for _ in 0 ..< DATAGRAMS_PER_UPDATE {
         from, length, ok := derp.poll(derp.user, buffer[:])
         if !ok {

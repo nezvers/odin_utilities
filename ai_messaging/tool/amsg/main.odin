@@ -71,6 +71,9 @@ main :: proc() {
         case "--name":
             i += 1
             config.name = os.args[i] if i < len(os.args) else ""
+        case "--password":
+            i += 1
+            config.password = os.args[i] if i < len(os.args) else ""
         case "--dir":
             i += 1
             config.receive_dir = os.args[i] if i < len(os.args) else "received"
@@ -137,8 +140,12 @@ main :: proc() {
             config.channel = argument
         }
     }
+    if config.password == "" {
+        // the environment keeps it out of the process list and the shell history
+        config.password = os.get_env("AMSG_PASSWORD", context.allocator)
+    }
     if config.channel == "" {
-        fmt.eprintln("usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--exclude name] [--include-git] [--keep-exec] [--derp [N] | --derp-host name] [--derp-only] [--auto-reconnect]")
+        fmt.eprintln("usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--exclude name] [--include-git] [--keep-exec] [--derp [N] | --derp-host name] [--derp-only] [--auto-reconnect] [--password P]")
         os.exit(2)
     }
     if include_git {

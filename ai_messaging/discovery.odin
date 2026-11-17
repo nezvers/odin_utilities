@@ -7,11 +7,15 @@
 // the newcomer joins and sends its reply code back as JOIN. From there it is the normal p2p connection (hole punching, reliable
 // channel). Nothing leaves the local network: across the internet the codes are pasted (or carried by something else).
 //
-// A beacon only answers a matching channel hash (first 8 bytes of sha256 of the name), but the name is not a secret: anybody on the
-// same network who knows it can join, exactly like a pasted code that was shown to a stranger.
+// A beacon only answers a matching channel hash (first 8 bytes of sha256 of the name). Without a password the name is not a secret:
+// anybody on the same network who knows it (or just listens) can join, exactly like a pasted code that was shown to a stranger. With a
+// password the hash covers both and every beacon is sealed with a key made from both, so a listener learns neither the invite nor
+// the session secret in it.
 package ai_messaging
 
+import "core:crypto"
 import "core:crypto/sha2"
+import "../p2p"
 import "core:net"
 import "core:testing"
 import "core:time"
@@ -33,14 +37,21 @@ Beacon :: struct {
     open: bool,
     port: int,                          // the bound port
     hash: [8]byte,
+    sealed: bool,                       // a password was given
+    key: p2p.BoxKey,
     packet: [BEACON_MAX]byte,
+    plain: [BEACON_MAX]byte,
 }
 
-ChannelHash :: proc(channel: string) -> (hash: [8]byte) {
+ChannelHash :: proc(channel: string, password: string = "") -> (hash: [8]byte) {
     context_256: sha2.Context_256
     sha2.init_256(&context_256)
     sha2.update(&context_256, transmute([]byte)string("aimsg1:"))
     sha2.update(&context_256, transmute([]byte)channel)
+    if password != "" {
+        sha2.update(&context_256, transmute([]byte)string("\x1f"))
+        sha2.update(&context_256, transmute([]byte)password)
+    }
     full: [32]byte
     sha2.final(&context_256, full[:])
     copy(hash[:], full[:8])
@@ -48,7 +59,7 @@ ChannelHash :: proc(channel: string) -> (hash: [8]byte) {
 }
 
 // A host listens on the first free port of the range; a newcomer takes any port (it only needs to hear the answer).
-BeaconOpen :: proc(beacon: ^Beacon, channel: string, listener: bool) -> bool {
+BeaconOpen :: proc(beacon: ^Beacon, channel: string, listener: bool, password: string = "") -> bool {
     socket, make_error := net.make_unbound_udp_socket(.IP4)
     if make_error != nil {
         return false
@@ -75,7 +86,17 @@ BeaconOpen :: proc(beacon: ^Beacon, channel: string, listener: bool) -> bool {
     net.set_option(socket, .Broadcast, true)
     beacon.socket = socket
     beacon.open = true
-    beacon.hash = ChannelHash(channel)
+    beacon.hash = ChannelHash(channel, password)
+    beacon.sealed = password != ""
+    if beacon.sealed {
+        context_256: sha2.Context_256
+        sha2.init_256(&context_256)
+        sha2.update(&context_256, transmute([]byte)string("aimsg1-seal:"))
+        sha2.update(&context_256, transmute([]byte)channel)
+        sha2.update(&context_256, transmute([]byte)string("\x1f"))
+        sha2.update(&context_256, transmute([]byte)password)
+        sha2.final(&context_256, beacon.key[:])
+    }
     return true
 }
 
@@ -87,15 +108,26 @@ BeaconClose :: proc(beacon: ^Beacon) {
 }
 
 BeaconSend :: proc(beacon: ^Beacon, to: net.Endpoint, kind: BeaconKind, text: string) {
-    if !beacon.open || BEACON_HEADER + len(text) > BEACON_MAX {
+    extra: int = p2p.BOX_NONCE_SIZE + p2p.BOX_AUTH_SIZE if beacon.sealed else 0
+    if !beacon.open || BEACON_HEADER + extra + len(text) > BEACON_MAX {
         return
     }
     packet: [BEACON_MAX]byte
     packet[0], packet[1], packet[2], packet[3] = 'A', 'I', 'M', '1'
     packet[4] = u8(kind)
     copy(packet[5:13], beacon.hash[:])
-    copy(packet[BEACON_HEADER:], text)
-    net.send_udp(beacon.socket, packet[:BEACON_HEADER + len(text)], to)
+    length: int = BEACON_HEADER
+    if beacon.sealed {
+        nonce: [p2p.BOX_NONCE_SIZE]byte
+        crypto.rand_bytes(nonce[:])
+        copy(packet[length:], nonce[:])
+        p2p.BoxSeal(packet[length + p2p.BOX_NONCE_SIZE:], transmute([]byte)text, nonce, beacon.key)
+        length += extra + len(text)
+    } else {
+        copy(packet[length:], text)
+        length += len(text)
+    }
+    net.send_udp(beacon.socket, packet[:length], to)
 }
 
 // The newcomer's question, to every port of the range on this computer and on the local network.
@@ -129,6 +161,20 @@ BeaconReceive :: proc(beacon: ^Beacon) -> (kind: BeaconKind, text: string, from:
         }
         if string(packet[5:13]) != string(beacon.hash[:]) {
             continue
+        }
+        if beacon.sealed {
+            // a packet that does not open was made without the password (or damaged): the same as no packet
+            sealed: []byte = packet[BEACON_HEADER:]
+            if len(sealed) < p2p.BOX_NONCE_SIZE + p2p.BOX_AUTH_SIZE {
+                continue
+            }
+            nonce: [p2p.BOX_NONCE_SIZE]byte
+            copy(nonce[:], sealed[:p2p.BOX_NONCE_SIZE])
+            body: []byte = sealed[p2p.BOX_NONCE_SIZE:]
+            if !p2p.BoxOpen(beacon.plain[:], body, nonce, beacon.key) {
+                continue
+            }
+            return BeaconKind(packet[4]), string(beacon.plain[:len(body) - p2p.BOX_AUTH_SIZE]), source, true
         }
         return BeaconKind(packet[4]), string(packet[BEACON_HEADER:]), source, true
     }

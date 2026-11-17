@@ -44,6 +44,7 @@ SEARCH_MS :: 1500                        // how long a newcomer asks around befo
 ASK_INTERVAL_MS :: 400
 JOIN_INTERVAL_MS :: 500
 DEFAULT_MAX_FILE :: u64(1) << 30
+PASSWORD_MAX :: 64
 
 Role :: enum {
     AUTO,                                // look for a host of the channel, become one when there is none
@@ -53,6 +54,11 @@ Role :: enum {
 
 MessengerConfig :: struct {
     channel: string,
+    // Optional: makes the channel private. The name alone finds a channel, so anybody who guesses "test" could join, listen to the beacon
+    // or take the place of the host at the relay. With a password, everything that finds the channel (the relay key, the beacon hash, the
+    // beacon contents) is made from name AND password, so a stranger cannot find it, join it, or read the session secret. Use a long
+    // random one; every member needs the same. It is only for finding: the session itself is protected by the secret in the invite.
+    password: string,
     name: string,
     role: Role,
     lan: bool,                           // use the discovery beacon (same computer / network)
@@ -177,6 +183,8 @@ PATH_MAX :: 260
 Messenger :: struct {
     config: MessengerConfig,             // its strings point into the three buffers below (copies: the caller's may be temporary)
     channel_buffer: [64]byte,
+    password_buffer: [PASSWORD_MAX]byte,
+    channel_id_buffer: [64 + 1 + PASSWORD_MAX]byte,
     name_buffer: [NAME_MAX]byte,
     dir_buffer: [PATH_MAX]byte,
     derp_host_buffer: [p2p.DERP_HOST_MAX]byte,
@@ -221,6 +229,7 @@ MessengerOpen :: proc(m: ^Messenger, config: MessengerConfig, now_ms: i64) -> bo
     m.config = config
     m.config.channel = StringKeep(m.channel_buffer[:], config.channel)
     m.config.name = StringKeep(m.name_buffer[:], config.name)
+    m.config.password = StringKeep(m.password_buffer[:], config.password)
     MessengerSetReceiveDir(m, config.receive_dir)
     m.config.derp_host = StringKeep(m.derp_host_buffer[:], config.derp_host)
     if m.config.max_file_size == 0 {
@@ -229,7 +238,7 @@ MessengerOpen :: proc(m: ^Messenger, config: MessengerConfig, now_ms: i64) -> bo
     link_config: p2p.LinkConfig = config.link
     link_config.include_loopback = true      // agents on one computer reach each other through 127.0.0.1
     if config.derp_server != 0 {
-        m.channel_private, m.channel_public = p2p.DerpChannelKey(config.channel)
+        m.channel_private, m.channel_public = p2p.DerpChannelKey(ChannelId(m))
         if config.role == .HOST {
             link_config.derp_private = m.channel_private          // the host IS the channel key at the relay
             link_config.derp_private_set = true
@@ -247,6 +256,19 @@ MessengerOpen :: proc(m: ^Messenger, config: MessengerConfig, now_ms: i64) -> bo
     p2p.LinkGatherBegin(&m.link, m.stun[:m.stun_count], now_ms)
     m.phase = .GATHERING
     return true
+}
+
+// What the relay key is made from: the name, and the password when there is one.
+@(private)
+ChannelId :: proc(m: ^Messenger) -> string {
+    if m.config.password == "" {
+        return m.config.channel
+    }
+    length: int = copy(m.channel_id_buffer[:], m.config.channel)
+    m.channel_id_buffer[length] = 0x1f
+    length += 1
+    length += copy(m.channel_id_buffer[length:], m.config.password)
+    return string(m.channel_id_buffer[:length])
 }
 
 @(private)
@@ -407,7 +429,7 @@ Start :: proc(m: ^Messenger, now_ms: i64) {
         return
     }
     if m.config.lan {
-        m.beacon_up = BeaconOpen(&m.beacon, m.config.channel, false)
+        m.beacon_up = BeaconOpen(&m.beacon, m.config.channel, false, m.config.password)
     }
     m.phase = .SEARCHING
     m.search_start_ms = now_ms
@@ -431,7 +453,7 @@ BecomeHost :: proc(m: ^Messenger, now_ms: i64) {
     m.self_id = HOST_ID
     MemberSet(m, HOST_ID, m.config.name)
     if m.config.lan {
-        m.beacon_up = BeaconOpen(&m.beacon, m.config.channel, true)
+        m.beacon_up = BeaconOpen(&m.beacon, m.config.channel, true, m.config.password)
         if !m.beacon_up {
             EventPush(m, .ERROR, 0, "no free discovery port: others have to paste the code")
         }
@@ -587,6 +609,9 @@ LinkEvents :: proc(m: ^Messenger, now_ms: i64) {
             }
         case .DERP_FAILED:
             EventPush(m, .ERROR, 0, fmt.tprintf("the relay cannot be used: %s. %s (it keeps trying in the background)", m.link.derp.failure, p2p.DerpAdvice(m.link.derp.failure_kind)))
+        case .DERP_SWITCHED:
+            m.derp_was_lost = true
+            EventPush(m, .ERROR, 0, fmt.tprintf("the relay stayed down, moved to %s (the others move the same way)", p2p.LinkDerpHost(&m.link)))
         case .DERP_LOST:
             m.derp_was_lost = true
             EventPush(m, .ERROR, 0, "the relay connection was lost, reconnecting by itself")

@@ -138,6 +138,7 @@ Sim :: struct {
     now_ms: i64,                    // set by SimPump, for the lifetimes of the relay
     relayed_bytes: int,             // payload that went through the relay (either way)
     derp_down: bool,                // the DERP relay does not answer (connections to it fail)
+    derp_dead: [64]bool,            // the relay with this number does not answer (the others do)
     derp_relayed: int,              // packets that went through the DERP relay
 }
 

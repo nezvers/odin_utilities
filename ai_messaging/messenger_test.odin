@@ -288,6 +288,41 @@ MessengerDiscoveryTest :: proc(t: ^testing.T) {
     testing.expect(t, PumpUntil(nodes[:2], gone))
 }
 
+// A channel with a password: the name alone does not get anybody in, neither with no password nor with a wrong one.
+@(test)
+MessengerPasswordTest :: proc(t: ^testing.T) {
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("private-%x", random)
+    defer delete(channel)
+
+    host: ^Node = NodeOpen({channel = channel, name = "host", role = .HOST, lan = true, password = "correct horse"})
+    friend: ^Node = NodeOpen({channel = channel, name = "friend", role = .GUEST, lan = true, password = "correct horse"})
+    nobody: ^Node = NodeOpen({channel = channel, name = "nobody", role = .GUEST, lan = true})
+    wrong: ^Node = NodeOpen({channel = channel, name = "wrong", role = .GUEST, lan = true, password = "battery staple"})
+    testing.expect(t, host != nil && friend != nil && nobody != nil && wrong != nil)
+    defer NodeClose(host)
+    defer NodeClose(friend)
+    defer NodeClose(nobody)
+    defer NodeClose(wrong)
+    nodes: []^Node = {host, friend, nobody, wrong}
+
+    connected := proc(nodes: []^Node) -> bool {
+        return nodes[1].connected && nodes[0].joined == 1
+    }
+    testing.expect(t, PumpUntil(nodes, connected))
+    // give the two without the password plenty of time to find the host, then see that they did not
+    for _ in 0 ..< 1500 {
+        for node in nodes {
+            NodeUpdate(node)
+        }
+        time.sleep(time.Millisecond)
+    }
+    testing.expect(t, !nobody.connected)
+    testing.expect(t, !wrong.connected)
+    testing.expect_value(t, host.joined, 1)
+}
+
 // A whole project folder from one member to another (and from a guest to a guest through the host): hidden files, empty folders and
 // exclusions survive, it arrives as one new folder named like the source, a second send does not overwrite it.
 @(test)

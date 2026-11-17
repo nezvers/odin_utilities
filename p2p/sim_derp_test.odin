@@ -17,6 +17,7 @@ SimDerpPacket :: struct {
 
 SimDerpHost :: struct {
     registered: bool,
+    server: int,                     // the relay it is connected to: packets only travel between hosts on the same one
     key: BoxKey,
     queue: [SIM_DERP_QUEUE]SimDerpPacket,
     head: int,
@@ -26,13 +27,13 @@ SimDerpHost :: struct {
 SimDerpSend :: proc(user: rawptr, peer: BoxKey, data: []byte) -> bool {
     host: ^SimHost = cast(^SimHost)user
     sim: ^Sim = host.sim
-    if sim.derp_down || len(data) > len(SimDerpPacket{}.data) {
+    if sim.derp_down || sim.derp_dead[host.derp.server] || len(data) > len(SimDerpPacket{}.data) {
         return false
     }
     peer_copy: BoxKey = peer
     for i in 0 ..< sim.host_count {
         target: ^SimHost = &sim.hosts[i]
-        if !target.derp.registered || target.derp.key != peer_copy || target.derp.count >= SIM_DERP_QUEUE {
+        if !target.derp.registered || target.derp.server != host.derp.server || target.derp.key != peer_copy || target.derp.count >= SIM_DERP_QUEUE {
             continue
         }
         slot: ^SimDerpPacket = &target.derp.queue[(target.derp.head + target.derp.count) % SIM_DERP_QUEUE]
@@ -60,12 +61,14 @@ SimDerpPoll :: proc(user: rawptr, out: []byte) -> (from: BoxKey, length: int, ok
 
 SimDerpStatus :: proc(user: rawptr) -> DerpPathState {
     host: ^SimHost = cast(^SimHost)user
-    return .FAILED if host.sim.derp_down else .READY
+    return .FAILED if host.sim.derp_down || host.sim.derp_dead[host.derp.server] else .READY
 }
 
 // Connects a link to the fake relay with a key made from `seed` (the simulation needs no randomness).
 // "Reconnecting" in the simulation: nothing to rebuild, the relay answers again when it is up (see SimDerpStatus).
 SimDerpRestart :: proc(path: ^DerpPath) {
+    host: ^SimHost = cast(^SimHost)path.user
+    host.derp.server = path.server                  // a replaced relay: the link now sits at another switchboard
 }
 
 SimDerpAttach :: proc(host: ^SimHost, link: ^Link, seed: u8, now_ms: i64) {
@@ -82,6 +85,7 @@ SimDerpAttachKey :: proc(host: ^SimHost, link: ^Link, private: BoxKey, now_ms: i
     link.derp = {}
     LinkDerpTransport(link, 8, private, host, SimDerpSend, SimDerpPoll, SimDerpStatus, now_ms, SimDerpRestart)
     host.derp.registered = true
+    host.derp.server = link.derp.server
     host.derp.key = link.derp.public
 }
 
@@ -505,4 +509,81 @@ SimDerpLateTest :: proc(t: ^testing.T) {
     }
     testing.expect(t, ready)
     testing.expect(t, LinkMakeInvite(a).derp_server != 0)
+}
+
+// The relay of the session stays down for good: both ends move to the next relay of the walk and carry on, with nothing lost and
+// nobody given up. Then the relay they moved to is a different one from the dead one.
+@(test)
+SimDerpFailoverTest :: proc(t: ^testing.T) {
+    sim: ^Sim = new(Sim)
+    defer free(sim)
+    SimInit(sim)
+    a: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.SYMMETRIC_RANDOM))))
+    b: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.SYMMETRIC_RANDOM))))
+    defer free(a)
+    defer free(b)
+    now: i64
+    testing.expect(t, SimConnectDerp(sim, a, b, &now, .SHORT) >= 0)
+    testing.expect_value(t, a.derp.server, 8)
+    sent, received: int
+    buffer: [MAX_PAYLOAD]byte
+    switched_a, switched_b: bool
+    for step in 0 ..< 40000 {
+        if step == 300 {
+            sim.derp_dead[8] = true                      // for good
+        }
+        if sent < 200 && step % 100 == 0 {
+            message: [4]byte = {byte(sent), byte(sent >> 8), 0, 0}
+            if LinkSend(a, 0, message[:], true, now) {
+                sent += 1
+            }
+        }
+        SimPump(a, b, &now, 1)
+        for {
+            _, length, ok := LinkReceive(b, buffer[:])
+            if !ok {
+                break
+            }
+            testing.expect_value(t, length, 4)
+            testing.expect_value(t, int(buffer[0]) | int(buffer[1]) << 8, received)
+            received += 1
+        }
+        for {
+            event, ok := LinkPollEvent(a)
+            if !ok {
+                break
+            }
+            switched_a ||= event.kind == .DERP_SWITCHED
+            testing.expectf(t, event.kind != .PEER_LOST, "lost at step %v state a=%v switched %v %v", step, a.derp.state, switched_a, switched_b)
+        }
+        for {
+            event, ok := LinkPollEvent(b)
+            if !ok {
+                break
+            }
+            switched_b ||= event.kind == .DERP_SWITCHED
+            testing.expectf(t, event.kind != .PEER_LOST, "lost at step %v state a=%v switched %v %v", step, a.derp.state, switched_a, switched_b)
+        }
+    }
+    testing.expect(t, switched_a && switched_b)
+    testing.expect_value(t, a.derp.server, 4)
+    testing.expect_value(t, b.derp.server, 4)
+    testing.expect_value(t, a.derp.state, DerpPathState.READY)
+    testing.expect_value(t, received, 200)
+    testing.expect_value(t, LinkPeerCount(a), 1)
+}
+
+// A relay of the person (a name that is not in the list) is never replaced by a public one; the walk never contains its start.
+@(test)
+DerpFailoverOrderTest :: proc(t: ^testing.T) {
+    testing.expect_value(t, DerpFailoverServer(8, 0), 8)
+    testing.expect_value(t, DerpFailoverServer(8, 1), 4)
+    testing.expect_value(t, DerpFailoverServer(4, 1), 8)              // the start is skipped
+    for primary in 1 ..= len(DERP_SERVERS) {
+        for step in 1 ..< 40 {
+            testing.expect(t, DerpFailoverServer(primary, step) != primary)
+        }
+    }
+    path: DerpPath = {server = DERP_CUSTOM, primary = DERP_CUSTOM, no_failover = true}
+    testing.expect(t, path.no_failover)
 }

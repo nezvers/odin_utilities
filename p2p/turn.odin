@@ -251,10 +251,10 @@ LinkSendRelayed :: proc(link: ^Link, to: net.Endpoint, data: []byte) {
         LinkDerpSend(link, slot, data)                // a peer reached through the DERP relay is answered through it
         return
     }
-    if link.turn.phase != .READY || len(data) > MAX_PAYLOAD + PACKET_HEADER + 8 {
+    if link.turn.phase != .READY || len(data) > MAX_PAYLOAD + PACKET_HEADER + PACKET_CRYPTO + 8 {
         return
     }
-    buffer: [PACKET_HEADER + 8 + MAX_PAYLOAD + TURN_OVERHEAD]byte
+    buffer: [PACKET_HEADER + PACKET_CRYPTO + 8 + MAX_PAYLOAD + TURN_OVERHEAD]byte
     txid: StunTxId
     crypto.rand_bytes(txid[:])
     offset: int = StunBegin(buffer[:], TURN_SEND_INDICATION, txid)

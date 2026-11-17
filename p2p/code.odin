@@ -14,10 +14,11 @@ import "core:net"
 import "core:testing"
 import serial "../serial"
 
-INVITE_VERSION :: u8(4)
+INVITE_VERSION :: u8(5)
 NAME_MAX :: 24
+SECRET_SIZE :: 16                   // the key material of a session: only an INVITE carries it
 MAX_CANDIDATES :: 6
-CODE_BINARY_MAX :: 1 + 1 + 8 + 4 + 1 + NAME_MAX + 1 + MAX_CANDIDATES * 7 + 12 + 5 + 1 + 1 + DERP_HOST_MAX + 32 + 4
+CODE_BINARY_MAX :: 1 + 1 + 8 + 4 + 1 + NAME_MAX + 1 + MAX_CANDIDATES * 7 + 12 + 5 + 1 + 1 + DERP_HOST_MAX + 32 + SECRET_SIZE + 4
 CODE_TEXT_MAX :: (CODE_BINARY_MAX * 8 + 4) / 5 + CODE_BINARY_MAX     // characters plus the dashes between groups of 5
 
 CODE_ALPHABET := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -46,6 +47,9 @@ Invite :: struct {
     derp_host: [DERP_HOST_MAX]byte,
     derp_host_length: int,
     derp_key: [32]byte,
+    // Chosen by the host and handed only through the invite. Every packet of the session is sealed with a key made from it, so
+    // whoever does not hold the code cannot read, forge or replay anything, however the packets travel.
+    secret: [SECRET_SIZE]byte,
 }
 
 // The relay an invite names ("" when none).
@@ -133,6 +137,10 @@ InviteToBinary :: proc(invite: Invite, binary: []byte) -> int {
     if invite.derp_server != 0 {
         key: [32]byte = invite.derp_key
         serial.WriteBytes(&writer, key[:])
+    }
+    if invite.kind == .INVITE {
+        secret: [SECRET_SIZE]byte = invite.secret
+        serial.WriteBytes(&writer, secret[:])
     }
     // the check catches a typo or a half copied code before any packet is sent
     serial.WriteU32(&writer, hash.crc32(binary[:writer.offset]))
@@ -235,6 +243,9 @@ InviteFromBinary :: proc(binary: []byte) -> (invite: Invite, ok: bool) {
             return
         }
         copy(invite.derp_key[:], serial.ReadBytes(&reader, 32))
+    }
+    if invite.kind == .INVITE {
+        copy(invite.secret[:], serial.ReadBytes(&reader, SECRET_SIZE))
     }
     if !serial.ReaderOk(&reader) || serial.ReaderRemaining(&reader) != 0 {
         return
@@ -402,7 +413,7 @@ InviteDerpTest :: proc(t: ^testing.T) {
     buffer: [CODE_TEXT_MAX]byte
     text, ok := InviteEncode(invite, buffer[:])
     testing.expect(t, ok)
-    testing.expect(t, len(text) < 130)                                   // no addresses, the relay and its key (32 bytes) take their place
+    testing.expect(t, len(text) < 160)                                   // no addresses, the relay and its key (32 bytes) take their place
     decoded, decoded_ok := InviteDecode(text)
     testing.expect(t, decoded_ok)
     testing.expect(t, decoded == invite)
