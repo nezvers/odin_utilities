@@ -38,6 +38,11 @@ Other members' agents (they decide, you only ask):
   --spawn bob [model]           ask bob to start their agent     --dismiss bob   ask them to end it
   --cmd bob /compact            ask bob to run a slash command on their agent (--private is the same)
   --yes agent / --no agent      what you answer when somebody asks that of you
+Only the host (the member that opened the channel) can give orders:
+  --kick bob                    dismiss bob's agent now, without asking (bob stays and can start another one)
+  --ban bob                     remove bob: their program is told to close (its agent too), the link is cut a moment later, and the name
+                                cannot join again while this host runs
+  --close_group                 end the group: every member's program closes (agents too), then this one
 `
 }
 
@@ -60,7 +65,7 @@ HelpFor :: proc() -> string {
 }
 
 // The words that only a person at the keyboard has. Nothing of the agent side may contain them.
-USER_ONLY_WORDS :: [?]string{"--spawn", "--dismiss", "--group_msg", "--group ", "--trust", "--listen", "--agents", "--allow-remote-agent", "--agent-trust", "--agent-model", "--cmd", "--private", "--yes", "--no ", "--quit", "--send", "--to "}
+USER_ONLY_WORDS :: [?]string{"--kick", "--ban", "--close_group", "--spawn", "--dismiss", "--group_msg", "--group ", "--trust", "--listen", "--agents", "--allow-remote-agent", "--agent-trust", "--agent-model", "--cmd", "--private", "--yes", "--no ", "--quit", "--send", "--to "}
 
 @(test)
 HelpSplitTest :: proc(t: ^testing.T) {

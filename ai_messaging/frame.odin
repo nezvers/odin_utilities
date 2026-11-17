@@ -35,6 +35,13 @@ Kind :: enum u8 {
     AGENT_TEXT,                         // [text]: like TEXT, said by the agent of the member (shown as the agent of `from`, not as `from`)
     AGENT_REQUEST,                      // [action u8: 1 start, 2 dismiss, 3 slash command][model or the command]: asks the member to start or dismiss its own agent, or to run a slash command on it (it decides)
     AGENT_STATUS,                       // [running bool][model][note]: the agent of `from` started, stopped or was refused (`note` says why)
+    MODERATE,                           // [action u8: 1 dismiss the agent, 2 close the program][reason]: only from the host (id 0), obeyed by the member's program
+}
+
+ModerationAction :: enum u8 {
+    NONE,
+    KICK_AGENT,                         // the member's agent is dismissed (the member stays)
+    CLOSE,                              // the member's program ends, its agent with it
 }
 
 AgentAction :: enum u8 {

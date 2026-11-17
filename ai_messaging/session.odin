@@ -46,6 +46,7 @@ TrustMode :: enum {
 }
 
 SESSION_TRUSTED_MAX :: 200
+SESSION_STRING_MAX :: 300
 
 SessionConfig :: struct {
     trust: TrustMode,
@@ -97,9 +98,11 @@ Session :: struct {
     config: SessionConfig,
     agent: Agent,
     control: ControlServer,
+    strings: [5][SESSION_STRING_MAX]byte,      // copies of the strings of the config
     trusted_text: [SESSION_TRUSTED_MAX]byte,   // the names of a LISTED trust set at run time (config.trusted points here then)
     trusted_text_length: int,
     folder: string,                      // the private folder of the running agent (config for Claude Code with the token, prompt, log)
+    closing: bool,                       // the host ordered this program to close (or this host closed the group): the program ends
     ready: bool,                         // the agent said it is up
     running_model: [AGENT_MODEL_MAX]byte,
     running_model_length: int,
@@ -117,8 +120,20 @@ Session :: struct {
     out_count: int,
 }
 
+// The strings of the config are copied (a caller's temporary string must not be kept by reference); `excludes` is kept as it is.
 SessionInit :: proc(s: ^Session, m: ^Messenger, config: SessionConfig) -> bool {
     s^ = {m = m, config = config}
+    Keep :: proc(buffer: []byte, text: string) -> string {
+        count: int = copy(buffer, text)
+        return string(buffer[:count])
+    }
+    s.config.agent_command = Keep(s.strings[0][:], config.agent_command)
+    s.config.agent_model = Keep(s.strings[1][:], config.agent_model)
+    s.config.agent_tools = Keep(s.strings[2][:], config.agent_tools)
+    s.config.agent_dir = Keep(s.strings[3][:], config.agent_dir)
+    s.config.program = Keep(s.strings[4][:], config.program)
+    s.trusted_text_length = copy(s.trusted_text[:], config.trusted)
+    s.config.trusted = string(s.trusted_text[:s.trusted_text_length])
     return ControlOpen(&s.control)
 }
 
@@ -474,7 +489,104 @@ SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
         }
     case .AGENT_REQUEST:
         SessionRequest(s, event, now_ms)
+    case .MODERATION:
+        reason: string = text if text != "" else "no reason given"
+        switch event.moderation {
+        case .KICK_AGENT:
+            if AgentRunning(&s.agent) || s.agent.state == .ENDED {
+                SessionDismiss(s, now_ms)
+                SessionNote(s, .INFO, fmt.tprintf("the host dismissed your agent (%s)", reason))
+            } else {
+                SessionNote(s, .INFO, fmt.tprintf("the host tried to dismiss your agent (%s): you have none", reason))
+            }
+        case .CLOSE:
+            if AgentRunning(&s.agent) || s.agent.state == .ENDED {
+                SessionDismiss(s, now_ms)
+            }
+            s.pending = {}
+            s.closing = true
+            SessionNote(s, .INFO, fmt.tprintf("the host ordered this program to close (%s)", reason))
+        case .NONE:
+        }
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------- the host's orders
+
+@(private)
+SessionHostOnly :: proc(s: ^Session) -> (message: string, ok: bool) {
+    if !MessengerReady(s.m) {
+        return "not in a channel yet", false
+    }
+    if !s.m.is_host {
+        return fmt.tprintf("only the host (%s) can do that", MessengerName(s.m, HOST_ID)), false
+    }
+    return "", true
+}
+
+// The member a name stands for: "bob", "bob-agent", "bob's agent". UNKNOWN_ID when there is none or it is this member.
+@(private)
+SessionMemberOf :: proc(s: ^Session, text: string) -> u8 {
+    wanted: string = strings.trim_space(text)
+    for suffix in ([?]string{"'s agent", "-agent"}) {
+        if strings.has_suffix(strings.to_lower(wanted, context.temp_allocator), suffix) {
+            wanted = wanted[:len(wanted) - len(suffix)]
+            break
+        }
+    }
+    member: u8 = MessengerFindMember(s.m, wanted)
+    if member == MessengerSelf(s.m) {
+        return UNKNOWN_ID
+    }
+    return member
+}
+
+// Host: dismisses the agent of a member now, without asking. The member stays and can start another one (until banned).
+SessionKick :: proc(s: ^Session, name: string, now_ms: i64) -> (message: string, ok: bool) {
+    if text, allowed := SessionHostOnly(s); !allowed {
+        return text, false
+    }
+    member: u8 = SessionMemberOf(s, name)
+    if member == UNKNOWN_ID {
+        return fmt.tprintf("no member called %s (see --who; the host cannot kick its own agent: --dismiss)", name), false
+    }
+    if !s.members[member].running {
+        return fmt.tprintf("%s has no agent running (--ban removes the member)", MessengerName(s.m, member)), false
+    }
+    if !MessengerModerate(s.m, member, .KICK_AGENT, "kicked by the host", now_ms) {
+        return "not sent", false
+    }
+    s.members[member].running = false
+    return fmt.tprintf("the agent of %s was ordered to end", MessengerName(s.m, member)), true
+}
+
+// Host: removes a member (see MessengerBan).
+SessionBan :: proc(s: ^Session, name: string, now_ms: i64) -> (message: string, ok: bool) {
+    if text, allowed := SessionHostOnly(s); !allowed {
+        return text, false
+    }
+    member: u8 = MessengerFindMember(s.m, strings.trim_space(name))
+    if member == UNKNOWN_ID || member == MessengerSelf(s.m) {
+        return fmt.tprintf("no member called %s (see --who)", name), false
+    }
+    member_name: string = MessengerName(s.m, member)
+    if !MessengerBan(s.m, member, now_ms) {
+        return "not done", false
+    }
+    return fmt.tprintf("%s was told to close, will be cut off in a moment, and cannot join again while you host", member_name), true
+}
+
+// Host: ends the group: every member is told to close (their agents end with them), and so does this one.
+SessionCloseGroup :: proc(s: ^Session, now_ms: i64) -> (message: string, ok: bool) {
+    if text, allowed := SessionHostOnly(s); !allowed {
+        return text, false
+    }
+    MessengerModerate(s.m, ALL, .CLOSE, "the host closed the group", now_ms)
+    if AgentRunning(&s.agent) || s.agent.state == .ENDED {
+        SessionDismiss(s, now_ms)
+    }
+    s.closing = true
+    return "closing the group: every member was told to close", true
 }
 
 // Another member asks this one to start or dismiss its agent.

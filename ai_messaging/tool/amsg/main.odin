@@ -15,6 +15,7 @@
 //   --spawn [model]              start your agent (model: haiku, sonnet, opus or a full id)   --dismiss   end it
 //   --spawn bob [model]          ask bob to start their agent  --dismiss bob   ask them to end it (bob decides: --yes agent / --no agent)
 //   --cmd bob /compact           ask bob to run a slash command on their agent (--private is the same; they decide)
+//   --kick bob  --ban bob  --close_group   only the host: dismiss bob's agent / remove bob / close every program of the group
 //   --agents                     who has an agent         --listen all|mentions|none   what the channel passes to your agent
 //   --trust ask|members|bob,carol   how far your agent believes other members: ask (default) = it asks you first, members = it does what
 //                                any member asks with its tools, a list = only those members
@@ -347,7 +348,7 @@ ShowEvent :: proc(m: ^ai.Messenger, event: ^ai.Event) {
         } else {
             fmt.printfln("<%s> (to you) %s", speaker, text)
         }
-    case .AGENT_REQUEST, .AGENT_STATUS:                    // the session says what it means (ShowSession)
+    case .AGENT_REQUEST, .AGENT_STATUS, .MODERATION:                    // the session says what it means (ShowSession)
     case .FILE_OFFERED:
         what: string = fmt.tprintf("the folder \"%s\" (%d files, %d bytes)", text, event.files, event.size) if event.folder else fmt.tprintf("the file \"%s\" (%d bytes)", text, event.size)
         fmt.printfln("* %s offers %s: --yes %d or --no %d", name, what, event.transfer, event.transfer)
@@ -378,7 +379,7 @@ ShowEventJson :: proc(m: ^ai.Messenger, event: ^ai.Event, text: string, name: st
         fmt.printfln(`{{"event":"left","id":%d,"name":%s}}`, event.member, Json(text))
     case .TEXT:
         fmt.printfln(`{{"event":"text","from":%s,"from_id":%d,"to":%s,"agent":%v,"text":%s}}`, Json(name), event.member, `"all"` if event.to == ai.ALL else `"you"`, event.agent, Json(text))
-    case .AGENT_REQUEST, .AGENT_STATUS:
+    case .AGENT_REQUEST, .AGENT_STATUS, .MODERATION:
     case .FILE_OFFERED:
         fmt.printfln(`{{"event":"file_offered","from":%s,"from_id":%d,"transfer":%d,"name":%s,"size":%d,"folder":%v,"files":%d}}`, Json(name), event.member, event.transfer, Json(text), event.size, event.folder, event.files)
     case .FILE_PROGRESS:
@@ -396,6 +397,7 @@ ShowEventJson :: proc(m: ^ai.Messenger, event: ^ai.Event, text: string, name: st
 
 Loop :: proc(m: ^ai.Messenger, config: ai.MessengerConfig) {
     announced_code: bool
+    close_at: i64
     reconnect_at: i64
     for {
         now: i64 = p2p.LinkNow()
@@ -440,6 +442,16 @@ Loop :: proc(m: ^ai.Messenger, config: ai.MessengerConfig) {
                 break
             }
             ShowSession(&out)
+        }
+        // an order to close (or this host closing the group): a moment for the orders and the last lines to leave, then the program ends
+        if session.closing {
+            if close_at == 0 {
+                close_at = now + 1500
+            } else if now >= close_at {
+                ai.SessionClose(session, now)
+                ai.MessengerClose(m)
+                os.exit(0)
+            }
         }
         // the code is shown once the role is known and again on --code
         if !announced_code && m.link.role != .NONE {
@@ -488,6 +500,15 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
         AgentCommand(m, strings.trim_space(line[len("--spawn"):]), true, now)
     case line == "--dismiss" || strings.has_prefix(line, "--dismiss "):
         AgentCommand(m, strings.trim_space(line[len("--dismiss"):]), false, now)
+    case line == "--kick" || strings.has_prefix(line, "--kick "):
+        message, _ := ai.SessionKick(session, strings.trim_space(line[len("--kick"):]), now)
+        Info(message)
+    case line == "--ban" || strings.has_prefix(line, "--ban "):
+        message, _ := ai.SessionBan(session, strings.trim_space(line[len("--ban"):]), now)
+        Info(message)
+    case line == "--close_group":
+        message, _ := ai.SessionCloseGroup(session, now)
+        Info(message)
     case line == "--help":
         for text in strings.split_lines(ai.HelpUser(), context.temp_allocator) {
             fmt.println(text)

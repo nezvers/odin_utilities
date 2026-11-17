@@ -20,6 +20,7 @@ Node :: struct {
     errors: [dynamic]string,
     requests: [dynamic]Event,            // AGENT_REQUEST
     statuses: [dynamic]Event,            // AGENT_STATUS
+    orders: [dynamic]Event,              // MODERATION
     agent_said: [dynamic]bool,           // for each text: was it an agent
     session: ^Session,                   // optional: the agent session of this node (session_test.odin)
     notes: [dynamic]string,              // what the session said: "REPLY: ...", "INFO: ..."
@@ -53,6 +54,7 @@ NodeClose :: proc(node: ^Node) {
     delete(node.errors)
     delete(node.requests)
     delete(node.statuses)
+    delete(node.orders)
     delete(node.agent_said)
     for note in node.notes {
         delete(note)
@@ -93,6 +95,8 @@ NodeUpdate :: proc(node: ^Node) {
             append(&node.requests, event)
         case .AGENT_STATUS:
             append(&node.statuses, event)
+        case .MODERATION:
+            append(&node.orders, event)
         }
     }
     if node.session != nil {

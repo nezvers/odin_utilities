@@ -92,6 +92,7 @@ EventKind :: enum {
     ERROR,                               // `text` says what went wrong (could not reach the host, ...)
     AGENT_REQUEST,                       // `member` asks this member to start or dismiss its agent: `action`, text = the model asked for (may be empty)
     AGENT_STATUS,                        // the agent of `member`: `ok` = running, text = its model, `note` = what happened ("started", "declined", ...)
+    MODERATION,                          // the host orders this member: `moderation` (dismiss the agent, close the program), text = the reason
 }
 
 Event :: struct {
@@ -107,6 +108,7 @@ Event :: struct {
     folder: bool,
     agent: bool,                         // TEXT: said by the agent of `member`
     action: AgentAction,                 // AGENT_REQUEST
+    moderation: ModerationAction,        // MODERATION
     text: [MAX_TEXT]byte,
     text_length: int,
     note: [AGENT_NOTE_MAX]byte,          // AGENT_STATUS
@@ -114,6 +116,8 @@ Event :: struct {
 }
 
 AGENT_NOTE_MAX :: 120
+MAX_BANS :: 16
+BAN_DROP_MS :: 1500                      // after the order to close, the link of a banned member is cut (the order needs a moment to arrive)
 AGENT_MODEL_MAX :: 64
 AGENT_COMMAND_MAX :: 200
 
@@ -230,6 +234,10 @@ Messenger :: struct {
     channel_public: p2p.BoxKey,
     derp_finding: bool,
     derp_was_lost: bool,
+    banned: [MAX_BANS][NAME_MAX]byte,    // host: names that may not join again while this host runs
+    banned_length: [MAX_BANS]int,
+    ban_count: int,
+    drop_at: [p2p.MAX_PEERS]i64,         // host: when the link of a banned member is cut (0 = not scheduled)
     events: [EVENTS]Event,
     event_head: int,
     event_count: int,
@@ -438,6 +446,7 @@ MessengerUpdate :: proc(m: ^Messenger, now_ms: i64) {
     }
     if m.phase == .SEARCHING || m.phase == .RUNNING {
         Beacons(m, now_ms)
+        BanDrops(m, now_ms)
         LinkEvents(m, now_ms)
         Receive(m, now_ms)
         ForwardsFlush(m, now_ms)
@@ -662,6 +671,17 @@ LinkEvents :: proc(m: ^Messenger, now_ms: i64) {
         case .PEER_CONNECTED:
             if m.is_host {
                 id: u8 = u8(event.peer + 1)
+                if MessengerIsBanned(m, p2p.LinkPeerName(&m.link, event.peer)) {
+                    // a name that was banned asks to join again: told to close, and cut off, without ever becoming a member
+                    writer: serial.Writer
+                    FrameBegin(&writer, m.scratch[:], .MODERATE, HOST_ID, ALL)             // it has no id yet: only ALL reaches a guest that was never in the roster
+                    serial.WriteU8(&writer, u8(ModerationAction.CLOSE))
+                    serial.WriteString(&writer, "this name was banned by the host")
+                    p2p.LinkSend(&m.link, event.peer, serial.WriterBytes(&writer), true, now_ms)
+                    m.drop_at[event.peer] = now_ms + BAN_DROP_MS
+                    EventPush(m, .ERROR, 0, fmt.tprintf("a banned name (%s) tried to join again: refused", p2p.LinkPeerName(&m.link, event.peer)))
+                    continue
+                }
                 name: string = NameUnique(m, p2p.LinkPeerName(&m.link, event.peer))
                 MemberSet(m, id, name)
                 EventPush(m, .MEMBER_JOINED, id, name)
@@ -756,6 +776,75 @@ MessengerSendText :: proc(m: ^Messenger, to: u8, text: string, now_ms: i64, agen
     FrameBegin(&writer, m.scratch[:], .AGENT_TEXT if agent else .TEXT, m.self_id, to)
     serial.WriteBytes(&writer, transmute([]byte)text)
     return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
+}
+
+// The host orders a member (or ALL) to dismiss its agent or to close its program (the program obeys: it is an order to a program that
+// cooperates, a modified one can ignore it, which is what MessengerBan is for). False: not the host, no such member, or too long.
+MessengerModerate :: proc(m: ^Messenger, to: u8, action: ModerationAction, reason: string, now_ms: i64) -> bool {
+    if !m.is_host || !MessengerReady(m) || len(reason) > AGENT_NOTE_MAX || to == HOST_ID || to != ALL && (int(to) >= MAX_MEMBERS || !m.members[to].used) {
+        return false
+    }
+    writer: serial.Writer
+    FrameBegin(&writer, m.scratch[:], .MODERATE, HOST_ID, to)
+    serial.WriteU8(&writer, u8(action))
+    serial.WriteString(&writer, reason)
+    return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
+}
+
+// Is this name on the list of names that may not join?
+MessengerIsBanned :: proc(m: ^Messenger, name: string) -> bool {
+    for i in 0 ..< m.ban_count {
+        if strings.equal_fold(string(m.banned[i][:m.banned_length[i]]), name) {
+            return true
+        }
+    }
+    return false
+}
+
+// Host: removes a member. It is told to close (its program ends, its agent with it), a moment later its link is cut whatever it did, and the
+// name cannot join again while this host runs. A banned member can come back under another name: the name is all the host knows.
+MessengerBan :: proc(m: ^Messenger, member: u8, now_ms: i64) -> bool {
+    if !m.is_host || member == HOST_ID || int(member) >= MAX_MEMBERS || !m.members[member].used {
+        return false
+    }
+    name: string = MessengerName(m, member)
+    if !MessengerIsBanned(m, name) {
+        slot: int = m.ban_count
+        if slot >= MAX_BANS {
+            copy(m.banned[:MAX_BANS - 1], m.banned[1:])
+            copy(m.banned_length[:MAX_BANS - 1], m.banned_length[1:])
+            slot = MAX_BANS - 1
+        } else {
+            m.ban_count += 1
+        }
+        m.banned_length[slot] = min(len(name), NAME_MAX)
+        copy(m.banned[slot][:m.banned_length[slot]], name)
+    }
+    MessengerModerate(m, member, .CLOSE, "removed by the host", now_ms)
+    m.drop_at[int(member) - 1] = now_ms + BAN_DROP_MS
+    return true
+}
+
+// Host: cuts the links that were scheduled (the member leaves the roster like one that was lost).
+@(private)
+BanDrops :: proc(m: ^Messenger, now_ms: i64) {
+    if !m.is_host {
+        return
+    }
+    for peer in 0 ..< p2p.MAX_PEERS {
+        if m.drop_at[peer] == 0 || now_ms < m.drop_at[peer] {
+            continue
+        }
+        m.drop_at[peer] = 0
+        id: u8 = u8(peer + 1)
+        p2p.LinkDisconnect(&m.link, peer)
+        if m.members[id].used {
+            EventPush(m, .MEMBER_LEFT, id, MessengerName(m, id))
+            TransfersFailMember(m, id, "the member was removed")
+            m.members[id] = {}
+            RosterSend(m, now_ms)
+        }
+    }
 }
 
 // Asks a member to start (SPAWN, with the model wanted, "" = its own default) or dismiss (DISMISS) its agent, or to run a slash command on it
@@ -902,6 +991,14 @@ Deliver :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
             event: ^Event = EventPush(m, .TEXT, frame.from, string(serial.ReadBytes(&frame.body, text)))
             event.to = frame.to
             event.agent = frame.kind == .AGENT_TEXT
+        }
+    case .MODERATE:
+        // an order is the host's alone: frames of guests are checked by the host against their link, so `from` = host cannot be forged
+        action: u8 = serial.ReadU8(&frame.body)
+        reason: string = serial.ReadString(&frame.body)
+        if !m.is_host && frame.from == HOST_ID && serial.ReaderOk(&frame.body) && (action == u8(ModerationAction.KICK_AGENT) || action == u8(ModerationAction.CLOSE)) && len(reason) <= AGENT_NOTE_MAX {
+            event: ^Event = EventPush(m, .MODERATION, HOST_ID, reason)
+            event.moderation = ModerationAction(action)
         }
     case .AGENT_REQUEST:
         action: u8 = serial.ReadU8(&frame.body)

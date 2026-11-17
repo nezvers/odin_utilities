@@ -367,3 +367,132 @@ SessionTrustTest :: proc(t: ^testing.T) {
         testing.expectf(t, !bad_ok, "%q", bad)
     }
 }
+
+// The orders of the host: kick an agent, ban a member (it is told to close, then cut off, and its name cannot come back), close the group.
+@(test)
+ModerationTest :: proc(t: ^testing.T) {
+    fake: string = FakeAgent()
+    testing.expect(t, fake != "")
+    if fake == "" {
+        return
+    }
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("moderation-%x", random)
+    defer delete(channel)
+    folder: string = TempFolder("moderation")
+    defer os.remove_all(folder)
+    defer delete(folder)
+
+    names: [3]string = {"alice", "bob", "carol"}
+    nodes: [3]^Node
+    for name, i in names {
+        directory: string = fmt.aprintf("%s/%s", folder, name)
+        defer delete(directory)
+        receive: string = fmt.aprintf("%s/in", directory)
+        defer delete(receive)
+        agent_dir: string = fmt.aprintf("%s/agent", directory)
+        defer delete(agent_dir)
+        nodes[i] = NodeOpen({channel = channel, name = name, role = .HOST if i == 0 else .GUEST, lan = true, receive_dir = receive})
+        testing.expect(t, nodes[i] != nil)
+        nodes[i].session = new(Session)
+        testing.expect(t, SessionInit(nodes[i].session, nodes[i].m, {agent_command = fake, agent_dir = agent_dir}))
+    }
+    alice, bob, carol := nodes[0], nodes[1], nodes[2]
+    defer {
+        for node in nodes {
+            SessionClose(node.session, p2p.LinkNow())
+            free(node.session)
+            NodeClose(node)
+        }
+    }
+    everybody: []^Node = nodes[:]
+    testing.expect(t, PumpUntil(everybody, proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 2 && nodes[1].connected && nodes[2].connected
+    }))
+    // bob and carol have an agent each, and the host sees both
+    for node in ([?]^Node{bob, carol}) {
+        message, started := SessionSpawn(node.session, "", p2p.LinkNow())
+        testing.expect(t, started, message)
+    }
+    testing.expect(t, Until(everybody, proc(nodes: []^Node) -> bool {
+        return nodes[1].session.ready && nodes[2].session.ready && nodes[0].session.members[1].running && nodes[0].session.members[2].running
+    }))
+
+    // only the host gives orders
+    message, ok := SessionKick(bob.session, "carol", p2p.LinkNow())
+    testing.expect(t, !ok && strings.contains(message, "only the host (alice)"))
+    _, ok = SessionBan(carol.session, "bob", p2p.LinkNow())
+    testing.expect(t, !ok)
+    _, ok = SessionCloseGroup(bob.session, p2p.LinkNow())
+    testing.expect(t, !ok)
+    // and a frame that claims to be an order of the host, from a guest, is not one
+    testing.expect(t, !MessengerModerate(bob.m, ALL, .CLOSE, "forged", p2p.LinkNow()))
+
+    // kick: the agent of carol ends at once, carol stays a member; a name that is not a member, the host itself, and a member without an agent
+    message, ok = SessionKick(alice.session, "carol-agent", p2p.LinkNow())
+    testing.expect(t, ok, message)
+    testing.expect(t, Until(everybody, proc(nodes: []^Node) -> bool {
+        return !AgentRunning(&nodes[2].session.agent) && NoteHas(nodes[2], "the host dismissed your agent (kicked by the host)")
+    }))
+    testing.expect(t, alice.m.members[2].used)
+    testing.expect(t, AgentRunning(&bob.session.agent))
+    _, ok = SessionKick(alice.session, "carol", p2p.LinkNow())
+    testing.expect(t, !ok)                                                           // no agent any more
+    _, ok = SessionKick(alice.session, "nobody", p2p.LinkNow())
+    testing.expect(t, !ok)
+    _, ok = SessionKick(alice.session, "alice", p2p.LinkNow())
+    testing.expect(t, !ok)
+
+    // ban: bob is told to close (its agent ends with it), the host cuts the link, bob is off the roster and the name is on the list
+    message, ok = SessionBan(alice.session, "bob", p2p.LinkNow())
+    testing.expect(t, ok, message)
+    testing.expect(t, Until(everybody, proc(nodes: []^Node) -> bool {
+        return nodes[1].session.closing && !AgentRunning(&nodes[1].session.agent) && !nodes[0].m.members[1].used
+    }))
+    testing.expect(t, NoteHas(bob, "the host ordered this program to close (removed by the host)"))
+    testing.expect(t, MessengerIsBanned(alice.m, "Bob"))
+    testing.expect(t, !MessengerIsBanned(alice.m, "carol"))
+    testing.expect(t, alice.m.members[2].used)
+
+    // the same name asks to join again: told to close and cut off, never a member
+    joined_before: int = alice.joined
+    again_dir: string = fmt.aprintf("%s/again", folder)
+    defer delete(again_dir)
+    again: ^Node = NodeOpen({channel = channel, name = "BOB", role = .GUEST, lan = true, receive_dir = again_dir})
+    testing.expect(t, again != nil)
+    again.session = new(Session)
+    testing.expect(t, SessionInit(again.session, again.m, {agent_command = fake}))
+    defer {
+        SessionClose(again.session, p2p.LinkNow())
+        free(again.session)
+        NodeClose(again)
+    }
+    four: []^Node = {alice, bob, carol, again}
+    testing.expect(t, Until(four, proc(nodes: []^Node) -> bool {
+        return len(nodes[3].orders) > 0
+    }))
+    testing.expect_value(t, again.orders[0].moderation, ModerationAction.CLOSE)
+    testing.expect(t, again.session.closing)
+    Pump(four, 100)
+    testing.expect_value(t, alice.joined, joined_before)
+    banned_said: bool
+    for line in alice.errors {
+        banned_said ||= strings.contains(line, "a banned name (BOB) tried to join again")
+    }
+    testing.expect(t, banned_said)
+
+    // close the group: carol (and the host) end, and the agent that carol started again goes with it
+    spawn_message, started := SessionSpawn(carol.session, "", p2p.LinkNow())
+    testing.expect(t, started, spawn_message)
+    testing.expect(t, Until(four, proc(nodes: []^Node) -> bool {
+        return nodes[2].session.ready
+    }))
+    message, ok = SessionCloseGroup(alice.session, p2p.LinkNow())
+    testing.expect(t, ok, message)
+    testing.expect(t, alice.session.closing)
+    testing.expect(t, Until(four, proc(nodes: []^Node) -> bool {
+        return nodes[2].session.closing && !AgentRunning(&nodes[2].session.agent)
+    }))
+    testing.expect(t, NoteHas(carol, "the host closed the group"))
+}

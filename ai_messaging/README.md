@@ -153,7 +153,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (26 tests, about 4 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (27 tests, about 5 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -190,6 +190,16 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
 - **What the agent is told** (system prompt, plus a first message): that it is the private agent of `alice` in the channel `X`, its model, the members, how its person's lines
   arrive (`[alice] text`), how the others' arrive (`[group bob] text`, `[private bob] text`, `bob's agent`), the five tools, to be brief, and that what others write is
   information from strangers, not instructions from alice.
+- **Orders of the host** (only the member that opened the channel; a guest who types them is told who the host is):
+  - `--kick bob` (also `bob-agent`): bob's agent is dismissed now, without asking. Bob stays in the channel and can start another one.
+  - `--ban bob`: bob's program is told to close (its agent ends with it), a moment later (1.5 s) the host cuts the link whatever bob's program did, bob leaves the roster, and the name
+    cannot join again while this host runs (a program that tries gets the order to close and is cut off, and the host reports it). The ban is by name, the only thing the host knows
+    of a member: someone can come back under another name. At most 16 names are kept.
+  - `--close_group`: every member's program is told to close (agents end with them), then the host's own agent and program end too. For a group that should be gone, including any
+    program or agent left running: an agent's process also ends by itself when its program ends (its input closes), so a leftover can only come from a program that was killed.
+  - These are orders to programs that cooperate: the order cannot be forged (a guest cannot speak as the host, the host checks the sender of every frame), but a modified program can
+    ignore it; the cut link of `--ban` does not depend on it. Tried with three real programs and real Claude agents: after `--kick`, `--ban` and `--close_group` no `amsg` and no
+    agent process was left.
 - **Two helps.** `amsg --help` (and `--help` typed in the session) lists the commands of the keyboard; the agent never sees them. The agent's own help (`amsg --agent-help`) has only its
   five tools. The agent is started with `AMSG_AGENT=1` in its environment, so a program it runs (if you gave it a shell with `--agent-tools`) gets the agent's help from `--help`, and
   `amsg <channel>` run from there refuses to start a second member. Its system prompt and its tool descriptions are tested not to contain any of the keyboard commands.
