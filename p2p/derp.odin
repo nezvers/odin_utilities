@@ -118,6 +118,8 @@ Derp :: struct {
     sent: u64,
     received: u64,
     connect_ms: i64,                     // how long the connection took, for reports
+    abandoned: bool,                     // DerpRace: nobody wants this connection any more (atomic)
+    closed: bool,                        // the connection was closed already, by whoever came first (atomic)
 }
 
 DerpGetState :: proc(derp: ^Derp) -> DerpState {
@@ -275,7 +277,59 @@ DerpReadFrameBlocking :: proc(derp: ^Derp) -> (kind: u8, length: int, ok: bool) 
 
 @(private)
 DerpThread :: proc(data: rawptr) {
-    DerpConnect(cast(^Derp)data)
+    derp: ^Derp = cast(^Derp)data
+    DerpConnect(derp)
+    if sync.atomic_load(&derp.abandoned) {
+        DerpCloseConnection(derp)
+    }
+}
+
+// Closes the TLS connection and the socket once, whoever asks first (the connect thread of a lost race, or its owner).
+@(private)
+DerpCloseConnection :: proc(derp: ^Derp) {
+    if DerpGetState(derp) != .READY || sync.atomic_exchange(&derp.closed, true) {
+        return
+    }
+    TlsClose(&derp.tls)
+    net.close(derp.socket)
+    DerpSetState(derp, .CLOSED)
+}
+
+// Which relay answers fastest from here: connects to the candidates (server numbers, 1 = the first of DERP_SERVERS) all at once and
+// returns the first that is ready, 0 when none was within `timeout_ms`. The attempts that lose close themselves when they finish.
+// Their memory (about 110 KB each) is not given back: this is a start-up helper for a tool, not something to call in a loop.
+DerpRace :: proc(candidates: []int, timeout_ms: i64) -> int {
+    clients: [8]^Derp
+    count: int = min(len(candidates), len(clients))
+    for i in 0 ..< count {
+        if candidates[i] < 1 || candidates[i] > len(DERP_SERVERS) {
+            continue
+        }
+        private, public: BoxKey
+        BoxKeyGenerate(&private, &public)
+        clients[i] = new(Derp)
+        DerpBegin(clients[i], DERP_SERVERS[candidates[i] - 1].host, private)
+    }
+    winner: int
+    start: time.Tick = time.tick_now()
+    for winner == 0 && i64(time.duration_milliseconds(time.tick_since(start))) < timeout_ms {
+        for i in 0 ..< count {
+            if clients[i] != nil && DerpGetState(clients[i]) == .READY {
+                winner = candidates[i]
+                break
+            }
+        }
+        if winner == 0 {
+            time.sleep(10 * time.Millisecond)
+        }
+    }
+    for i in 0 ..< count {
+        if clients[i] != nil {
+            sync.atomic_store(&clients[i].abandoned, true)
+            DerpCloseConnection(clients[i])
+        }
+    }
+    return winner
 }
 
 // Starts connecting on a thread. Poll DerpGetState: READY, or FAILED with `failure`.
@@ -293,10 +347,7 @@ DerpClose :: proc(derp: ^Derp) {
         thread.destroy(derp.thread)
         derp.thread = nil
     }
-    if DerpGetState(derp) == .READY {
-        TlsClose(&derp.tls)
-        net.close(derp.socket)
-    }
+    DerpCloseConnection(derp)
     DerpSetState(derp, .CLOSED)
 }
 

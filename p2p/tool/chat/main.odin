@@ -8,6 +8,10 @@
 //        --upnp (ask the router to forward the port: PCP, NAT-PMP, UPnP)  --no-ipv6
 //        --turn host:port user password (a TURN relay from a provider with a free tier)  --relay-only (offer only the relay)
 //        --port N (fixed local UDP port)
+//        --derp [N] (use a free Tailscale DERP relay, no account: N = its number in the list of tool/derp, none = the fastest one found;
+//                    the code then names the relay, the guest's reply goes through it and the connection works even when both sides are
+//                    behind strict NATs)  --derp-only (offer no addresses, everything through the relay)  --short (host code without
+//                    addresses)  --no-derp (a guest ignores the relay in a code)
 //        --find-relay (look for TURN relays that answer from this network and offer to use one you have an account for)
 //        --wireguard [--yes] (optional encrypted tunnel: says what it does, installs WireGuard when missing, then the chat runs inside it)
 // In the chat: a line is sent to everybody; /code shows and copies the code again, /quit leaves.
@@ -31,6 +35,16 @@ TurnOptions :: struct {
     password: string,
 }
 
+DerpOptions :: struct {
+    enabled: bool,
+    server: int,                        // 1 = first of p2p.DERP_SERVERS, 0 = look for the fastest
+    only: bool,
+    short: bool,
+    disabled: bool,                     // --no-derp
+}
+
+short_codes: bool
+
 MSG_CHAT :: u8(1)
 MAX_LINE :: 512
 LINE_QUEUE :: 16
@@ -53,6 +67,7 @@ main :: proc() {
     config: p2p.LinkConfig
     use_stun: bool = true
     use_portmap: bool
+    derp: DerpOptions
     find_relay: bool
     use_wireguard: bool
     yes: bool
@@ -77,6 +92,26 @@ main :: proc() {
             tunnel_dry = true
         case "--yes":
             yes = true
+        case "--derp":
+            derp.enabled = true
+            if i + 1 < len(os.args) {
+                number, is_number := strconv.parse_int(os.args[i + 1])
+                if is_number {
+                    if number < 1 || number > len(p2p.DERP_SERVERS) {
+                        fmt.eprintfln("--derp N: N is 1..%d (see odin run p2p/tool/derp)", len(p2p.DERP_SERVERS))
+                        os.exit(2)
+                    }
+                    derp.server = number
+                    i += 1
+                }
+            }
+        case "--derp-only":
+            derp.enabled = true
+            derp.only = true
+        case "--short":
+            derp.short = true
+        case "--no-derp":
+            derp.disabled = true
         case "--no-ipv6":
             config.no_ipv6 = true
         case "--turn":
@@ -105,7 +140,7 @@ main :: proc() {
         }
     }
     if mode == "selftest" {
-        os.exit(SelfTest(use_stun, use_portmap))
+        os.exit(SelfTest(use_stun, use_portmap, derp))
     }
     if mode != "host" && mode != "join" {
         fmt.eprintln("usage: chat host|join [name] [--no-stun] [--loopback] [--port N]   or   chat selftest")
@@ -120,10 +155,12 @@ main :: proc() {
     if use_wireguard {
         TunnelPrepare(yes)
     }
-    Chat(mode == "host", name, config, use_stun, use_portmap, turn)
+    config.derp_only = derp.only
+    short_codes = derp.short
+    Chat(mode == "host", name, config, use_stun, use_portmap, turn, derp)
 }
 
-Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool, use_portmap: bool, turn: TurnOptions) {
+Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool, use_portmap: bool, turn: TurnOptions, derp: DerpOptions) {
     link: ^p2p.Link = new(p2p.Link)
     if !p2p.LinkInit(link, config) {
         fmt.eprintln("cannot open the UDP socket (port in use?)")
@@ -145,6 +182,20 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
             p2p.LinkTurnBegin(link, server, turn.user, turn.password, p2p.LinkNow())
         } else {
             fmt.printfln("Cannot resolve the TURN server %s, going without a relay.", turn.host)
+        }
+    }
+    if derp.enabled && is_host {
+        server: int = derp.server
+        if server == 0 {
+            fmt.println("Looking for the fastest DERP relay (free Tailscale relays, no account)...")
+            candidates: [6]int = {4, 8, 1, 14, 22, 2}
+            server = p2p.DerpRace(candidates[:], 6000)
+        }
+        if server == 0 {
+            fmt.println("No DERP relay answered (offline, or TCP 443 to them is blocked), going without one.")
+        } else {
+            fmt.printfln("Using the DERP relay %s (%s).", p2p.DERP_SERVERS[server - 1].host, p2p.DERP_SERVERS[server - 1].place)
+            p2p.LinkDerpBegin(link, server, p2p.LinkNow())
         }
     }
     p2p.LinkGatherBegin(link, servers[:server_count], p2p.LinkNow())
@@ -178,11 +229,22 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
 
     peer_names: [p2p.MAX_PEERS][p2p.NAME_MAX]byte
     _ = peer_names
+    pending_invite: p2p.Invite                   // a guest that waits for its relay connection before it joins
+    has_pending: bool
     buffer: [p2p.MAX_PAYLOAD]byte
     for {
         now: i64 = p2p.LinkNow()
         p2p.LinkUpdate(link, now)
         link = TunnelUpdate(link, is_host, now)
+        if has_pending && link.derp.state != .CONNECTING {
+            has_pending = false
+            p2p.LinkJoin(link, pending_invite, name, now)
+            title: string = "Send this reply code back to the host, connecting meanwhile..."
+            if link.derp.state == .READY {
+                title = "Connecting through the relay: no reply code needs to be sent. (This one is only a fallback if the host does not see you.)"
+            }
+            code = ShowCode(link, code_text[:], title)
+        }
 
         for {
             event, ok := p2p.LinkPollEvent(link)
@@ -191,6 +253,10 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
             }
             switch event.kind {
             case .GATHERED:
+            case .DERP_READY:
+                fmt.printfln("DERP relay ready: %s (%s), our key there %s...", p2p.DERP_SERVERS[link.derp.server - 1].host, p2p.DERP_SERVERS[link.derp.server - 1].place, KeyStart(link.derp.public))
+            case .DERP_FAILED:
+                fmt.printfln("The DERP relay could not be used: %s", link.derp.failure)
             case .RELAY_READY:
                 fmt.printfln("Relay ready: %s (used only when a direct path does not work)", net.endpoint_to_string(link.turn.relayed, context.temp_allocator))
             case .RELAY_FAILED:
@@ -202,7 +268,7 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
             case .NAT_MEASURED:
                 PrintFiltering(link)
             case .PEER_CONNECTED:
-                Announce(link, is_host, fmt.tprintf("* %s connected", p2p.LinkPeerName(link, event.peer)), event.peer, now)
+                Announce(link, is_host, fmt.tprintf("* %s connected%s", p2p.LinkPeerName(link, event.peer), " (through a relay, a direct path is tried every few seconds)" if link.peers[event.peer].via_relay else ""), event.peer, now)
                 if is_host {
                     TunnelStart(link, name, now)
                 }
@@ -262,9 +328,16 @@ Chat :: proc(is_host: bool, name: string, config: p2p.LinkConfig, use_stun: bool
                         } else {
                             fmt.println("That reply is not for this session (or the room is full).")
                         }
-                    } else if !is_host && invite.kind == .INVITE && link.role == .NONE {
-                        p2p.LinkJoin(link, invite, name, now)
-                        code = ShowCode(link, code_text[:], "Send this reply code back to the host, connecting meanwhile...")
+                    } else if !is_host && invite.kind == .INVITE && link.role == .NONE && !has_pending {
+                        if invite.derp_server != 0 && link.derp.state == .OFF && !derp.disabled {
+                            fmt.printfln("The code names the DERP relay %s: connecting to it first...", p2p.DERP_SERVERS[invite.derp_server - 1].host)
+                            p2p.LinkDerpBegin(link, int(invite.derp_server), now)
+                            pending_invite = invite
+                            has_pending = true
+                        } else {
+                            p2p.LinkJoin(link, invite, name, now)
+                            code = ShowCode(link, code_text[:], "Send this reply code back to the host, connecting meanwhile...")
+                        }
                     } else {
                         fmt.println("That code is not the kind needed now.")
                     }
@@ -307,8 +380,12 @@ Announce :: proc(link: ^p2p.Link, is_host: bool, line: string, except: int, now:
     }
 }
 
+KeyStart :: proc(key: p2p.BoxKey) -> string {
+    return fmt.tprintf("%02x%02x%02x%02x", key[0], key[1], key[2], key[3])
+}
+
 ShowCode :: proc(link: ^p2p.Link, buffer: []byte, title: string) -> string {
-    text, ok := p2p.InviteEncode(p2p.LinkMakeInvite(link), buffer)
+    text, ok := p2p.InviteEncode(p2p.LinkMakeInvite(link, short_codes && link.derp.state == .READY && link.role == .HOST), buffer)
     assert(ok)
     fmt.println()
     fmt.println(title)

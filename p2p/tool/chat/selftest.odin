@@ -11,10 +11,12 @@ SELFTEST_MESSAGES :: 200
 // offered, so the packets take the same routes two computers would use), codes passed as text, 20% of the datagrams dropped.
 // It proves the whole chain on this machine and prints what the NAT looks like. It cannot prove a crossing of two different
 // networks: for that run host and join on two computers.
-SelfTest :: proc(use_stun: bool, use_portmap: bool) -> int {
+SelfTest :: proc(use_stun: bool, use_portmap: bool, derp: DerpOptions) -> int {
     host: ^p2p.Link = new(p2p.Link)
     guest: ^p2p.Link = new(p2p.Link)
-    if !p2p.LinkInit(host) || !p2p.LinkInit(guest) {
+    config: p2p.LinkConfig
+    config.derp_only = derp.only
+    if !p2p.LinkInit(host, config) || !p2p.LinkInit(guest, config) {
         fmt.eprintln("FAIL: cannot open sockets")
         return 1
     }
@@ -26,6 +28,18 @@ SelfTest :: proc(use_stun: bool, use_portmap: bool) -> int {
     if use_stun {
         server_count = p2p.LinkResolveStun(servers[:])
         fmt.printfln("STUN servers resolved: %d of %d", server_count, p2p.STUN_MAX_SERVERS)
+    }
+    if derp.enabled {
+        server: int = derp.server
+        if server == 0 {
+            candidates: [6]int = {4, 8, 1, 14, 22, 2}
+            server = p2p.DerpRace(candidates[:], 6000)
+        }
+        if server == 0 || !p2p.LinkDerpBegin(host, server, p2p.LinkNow()) || !p2p.LinkDerpBegin(guest, server, p2p.LinkNow()) {
+            fmt.eprintln("FAIL: no DERP relay could be used")
+            return 1
+        }
+        fmt.printfln("DERP relay: %s (%s)%s", p2p.DERP_SERVERS[server - 1].host, p2p.DERP_SERVERS[server - 1].place, ", no addresses offered: everything goes through it" if derp.only else "")
     }
     p2p.LinkGatherBegin(host, servers[:server_count], p2p.LinkNow())
     p2p.LinkGatherBegin(guest, servers[:server_count], p2p.LinkNow())
@@ -59,23 +73,28 @@ SelfTest :: proc(use_stun: bool, use_portmap: bool) -> int {
 
     p2p.LinkHost(host, "host")
     text: [p2p.CODE_TEXT_MAX]byte
-    invite_text, _ := p2p.InviteEncode(p2p.LinkMakeInvite(host), text[:])
+    short: bool = derp.short && host.derp.state == .READY
+    invite_text, _ := p2p.InviteEncode(p2p.LinkMakeInvite(host, short), text[:])
     invite, invite_ok := p2p.InviteDecode(invite_text)
     if !invite_ok || !p2p.LinkJoin(guest, invite, "guest", p2p.LinkNow()) {
         fmt.eprintln("FAIL: invite")
         return 1
     }
-    reply_buffer: [p2p.CODE_TEXT_MAX]byte
-    reply_text, _ := p2p.InviteEncode(p2p.LinkMakeInvite(guest), reply_buffer[:])
-    reply, reply_ok := p2p.InviteDecode(reply_text)
-    if !reply_ok {
-        fmt.eprintln("FAIL: reply")
-        return 1
-    }
-    _, accepted := p2p.LinkAcceptReply(host, reply, p2p.LinkNow())
-    if !accepted {
-        fmt.eprintln("FAIL: reply not accepted")
-        return 1
+    if short {
+        fmt.println("short code: the guest's reply goes through the relay by itself")
+    } else {
+        reply_buffer: [p2p.CODE_TEXT_MAX]byte
+        reply_text, _ := p2p.InviteEncode(p2p.LinkMakeInvite(guest), reply_buffer[:])
+        reply, reply_ok := p2p.InviteDecode(reply_text)
+        if !reply_ok {
+            fmt.eprintln("FAIL: reply")
+            return 1
+        }
+        _, accepted := p2p.LinkAcceptReply(host, reply, p2p.LinkNow())
+        if !accepted {
+            fmt.eprintln("FAIL: reply not accepted")
+            return 1
+        }
     }
 
     started: i64 = p2p.LinkNow()
@@ -86,9 +105,9 @@ SelfTest :: proc(use_stun: bool, use_portmap: bool) -> int {
             return 1
         }
     }
-    fmt.printfln("connected in %d ms, host sees %s, guest sees %s", p2p.LinkNow() - started,
-        net.endpoint_to_string(host.peers[0].endpoint, context.temp_allocator),
-        net.endpoint_to_string(guest.peers[0].endpoint, context.temp_allocator))
+    fmt.printfln("connected in %d ms, host sees %s%s, guest sees %s%s", p2p.LinkNow() - started,
+        net.endpoint_to_string(host.peers[0].endpoint, context.temp_allocator), " (relay)" if host.peers[0].via_relay else "",
+        net.endpoint_to_string(guest.peers[0].endpoint, context.temp_allocator), " (relay)" if guest.peers[0].via_relay else "")
 
     host.drop_percent = 20
     guest.drop_percent = 20

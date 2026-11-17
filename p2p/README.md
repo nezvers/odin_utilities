@@ -28,7 +28,12 @@ copied code is refused before any packet is sent. The host can paste more replie
 4. **Port forwarding on request**: `LinkPortMap` asks the router (PCP, NAT-PMP, UPnP) to forward the port. The public address becomes stable
    and open, so nothing has to be punched or guessed.
 5. **IPv6**: with a global IPv6 address on both sides there is no NAT, only a stateful firewall that both sides open by sending first.
-6. **TURN relay**: `LinkTurnBegin` allocates a relayed address on a TURN server. Only ONE side needs it: the other just sends to the
+6. **DERP relay (free, no account)**: `LinkDerpBegin` connects to one of Tailscale's public DERP relays (28 regions, nothing to sign up for, nothing
+   to install; idea and protocol from [derpnet](https://github.com/mmozeiko/derpnet), made cross-platform here). The code then names the relay and our key
+   there, the guest's reply travels through it by itself (one code goes one way, nothing is pasted back), and the relay is a candidate like any
+   address: it connects even two strict NATs, and the connection moves to a direct path as soon as one works. Everything through it is sealed end to
+   end (NaCl box). Relay of last resort: a detour through a data center (about 90 ms and a few hundred KB/s measured), so direct paths stay first.
+7. **TURN relay**: `LinkTurnBegin` allocates a relayed address on a TURN server. Only ONE side needs it: the other just sends to the
    relayed address like to any public address. It carries every byte, so the connection moves to a direct path as soon as one packet
    arrives that way.
 
@@ -37,21 +42,25 @@ copied code is refused before any packet is sent. The host can paste more replie
 | same LAN, any NAT | 1 |
 | full cone, address restricted, port restricted (cone) NATs, in any combination | 2 |
 | symmetric NAT that counts up, against anything (including another one) | 3 |
-| symmetric NAT with random ports (carrier and company NATs) against port restricted or symmetric | 4 (router with UPnP/PCP), 5 (IPv6 on both), or 6 (a relay on either side) |
-| both behind carrier grade NAT with no IPv6 | 6 only |
+| symmetric NAT with random ports (carrier and company NATs) against port restricted or symmetric | 4 (router with UPnP/PCP), 5 (IPv6 on both), 6 (DERP, free) or 7 (TURN, account) |
+| both behind carrier grade NAT with no IPv6 | 6 or 7 (a relay) |
 
 ## Files
 - `stun.odin`: STUN binding (RFC 5389) with CHANGE-REQUEST / OTHER-ADDRESS (RFC 5780), pure functions, the server list.
 - `code.odin`: `Invite` (candidates, session, id, name, NAT facts) and its text form.
 - `link.odin`: `Link`: sockets (IPv4 + IPv6), gathering, NAT measurement, punching, port guessing, reliable channel, events, inbox.
 - `portmap.odin`: PCP, NAT-PMP and UPnP IGD port forwarding (blocking, time bounded).
+- `derp.odin`: the DERP client (frames, handshake, send / poll, a race to find the fastest relay), `derp_link.odin`: DERP inside the Link (relay candidate,
+  SIGNAL packets, short codes), `tls13.odin`: a small TLS 1.3 client (Odin has none in core; certificates are NOT checked, see its header: fine for DERP
+  because the payload is sealed end to end, not for anything else), `nacl.odin`: NaCl box (X25519 + XSalsa20 + Poly1305) checked against the derpnet C code.
 - `turn.odin`: TURN client (allocation, refresh, permissions, Send/Data indications), non blocking from `LinkUpdate`.
 - `relay_find.odin`: `RelayFind`, which relay (TURN) servers answer from this network, with their free sign-up pages.
 - `wireguard/`: optional encrypted tunnel (separate package), see "Encryption with WireGuard" below.
 - `sim_test.odin`: a simulated internet for the tests: NAT boxes with every mapping and filtering behavior, LANs, hairpin, IPv6 with
   firewalls, STUN servers with a second address, a TURN server. Deterministic, no sockets, milliseconds per scenario.
 - `tool/multi`: runs many chat processes at once with one merged log and a pass/fail check (the many-peer test).
-- `tool/chat`: terminal chat, the demo and the manual test. `tool/probe`: which free servers work from this network. `tool/portmap`: can this
+- `tool/chat`: terminal chat, the demo and the manual test. `tool/derp`: connect to every public DERP relay (time and failures), two clients through one relay, listen / send to a public key (works with the derpnet
+  examples). `tool/probe`: which free servers work from this network. `tool/portmap`: can this
   router forward a port. `tool/turn`: try TURN credentials and run a chat through the relay.
 
 ## Use
@@ -98,6 +107,25 @@ exchange WireGuard public keys over the live Link, the Link closes and WireGuard
 - Verified: key derivation against RFC 7748, config text, package manager choice, and `--wireguard-dry` (both programs run the whole exchange and the
   switch, the second Link connects on loopback, the chat flows). Not verified on this machine: the installer and the real tunnel (they need administrator rights).
 
+## DERP relay (free, `chat --derp`)
+- `odin run p2p/tool/derp`: tries all 28 relays at once. From the development network 27 answered (70 ms to the nearest, the farthest 1.8 s).
+- `odin run p2p/tool/chat -- host Ann --derp` picks the fastest relay (or `--derp N`), the code names it. `join Bob` with that code connects to the same
+  relay by itself and the reply goes through it: no reply code to send back. `--derp-only` offers no addresses (everything through the relay, for testing or
+  privacy), `--short` makes the host code without addresses, `--no-derp` ignores the relay in a code.
+- In a program: `LinkDerpBegin(link, server, now)` before the gathering is done (`LinkGathered` waits up to 10 s), then `LinkMakeInvite(link, short = true)` for a
+  code without addresses. Events `DERP_READY` / `DERP_FAILED`. The guest calls `LinkDerpBegin(link, int(invite.derp_server), now)` with the server number of the
+  code it was given and `LinkJoin` once it is not `CONNECTING`.
+- How it works: a pseudo address `fd0d:e29::slot` stands for the peer's key at the relay; `LinkSendRaw` sends such datagrams through the relay. A guest keeps
+  sending its reply as a `SIGNAL` packet until connected; the host accepts it only for its own session and only from the key named inside (a forged sender
+  is dropped) and answers with its full invite. A connection through a relay tries a direct punch every 2.5 s and leaves the relay when one is answered.
+- Verified: the TLS client against the RFC 8448 trace (every secret, the encrypted flight, our Finished record byte for byte), the NaCl box against the derpnet
+  C code, the frames, the whole Link in the simulation (all 36 NAT pairs connect through the fake relay, upgrade to direct, 150 messages over 20% loss, a relay
+  that is down, forged signals), and live: two clients through the real relay, interop in BOTH directions with the derpnet C example, `chat selftest --derp-only
+  --short` (200 messages each way over 20% loss through Warsaw), two `chat` processes with one code. `P2P_LIVE=1 odin test p2p` also runs a live relay test.
+- Limits: relays are run by Tailscale for their own service and may change or limit use at any time; this is for connecting people, not for bulk transfer.
+  The TLS to the relay does not check its certificate, so someone in the middle can pretend to be the relay: they still cannot read the sealed packets, they can
+  drop them. A relay sees who talks to whom and how much.
+
 ## Reliable channel
 Selective repeat over a window of 16: the receiver keeps messages that arrive early and reports exactly which ones it has (next expected
 sequence + a bit mask), the sender resends only the missing ones on a timer of 2x the measured round trip (doubling per resend). Messages
@@ -114,8 +142,8 @@ arrive in order in about 2 s.
 - **Router forwarding**: depends on the router. The one tested (UPnP) granted a mapping in 800 ms.
 
 ## What it cannot do (be honest with players)
-- **No relay without an account.** The relay case needs credentials from a provider (see above); without them the last two rows of the table fail
-  and the link says why (`link.nat_mapping`, `PEER_FAILED`). A phone hotspot on one side usually fixes it.
+- **Relays**: DERP (free, no account, `--derp`) covers the last rows of the table. TURN needs an account from a provider (see above). Without either, those rows fail
+  and the link says why (`link.nat_mapping`, `PEER_FAILED`).
 - **No encryption by default.** The random session id in the code is a shared secret that keeps strangers' packets out, not a key. Anyone who can read the
   traffic can read the chat. Do not send passwords, or use `--wireguard` (above).
 - A random-port symmetric NAT against another strict NAT cannot be guessed (no birthday attack: it would need hundreds of sockets).
@@ -127,13 +155,15 @@ arrive in order in about 2 s.
 
 ## Tests
 ```
-odin test p2p -strict-style -vet                 # 29 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
+odin test p2p -strict-style -vet                 # 42 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
                                                  # 36 NAT pairs, NAT measurement, relay and renewal, IPv6, loss, failure timeouts
 odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, real STUN servers, real LAN addresses, 20% loss
 odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)
 odin run p2p/tool/chat -- join Bob               # computer 2, on another network for the real NAT test
 odin test p2p/wireguard -strict-style -vet       # 4 tests: keys, config, package manager choice
 odin run p2p/tool/multi -- 4                    # host + 3 guests as separate processes on this computer: codes passed automatically, merged log, PASS/FAIL (2..8)
+odin run p2p/tool/derp                           # which public DERP relays answer from here; pair / listen / send modes
+odin run p2p/tool/chat -- selftest --derp-only --short   # both ends in one process through a real DERP relay
 odin run p2p/tool/probe                          # which free STUN / TURN servers work from here, and what this NAT does
 odin run p2p/tool/portmap                        # can this router forward a port (opens one, shows it, removes it)
 odin run p2p/tool/turn -- host:port user pass --relay-test
