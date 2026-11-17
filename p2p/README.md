@@ -168,7 +168,7 @@ Nothing here depends on one company: the relay is one candidate path among other
   replaced, `LinkConfig.derp_no_failover` turns it off for the list too.
 - **Behind an HTTP proxy.** The relay connection (and `derp map` / `diagnose`) goes through `HTTPS_PROXY` / `https_proxy` / `ALL_PROXY` (`http://[user:password@]host:port`,
   Basic authentication, `NO_PROXY` respected) with the CONNECT method (`proxy.odin`, tested against a fake proxy: header, credentials, 407, 403, and that no tunnel bytes are eaten).
-  Not covered: SOCKS, HTTPS proxies, NTLM/Kerberos. UDP (STUN, hole punching) cannot pass a proxy: behind one only the relay works, which is what it is for.
+  SOCKS5 works too (`ALL_PROXY=socks5://[user:password@]host:port`, `socks5h://` the same: the name always goes to the proxy; no authentication or user name and password). Not covered: HTTPS proxies, SOCKS4, NTLM/Kerberos. UDP (STUN, hole punching) cannot pass a proxy: behind one only the relay works, which is what it is for.
 - **Without any relay:** the same network works (LAN addresses), hole punching works through most home routers, pasted codes need no relay, TURN works with credentials
   (`chat --turn host:port user password`), a router with UPnP can forward the port (`--upnp`). Only the case of two strict carrier NATs needs a relay.
 - **What breaks for good:** if TLS 1.3 were dropped or the DERP framing changed incompatibly, the client needs an update (the detection above tells the difference
@@ -233,7 +233,7 @@ CertificateVerify signature (ECDSA P-256 / P-384, RSA-PSS, Ed25519) that it hold
 
 ## Tests
 ```
-odin test p2p -strict-style -vet                 # 54 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
+odin test p2p -strict-style -vet                 # 55 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
                                                  # 36 NAT pairs, NAT measurement, relay and renewal, IPv6, loss, failure timeouts
 odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, real STUN servers, real LAN addresses, 20% loss
 odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)
