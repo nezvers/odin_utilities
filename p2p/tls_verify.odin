@@ -14,7 +14,8 @@
 //      of a relay with a private authority or a self-signed certificate of a derper of your own.
 // P2P_TLS_VERIFY=off switches the checking off (a relay with a certificate nobody can vouch for, or a clock that cannot be corrected).
 //
-// Not checked: revocation (no OCSP / CRL), as the x509 package says too. The clock of the computer matters: a certificate is valid between two
+// Revocation is checked after the chain is good (tls_revoke.odin: the CRLs that the certificates name, soft failing by default;
+// P2P_TLS_REVOCATION=strict|off). The clock of the computer matters: a certificate is valid between two
 // dates, and a computer that thinks it is another year refuses every server.
 package p2p
 
@@ -204,7 +205,13 @@ TlsVerifyChain :: proc(chain: [][]byte, host: string, now: time.Time = {}) -> (w
         }
         return text, false
     }
-    delete(verified)
+    defer delete(verified)
+    // has an authority withdrawn one of them (tls_revoke.odin)? Only with the real clock: a date that a test pins is not a connection
+    if now == {} {
+        if revoked_why, revoked_ok := TlsRevocationCheck(verified, time.now(), TlsRevocationModeGet()); !revoked_ok {
+            return revoked_why, false
+        }
+    }
     return "", true
 }
 

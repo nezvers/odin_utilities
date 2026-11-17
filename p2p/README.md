@@ -227,7 +227,15 @@ CertificateVerify signature (ECDSA P-256 / P-384, RSA-PSS, Ed25519) that it hold
   the RFC 8448 CertificateVerify signature (accepted; refused when damaged, for the wrong scheme, and over another transcript); 27 of the 28 relays connect with the check on (the
   28th did not answer in time, as before); a Windows root store of 90 certificates loaded; `example.com` (its authority was not in the local store) is refused by our roots alone
   and accepted through the Windows lookup (`TlsSystemTrustLiveTest`, P2P_LIVE=1). On Linux and macOS there is no such lookup: a missing authority needs the PEM bundle or `P2P_CA_FILE`.
-- **Not covered:** revocation (no OCSP or CRL), certificate transparency, name constraints beyond what the x509 package enforces, pinning. A relay is still only a carrier: the
+- **Revocation** (`tls_revoke.odin`): once the chain is good, the certificate of the server and every intermediate above it (not the root) are looked up on the CRLs they name
+  (CRL distribution points, `http://`; Let's Encrypt switched OCSP off in 2025, so the relays only have lists). A list is fetched, its signature checked against the certificate of
+  the authority (ECDSA, RSA PKCS#1, Ed25519), its dates and issuer checked, the serial looked for; it stays in memory until its next update (a leaf list of Let's Encrypt is about
+  100 KB, the lists of intermediates a few hundred bytes), and a list that could not be had is not asked for again for ten minutes. Certificates valid for 10 days or less are not
+  checked (the rule of the browsers). `P2P_TLS_REVOCATION=soft` (default): a revoked certificate is refused, a list that cannot be had is let through, because a down CDN must
+  not take the relays down (and many proxies refuse port 80); `strict`: no answer = refused; `off`. Measured: real revoked certificates (a test site of Amazon Trust and one of
+  SSL.com) are refused with the list named, good ones pass, all the relays pass in `strict` (3 small lists on the first connection, about 50 ms each); offline tests with a CA made
+  with openssl (good and revoked certificate), the real list of ISRG Root X2, a damaged / wrong-issuer / expired list, and the HTTP side (Content-Length, chunked, 404).
+- **Not covered:** OCSP (stapled or fetched), delta lists, the scope of an Issuing Distribution Point, a list kept on disk between runs, certificate transparency, name constraints beyond what the x509 package enforces, pinning. A relay is still only a carrier: the
   packets inside are sealed end to end whatever the TLS says.
 
 ## When it does not connect: what to check
@@ -245,7 +253,7 @@ CertificateVerify signature (ECDSA P-256 / P-384, RSA-PSS, Ed25519) that it hold
 
 ## Tests
 ```
-odin test p2p -strict-style -vet                 # 61 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
+odin test p2p -strict-style -vet                 # 63 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
                                                  # 36 NAT pairs, NAT measurement, relay and renewal, IPv6, loss, failure timeouts
 odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, real STUN servers, real LAN addresses, 20% loss
 odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)

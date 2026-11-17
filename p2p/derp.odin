@@ -103,7 +103,7 @@ DerpAdvice :: proc(kind: DerpFailure) -> string {
     case .NO_NETWORK:
         return "No connection to the relay. Check the network: a firewall must allow outgoing TCP 443 and the name must resolve. Behind a proxy set HTTPS_PROXY=http://[user:password@]host:port or ALL_PROXY=socks5://host:port (also https://, socks4://, NTLM logins: p2p/README.md) (NO_PROXY lists what goes direct). If this relay is gone, use another one (--derp N, or --derp-host name for any DERP server)."
     case .TLS:
-        return "The relay did not complete a TLS 1.3 handshake. It may be down, overloaded, or something on the network interferes with HTTPS. If the failure text names the certificate: check the date and time of this computer, a program that inspects HTTPS (a company proxy) needs its authority added with P2P_CA_FILE=<pem file>, and a relay with a certificate nobody can vouch for needs P2P_TLS_VERIFY=off. Otherwise try another relay."
+        return "The relay did not complete a TLS 1.3 handshake. It may be down, overloaded, or something on the network interferes with HTTPS. If the failure text names the certificate: check the date and time of this computer, a revoked certificate needs a new one on the relay (P2P_TLS_REVOCATION=off skips the check), a program that inspects HTTPS (a company proxy) needs its authority added with P2P_CA_FILE=<pem file>, and a relay with a certificate nobody can vouch for needs P2P_TLS_VERIFY=off. Otherwise try another relay."
     case .TIMEOUT:
         return "The relay stopped answering in time. It may be overloaded or the network drops this traffic. Try another relay."
     case .NOT_DERP:
