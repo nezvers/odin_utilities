@@ -71,6 +71,10 @@ SimDerpAttach :: proc(host: ^SimHost, link: ^Link, seed: u8, now_ms: i64) {
     }
     private[0] &= 248
     private[31] = private[31] & 127 | 64
+    SimDerpAttachKey(host, link, private, now_ms)
+}
+
+SimDerpAttachKey :: proc(host: ^SimHost, link: ^Link, private: BoxKey, now_ms: i64) {
     link.derp = {}
     LinkDerpTransport(link, 8, private, host, SimDerpSend, SimDerpPoll, SimDerpStatus, now_ms)
     host.derp.registered = true
@@ -333,4 +337,74 @@ SimDerpSignalSecurityTest :: proc(t: ^testing.T) {
     LinkSendSignal(c, a.derp.public, honest)
     SimPump(a, c, &now, 50)
     testing.expect(t, a.peers[0].state != PeerState.EMPTY)
+}
+
+// A channel found by its name alone: the host sits at the relay under a key derived from the name, a guest asks that key, gets the host's
+// short invite and joins; nobody pasted anything. A guest that knows another name asks another key and gets no answer.
+@(test)
+SimDerpChannelTest :: proc(t: ^testing.T) {
+    sim: ^Sim = new(Sim)
+    defer free(sim)
+    SimInit(sim)
+    a: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.SYMMETRIC_RANDOM))))
+    b: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.SYMMETRIC_RANDOM))))
+    c: ^Link = SimLink(SimAddHost(sim, SimAddNat(sim, SimConfigOf(.FULL_CONE))))
+    defer free(a)
+    defer free(b)
+    defer free(c)
+    now: i64
+    servers: [2]net.Endpoint = {sim.stuns[0].endpoint, sim.stuns[1].endpoint}
+    private, public: BoxKey = DerpChannelKey("my-team")
+    SimDerpAttachKey((^SimHost)(a.transport.user), a, private, now)
+    SimDerpAttach((^SimHost)(b.transport.user), b, 2, now)
+    SimDerpAttach((^SimHost)(c.transport.user), c, 3, now)
+    for link in ([?]^Link{a, b, c}) {
+        LinkGatherBegin(link, servers[:], now)
+    }
+    for !LinkGathered(a) || !LinkGathered(b) || !LinkGathered(c) {
+        SimPump(a, b, &now, 1)
+        LinkUpdate(c, now)
+    }
+    testing.expect_value(t, a.derp.public, public)
+    LinkHost(a, "host")
+
+    other_private, other_public: BoxKey = DerpChannelKey("another-team")
+    _ = other_private
+    LinkDerpFind(b, public, now)
+    LinkDerpFind(c, other_public, now)
+    found: bool
+    for _ in 0 ..< 400 {
+        SimPump(a, b, &now, 1)
+        LinkUpdate(c, now)
+        for {
+            event, ok := LinkPollEvent(b)
+            if !ok {
+                break
+            }
+            found ||= event.kind == .DERP_HOST_FOUND
+        }
+        if found {
+            break
+        }
+    }
+    testing.expect(t, found)
+    testing.expect_value(t, b.derp.found.session, a.session)
+    testing.expect(t, LinkJoin(b, b.derp.found, "guest", now))
+    connected: bool
+    for _ in 0 ..< 1500 {
+        SimPump(a, b, &now, 1)
+        if LinkPeerCount(a) == 1 && LinkPeerCount(b) == 1 {
+            connected = true
+            break
+        }
+    }
+    testing.expect(t, connected)                                     // two random-port symmetric NATs, through the relay
+    // the wrong channel name never got an answer
+    for _ in 0 ..< 300 {
+        LinkUpdate(c, now)
+        now += 10
+        SimPump(a, b, &now, 1)
+    }
+    testing.expect(t, c.derp.find)
+    testing.expect_value(t, c.role, LinkRole.NONE)
 }

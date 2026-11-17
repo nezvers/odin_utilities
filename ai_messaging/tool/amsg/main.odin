@@ -2,7 +2,7 @@
 // part that talks to the channel and to the person at the keyboard.
 //
 //   amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N]
-//                  [--json] [--exclude name]... [--include-git] [--keep-exec]
+//                  [--json] [--exclude name]... [--include-git] [--keep-exec] [--derp [N]] [--derp-only]
 //
 // The first one to open a channel hosts it; the others find it by the channel name on the same computer or network. Over the
 // internet one pastes the code of the other (--code shows yours). Lines typed here:
@@ -12,6 +12,9 @@
 //   --who  --code  --quit  --help   <a pasted code> joins or accepts a reply
 // Only a line that starts with "--" and a letter is a tool command; everything else, "/" lines included, is a message (and, once an
 // agent is attached, goes to the agent untouched). A line that must start with "--" is sent with a space in front of it.
+// --derp: find the others over the internet by the channel name alone, through a free Tailscale DERP relay (no account, nothing to paste).
+// Everybody uses the same relay: N is its number (see p2p/tool/derp), without N the fastest one is looked for (so give N when members start
+// at different places). --derp-only sends everything through the relay (no addresses offered): for tests and privacy.
 // A folder is sent as one new folder at the receiver, all or nothing, without .git, node_modules, __pycache__, .DS_Store and
 // whatever --exclude names (a name, or *.ext); --include-git keeps .git. Received folders keep executable bits only with --keep-exec.
 //
@@ -52,6 +55,7 @@ main :: proc() {
     config.lan = true
     config.receive_dir = "received"
     include_git: bool
+    use_derp: bool
     for name in ([?]string{".git", "node_modules", "__pycache__", ".DS_Store"}) {
         excludes[exclude_count] = name
         exclude_count += 1
@@ -75,6 +79,18 @@ main :: proc() {
             config.lan = false
         case "--stun":
             config.use_stun = true
+        case "--derp":
+            use_derp = true
+            if i + 1 < len(os.args) {
+                number, is_number := strconv.parse_int(os.args[i + 1])
+                if is_number {
+                    config.derp_server = number
+                    i += 1
+                }
+            }
+        case "--derp-only":
+            use_derp = true
+            config.link.derp_only = true
         case "--json":
             json_mode = true
         case "--keep-exec":
@@ -128,6 +144,19 @@ main :: proc() {
         }
     }
 
+    if use_derp && config.derp_server == 0 {
+        Info("looking for the fastest DERP relay (free Tailscale relays, no account)...")
+        candidates: [6]int = {4, 8, 1, 14, 22, 2}
+        config.derp_server = p2p.DerpRace(candidates[:], 6000)
+        if config.derp_server == 0 {
+            Info("no DERP relay answered (offline, or TCP 443 to them is blocked): only the same network can be found")
+        } else {
+            Info(fmt.tprintf("using the relay %s (%s); other members must pass --derp %d", p2p.DERP_SERVERS[config.derp_server - 1].host, p2p.DERP_SERVERS[config.derp_server - 1].place, config.derp_server))
+        }
+    } else if use_derp && (config.derp_server < 1 || config.derp_server > len(p2p.DERP_SERVERS)) {
+        fmt.eprintfln("--derp N: N is 1..%d", len(p2p.DERP_SERVERS))
+        os.exit(2)
+    }
     m: ^ai.Messenger = new(ai.Messenger)
     if !ai.MessengerOpen(m, config, p2p.LinkNow()) {
         fmt.eprintln("cannot open the UDP socket")

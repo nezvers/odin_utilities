@@ -78,8 +78,8 @@ NodeUpdate :: proc(node: ^Node) {
 }
 
 // Pumps every node until `condition` holds or about 8 seconds passed.
-PumpUntil :: proc(nodes: []^Node, condition: proc(nodes: []^Node) -> bool) -> bool {
-    for _ in 0 ..< 8000 {
+PumpUntil :: proc(nodes: []^Node, condition: proc(nodes: []^Node) -> bool, limit: int = 8000) -> bool {
+    for _ in 0 ..< limit {
         for node in nodes {
             NodeUpdate(node)
         }
@@ -411,4 +411,58 @@ MessengerCancelTest :: proc(t: ^testing.T) {
     testing.expect(t, !os.exists(fmt.tprintf("%s/in/huge.bin.part", folder)))
     testing.expect(t, !os.exists(fmt.tprintf("%s/in/huge.bin", folder)))
     testing.expect(t, !MessengerCancel(guest.m, HOST_ID, transfer, p2p.LinkNow()))     // already gone
+}
+
+// Over a real public DERP relay, found by the channel name alone (no lan, no code), only when asked for: P2P_LIVE=1. The first member
+// finds nobody and becomes the host (it takes the channel key at the relay), the second finds it, text and a file travel, and with
+// derp_only everything really goes through the relay.
+@(test)
+MessengerRelayLiveTest :: proc(t: ^testing.T) {
+    if os.get_env("P2P_LIVE", context.temp_allocator) == "" {
+        return
+    }
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("live-%x", random)
+    defer delete(channel)
+    folder: string = TempFolder("live")
+    defer os.remove_all(folder)
+    defer delete(folder)
+    first: ^Node = NodeOpen({channel = channel, name = "first", role = .AUTO, derp_server = 22, receive_dir = fmt.tprintf("%s/first_in", folder), auto_accept = true, link = {derp_only = true}})
+    testing.expect(t, first != nil)
+    defer NodeClose(first)
+    // the first member finds nobody and becomes the host (it takes the channel key at the relay)
+    hosting := proc(nodes: []^Node) -> bool {
+        return nodes[0].m.is_host && nodes[0].m.phase == .RUNNING
+    }
+    testing.expect(t, PumpUntil([]^Node{first}, hosting, 30000))
+    // the second one starts later and finds it by the name (two members that start in the same second may both host: use the roles then)
+    second: ^Node = NodeOpen({channel = channel, name = "second", role = .AUTO, derp_server = 22, receive_dir = fmt.tprintf("%s/second_in", folder), auto_accept = true, link = {derp_only = true}})
+    testing.expect(t, second != nil)
+    defer NodeClose(second)
+    nodes: []^Node = {first, second}
+    meet := proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 1 && MessengerReady(nodes[1].m)
+    }
+    testing.expect(t, PumpUntil(nodes, meet, 30000))
+    host, guest: ^Node = first, second
+    if second.m.is_host {
+        host, guest = second, first
+    }
+    testing.expect(t, MessengerSendText(guest.m, HOST_ID, "hello through the relay", p2p.LinkNow()))
+    testing.expect(t, MessengerSendText(host.m, ALL, "hello back", p2p.LinkNow()))
+    talked := proc(nodes: []^Node) -> bool {
+        return Heard(nodes[0], "hello") && Heard(nodes[1], "hello")
+    }
+    testing.expect(t, PumpUntil(nodes, talked, 20000))
+    testing.expect(t, guest.m.link.peers[0].via_relay)
+    source: string = fmt.aprintf("%s/live.bin", folder)
+    defer delete(source)
+    FillTestFile(source, 60_000)
+    _, started := MessengerSendFile(guest.m, HOST_ID, source, p2p.LinkNow())
+    testing.expect(t, started)
+    sent := proc(nodes: []^Node) -> bool {
+        return len(nodes[0].done) == 1 && len(nodes[1].done) == 1
+    }
+    testing.expect(t, PumpUntil(nodes, sent, 30000))
 }

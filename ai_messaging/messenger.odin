@@ -56,6 +56,11 @@ MessengerConfig :: struct {
     name: string,
     role: Role,
     lan: bool,                           // use the discovery beacon (same computer / network)
+    // Over the internet by channel name alone, through a free Tailscale DERP relay (p2p/derp.odin): the number of the relay (1 = the first
+    // of p2p.DERP_SERVERS, all members must use the same one), 0 = off. The host sits at the relay under a key derived from the channel name,
+    // guests ask that key and join; nothing is pasted. The relay carries the connection when no direct path works and the members move to a
+    // direct path when one does. The name is the secret: anybody who knows it can join.
+    derp_server: int,
     use_stun: bool,                      // look up the public address for codes that are sent over the internet (blocking at open)
     receive_dir: string,                 // incoming files go here ("" refuses all)
     auto_accept: bool,                   // accept offers without asking (else a FILE_OFFERED event, then MessengerFileAnswer)
@@ -160,6 +165,7 @@ Forward :: struct {
 Phase :: enum {
     GATHERING,                           // the link is finding its addresses
     SEARCHING,                           // asking the network for a host
+    HOSTING_WAIT,                        // no host found: reconnecting to the relay under the channel key, then hosting
     RUNNING,
     CLOSED,
 }
@@ -187,6 +193,9 @@ Messenger :: struct {
     join_ms: i64,
     stun: [p2p.STUN_MAX_SERVERS]net.Endpoint,
     stun_count: int,
+    channel_private: p2p.BoxKey,         // the channel's identity at the relay (derived from its name)
+    channel_public: p2p.BoxKey,
+    derp_finding: bool,
     events: [EVENTS]Event,
     event_head: int,
     event_count: int,
@@ -213,11 +222,21 @@ MessengerOpen :: proc(m: ^Messenger, config: MessengerConfig, now_ms: i64) -> bo
     }
     link_config: p2p.LinkConfig = config.link
     link_config.include_loopback = true      // agents on one computer reach each other through 127.0.0.1
+    if config.derp_server != 0 {
+        m.channel_private, m.channel_public = p2p.DerpChannelKey(config.channel)
+        if config.role == .HOST {
+            link_config.derp_private = m.channel_private          // the host IS the channel key at the relay
+            link_config.derp_private_set = true
+        }
+    }
     if !p2p.LinkInit(&m.link, link_config) {
         return false
     }
     if config.use_stun {
         m.stun_count = p2p.LinkResolveStun(m.stun[:])
+    }
+    if config.derp_server != 0 && !p2p.LinkDerpBegin(&m.link, config.derp_server, now_ms) {
+        return false
     }
     p2p.LinkGatherBegin(&m.link, m.stun[:m.stun_count], now_ms)
     m.phase = .GATHERING
@@ -349,6 +368,10 @@ MessengerUpdate :: proc(m: ^Messenger, now_ms: i64) {
         }
     case .SEARCHING:
         Search(m, now_ms)
+    case .HOSTING_WAIT:
+        if m.link.derp.state != .CONNECTING {
+            BecomeHost(m, now_ms)
+        }
     case .RUNNING:
     case .CLOSED:
     }
@@ -364,7 +387,7 @@ MessengerUpdate :: proc(m: ^Messenger, now_ms: i64) {
 @(private)
 Start :: proc(m: ^Messenger, now_ms: i64) {
     m.self_id = UNKNOWN_ID
-    wants_host: bool = m.config.role == .HOST || m.config.role == .AUTO && !m.config.lan
+    wants_host: bool = m.config.role == .HOST || m.config.role == .AUTO && !m.config.lan && m.config.derp_server == 0
     if wants_host {
         BecomeHost(m, now_ms)
         return
@@ -377,6 +400,9 @@ Start :: proc(m: ^Messenger, now_ms: i64) {
     jitter: [1]byte
     crypto.rand_bytes(jitter[:])
     m.search_ms = SEARCH_MS + i64(jitter[0]) * 700 / 255
+    if m.config.derp_server != 0 {
+        m.search_ms += 3000                  // the relay needs its round trips: do not take over a channel whose host just has not answered yet
+    }
     m.ask_ms = now_ms - ASK_INTERVAL_MS
 }
 
@@ -408,7 +434,22 @@ Search :: proc(m: ^Messenger, now_ms: i64) {
         m.ask_ms = now_ms
         BeaconAskWho(&m.beacon)
     }
+    if m.config.derp_server != 0 && !m.derp_finding && m.link.derp.state == .READY && m.link.role == .NONE {
+        m.derp_finding = true
+        p2p.LinkDerpFind(&m.link, m.channel_public, now_ms)
+    }
     if m.config.role == .AUTO && now_ms - m.search_start_ms >= m.search_ms {
+        if m.config.derp_server != 0 && m.link.derp.public != m.channel_public {
+            // nobody answered: this member becomes the host, which at the relay means to be the channel key
+            p2p.LinkDerpClose(&m.link)
+            m.link.config.derp_private = m.channel_private
+            m.link.config.derp_private_set = true
+            m.derp_finding = false
+            if p2p.LinkDerpBegin(&m.link, m.config.derp_server, now_ms) {
+                m.phase = .HOSTING_WAIT
+                return
+            }
+        }
         BecomeHost(m, now_ms)
     }
 }
@@ -522,6 +563,14 @@ LinkEvents :: proc(m: ^Messenger, now_ms: i64) {
                 EventPush(m, .MEMBER_JOINED, id, name)
                 RosterSend(m, now_ms)
             }
+        case .DERP_HOST_FOUND:
+            if !m.is_host && !m.joined && m.link.role == .NONE {
+                p2p.LinkJoin(&m.link, m.link.derp.found, m.config.name, now_ms)
+                m.joined = true
+                m.phase = .RUNNING
+            }
+        case .DERP_FAILED:
+            EventPush(m, .ERROR, 0, fmt.tprintf("the relay cannot be used: %s", m.link.derp.failure))
         case .PEER_FAILED:
             if !m.is_host {
                 EventPush(m, .ERROR, HOST_ID, "could not reach the host (is it still running? firewall? same network?)")

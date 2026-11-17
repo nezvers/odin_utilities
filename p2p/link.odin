@@ -51,6 +51,8 @@ PacketKind :: enum u8 {
     ACK,                            // ack u16 (also the keepalive)
     CLOSE,
     SIGNAL,                         // an invite sent through the DERP relay (see derp_link.odin)
+    WHO,                            // "is there a host of this channel?" to the channel key at the relay (no session yet, no tag)
+    HERE,                           // the host's answer: its short invite
 }
 
 // How the NAT chooses the public port of a socket (RFC 4787 mapping behavior), measured by asking several STUN servers.
@@ -105,6 +107,7 @@ LinkEventKind :: enum {
     RELAY_FAILED,                   // wrong credentials, no answer, quota: link.turn.failure says why
     DERP_READY,                     // the DERP relay connection is up (codes made from now on carry it)
     DERP_FAILED,                    // link.derp.failure says why
+    DERP_HOST_FOUND,                // LinkDerpFind got an answer: link.derp.found is the host's invite, LinkJoin it
 }
 
 LinkEvent :: struct {

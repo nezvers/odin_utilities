@@ -15,6 +15,7 @@
 // the whole thing with a fake relay and the real one is the Derp client with its TLS connection.
 package p2p
 
+import "core:crypto/sha2"
 import "core:net"
 
 DERP_UPGRADE_MS :: 2500                  // a connection through a relay tries the direct path this often
@@ -41,6 +42,11 @@ DerpPath :: struct {
     real: ^Derp,                         // set by LinkDerpBegin, freed by LinkClose
     begin_ms: i64,
     failure: string,
+    // looking for the host of a channel (LinkDerpFind)
+    find: bool,
+    find_key: BoxKey,
+    find_ms: i64,
+    found: Invite,
 }
 
 // The pseudo address of a peer slot. Never leaves the program: LinkSendRaw sees it and uses the relay.
@@ -123,6 +129,48 @@ LinkDerpClose :: proc(link: ^Link) {
     link.derp = {}
 }
 
+// ---------------------------------------------------------------------------------------------------------------- channels
+
+// The identity of the HOST of a named channel at the relay: derived from the name, so everybody who knows the name knows where to ask.
+// The name is therefore the secret of the channel: whoever knows it can ask the host to let them in, and can pose as the host.
+DerpChannelKey :: proc(channel: string) -> (private: BoxKey, public: BoxKey) {
+    context_256: sha2.Context_256
+    sha2.init_256(&context_256)
+    sha2.update(&context_256, transmute([]byte)string("p2p-derp-channel-v1:"))
+    sha2.update(&context_256, transmute([]byte)channel)
+    sha2.final(&context_256, private[:])
+    private[0] &= 248
+    private[31] &= 127
+    private[31] |= 64
+    public = BoxPublicKey(private)
+    return
+}
+
+// A guest (no role yet, relay ready) asks the channel's host key every second until an answer arrives: event DERP_HOST_FOUND, the
+// host's short invite is in link.derp.found. The host is the member that connected to the relay with the channel's private key
+// (config.derp_private = DerpChannelKey(name)) and called LinkHost.
+LinkDerpFind :: proc(link: ^Link, host_key: BoxKey, now_ms: i64) {
+    link.derp.find = true
+    link.derp.find_key = host_key
+    link.derp.find_ms = now_ms - DERP_SIGNAL_MS
+}
+
+@(private)
+LinkSendRendezvous :: proc(link: ^Link, to: BoxKey, kind: PacketKind, invite: ^Invite) {
+    packet: [PACKET_HEADER + CODE_BINARY_MAX]byte
+    packet[0] = PACKET_MAGIC
+    packet[1] = u8(kind)
+    length: int = PACKET_HEADER
+    if invite != nil {
+        count: int = InviteToBinary(invite^, packet[PACKET_HEADER:])
+        if count == 0 {
+            return
+        }
+        length += count
+    }
+    link.derp.send(link.derp.user, to, packet[:length])
+}
+
 // ---------------------------------------------------------------------------------------------------------------- per frame
 
 // State changes and incoming packets. Called from LinkUpdate.
@@ -159,6 +207,10 @@ LinkDerpUpdate :: proc(link: ^Link, now_ms: i64) {
         LinkPushEvent(link, {kind = .DERP_FAILED})
         return
     }
+    if derp.find && link.role == .NONE && now_ms - derp.find_ms >= DERP_SIGNAL_MS {
+        derp.find_ms = now_ms
+        LinkSendRendezvous(link, derp.find_key, .WHO, nil)
+    }
     buffer: [PACKET_HEADER + 8 + MAX_PAYLOAD + 64]byte
     for _ in 0 ..< DATAGRAMS_PER_UPDATE {
         from, length, ok := derp.poll(derp.user, buffer[:])
@@ -173,7 +225,29 @@ LinkDerpUpdate :: proc(link: ^Link, now_ms: i64) {
 
 @(private)
 LinkDerpDispatch :: proc(link: ^Link, from: BoxKey, data: []byte, now_ms: i64) {
-    if len(data) < PACKET_HEADER || data[0] != PACKET_MAGIC || link.role == .NONE {
+    if len(data) < PACKET_HEADER || data[0] != PACKET_MAGIC {
+        return
+    }
+    // the rendezvous of a channel happens before there is a session, so these carry no tag
+    #partial switch PacketKind(data[1]) {
+    case .WHO:
+        if link.role == .HOST && link.derp.state == .READY && LinkPeerCount(link) < MAX_PEERS {
+            invite: Invite = LinkMakeInvite(link, true)
+            LinkSendRendezvous(link, from, .HERE, &invite)
+        }
+        return
+    case .HERE:
+        if link.derp.find && link.role == .NONE && from == link.derp.find_key {
+            invite, ok := InviteFromBinary(data[PACKET_HEADER:])
+            if ok && invite.kind == .INVITE && invite.derp_server == u8(link.derp.server) && invite.derp_key == from {
+                link.derp.found = invite
+                link.derp.find = false
+                LinkPushEvent(link, {kind = .DERP_HOST_FOUND})
+            }
+        }
+        return
+    }
+    if link.role == .NONE {
         return
     }
     if PacketKind(data[1]) == .SIGNAL {

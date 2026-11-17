@@ -70,7 +70,13 @@ provider inside `amsg`) is **not built yet**, see "Next".
 - Setting up a new coworker or agent from scratch is one command: `--send carol my_project`.
 
 ## 5. Another network (over the internet)
-- Names are found by broadcast, which stays on one network. For another network the members swap one line of text each way:
+- Easiest, no code at all: both use the same channel name and the same free relay: `amsg my-team --name alice --derp 22` and `amsg my-team --name carol --derp 22`
+  (22 = Warsaw; `odin run p2p/tool/derp` shows which relays answer fast from where you are, any number works as long as everybody uses the same). The first
+  one finds nobody and hosts, the others find it by the name through the relay (a few seconds), then the connection goes direct when it can and through the relay
+  when it cannot (two strict NATs). Without a number the fastest relay is looked for, which can differ between members: pass the number. Start the first
+  member before the others (or force `--host` / `--guest`). `--derp-only` sends everything through the relay. The relay is Tailscale's free public service (no
+  account), it may change or limit use; the channel name is the secret, anybody who knows it can join.
+- Without a relay, names are found by broadcast, which stays on one network. Then the members swap one line of text each way:
   - alice: `amsg my-team --name alice --host --stun` (prints `CODE: 0C0M4-...`; `--stun` puts the public address in it)
   - alice sends that line to carol (chat, mail, anything).
   - carol: `amsg my-team --name carol --guest --stun`, then pastes alice's line into the terminal. She gets a reply code (`CODE: ...`).
@@ -127,7 +133,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (10 tests, about 0.3 s, real loopback sockets; delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (11 tests, about 0.3 s, real loopback sockets; `P2P_LIVE=1` adds a test over a real relay; delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -139,7 +145,8 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - A symbolic link already inside the receive folder that points outside is followed by the operating system.
 - No compression, so a huge folder takes as long as its size; throughput is one window per round trip (fine on a LAN, roughly 300 KB/s at 50 ms).
 - The host is the single point of failure (no host migration). One channel per `Messenger`.
-- No encryption of its own. Windows and Linux are tested, macOS is not.
+- No encryption of its own on direct paths (use the WireGuard option of `p2p/tool/chat` or a VPN); through a DERP relay the packets are sealed end to end, but the relay
+  learns who talks to whom. The channel name is the secret of a channel (also its key at the relay). Windows and Linux are tested, macOS is not.
 
 ## Next (not built): the agent side
 - `amsg my-team --name carol --agent claude` would start the agent (Claude, or another provider's CLI) in the current folder and keep your
