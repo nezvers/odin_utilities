@@ -5,11 +5,13 @@
 //                  [--json] [--exclude name]... [--include-git] [--keep-exec]
 //
 // The first one to open a channel hosts it; the others find it by the channel name on the same computer or network. Over the
-// internet one pastes the code of the other (/code shows yours). Lines typed here:
-//   hello everybody              to all members            /to bob text        to one member
-//   /send bob path               a file or a whole folder  /send all path      to everybody
-//   /yes 3  /no 3                answer an offer           /cancel 3           stop a transfer
-//   /who  /code  /quit           <a pasted code> joins or accepts a reply
+// internet one pastes the code of the other (--code shows yours). Lines typed here:
+//   hello everybody              to all members            --to bob text       to one member
+//   --send bob path              a file or a whole folder  --send all path     to everybody
+//   --yes 3  --no 3              answer an offer           --cancel 3          stop a transfer
+//   --who  --code  --quit  --help   <a pasted code> joins or accepts a reply
+// Only a line that starts with "--" and a letter is a tool command; everything else, "/" lines included, is a message (and, once an
+// agent is attached, goes to the agent untouched). A line that must start with "--" is sent with a space in front of it.
 // A folder is sent as one new folder at the receiver, all or nothing, without .git, node_modules, __pycache__, .DS_Store and
 // whatever --exclude names (a name, or *.ext); --include-git keeps .git. Received folders keep executable bits only with --keep-exec.
 //
@@ -215,7 +217,7 @@ ShowEvent :: proc(m: ^ai.Messenger, event: ^ai.Event) {
         }
     case .FILE_OFFERED:
         what: string = fmt.tprintf("the folder \"%s\" (%d files, %d bytes)", text, event.files, event.size) if event.folder else fmt.tprintf("the file \"%s\" (%d bytes)", text, event.size)
-        fmt.printfln("* %s offers %s: /yes %d or /no %d", name, what, event.transfer, event.transfer)
+        fmt.printfln("* %s offers %s: --yes %d or --no %d", name, what, event.transfer, event.transfer)
     case .FILE_PROGRESS:
         fmt.printfln("* transfer %d %s: %d of %d bytes", event.transfer, "incoming" if event.incoming else "outgoing", event.done, event.size)
     case .FILE_DONE:
@@ -270,7 +272,7 @@ Loop :: proc(m: ^ai.Messenger, config: ai.MessengerConfig) {
             }
             ShowEvent(m, &event)
         }
-        // the code is shown once the role is known and again on /code
+        // the code is shown once the role is known and again on --code
         if !announced_code && m.link.role != .NONE {
             announced_code = true
             ShowCode(m, "code to paste on another network (the same network finds the channel by its name)")
@@ -278,21 +280,39 @@ Loop :: proc(m: ^ai.Messenger, config: ai.MessengerConfig) {
         input: [MAX_LINE]byte
         length, has_line := PopLine(input[:])
         if has_line {
-            Command(m, strings.trim_space(string(input[:length])), now)
+            Command(m, string(input[:length]), now)             // raw: a leading space is the escape
         }
         time.sleep(5 * time.Millisecond)
     }
 }
 
-Command :: proc(m: ^ai.Messenger, line: string, now: i64) {
+// A tool command is "--" and a letter ("--send"); "---", "-- note", "/help" and a leading space are ordinary text.
+IsToolCommand :: proc(raw: string) -> bool {
+    if len(raw) < 3 || raw[0] != '-' || raw[1] != '-' {
+        return false
+    }
+    c: u8 = raw[2]
+    return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
+    if strings.has_prefix(raw, " ") {
+        Say(m, ai.ALL, raw[1:], now)                  // the escape: a leading space makes any line a plain message
+        return
+    }
+    line: string = strings.trim_space(raw)
+    if line != "" && !IsToolCommand(line) && !LooksLikeCode(line) {
+        Say(m, ai.ALL, line, now)
+        return
+    }
     switch {
     case line == "":
-    case line == "/quit":
+    case line == "--quit":
         ai.MessengerClose(m)
         os.exit(0)
-    case line == "/code":
+    case line == "--code":
         ShowCode(m, "your code")
-    case line == "/who":
+    case line == "--who":
         for id in 0 ..< ai.MAX_MEMBERS {
             name: string = ai.MessengerName(m, u8(id))
             if name == "" {
@@ -304,27 +324,27 @@ Command :: proc(m: ^ai.Messenger, line: string, now: i64) {
                 fmt.printfln("* member %d: %s%s%s", id, name, " (host)" if id == 0 else "", " (you)" if u8(id) == ai.MessengerSelf(m) else "")
             }
         }
-    case strings.has_prefix(line, "/to "):
-        rest: string = strings.trim_space(line[4:])
+    case strings.has_prefix(line, "--to "):
+        rest: string = strings.trim_space(line[5:])
         space: int = strings.index_byte(rest, ' ')
         if space < 0 {
-            Info("usage: /to <name> <text>")
+            Info("usage: --to <name> <text>")
             return
         }
         Say(m, ai.MessengerFindMember(m, rest[:space]), strings.trim_space(rest[space + 1:]), now)
-    case strings.has_prefix(line, "/send "):
-        rest: string = strings.trim_space(line[6:])
+    case strings.has_prefix(line, "--send "):
+        rest: string = strings.trim_space(line[7:])
         space: int = strings.index_byte(rest, ' ')
         if space < 0 {
-            Info("usage: /send <name|all> <path to a file or a folder>")
+            Info("usage: --send <name|all> <path to a file or a folder>")
             return
         }
         Send(m, rest[:space], strings.trim_space(rest[space + 1:]), now)
-    case strings.has_prefix(line, "/yes ") || strings.has_prefix(line, "/no "):
-        accept: bool = strings.has_prefix(line, "/yes ")
-        number, ok := strconv.parse_int(strings.trim_space(line[5 if accept else 4:]))
+    case strings.has_prefix(line, "--yes ") || strings.has_prefix(line, "--no "):
+        accept: bool = strings.has_prefix(line, "--yes ")
+        number, ok := strconv.parse_int(strings.trim_space(line[6 if accept else 5:]))
         if !ok {
-            Info("usage: /yes <transfer number>")
+            Info("usage: --yes <transfer number>")
             return
         }
         // the offer is identified by its number; the sender is whoever offered it
@@ -336,8 +356,8 @@ Command :: proc(m: ^ai.Messenger, line: string, now: i64) {
             }
         }
         Info("no such offer")
-    case strings.has_prefix(line, "/cancel "):
-        number, ok := strconv.parse_int(strings.trim_space(line[8:]))
+    case strings.has_prefix(line, "--cancel "):
+        number, ok := strconv.parse_int(strings.trim_space(line[9:]))
         cancelled: bool
         if ok {
             // the transfer number is looked up on both directions; the other end is whoever it is with
@@ -355,23 +375,26 @@ Command :: proc(m: ^ai.Messenger, line: string, now: i64) {
         if !cancelled {
             Info("no such transfer")
         }
-    case strings.has_prefix(line, "/"):
-        Info("commands: /to name text  /send name|all path  /yes n  /no n  /cancel n  /who  /code  /quit")
-    case len(line) > 40 && !strings.contains_rune(line, ' '):
+    case IsToolCommand(line):
+        Info("commands: --to name text  --send name|all path  --yes n  --no n  --cancel n  --who  --code  --quit   (a line starting with a space is always a message)")
+    case LooksLikeCode(line):
         ok, message := ai.MessengerUseCode(m, line, now)
         _ = ok
         Info(message)
         if ok && !m.is_host {
             ShowCode(m, "send this reply code back to the host")
         }
-    case:
-        Say(m, ai.ALL, line, now)
     }
+}
+
+// A pasted session code: one long word.
+LooksLikeCode :: proc(line: string) -> bool {
+    return len(line) > 40 && !strings.contains_rune(line, ' ') && !strings.has_prefix(line, "-") && !strings.has_prefix(line, "/")
 }
 
 Say :: proc(m: ^ai.Messenger, to: u8, text: string, now: i64) {
     if to == ai.UNKNOWN_ID {
-        Info("no such member (see /who)")
+        Info("no such member (see --who)")
         return
     }
     if !ai.MessengerReady(m) {
@@ -413,7 +436,7 @@ Send :: proc(m: ^ai.Messenger, target: string, path: string, now: i64) {
         }
     }
     if sent == 0 {
-        Info("nobody to send it to (see /who)")
+        Info("nobody to send it to (see --who)")
     }
 }
 

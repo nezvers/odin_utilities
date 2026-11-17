@@ -39,14 +39,14 @@ uses the same chunks, credit window and sha256 as a file and arrives all or noth
 `excludes` (names or `*.ext`) are left out anywhere in the tree (the tool excludes `.git node_modules __pycache__ .DS_Store` unless told otherwise).
 A hostile sender is limited: every path component is cleaned (no `..`, no absolute path, no names Windows refuses), depth 24, path 240 bytes, 20000
 entries, the size limit counts the whole stream, and executable bits are only applied with `keep_executable`. Setting up a coworker's project is
-`/send name my_project`.
+`--send name my_project`.
 
 ### Bugs found and fixed in review
 - A frame the host could not forward (receiver queue full) was silently lost, which corrupts a reliable stream: now the transfer is cancelled for the
   sender and an ERROR event is raised (the queue also grew from 64 to 96).
 - A chunk that did not fit the window was read again from the file next time (and could hash twice): it is read once and waits in `pending`.
 - A receiver that stalled in the middle of a transfer kept its `.part` for ever: it fails after 30 s; an unanswered offer is refused after 60 s.
-- No way to stop a transfer: `MessengerCancel` / `/cancel n`. A cancelled or failed receive never leaves a `.part` file or staging folder.
+- No way to stop a transfer: `MessengerCancel` / `--cancel n`. A cancelled or failed receive never leaves a `.part` file or staging folder.
 - The window was 8 chunks (about 130 KB/s at 50 ms): now 12 of the 16 the link holds.
 - Strings in the config were kept by reference (a temporary string dangled): copied now.
 
@@ -56,7 +56,7 @@ entries, the size limit counts the whole stream, and executable bits are only ap
 
 ## Tool
 `odin run ai_messaging/tool/amsg -- <channel> [--name N] [--dir received] [--auto-accept] [--host|--guest] [--no-lan] [--stun] [--json] [--exclude name] [--include-git] [--keep-exec]`
-Typed lines go to everybody; `/to name text`, `/send name|all path` (a file or a folder), `/yes n` `/no n`, `/cancel n`, `/who`, `/code`, `/quit`; a pasted
+Typed lines go to everybody; `--to name text`, `--send name|all path` (a file or a folder), `--yes n` `--no n`, `--cancel n`, `--who`, `--code`, `--quit`; a line is a tool command only when it starts with `--` and a letter (a `/help` or a line with a leading space is a plain message, so an attached agent keeps all its own slash commands); a pasted
 code joins or accepts. Output is one event per line: text mode `<name> text`, `<name> (to you) text`, `* ...`; with `--json` every line is one JSON object
 (`{"event":"text","from":"bob","to":"all","text":"..."}`, events: info, code, connected, joined, left, text, member, file_offered, file_progress,
 file_done with `path` and `message`, error), so a program or an agent parses it without guessing.
