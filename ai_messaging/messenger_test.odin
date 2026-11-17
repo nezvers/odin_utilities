@@ -501,3 +501,179 @@ MessengerRelayLiveTest :: proc(t: ^testing.T) {
     }
     testing.expect(t, PumpUntil(nodes, sent, 30000))
 }
+
+// Two members that start at the same moment both hosted the channel: the relay serves the newer connection and the older one heard nothing.
+// The host check finds that out and the loser joins the other as a guest. Needs the network (P2P_LIVE=1), it takes about 30 s.
+@(test)
+MessengerRaceLiveTest :: proc(t: ^testing.T) {
+    if os.get_env("P2P_LIVE", context.temp_allocator) == "" {
+        return
+    }
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("race-%x", random)
+    defer delete(channel)
+    config: MessengerConfig = {channel = channel, role = .HOST, derp_server = 22, link = {derp_only = true}}      // both are told to host: the race, forced
+    config.name = "one"
+    one: ^Node = NodeOpen(config)
+    config.name = "two"
+    two: ^Node = NodeOpen(config)
+    testing.expect(t, one != nil && two != nil)
+    defer NodeClose(one)
+    defer NodeClose(two)
+    started: time.Tick = time.tick_now()
+    settled: bool
+    reopened: int
+    for time.duration_seconds(time.tick_since(started)) < 90 {
+        NodeUpdate(one)
+        NodeUpdate(two)
+        for node in ([2]^^Node{&one, &two}) {
+            if node^.m.demoted {
+                // what the tool does: leave and come back, now as a guest of the one that is heard
+                name: string = "one" if node == &one else "two"
+                NodeClose(node^)
+                config.role = .GUEST
+                config.name = name
+                node^ = NodeOpen(config)
+                reopened += 1
+            }
+        }
+        hosts: int = int(one.m.is_host && one.m.phase == .RUNNING) + int(two.m.is_host && two.m.phase == .RUNNING)
+        if hosts == 1 && (one.m.is_host && one.joined == 1 && MessengerReady(two.m) || two.m.is_host && two.joined == 1 && MessengerReady(one.m)) && reopened <= 1 {
+            settled = true
+            break
+        }
+        time.sleep(time.Millisecond)
+    }
+    testing.expect(t, settled)
+    fmt.printfln("race: settled=%v, reopened %d time(s)", settled, reopened)
+    if settled {
+        host, guest: ^Node = one, two
+        if two.m.is_host {
+            host, guest = two, one
+        }
+        testing.expect(t, MessengerSendText(guest.m, HOST_ID, "after the race", p2p.LinkNow()))
+        heard := proc(nodes: []^Node) -> bool {
+            return Heard(nodes[0], "after the race")
+        }
+        testing.expect(t, PumpUntil([]^Node{host, guest}, heard, 20000))
+    }
+}
+
+PathSize :: proc(path: string) -> (size: i64, ok: bool) {
+    file, error := os.open(path)
+    if error != nil {
+        return
+    }
+    defer os.close(file)
+    size_value, size_error := os.file_size(file)
+    return size_value, size_error == nil
+}
+
+// A transfer that is cut in the middle (the sender leaves) keeps what arrived; sending the same file again continues there and the
+// result is the same file. A part that is not the start of the file is refused and thrown away.
+@(test)
+MessengerResumeTest :: proc(t: ^testing.T) {
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("resume-%x", random)
+    defer delete(channel)
+    folder: string = TempFolder("resume")
+    defer os.remove_all(folder)
+    defer delete(folder)
+    receive: string = fmt.aprintf("%s/in", folder)
+    defer delete(receive)
+    source: string = fmt.aprintf("%s/big.bin", folder)
+    defer delete(source)
+    part: string = fmt.aprintf("%s/big.bin.part", receive)
+    defer delete(part)
+    FillTestFile(source, 6_000_000)
+
+    host: ^Node = NodeOpen({channel = channel, name = "receiver", role = .HOST, lan = true, receive_dir = receive, auto_accept = true})
+    testing.expect(t, host != nil)
+    defer NodeClose(host)
+    sender_config: MessengerConfig = {channel = channel, name = "sender", role = .GUEST, lan = true}
+    sender: ^Node = NodeOpen(sender_config)
+    testing.expect(t, sender != nil)
+    joined := proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 1 && nodes[1].connected
+    }
+    testing.expect(t, PumpUntil([]^Node{host, sender}, joined))
+    _, started := MessengerSendFile(sender.m, 0, source, p2p.LinkNow())
+    testing.expect(t, started)
+
+    // cut it when part of the file has arrived
+    cut: bool
+    for _ in 0 ..< 8000 {
+        NodeUpdate(host)
+        NodeUpdate(sender)
+        if size, size_ok := PathSize(part); size_ok && size > 200_000 && size < 5_000_000 {
+            cut = true
+            break
+        }
+        time.sleep(time.Millisecond)
+    }
+    testing.expect(t, cut)
+    NodeClose(sender)
+    left := proc(nodes: []^Node) -> bool {
+        return nodes[0].left == 1
+    }
+    testing.expect(t, PumpUntil([]^Node{host}, left))
+    kept, kept_ok := PathSize(part)
+    testing.expect(t, kept_ok && kept > 200_000)                                   // the part stays
+
+    // the same file again: it continues from the part
+    sender = NodeOpen(sender_config)
+    testing.expect(t, sender != nil)
+    defer NodeClose(sender)
+    nodes: []^Node = {host, sender}
+    testing.expect(t, PumpUntil(nodes, proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 2 && nodes[1].connected
+    }))
+    done_before: int = len(host.done)
+    _, started = MessengerSendFile(sender.m, 0, source, p2p.LinkNow())
+    testing.expect(t, started)
+    finished := proc(nodes: []^Node) -> bool {
+        return len(nodes[1].done) == 1 && len(nodes[0].done) >= 1
+    }
+    testing.expect(t, PumpUntil(nodes, finished, 20000))
+    testing.expect_value(t, len(host.done), done_before + 1)
+    testing.expect(t, SameFile(source, fmt.tprintf("%s/big.bin", receive)))
+    testing.expect(t, !os.exists(part))
+    continued: bool
+    for line in host.errors {
+        continued ||= strings.contains(line, "continuing an interrupted transfer")
+    }
+    testing.expect(t, continued)
+
+    // a part that is not the start of the file: refused, thrown away, and the next send starts clean
+    os.remove(fmt.tprintf("%s/big.bin", receive))
+    garbage, garbage_error := os.open(part, {.Write, .Create, .Trunc})
+    testing.expect(t, garbage_error == nil)
+    junk: [5000]byte
+    for i in 0 ..< len(junk) {
+        junk[i] = 0xAB
+    }
+    os.write(garbage, junk[:])
+    os.close(garbage)
+    sender_done: int = len(sender.done)
+    _, started = MessengerSendFile(sender.m, 0, source, p2p.LinkNow())
+    testing.expect(t, started)
+    refused := proc(nodes: []^Node) -> bool {
+        return len(nodes[1].done) == 2
+    }
+    testing.expect(t, PumpUntil(nodes, refused, 20000))
+    testing.expect(t, sender_done == 1 && len(sender.done) == 2 && !sender.done[1].ok)
+    for _ in 0 ..< 200 {                                           // the receiver learns of it a moment later
+        NodeUpdate(host)
+        NodeUpdate(sender)
+        time.sleep(time.Millisecond)
+    }
+    testing.expect(t, !os.exists(part))
+    _, started = MessengerSendFile(sender.m, 0, source, p2p.LinkNow())
+    testing.expect(t, started)
+    testing.expect(t, PumpUntil(nodes, proc(nodes: []^Node) -> bool {
+        return len(nodes[1].done) == 3
+    }, 20000))
+    testing.expect(t, SameFile(source, fmt.tprintf("%s/big.bin", receive)))
+}

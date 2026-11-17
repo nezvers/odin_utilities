@@ -101,7 +101,7 @@ DerpAdvice :: proc(kind: DerpFailure) -> string {
     case .NONE:
         return ""
     case .NO_NETWORK:
-        return "No connection to the relay. Check the network: a firewall or proxy must allow outgoing TCP 443, and the name must resolve. If this relay is gone, use another one (--derp N, or --derp-host name for any DERP server)."
+        return "No connection to the relay. Check the network: a firewall must allow outgoing TCP 443 and the name must resolve. Behind an HTTP proxy set HTTPS_PROXY=http://[user:password@]host:port (NO_PROXY lists what goes direct). If this relay is gone, use another one (--derp N, or --derp-host name for any DERP server)."
     case .TLS:
         return "The relay did not complete a TLS 1.3 handshake. It may be down, overloaded, or something on the network interferes with HTTPS. Try another relay."
     case .TIMEOUT:
@@ -232,9 +232,10 @@ DerpConnect :: proc(derp: ^Derp) -> bool {
         return false
     }
 
-    socket, dial_error := net.dial_tcp_from_hostname_with_port_override(host, port)
-    if dial_error != nil {
-        return fail(derp, .NO_NETWORK, fmt.aprintf("cannot connect to %s: %v", host_and_port, dial_error))
+    // through the HTTP proxy of the environment when there is one (proxy.odin)
+    socket, dial_error, dial_ok := TcpDial(host, port)
+    if !dial_ok {
+        return fail(derp, .NO_NETWORK, dial_error)
     }
     derp.socket = socket
     net.set_option(socket, .Receive_Timeout, time.Millisecond * DERP_TIMEOUT_MS)

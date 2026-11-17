@@ -317,6 +317,10 @@ Loop :: proc(m: ^ai.Messenger, config: ai.MessengerConfig) {
     reconnect_at: i64
     for {
         now: i64 = p2p.LinkNow()
+        if m.demoted && reconnect_at == 0 {
+            reconnect_at = now + 500
+            Info("another member started hosting this channel at the same moment: joining it as a guest")
+        }
         if m.ended && auto_reconnect && reconnect_at == 0 {
             // a little time and a spread, so that not everybody tries to take over the channel at the same instant
             reconnect_at = now + 1500 + i64(os.get_pid() % 7) * 400

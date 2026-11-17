@@ -25,7 +25,7 @@ Kind :: enum u8 {
     ROSTER,                             // host to a guest: [count u8]{[id u8][name]}, `to` is the receiver's own id
     TEXT,                               // [text]
     FILE_OFFER,                         // [transfer u16][size u64][kind u8: 0 file, 1 folder][files u32][name]
-    FILE_ACCEPT,                        // [transfer u16]
+    FILE_ACCEPT,                        // [transfer u16] and, when the receiver kept the start of an interrupted file: [bytes it has u64][sha256 of them 32]
     FILE_REJECT,                        // [transfer u16][reason]
     FILE_CHUNK,                         // [transfer u16][offset u64][bytes...]
     FILE_CREDIT,                        // [transfer u16][bytes received u64]: the sender may go on up to this + the window

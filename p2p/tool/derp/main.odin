@@ -148,9 +148,9 @@ Probe :: proc(arguments: []string) {
 
 // Is the internet there at all? (a TCP connection to a few well known places)
 InternetReachable :: proc() -> bool {
-    for target in ([?]string{"1.1.1.1:443", "8.8.8.8:443", "www.cloudflare.com:443"}) {
-        socket, error := net.dial_tcp_from_hostname_and_port_string(target)
-        if error == nil {
+    for target in ([?]string{"1.1.1.1", "8.8.8.8", "www.cloudflare.com"}) {
+        socket, _, ok := p2p.TcpDial(target, 443)           // through the proxy of the environment, when there is one
+        if ok {
             net.close(socket)
             return true
         }
@@ -211,8 +211,8 @@ Diagnose :: proc(arguments: []string) {
 
 // GET https://host/path with the TLS client of p2p (no certificate check, fine for a public list). Returns the body.
 HttpsGet :: proc(host: string, path: string) -> (body: []byte, status: int, ok: bool) {
-    socket, dial_error := net.dial_tcp_from_hostname_with_port_override(host, 443)
-    if dial_error != nil {
+    socket, _, dial_ok := p2p.TcpDial(host, 443)
+    if !dial_ok {
         return
     }
     defer net.close(socket)

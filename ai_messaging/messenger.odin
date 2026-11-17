@@ -45,6 +45,9 @@ ASK_INTERVAL_MS :: 400
 JOIN_INTERVAL_MS :: 500
 DEFAULT_MAX_FILE :: u64(1) << 30
 PASSWORD_MAX :: 64
+PROBE_DELAY_MS :: 4000                   // after becoming the host of a channel at the relay: is another member the host as well?
+PROBE_AGAIN_MS :: 12000
+PROBE_ROUNDS :: 2
 
 Role :: enum {
     AUTO,                                // look for a host of the channel, become one when there is none
@@ -188,6 +191,10 @@ Messenger :: struct {
     name_buffer: [NAME_MAX]byte,
     dir_buffer: [PATH_MAX]byte,
     derp_host_buffer: [p2p.DERP_HOST_MAX]byte,
+    demoted: bool,                       // hosted the channel at the same moment as another member and lost: MessengerClose and MessengerOpen again to join it as a guest
+    probe: p2p.ChannelProbe,             // the check for a second host of the channel (relay hosting only)
+    probe_due_ms: i64,
+    probe_rounds: int,
     ended: bool,                         // a guest lost its host (or the channel was never reachable): the program may MessengerClose and MessengerOpen again
     link: p2p.Link,
     phase: Phase,
@@ -296,9 +303,10 @@ MessengerClose :: proc(m: ^Messenger) {
         OutFinish(m, &out, false, "closed")
     }
     for &in_ in m.ins {
-        InFinish(m, &in_, false, "closed")
+        InFinish(m, &in_, false, "closed", true)
     }
     BeaconClose(&m.beacon)
+    p2p.ChannelProbeClose(&m.probe)
     p2p.LinkClose(&m.link)
     m.phase = .CLOSED
 }
@@ -411,12 +419,53 @@ MessengerUpdate :: proc(m: ^Messenger, now_ms: i64) {
     case .RUNNING:
     case .CLOSED:
     }
+    if m.phase == .RUNNING && m.is_host {
+        HostProbe(m, now_ms)
+    }
     if m.phase == .SEARCHING || m.phase == .RUNNING {
         Beacons(m, now_ms)
         LinkEvents(m, now_ms)
         Receive(m, now_ms)
         ForwardsFlush(m, now_ms)
         TransfersPump(m, now_ms)
+    }
+}
+
+// Another member may have taken the channel key at the relay at the same moment, and the relay serves the newer connection only: ask who
+// answers there. An answer with another id means this member is not the one that is heard.
+@(private)
+HostProbe :: proc(m: ^Messenger, now_ms: i64) {
+    switch m.probe.state {
+    case .IDLE:
+        if m.probe_due_ms != 0 && now_ms >= m.probe_due_ms && m.link.derp.state == .READY {
+            m.probe_due_ms = 0
+            p2p.ChannelProbeBegin(&m.probe, p2p.LinkDerpHost(&m.link), m.channel_public, now_ms)
+        }
+    case .WAITING:
+        p2p.ChannelProbeUpdate(&m.probe, now_ms)
+    case .FOUND:
+        if m.probe.found.id != m.link.id {
+            if p2p.LinkPeerCount(&m.link) == 0 {
+                m.demoted = true
+                EventPush(m, .ERROR, 0, "another member took the channel at the same moment and is the one the relay serves: joining it as a guest")
+            } else {
+                EventPush(m, .ERROR, 0, "another member also hosts this channel (started at the same moment): the channel is split, restart one side")
+            }
+            p2p.ChannelProbeClose(&m.probe)
+            return
+        }
+        ProbeNext(m, now_ms)
+    case .NOBODY:
+        ProbeNext(m, now_ms)
+    }
+}
+
+@(private)
+ProbeNext :: proc(m: ^Messenger, now_ms: i64) {
+    p2p.ChannelProbeClose(&m.probe)
+    m.probe_rounds += 1
+    if m.probe_rounds < PROBE_ROUNDS {
+        m.probe_due_ms = now_ms + PROBE_AGAIN_MS
     }
 }
 
@@ -459,6 +508,9 @@ BecomeHost :: proc(m: ^Messenger, now_ms: i64) {
         }
     }
     m.phase = .RUNNING
+    if m.config.derp_server != 0 && m.link.derp.state == .READY && m.link.derp.public == m.channel_public {
+        m.probe_due_ms = now_ms + PROBE_DELAY_MS
+    }
     EventPush(m, .CONNECTED, HOST_ID, "hosting the channel")
 }
 
@@ -998,6 +1050,9 @@ OutReceive :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
     case .FILE_ACCEPT:
         if out.state == .OFFERED {
             out.state = .SENDING
+            if serial.ReaderRemaining(&frame.body) > 0 {
+                OutResume(m, out, serial.ReadU64(&frame.body), serial.ReadBytes(&frame.body, HASH_SIZE), now_ms)
+            }
         }
     case .FILE_REJECT:
         OutFinish(m, out, false, fmt.tprintf("rejected: %s", serial.ReadString(&frame.body)))
@@ -1008,6 +1063,33 @@ OutReceive :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
         message: string = serial.ReadString(&frame.body)
         OutFinish(m, out, ok, message)
     }
+}
+
+// The receiver kept `offset` bytes of an earlier attempt and says what they hash to. If this file starts with exactly those bytes the
+// transfer goes on from there, else it is stopped (the receiver throws its start away: send again to start over).
+@(private)
+OutResume :: proc(m: ^Messenger, out: ^OutTransfer, offset: u64, theirs: []byte, now_ms: i64) {
+    ok: bool = out.bundle == nil && offset <= out.size && len(theirs) == HASH_SIZE
+    mine: [HASH_SIZE]byte
+    if ok {
+        ok = PartHash(out.file, offset, &out.hash)
+    }
+    if ok {
+        prefix: sha2.Context_256 = out.hash
+        sha2.final(&prefix, mine[:])
+        ok = string(mine[:]) == string(theirs)
+    }
+    if !ok {
+        writer: serial.Writer
+        FrameBegin(&writer, m.scratch[:], .FILE_CANCEL, m.self_id, out.to)
+        serial.WriteU16(&writer, out.id)
+        serial.WriteString(&writer, "the part that arrived before is not the start of this file")
+        FrameSend(m, out.to, serial.WriterBytes(&writer), now_ms, true)
+        OutFinish(m, out, false, "the receiver's earlier part does not match this file: it was thrown away, send again")
+        return
+    }
+    out.sent = offset
+    out.credited = offset
 }
 
 // Stops a transfer in either direction (the other side is told). `member` is the other end.
@@ -1126,6 +1208,34 @@ MessengerFileAnswer :: proc(m: ^Messenger, member: u8, transfer: u16, accept: bo
     }
 }
 
+// Is another transfer already writing to this part file?
+@(private)
+PartInUse :: proc(m: ^Messenger, except: ^InTransfer, path: string) -> bool {
+    for &other in m.ins {
+        if &other != except && other.state == .RECEIVING && string(other.part_path[:other.part_length]) == path {
+            return true
+        }
+    }
+    return false
+}
+
+// Feeds the first `count` bytes of a file into a hash (the start of a file that is being continued). The file position ends at `count`.
+@(private)
+PartHash :: proc(file: ^os.File, count: u64, hash: ^sha2.Context_256) -> bool {
+    buffer: [16 * 1024]byte
+    done: u64
+    for done < count {
+        want: int = int(min(u64(len(buffer)), count - done))
+        read, error := os.read_at(file, buffer[:want], i64(done))
+        if error != nil || read != want {
+            return false
+        }
+        sha2.update(hash, buffer[:want])
+        done += u64(want)
+    }
+    return true
+}
+
 @(private)
 InAccept :: proc(m: ^Messenger, in_: ^InTransfer, now_ms: i64) {
     os.make_directory_all(m.config.receive_dir)
@@ -1138,27 +1248,59 @@ InAccept :: proc(m: ^Messenger, in_: ^InTransfer, now_ms: i64) {
             return
         }
     } else {
-        file, error := os.open(path, {.Write, .Create, .Trunc})
-        if error != nil {
-            OfferReject(m, in_.from, in_.id, "cannot write the file here", now_ms)
-            in_^ = {}
-            return
+        // the leftover of an interrupted transfer of this name: continue it (the sender checks the start against its own file)
+        resume: string = fmt.tprintf("%s/%s.part", m.config.receive_dir, string(in_.name[:in_.name_length]))
+        resumed: bool
+        if os.is_file(resume) && !PartInUse(m, in_, resume) {
+            if file, error := os.open(resume, {.Read, .Write}); error == nil {
+                size, size_error := os.file_size(file)
+                sha2.init_256(&in_.hash)
+                if size_error == nil && size > 0 && u64(size) <= in_.size && PartHash(file, u64(size), &in_.hash) {
+                    in_.file = file
+                    in_.received = u64(size)
+                    in_.credited = u64(size)
+                    path = resume
+                    resumed = true
+                    os.seek(file, 0, .End)
+                } else {
+                    os.close(file)
+                }
+            }
         }
-        in_.file = file
+        if !resumed {
+            file, error := os.open(path, {.Write, .Create, .Trunc})
+            if error != nil {
+                OfferReject(m, in_.from, in_.id, "cannot write the file here", now_ms)
+                in_^ = {}
+                return
+            }
+            in_.file = file
+            sha2.init_256(&in_.hash)
+        }
     }
     in_.part_length = min(len(path), len(in_.part_path))
     copy(in_.part_path[:in_.part_length], path)
     in_.state = .RECEIVING
     in_.active_ms = now_ms
-    sha2.init_256(&in_.hash)
+    if in_.folder {
+        sha2.init_256(&in_.hash)
+    }
     writer: serial.Writer
     FrameBegin(&writer, m.scratch[:], .FILE_ACCEPT, m.self_id, in_.from)
     serial.WriteU16(&writer, in_.id)
+    if in_.received > 0 {
+        prefix: sha2.Context_256 = in_.hash
+        digest: [HASH_SIZE]byte
+        sha2.final(&prefix, digest[:])
+        serial.WriteU64(&writer, in_.received)
+        serial.WriteBytes(&writer, digest[:])
+        EventPush(m, .ERROR, in_.from, fmt.tprintf("continuing an interrupted transfer of %s from %d bytes", string(in_.name[:in_.name_length]), in_.received))
+    }
     FrameSend(m, in_.from, serial.WriterBytes(&writer), now_ms, true)
 }
 
 @(private)
-InFinish :: proc(m: ^Messenger, in_: ^InTransfer, ok: bool, text: string) {
+InFinish :: proc(m: ^Messenger, in_: ^InTransfer, ok: bool, text: string, keep_part: bool = false) {
     if in_.state == .FREE {
         return
     }
@@ -1169,7 +1311,8 @@ InFinish :: proc(m: ^Messenger, in_: ^InTransfer, ok: bool, text: string) {
     if in_.folder {
         BundleReaderClose(&in_.reader)
     }
-    if !ok && in_.part_length > 0 {
+    // an interrupted file (the link was lost, the program closed) keeps what arrived: sending the same file again continues there
+    if !ok && in_.part_length > 0 && !(keep_part && !in_.folder) {
         part: string = string(in_.part_path[:in_.part_length])
         if in_.folder {
             os.remove_all(part)
@@ -1397,7 +1540,7 @@ TransfersFailMember :: proc(m: ^Messenger, member: u8, reason: string) {
     }
     for &in_ in m.ins {
         if in_.state != .FREE && in_.from == member {
-            InFinish(m, &in_, false, reason)
+            InFinish(m, &in_, false, reason, true)
         }
     }
 }

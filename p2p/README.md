@@ -15,7 +15,7 @@ InviteDecode(reply) -> LinkAcceptReply  ◄───
 every frame: LinkUpdate, LinkPollEvent, LinkReceive, LinkSend      (same on both sides)
 ```
 
-The code is about 90 characters (`0C0H2-PT5R4-4DVAC-...`), Crockford base32 with a crc: case free, dashes and spaces ignored, a typo or a half
+The code is about 110 characters (`0C0H2-PT5R4-4DVAC-...`; it carries the session secret, see "Encryption of the Link"), Crockford base32 with a crc: case free, dashes and spaces ignored, a typo or a half
 copied code is refused before any packet is sent. The host can paste more replies at any time (up to `MAX_PEERS` = 8).
 
 ## How it gets through, in the order it is tried (all at once, the first answer wins)
@@ -92,8 +92,22 @@ Memory: no allocation after the `Link` exists (the interface lists read at setup
 alive ones with the page where their free tier is made, and lets you type `host:port username password` for one you have an account at (the same as
 `--turn`). An alive relay answers `401` and wants a login; a server that allocates without one would be listed as OPEN (none was found).
 
-## Encryption with WireGuard (`chat --wireguard`, optional)
-The Link has no encryption; WireGuard adds it and a virtual LAN (10.73.82.1 / .2). It is **not a relay**: the tunnel uses the same UDP path the punch
+## Encryption of the Link
+Every packet after the 10 byte header is sealed (XSalsa20-Poly1305, the NaCl code that DERP uses, `nacl.odin`), on every route: direct, through a DERP relay, through TURN.
+- **The secret is in the code.** The host makes 16 random bytes and puts them in its invite (`Invite.secret`, invite format 5; a reply code carries none). Whoever does not
+  hold the code cannot read, forge or replay a packet. The code is therefore a secret: pass it privately (a chat message is fine, a public page is not).
+- **Keys.** One key per pair of members: `sha256("p2p-link-v1:" + secret + both ids)`. The nonce is a 64 bit packet counter plus the direction, so the two ends of a pair
+  never repeat one; the counter starts at a random value.
+- **Replay.** A window of 64 counters: a packet that was seen, or is more than 63 behind the newest, is dropped. The kind of the packet is also inside the seal, so
+  changing it in the header (which is not covered by the tag) does nothing.
+- **What an observer still learns:** who talks to whom (addresses, or the relay keys), how much, and when. A relay sees the same.
+- **Cost:** 8 bytes counter + 1 byte kind + 16 bytes tag per packet, one HSalsa20 and one XSalsa20 pass; `MAX_PAYLOAD` is still 1000 bytes (a datagram stays under about 1050).
+- **Not covered:** the code itself (if somebody else reads it, they can join), and a member that joined keeps being trusted as much as the host trusts it.
+- Verified: `LinkSealTest` (unreadable on the wire, a flipped bit anywhere refused, a stranger's packet refused, own packet reflected back refused, the replay window), and the
+  whole NAT matrix and relay simulations run sealed.
+
+## WireGuard on top (`chat --wireguard`, optional)
+The Link seals its own packets; WireGuard adds a virtual LAN (10.73.82.1 / .2) for programs that speak plain IP. It is **not a relay**: the tunnel uses the same UDP path the punch
 found, so it does not get through a NAT the punch could not pass. The sequence (`tool/chat/tunnel.odin`): the chat connects as usual, then the two sides
 exchange WireGuard public keys over the live Link, the Link closes and WireGuard takes over **the same UDP port** towards the address that just worked
 (the NAT mapping belongs to the port, so the hole stays open), and the chat continues on a second Link whose only address is the tunnel's.
@@ -145,6 +159,16 @@ Nothing here depends on one company: the relay is one candidate path among other
 - **A relay of your own** (free, accepts anybody by default; verified here only against the public relays, not against a self-hosted one, follow Tailscale's current
   documentation for `derper`): a small server with a domain name and ports 443 and 80 open: `go install tailscale.com/cmd/derper@latest`, then
   `derper --hostname=derp.yourdomain.example`; every member passes `--derp-host derp.yourdomain.example`. Its certificate is not checked by the client (see tls13.odin).
+- **A relay that stays down is replaced.** A relay of the built in list that has been down for 12 s is replaced by the next one of a fixed walk
+  (`DERP_FALLBACK`: 4, 8, 1, 14, 22, 2, ... never the starting one), then again after 12 s, and so on; `DERP_SWITCHED` says it. Both ends of a connection do the same after the
+  same time, so they meet on the same relay without being able to talk (the relay was the only way): the identities (keys) are the same on every relay. Peers that can only be
+  reached through the relay are not given up for 45 s meanwhile and their silence clocks restart when the relay is back (tested: relay 8 dead for good in the middle of 200
+  messages, both ends on relay 4, nothing lost). A code made before names the old relay; an invite that names the relay the session started on is still accepted.
+  Limits: it assumes both sides see the same relays as down (if only one side cannot reach it, they end on different ones); a relay of your own (`--derp-host`) is never
+  replaced, `LinkConfig.derp_no_failover` turns it off for the list too.
+- **Behind an HTTP proxy.** The relay connection (and `derp map` / `diagnose`) goes through `HTTPS_PROXY` / `https_proxy` / `ALL_PROXY` (`http://[user:password@]host:port`,
+  Basic authentication, `NO_PROXY` respected) with the CONNECT method (`proxy.odin`, tested against a fake proxy: header, credentials, 407, 403, and that no tunnel bytes are eaten).
+  Not covered: SOCKS, HTTPS proxies, NTLM/Kerberos. UDP (STUN, hole punching) cannot pass a proxy: behind one only the relay works, which is what it is for.
 - **Without any relay:** the same network works (LAN addresses), hole punching works through most home routers, pasted codes need no relay, TURN works with credentials
   (`chat --turn host:port user password`), a router with UPnP can forward the port (`--upnp`). Only the case of two strict carrier NATs needs a relay.
 - **What breaks for good:** if TLS 1.3 were dropped or the DERP framing changed incompatibly, the client needs an update (the detection above tells the difference
@@ -168,8 +192,7 @@ arrive in order in about 2 s.
 ## What it cannot do (be honest with players)
 - **Relays**: DERP (free, no account, `--derp`) covers the last rows of the table. TURN needs an account from a provider (see above). Without either, those rows fail
   and the link says why (`link.nat_mapping`, `PEER_FAILED`).
-- **No encryption by default.** The random session id in the code is a shared secret that keeps strangers' packets out, not a key. Anyone who can read the
-  traffic can read the chat. Do not send passwords, or use `--wireguard` (above).
+- **Encryption** is on (section "Encryption of the Link"); the code is the secret. WireGuard (above) is optional for a virtual LAN.
 - A random-port symmetric NAT against another strict NAT cannot be guessed (no birthday attack: it would need hundreds of sockets).
 - The CHANGE-REQUEST test measures the router **and this computer's firewall** together (an unprogrammed Windows firewall drops unsolicited UDP,
   which is correct for security and does not stop punching, because the first outgoing packet opens it).
@@ -177,9 +200,21 @@ arrive in order in about 2 s.
 - The simulation proves the logic, not the real world: NAT counters shared with other devices on the same router, carrier NAT quirks and
   provider TURN servers can differ. The guessing in particular assumes the NAT port counter is not touched between the measurement and the punch.
 
+## When it does not connect: what to check
+| What you see | Likely cause | What to do |
+|---|---|---|
+| `DERP_FAILED` `NO_NETWORK` | no TCP 443 out, or a proxy is needed | set `HTTPS_PROXY`; `derp diagnose` |
+| `NOT_DERP`, `TLS`, `REFUSED` | the relay moved or changed | `derp map` for the current list, `--derp-host`, your own `derper` |
+| relay fine, `PEER_FAILED` on direct | UDP blocked by a firewall (company network, Windows Firewall prompt declined), or two strict NATs | the relay carries it; allow the program in Windows Firewall |
+| LAN discovery finds nobody | Wi-Fi client isolation, a VPN adapter took the broadcast, another subnet | paste the code, or use the relay (`--derp N`) |
+| a code is refused | typo (crc), a code from an older version (format 4 or older: make a new one), or somebody else's session | make a new code |
+| connected, then `PEER_LOST` after about 8 s | the path closed (NAT timeout, Wi-Fi roaming) | keepalives are sent every second; reconnect (`--reconnect` in amsg) |
+| IPv6 only network | not tested (no NAT64/DNS64 handling) | the relay by name works when the name resolves |
+| WireGuard step fails | the installer address or signing name changed, or no administrator rights | `--wireguard-dry` shows the whole flow; the Link is encrypted anyway |
+
 ## Tests
 ```
-odin test p2p -strict-style -vet                 # 47 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
+odin test p2p -strict-style -vet                 # 52 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
                                                  # 36 NAT pairs, NAT measurement, relay and renewal, IPv6, loss, failure timeouts
 odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, real STUN servers, real LAN addresses, 20% loss
 odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)

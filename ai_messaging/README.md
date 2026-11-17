@@ -66,6 +66,9 @@ provider inside `amsg`) is **not built yet**, see "Next".
   - Left out by default: `.git`, `node_modules`, `__pycache__`, `.DS_Store`. Add more with `--exclude target` or `--exclude *.tmp` (repeat the flag).
     `--include-git` keeps `.git`.
   - Executable bits are only restored with `--keep-exec` (received files never run by themselves otherwise).
+- A file that was cut (the other member left, the link broke, the program closed) leaves `name.part` in the receive folder. Send the same file to the same member again: the receiver
+  tells how many bytes it has and the sha256 of them, the sender checks them against its own file and goes on from there (`* continuing an interrupted transfer ...`). If the
+  start differs the transfer stops and the part is deleted, the next send starts clean. Folders are not resumed (they start again). Remove old `.part` files by hand.
 - Limits (change with `--max-mb 200`): 1 GiB per transfer, 20000 files per folder, 4 transfers at a time in each direction.
 - Setting up a new coworker or agent from scratch is one command: `--send carol my_project`.
 
@@ -75,7 +78,9 @@ provider inside `amsg`) is **not built yet**, see "Next".
   one finds nobody and hosts, the others find it by the name through the relay (a few seconds), then the connection goes direct when it can and through the relay
   when it cannot (two strict NATs). Without a number the fastest relay is looked for, which can differ between members: pass the number. Start the first
   member before the others (or force `--host` / `--guest`). `--derp-only` sends everything through the relay. The relay is Tailscale's free public service (no
-  account), it may change or limit use; the channel name is the secret, anybody who knows it can join.
+  account), it may change or limit use. Without a password the channel name is the only secret: anybody who knows (or guesses) it can join. Add `--password
+  long-random-text` (or the environment variable `AMSG_PASSWORD`, which stays out of the process list) to every member: then the key at the relay, the discovery hash and
+  the discovery packets are made from the name AND the password, so a stranger cannot find, join or hijack the channel by guessing its name.
 - If the relays are down or changed: the tool says why and what to do, and the relay reconnects by itself. `--derp-host name` uses any DERP server (your own, or a
   current one from `odin run p2p/tool/derp -- map`), `odin run p2p/tool/derp -- diagnose` explains the situation. When the HOST is lost, `--reconnect` (a command, or
   `--auto-reconnect` by itself) closes this member and joins again: whoever searches first takes over as the host and the others find it (tested live: the host quit,
@@ -87,7 +92,8 @@ provider inside `amsg`) is **not built yet**, see "Next".
   - carol sends her reply line back; alice pastes it. Both print `* ... joined`.
 - It uses hole punching, so it works through most home routers. When both sides are behind a strict carrier NAT it cannot connect (see
   `p2p/README.md`: relay and port forwarding options).
-- There is no encryption of its own. Do not send secrets, or run it over a VPN / the WireGuard option of `p2p/tool/chat`.
+- Everything is sealed end to end with a key from the session secret that is in the code (`p2p/README.md`, "Encryption of the Link"); a code is private, keep it so. Behind an
+  HTTP proxy set `HTTPS_PROXY` (the relay then works through it).
 
 ## 6. For programs and agents: `--json`
 - `amsg my-team --name alice --json` prints one JSON object per line, easy to parse.
@@ -127,7 +133,11 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
   (a frame claiming another sender is dropped). Names are made unique by the host (`bob`, `bob2`). When the host leaves, the channel ends.
 - Finding the others on one network (`discovery.odin`): the host listens on the first free UDP port of 47500..47563 (several channels fit on one
   computer). A newcomer asks `WHO` (loopback + broadcast), the host answers `HERE` with its invite code, the newcomer joins and sends its reply
-  code back as `JOIN`. The channel name is hashed (sha256) in those packets; it is not a secret.
+  code back as `JOIN`. The channel name is hashed (sha256) in those packets; without `--password` it is not a secret, with one the hash covers both and the packets are sealed.
+- Two members that start at the same moment can both host a channel at the relay (the relay serves only the newer connection, the older host hears nothing, measured). A host
+  of a relay channel therefore asks 4 s after it started, from a short second connection, who answers for the channel key; if it is somebody else and this host has no guests
+  it joins them as a guest (`m.demoted`; the tool reopens by itself, a program does `MessengerClose` + `MessengerOpen` with `role = .GUEST`). With guests it only reports the split.
+  Verified live: two forced hosts, one demoted and joined, a message arrived.
 - Messages (`frame.odin`): `[kind][from][to][body]`, member ids: host 0, guests 1..8, 255 = everybody.
 - Files (`messenger.odin`): offer, accept or reject with a reason, 800 byte chunks over the reliable channel, a credit window of 12 chunks,
   sha256 of the whole thing at the end, a verdict back to the sender. File names that arrive are reduced to one safe name (no path, no `..`,
@@ -137,20 +147,23 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (11 tests, about 0.3 s, real loopback sockets; `P2P_LIVE=1` adds a test over a real relay; delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (14 tests, about 3 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
+  - a channel with a password: the same name without or with another password finds nothing
+  - a file cut in the middle continues from its part, byte for byte; a wrong part is refused and thrown away
   - folders between members (hidden files, empty folders, exclusions, second copy next to the first, declined offer), cancel in the middle of a 20 MB file
 - Also run by hand with real `amsg` processes: three members, folders and files received byte for byte identical.
 
 ## 10. Known limits
-- No resume: a transfer that breaks starts again from zero.
+- Resume is for single files (above); a folder starts again.
 - A symbolic link already inside the receive folder that points outside is followed by the operating system.
 - No compression, so a huge folder takes as long as its size; throughput is one window per round trip (fine on a LAN, roughly 300 KB/s at 50 ms).
 - The host is the single point of failure (no host migration). One channel per `Messenger`.
-- No encryption of its own on direct paths (use the WireGuard option of `p2p/tool/chat` or a VPN); through a DERP relay the packets are sealed end to end, but the relay
-  learns who talks to whom. The channel name is the secret of a channel (also its key at the relay). Windows and Linux are tested, macOS is not.
+- Sealed end to end on every path (session secret from the code); a relay or an observer learns who talks to whom and how much. Without `--password` the channel name is the only
+  secret that finds a channel. If the relay of the channel stays down members move to the same next relay by themselves (`p2p/README.md`); that assumes they all see the same
+  relays as down. Windows and Linux are tested, macOS is not.
 
 ## Next (not built): the agent side
 - `amsg my-team --name carol --agent claude` would start the agent (Claude, or another provider's CLI) in the current folder and keep your
