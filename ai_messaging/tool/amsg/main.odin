@@ -4,7 +4,7 @@
 //   amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N]
 //                  [--json] [--exclude name]... [--include-git] [--keep-exec] [--derp [N]] [--derp-host name] [--derp-only] [--auto-reconnect]
 //                  [--agent [model]] [--agent-model M] [--agent-cmd claude] [--agent-tools Read,Glob] [--agent-dir agent_files]
-//                  [--listen mentions|all|none] [--allow-remote-agent]
+//                  [--listen mentions|all|none] [--agent-trust ask|members|name,name] [--allow-remote-agent]
 //
 // The first one to open a channel hosts it; the others find it by the channel name on the same computer or network. Over the
 // internet one pastes the code of the other (--code shows yours). Without --agent this is a plain chat: what you type goes to the group.
@@ -15,6 +15,8 @@
 //   --spawn [model]              start your agent (model: haiku, sonnet, opus or a full id)   --dismiss   end it
 //   --spawn bob [model]          ask bob to start his agent  --dismiss bob   ask him to end it (bob decides: --yes agent / --no agent)
 //   --agents                     who has an agent         --listen all|mentions|none   what the channel passes to your agent
+//   --trust ask|members|bob,carol   how far your agent believes other members: ask (default) = it asks you first, members = it does what
+//                                any member asks with its tools, a list = only those members
 //   --yes 3  --no 3              answer an offer           --cancel 3          stop a transfer
 //   --who  --code  --quit  --help   <a pasted code> joins or accepts a reply
 // Only a line that starts with "--" and a letter is a tool command; everything else, "/" lines included, is a message (to the agent when
@@ -162,6 +164,15 @@ main :: proc() {
             session_config.agent_dir = os.args[i] if i < len(os.args) else "agent_files"
         case "--allow-remote-agent":
             session_config.allow_remote = true
+        case "--agent-trust":
+            i += 1
+            mode, trusted, trust_message, trust_ok := ai.SessionParseTrust(os.args[i] if i < len(os.args) else "")
+            if !trust_ok {
+                fmt.eprintln(trust_message)
+                os.exit(2)
+            }
+            session_config.trust = mode
+            session_config.trusted = strings.clone(trusted)
         case "--listen":
             i += 1
             mode, mode_ok := ListenFromText(os.args[i] if i < len(os.args) else "")
@@ -191,7 +202,7 @@ main :: proc() {
         config.password = os.get_env("AMSG_PASSWORD", context.allocator)
     }
     if config.channel == "" {
-        fmt.eprintln("usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--exclude name] [--include-git] [--keep-exec] [--derp [N] | --derp-host name] [--derp-only] [--auto-reconnect] [--password P] [--agent [model]] [--agent-model M] [--agent-cmd claude] [--agent-tools Read,Glob] [--agent-dir agent_files] [--listen mentions|all|none] [--allow-remote-agent]")
+        fmt.eprintln("usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--exclude name] [--include-git] [--keep-exec] [--derp [N] | --derp-host name] [--derp-only] [--auto-reconnect] [--password P] [--agent [model]] [--agent-model M] [--agent-cmd claude] [--agent-tools Read,Glob] [--agent-dir agent_files] [--listen mentions|all|none] [--agent-trust ask|members|name,name] [--allow-remote-agent]")
         os.exit(2)
     }
     if include_git {
@@ -464,6 +475,9 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
         for text in strings.split_lines(ai.SessionStatus(session), context.temp_allocator) {
             Info(text)
         }
+    case line == "--trust" || strings.has_prefix(line, "--trust "):
+        message, _ := ai.SessionSetTrust(session, strings.trim_space(line[len("--trust"):]))
+        Info(message)
     case strings.has_prefix(line, "--listen "):
         mode, mode_ok := ListenFromText(strings.trim_space(line[len("--listen "):]))
         if mode_ok {
@@ -545,7 +559,7 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
             Info("no such transfer")
         }
     case IsToolCommand(line):
-        Info("commands: --group_msg text  --to name text  --send name|all path  --spawn [bob] [model]  --dismiss [bob]  --agents  --listen all|mentions|none  --yes n|agent  --no n|agent  --cancel n  --who  --code  --reconnect  --quit   (a line starting with a space is always a message; with an agent a plain line goes to it, without one to the group)")
+        Info("commands: --group_msg text  --to name text  --send name|all path  --spawn [bob] [model]  --dismiss [bob]  --agents  --listen all|mentions|none  --trust ask|members|name,name  --yes n|agent  --no n|agent  --cancel n  --who  --code  --reconnect  --quit   (a line starting with a space is always a message; with an agent a plain line goes to it, without one to the group)")
     case LooksLikeCode(line):
         ok, message := ai.MessengerUseCode(m, line, now)
         _ = ok
