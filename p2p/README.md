@@ -50,6 +50,7 @@ copied code is refused before any packet is sent. The host can paste more replie
 - `wireguard/`: optional encrypted tunnel (separate package), see "Encryption with WireGuard" below.
 - `sim_test.odin`: a simulated internet for the tests: NAT boxes with every mapping and filtering behavior, LANs, hairpin, IPv6 with
   firewalls, STUN servers with a second address, a TURN server. Deterministic, no sockets, milliseconds per scenario.
+- `tool/multi`: runs many chat processes at once with one merged log and a pass/fail check (the many-peer test).
 - `tool/chat`: terminal chat, the demo and the manual test. `tool/probe`: which free servers work from this network. `tool/portmap`: can this
   router forward a port. `tool/turn`: try TURN credentials and run a chat through the relay.
 
@@ -132,6 +133,7 @@ odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, rea
 odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)
 odin run p2p/tool/chat -- join Bob               # computer 2, on another network for the real NAT test
 odin test p2p/wireguard -strict-style -vet       # 4 tests: keys, config, package manager choice
+odin run p2p/tool/multi -- 4                    # host + 3 guests as separate processes on this computer: codes passed automatically, merged log, PASS/FAIL (2..8)
 odin run p2p/tool/probe                          # which free STUN / TURN servers work from here, and what this NAT does
 odin run p2p/tool/portmap                        # can this router forward a port (opens one, shows it, removes it)
 odin run p2p/tool/turn -- host:port user pass --relay-test
