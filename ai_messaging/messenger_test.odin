@@ -18,6 +18,11 @@ Node :: struct {
     done: [dynamic]Event,
     offered: [dynamic]Event,
     errors: [dynamic]string,
+    requests: [dynamic]Event,            // AGENT_REQUEST
+    statuses: [dynamic]Event,            // AGENT_STATUS
+    agent_said: [dynamic]bool,           // for each text: was it an agent
+    session: ^Session,                   // optional: the agent session of this node (session_test.odin)
+    notes: [dynamic]string,              // what the session said: "REPLY: ...", "INFO: ..."
     joined: int,
     left: int,
     connected: bool,
@@ -46,6 +51,13 @@ NodeClose :: proc(node: ^Node) {
     delete(node.done)
     delete(node.offered)
     delete(node.errors)
+    delete(node.requests)
+    delete(node.statuses)
+    delete(node.agent_said)
+    for note in node.notes {
+        delete(note)
+    }
+    delete(node.notes)
     free(node)
 }
 
@@ -55,6 +67,9 @@ NodeUpdate :: proc(node: ^Node) {
         event, ok := MessengerPoll(node.m)
         if !ok {
             break
+        }
+        if node.session != nil {
+            SessionOnEvent(node.session, &event, p2p.LinkNow())
         }
         switch event.kind {
         case .NONE, .FILE_PROGRESS:
@@ -67,12 +82,27 @@ NodeUpdate :: proc(node: ^Node) {
         case .TEXT:
             append(&node.texts, fmt.aprintf("%s: %s", MessengerName(node.m, event.member), string(event.text[:event.text_length])))
             append(&node.to_all, event.to == ALL)
+            append(&node.agent_said, event.agent)
         case .FILE_OFFERED:
             append(&node.offered, event)
         case .FILE_DONE:
             append(&node.done, event)
         case .ERROR:
             append(&node.errors, strings.clone(string(event.text[:event.text_length])))
+        case .AGENT_REQUEST:
+            append(&node.requests, event)
+        case .AGENT_STATUS:
+            append(&node.statuses, event)
+        }
+    }
+    if node.session != nil {
+        SessionUpdate(node.session, p2p.LinkNow())
+        for {
+            out, out_ok := SessionPoll(node.session)
+            if !out_ok {
+                break
+            }
+            append(&node.notes, fmt.aprintf("%v: %s", out.kind, SessionOutText(&out)))
         }
     }
 }

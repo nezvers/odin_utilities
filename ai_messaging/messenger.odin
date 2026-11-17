@@ -90,6 +90,8 @@ EventKind :: enum {
     FILE_PROGRESS,                       // `done` of `size` bytes, `incoming` tells the direction
     FILE_DONE,                           // finished: `ok`; text = the saved path (incoming) or the reason when not ok
     ERROR,                               // `text` says what went wrong (could not reach the host, ...)
+    AGENT_REQUEST,                       // `member` asks this member to start or dismiss its agent: `action`, text = the model asked for (may be empty)
+    AGENT_STATUS,                        // the agent of `member`: `ok` = running, text = its model, `note` = what happened ("started", "declined", ...)
 }
 
 Event :: struct {
@@ -103,12 +105,23 @@ Event :: struct {
     done: u64,
     files: u32,                          // FILE_OFFERED / FILE_DONE of a folder: how many files it holds (0 for a single file)
     folder: bool,
+    agent: bool,                         // TEXT: said by the agent of `member`
+    action: AgentAction,                 // AGENT_REQUEST
     text: [MAX_TEXT]byte,
     text_length: int,
+    note: [AGENT_NOTE_MAX]byte,          // AGENT_STATUS
+    note_length: int,
 }
+
+AGENT_NOTE_MAX :: 120
+AGENT_MODEL_MAX :: 64
 
 EventText :: proc(event: ^Event) -> string {
     return string(event.text[:event.text_length])
+}
+
+EventNote :: proc(event: ^Event) -> string {
+    return string(event.note[:event.note_length])
 }
 
 Member :: struct {
@@ -732,14 +745,41 @@ FrameSend :: proc(m: ^Messenger, to: u8, frame: []byte, now_ms: i64, queue: bool
     return p2p.LinkSend(&m.link, 0, frame, true, now_ms)
 }
 
-// Text to one member or to ALL. False: too long, not ready, no such member, or the queue is full.
-MessengerSendText :: proc(m: ^Messenger, to: u8, text: string, now_ms: i64) -> bool {
+// Text to one member or to ALL. False: too long, not ready, no such member, or the queue is full. `agent`: it is the agent of this member
+// that speaks (the others see it as that).
+MessengerSendText :: proc(m: ^Messenger, to: u8, text: string, now_ms: i64, agent: bool = false) -> bool {
     if len(text) > MAX_TEXT || !MessengerReady(m) {
         return false
     }
     writer: serial.Writer
-    FrameBegin(&writer, m.scratch[:], .TEXT, m.self_id, to)
+    FrameBegin(&writer, m.scratch[:], .AGENT_TEXT if agent else .TEXT, m.self_id, to)
     serial.WriteBytes(&writer, transmute([]byte)text)
+    return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
+}
+
+// Asks a member to start (SPAWN, with the model wanted, "" = its own default) or dismiss (DISMISS) its agent. The member decides: the answer
+// is an AGENT_STATUS event.
+MessengerSendAgentRequest :: proc(m: ^Messenger, to: u8, action: AgentAction, model: string, now_ms: i64) -> bool {
+    if to == ALL || len(model) > AGENT_MODEL_MAX || !MessengerReady(m) {
+        return false
+    }
+    writer: serial.Writer
+    FrameBegin(&writer, m.scratch[:], .AGENT_REQUEST, m.self_id, to)
+    serial.WriteU8(&writer, u8(action))
+    serial.WriteString(&writer, model)
+    return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
+}
+
+// Tells one member (or ALL) what the agent of this member is doing.
+MessengerSendAgentStatus :: proc(m: ^Messenger, to: u8, running: bool, model: string, note: string, now_ms: i64) -> bool {
+    if len(model) > AGENT_MODEL_MAX || len(note) > AGENT_NOTE_MAX || !MessengerReady(m) {
+        return false
+    }
+    writer: serial.Writer
+    FrameBegin(&writer, m.scratch[:], .AGENT_STATUS, m.self_id, to)
+    serial.WriteBool(&writer, running)
+    serial.WriteString(&writer, model)
+    serial.WriteString(&writer, note)
     return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
 }
 
@@ -855,10 +895,30 @@ Deliver :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
         if !m.is_host {
             RosterReceive(m, frame)
         }
-    case .TEXT:
+    case .TEXT, .AGENT_TEXT:
         if text := serial.ReaderRemaining(&frame.body); text > 0 && text <= MAX_TEXT {
             event: ^Event = EventPush(m, .TEXT, frame.from, string(serial.ReadBytes(&frame.body, text)))
             event.to = frame.to
+            event.agent = frame.kind == .AGENT_TEXT
+        }
+    case .AGENT_REQUEST:
+        action: u8 = serial.ReadU8(&frame.body)
+        model: string = serial.ReadString(&frame.body)
+        if serial.ReaderOk(&frame.body) && (action == u8(AgentAction.SPAWN) || action == u8(AgentAction.DISMISS)) && len(model) <= AGENT_MODEL_MAX {
+            event: ^Event = EventPush(m, .AGENT_REQUEST, frame.from, model)
+            event.action = AgentAction(action)
+            event.to = frame.to
+        }
+    case .AGENT_STATUS:
+        running: bool = serial.ReadBool(&frame.body)
+        model: string = serial.ReadString(&frame.body)
+        note: string = serial.ReadString(&frame.body)
+        if serial.ReaderOk(&frame.body) && len(model) <= AGENT_MODEL_MAX && len(note) <= AGENT_NOTE_MAX {
+            event: ^Event = EventPush(m, .AGENT_STATUS, frame.from, model)
+            event.ok = running
+            event.to = frame.to
+            event.note_length = len(note)
+            copy(event.note[:], note)
         }
     case .FILE_OFFER:
         OfferReceive(m, frame, now_ms)

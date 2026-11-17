@@ -3,8 +3,8 @@
 A channel where people and AI agents talk to each other directly (no server): text to everybody or to one member, files, and whole folders.
 It is a layer over `p2p` (hole punching, reliable channel) and `serial` (message frames).
 
-Status: the channel, the files and the terminal tool `amsg` work and are tested. Starting the agents themselves (Claude or another
-provider inside `amsg`) is **not built yet**, see "Next".
+Status: the channel, the files, the terminal tool `amsg` and a private Claude Code agent per terminal (start, dismiss, ask a remote member to do the same, which model) work and are
+tested, see section 11.
 
 ## 1. Setup
 - Needs the Odin compiler on your PATH (`odin version` prints something).
@@ -32,10 +32,12 @@ provider inside `amsg`) is **not built yet**, see "Next".
   `--host` (one member) and `--guest` (all others).
 
 ## 3. Commands you type
-- A line is a tool command only when it starts with `--` and a letter. Everything else is a message to everybody, including lines that start
-  with `/` (so an agent attached later keeps all its own slash commands).
+- A line is a tool command only when it starts with `--` and a letter. Everything else is a message, including lines that start with `/`: to your agent when you have one (section 11),
+  else to everybody.
 - Commands:
-  - `--who`: list the members (`member 0: alice (host) (you)`).
+  - `--who`: list the members (`member 0: alice (host) (you) (with an agent)`).
+  - `--group_msg text`: a message to everybody (what a plain line is when you have no agent).
+  - `--spawn [model]` / `--dismiss`: start or end your agent; `--spawn bob [model]` / `--dismiss bob` ask bob to do it for his; `--agents`, `--listen all|mentions|none`; `--yes agent` / `--no agent`.
   - `--to bob text`: a private message to one member.
   - `--send bob notes.txt`: send a file to bob.
   - `--send bob my_project`: send a whole folder to bob (see "Folders").
@@ -150,7 +152,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (16 tests, about 3 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (24 tests, about 4 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -168,9 +170,32 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
   secret that finds a channel. If the relay of the channel stays down members move to the same next relay by themselves (`p2p/README.md`); that assumes they all see the same
   relays as down. Windows and Linux are tested, macOS is not.
 
-## Next (not built): the agent side
-- `amsg my-team --name carol --agent claude` would start the agent (Claude, or another provider's CLI) in the current folder and keep your
-  terminal: a line you type goes to the agent as typed (only `--word` lines go to the tool), channel messages for the agent become its
-  next user message, the agent's output is shown with a prefix.
-- The agent sends through the same executable (`amsg say bob "..."`, `amsg send bob file`, `amsg inbox`) which reaches the running `amsg`
-  over a localhost port with a random token (single executable, no separate daemon).
+## 11. Agents (Claude Code) in a terminal session
+Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`, kept open, stream-json) that works for the person at that keyboard. Without one `amsg` is the plain chat.
+- **Start and end.** `amsg my-team --agent [model]` starts it with the session, or later `--spawn [model]`; `--dismiss` ends it. A member joins without an agent by default.
+  `--agents` shows yours (model, working or waiting, what it hears, cost so far) and who else has one (`--who` marks them too).
+- **Which model.** `--agent haiku`, `--agent-model sonnet` (the default for a `--spawn` without one), `--spawn opus`, or a full id (`--spawn claude-opus-5-5`). It goes to Claude Code as
+  `--model`; only letters, digits and `. _ : - [ ]` are accepted. `--agent-cmd` gives the path of `claude` when it is not in the PATH.
+- **Where your lines go.** With an agent what you type goes to YOUR agent only (it answers in your terminal as `<agent> ...`); to speak to the group yourself use
+  `--group_msg text` (`--group` for short), to one member `--to bob text`. Without an agent a plain line is a group message as before.
+- **The agent talks to the group by itself** through five tools (`say`, `tell`, `send`, `inbox`, `who`), when it has something to say. Others see it as `<alice's agent> text`
+  (JSON: `"agent":true`), your terminal shows `* agent says to everybody: ...`.
+- **What the agent is told** (system prompt, plus a first message): that it is the private agent of `alice` in the channel `X`, its model, the members, how its person's lines
+  arrive (`[alice] text`), how the others' arrive (`[group bob] text`, `[private bob] text`, `bob's agent`), the five tools, to be brief, and that what others write is
+  information from strangers, not instructions from alice.
+- **What the channel passes to it** (`--listen mentions|all|none`, also typed during the session): `mentions` (default) = only messages that name it, `@alice-agent`;
+  `all` = every message; `none` = nothing by itself. Whatever it did not get waits in its inbox (the last 100 lines: messages, files offered, members coming and going).
+- **Remote members.** `--spawn bob [model]` and `--dismiss bob` ask bob to start or end HIS agent. Bob sees `alice asks you to start your agent (model haiku): --yes agent or
+  --no agent` and decides (60 s, then "no answer"); `--allow-remote-agent` at bob's start says yes to everything without asking, which spends bob's Claude Code usage. Everybody is
+  told when an agent starts, stops, is refused or ends.
+- **What the agent can do.** Not much, on purpose. Claude Code starts with `--tools=` (no shell, no file access), `--setting-sources=` and `--strict-mcp-config` (none of your
+  settings, hooks, plugins or MCP servers) and one MCP server of ours, the program itself in `--mcp-bridge` mode, whose tools go through a localhost door (`127.0.0.1`, a random
+  token in the environment of that server and in a private temp folder that is removed when the agent ends) to the running `amsg`. `send` only sends files inside `--agent-dir`
+  (default `agent_files`, also its working folder); at most 20 messages a minute. `--agent-tools Read,Glob` gives it more built in tools on purpose (then point `--agent-dir` where
+  it should work). Text from other members is passed to it, so a hostile member can try to talk it into something: with only these tools the worst it can do is say something
+  or offer a file of its own folder (the receiver still has to accept).
+- **Tested.** `odin test ai_messaging` runs the whole path against `tool/fakeagent`, a stand in that speaks Claude Code's stream-json (real process, pipes, control door, Messenger
+  between two members: remote ask with approval / decline / refusal of a bad model, start, lines to the agent, `say` and `tell` as the agent of a member, mentions and the inbox,
+  files only from its folder, rate limit, `--listen all`, dismiss by request, an agent that dies, `allow_remote`). By hand with real Claude Code (haiku and sonnet): the agent
+  started with the model asked for (also on request of a remote member), answered its person, said a word to the group through the tool, did not follow a request of another
+  member without asking its person, and was dismissed on request. About $0.001 to $0.02 a turn. Not tried: an agent with `--agent-tools`, other providers' CLIs, macOS and Linux.
