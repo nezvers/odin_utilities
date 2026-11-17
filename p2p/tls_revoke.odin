@@ -8,7 +8,8 @@
 // Which certificates: the server's certificate and every intermediate above it (not the root we trust: nobody revokes that for us, the store
 // is updated instead). A certificate that lives at most 10 days is not checked (it expires sooner than a list would be published, the rule
 // of the browsers). A list is fetched once and kept in memory until it expires (a list of an intermediate stays for months, the one for a
-// leaf is about 100 KB for Let's Encrypt); a list that could not be fetched is not asked again for ten minutes.
+// leaf is about 100 KB for Let's Encrypt), and on disk between runs (see CrlDiskPath: nothing on the disk is trusted, a list that is read
+// back is verified like a fresh one); a list that could not be fetched is not asked again for ten minutes.
 //
 // P2P_TLS_REVOCATION: "soft" (the default: a revoked certificate is refused, a list that cannot be had or read is let through, as the browsers
 // do for the same reason: a down CDN must not take the relays down), "strict" (no answer = refused), "off". P2P_TLS_VERIFY=off switches
@@ -18,6 +19,7 @@
 package p2p
 
 import "base:runtime"
+import "core:crypto/sha2"
 import "core:crypto/x509"
 import "core:fmt"
 import "core:net"
@@ -269,6 +271,89 @@ CrlVerify :: proc(crl: ^Crl, issuer: ^x509.Certificate, now: time.Time) -> bool 
     return x509.verify_signature(&stand_in, issuer) == .None
 }
 
+// ---------------------------------------------------------------------------------------------------------------- disk cache
+
+// Where the lists are kept between runs: P2P_CACHE_DIR/crl if set ("off" = nowhere), else %LOCALAPPDATA%\p2p\crl on Windows,
+// $XDG_CACHE_HOME/p2p/crl or ~/.cache/p2p/crl elsewhere. One file per list, named by the sha256 of its address. "" = no cache.
+CrlDiskPath :: proc(url: string, allocator := context.temp_allocator) -> string {
+    base: string = os.get_env("P2P_CACHE_DIR", context.temp_allocator)
+    if base == "off" {
+        return ""
+    }
+    if base == "" {
+        when ODIN_OS == .Windows {
+            base = os.get_env("LOCALAPPDATA", context.temp_allocator)
+            if base != "" {
+                base = fmt.tprintf("%s/p2p", base)
+            }
+        } else {
+            base = os.get_env("XDG_CACHE_HOME", context.temp_allocator)
+            if base == "" {
+                if home := os.get_env("HOME", context.temp_allocator); home != "" {
+                    base = fmt.tprintf("%s/.cache", home)
+                }
+            }
+            if base != "" {
+                base = fmt.tprintf("%s/p2p", base)
+            }
+        }
+    }
+    if base == "" {
+        return ""
+    }
+    digest: [32]byte
+    context_256: sha2.Context_256
+    sha2.init_256(&context_256)
+    sha2.update(&context_256, transmute([]byte)url)
+    sha2.final(&context_256, digest[:])
+    hex: [64]byte
+    digits: string = "0123456789abcdef"
+    for b, i in digest {
+        hex[2 * i] = digits[b >> 4]
+        hex[2 * i + 1] = digits[b & 15]
+    }
+    return fmt.aprintf("%s/crl/%s.crl", strings.trim_right(base, "/\\"), string(hex[:]), allocator = allocator)
+}
+
+// The list kept for `url` when it is good: the right issuer, a good signature, not past its next update. Heap allocated. Whatever is on
+// the disk could have been put there by anybody: it is checked exactly like a fetched list.
+@(private)
+CrlDiskLoad :: proc(url: string, issuer: ^x509.Certificate, now: time.Time) -> (der: []byte, ok: bool) {
+    path: string = CrlDiskPath(url)
+    if path == "" {
+        return
+    }
+    data, read_error := os.read_entire_file(path, runtime.heap_allocator())
+    if read_error != nil {
+        return
+    }
+    crl, parsed := CrlParse(data)
+    if !parsed || !CrlVerify(&crl, issuer, now) {
+        delete(data, runtime.heap_allocator())
+        return
+    }
+    return data, true
+}
+
+// Writes a list that was verified (to a file of its own first, then renamed: a program that stops in the middle leaves no half list).
+@(private)
+CrlDiskStore :: proc(url: string, der: []byte) {
+    path: string = CrlDiskPath(url)
+    if path == "" {
+        return
+    }
+    if slash := strings.last_index_byte(path, '/'); slash > 0 {
+        os.make_directory_all(path[:slash])
+    }
+    temporary: string = fmt.tprintf("%s.%d.tmp", path, os.get_pid())
+    if os.write_entire_file(temporary, der) != nil {
+        return
+    }
+    if os.rename(temporary, path) != nil {
+        os.remove(temporary)
+    }
+}
+
 // ---------------------------------------------------------------------------------------------------------------- fetch
 
 // The http:// addresses of the lists a certificate is on (CRLDistributionPoints, 2.5.29.31). Views into the certificate.
@@ -440,7 +525,11 @@ CrlStatusOf :: proc(url: string, cert: ^x509.Certificate, issuer: ^x509.Certific
     if der != nil {
         crl, parsed = CrlParse(der)
     } else {
-        fetched, fetch_ok := CrlFetch(url)
+        fetched, fetch_ok := CrlDiskLoad(url, issuer, now)
+        from_disk: bool = fetch_ok
+        if !fetch_ok {
+            fetched, fetch_ok = CrlFetch(url)
+        }
         if fetch_ok {
             crl, parsed = CrlParse(fetched)
             if parsed && !CrlVerify(&crl, issuer, now) {
@@ -448,6 +537,9 @@ CrlStatusOf :: proc(url: string, cert: ^x509.Certificate, issuer: ^x509.Certific
             }
             if parsed {
                 der = fetched
+                if !from_disk {
+                    CrlDiskStore(url, fetched)
+                }
             } else {
                 delete(fetched, runtime.heap_allocator())
             }
@@ -530,6 +622,8 @@ RevokeTestServe :: proc(url: string) -> []byte {
 TlsRevocationTest :: proc(t: ^testing.T) {
     context.allocator = runtime.heap_allocator()
     pinned: time.Time = time.unix(1_795_000_000, 0)                   // 2026-11-18
+    os.set_env("P2P_CACHE_DIR", "off")
+    defer os.unset_env("P2P_CACHE_DIR")
 
     authority_chain: TlsRoots
     testing.expect_value(t, TlsRootsAddPem(&authority_chain, REVOKE_TEST_CHAIN), 3)
@@ -606,6 +700,8 @@ TlsRevocationTest :: proc(t: ^testing.T) {
     root_ye_serial: []byte = {0x00, 0x87, 0x21, 0x65, 0xFC, 0x34, 0xB6, 0xE5, 0xFB, 0xA8, 0xAD, 0xD5, 0xB3, 0x70, 0x5F, 0xB5, 0x3A}
     testing.expect(t, CrlHas(&real_crl, superseded))
     testing.expect(t, !CrlHas(&real_crl, root_ye_serial))
+
+    CrlDiskCacheCheck(t)
 }
 
 CrlTestServer :: struct {
@@ -672,4 +768,73 @@ CrlFetchTest :: proc(t: ^testing.T) {
         }
         delete(body, runtime.heap_allocator())
     }
+}
+
+// A list fetched once is on the disk for the next run, is verified again when read back, and a damaged or foreign file is ignored.
+// (Run from TlsRevocationTest: both use the cache and the hook, which are global, and tests run in parallel.)
+@(private)
+CrlDiskCacheCheck :: proc(t: ^testing.T) {
+    context.allocator = runtime.heap_allocator()
+    pinned: time.Time = time.unix(1_795_000_000, 0)
+    folder: string = fmt.aprintf("%s/p2p_crl_%d", os.get_env("TEMP", context.temp_allocator), time.tick_now()._nsec)
+    defer os.remove_all(folder)
+    defer delete(folder)
+    os.set_env("P2P_CACHE_DIR", folder)
+    defer os.unset_env("P2P_CACHE_DIR")
+
+    chain: TlsRoots
+    testing.expect_value(t, TlsRootsAddPem(&chain, REVOKE_TEST_CHAIN), 3)
+    revoked, authority: x509.Certificate = chain.certs[1], chain.certs[2]
+    chain_pointers: []^x509.Certificate = {&revoked, &authority}
+    url: string = "http://crl.test.invalid/ca.crl"
+    clear_memory :: proc() {
+        sync.mutex_lock(&crl_mutex)
+        clear(&crl_cache)
+        sync.mutex_unlock(&crl_mutex)
+    }
+    clear_memory()
+    crl_fetch_hook = RevokeTestServe
+    defer {
+        crl_fetch_hook = nil
+    }
+
+    before: int = revoke_test_serves
+    why, ok := TlsRevocationCheck(chain_pointers, pinned, .SOFT)
+    testing.expect(t, !ok && strings.contains(why, "revoked"))
+    delete(why)
+    testing.expect_value(t, revoke_test_serves, before + 1)
+    path: string = CrlDiskPath(url)
+    testing.expect(t, os.is_file(path))
+
+    // a new run: nothing in memory, the file answers, nothing is fetched
+    clear_memory()
+    why, ok = TlsRevocationCheck(chain_pointers, pinned, .SOFT)
+    testing.expect(t, !ok && strings.contains(why, "revoked"))
+    delete(why)
+    testing.expect_value(t, revoke_test_serves, before + 1)
+
+    // a file that is not a good list (a changed byte) is ignored: the list is fetched again and the file replaced
+    data, _ := os.read_entire_file(path, context.allocator)
+    data[len(data) - 5] ~= 1
+    _ = os.write_entire_file(path, data)
+    delete(data)
+    clear_memory()
+    why, ok = TlsRevocationCheck(chain_pointers, pinned, .SOFT)
+    testing.expect(t, !ok)
+    delete(why)
+    testing.expect_value(t, revoke_test_serves, before + 2)
+    clear_memory()
+    why, ok = TlsRevocationCheck(chain_pointers, pinned, .SOFT)
+    delete(why)
+    testing.expect_value(t, revoke_test_serves, before + 2)                                  // the replaced file is good again
+
+    // past its next update (2055): the file is not used
+    clear_memory()
+    old_serves: int = revoke_test_serves
+    _, _ = TlsRevocationCheck(chain_pointers, time.unix(2_700_000_000, 0), .SOFT)
+    testing.expect_value(t, revoke_test_serves, old_serves + 1)
+
+    // no cache wanted
+    os.set_env("P2P_CACHE_DIR", "off")
+    testing.expect_value(t, CrlDiskPath(url), "")
 }

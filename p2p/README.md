@@ -230,12 +230,14 @@ CertificateVerify signature (ECDSA P-256 / P-384, RSA-PSS, Ed25519) that it hold
 - **Revocation** (`tls_revoke.odin`): once the chain is good, the certificate of the server and every intermediate above it (not the root) are looked up on the CRLs they name
   (CRL distribution points, `http://`; Let's Encrypt switched OCSP off in 2025, so the relays only have lists). A list is fetched, its signature checked against the certificate of
   the authority (ECDSA, RSA PKCS#1, Ed25519), its dates and issuer checked, the serial looked for; it stays in memory until its next update (a leaf list of Let's Encrypt is about
-  100 KB, the lists of intermediates a few hundred bytes), and a list that could not be had is not asked for again for ten minutes. Certificates valid for 10 days or less are not
+  100 to 250 KB, the lists of intermediates a few hundred bytes) and on disk between runs (`%LOCALAPPDATA%\p2p\crl`, `$XDG_CACHE_HOME/p2p/crl` or `~/.cache/p2p/crl`;
+  `P2P_CACHE_DIR` moves it, `off` = none; a file that is read back is verified like a fresh list, so a changed file is ignored and replaced), and a list that could not be had is not
+  asked for again for ten minutes. Certificates valid for 10 days or less are not
   checked (the rule of the browsers). `P2P_TLS_REVOCATION=soft` (default): a revoked certificate is refused, a list that cannot be had is let through, because a down CDN must
   not take the relays down (and many proxies refuse port 80); `strict`: no answer = refused; `off`. Measured: real revoked certificates (a test site of Amazon Trust and one of
   SSL.com) are refused with the list named, good ones pass, all the relays pass in `strict` (3 small lists on the first connection, about 50 ms each); offline tests with a CA made
   with openssl (good and revoked certificate), the real list of ISRG Root X2, a damaged / wrong-issuer / expired list, and the HTTP side (Content-Length, chunked, 404).
-- **Not covered:** OCSP (stapled or fetched), delta lists, the scope of an Issuing Distribution Point, a list kept on disk between runs, certificate transparency, name constraints beyond what the x509 package enforces, pinning. A relay is still only a carrier: the
+- **Not covered:** OCSP (stapled or fetched), delta lists, the scope of an Issuing Distribution Point, removing old list files from the cache folder, certificate transparency, name constraints beyond what the x509 package enforces, pinning. A relay is still only a carrier: the
   packets inside are sealed end to end whatever the TLS says.
 
 ## When it does not connect: what to check
