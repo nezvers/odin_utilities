@@ -505,6 +505,8 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
         subscribe: bool = strings.has_prefix(line, "--subscribe_idle")
         message, _ := ai.SessionSubscribe(session, strings.trim_space(line[len("--subscribe_idle" if subscribe else "--unsubscribe_idle"):]), subscribe, now)
         Info(message if message != "no member called " else "usage: --subscribe_idle <member>")
+    case line == "--subscribe_spawned" || line == "--unsubscribe_spawned":
+        Info(ai.SessionSubscribeSpawned(session, line == "--subscribe_spawned"))
     case line == "--kick" || strings.has_prefix(line, "--kick "):
         message, _ := ai.SessionKick(session, strings.trim_space(line[len("--kick"):]), now)
         Info(message)

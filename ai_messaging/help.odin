@@ -39,6 +39,8 @@ Other members' agents (they decide, you only ask):
   --cmd bob /compact            ask bob to run a slash command on their agent (--private is the same)
   --subscribe_idle bob          get bob's agent's last message (its report) whenever it finishes its work and goes idle, passed to your
                                 agent without spending its tokens; bob agrees first.   --unsubscribe_idle bob   stop
+  --subscribe_spawned           tell your agent whenever an agent of the channel starts or ends (or its member leaves), and who has one now,
+                                so it can reorganize the work; no consent needed, it is public.   --unsubscribe_spawned   stop
   --yes agent / --no agent      what you answer when somebody asks that of you
 Only the host (the member that opened the channel) can give orders:
   --kick bob                    dismiss bob's agent now, without asking (bob stays and can start another one)
@@ -67,7 +69,7 @@ HelpFor :: proc() -> string {
 }
 
 // The words that only a person at the keyboard has. Nothing of the agent side may contain them.
-USER_ONLY_WORDS :: [?]string{"--subscribe_idle", "--unsubscribe_idle", "--kick", "--ban", "--close_group", "--spawn", "--dismiss", "--group_msg", "--group ", "--trust", "--listen", "--agents", "--allow-remote-agent", "--agent-trust", "--agent-model", "--cmd", "--private", "--yes", "--no ", "--quit", "--send", "--to "}
+USER_ONLY_WORDS :: [?]string{"--subscribe_idle", "--unsubscribe_idle", "--subscribe_spawned", "--unsubscribe_spawned", "--kick", "--ban", "--close_group", "--spawn", "--dismiss", "--group_msg", "--group ", "--trust", "--listen", "--agents", "--allow-remote-agent", "--agent-trust", "--agent-model", "--cmd", "--private", "--yes", "--no ", "--quit", "--send", "--to "}
 
 @(test)
 HelpSplitTest :: proc(t: ^testing.T) {

@@ -153,7 +153,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (28 tests, about 9 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (29 tests, about 12 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -202,6 +202,9 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
   4. Long reports go in pieces (up to 3800 bytes, the rest is cut). Reports are accepted only from members you subscribed to, so nobody else can put text in front of your agent that
      way. The agent's prompt says what `[idle bob] ...` is, and the trust setting decides how far it acts on it. Subscriptions last as long as the two programs run (they survive the
      agent being restarted); at most 8 members can watch one agent.
+- **Spawn notices** (`--subscribe_spawned`, `--unsubscribe_spawned`): for a manager that hands out work. Your agent gets `[spawned] bob's agent started (haiku). Agents of the others now: bob, carol`
+  (or `... ended ...`, or `bob left the channel, their agent is gone`) whenever an agent of the channel starts or ends, so it can reorganize the workload. Nobody has to agree: those
+  statuses are public in the channel already, this only decides whether your agent is told. The notice is news, not an order (the prompt says so). Off by default, lasts as long as the program.
 - **Orders of the host** (only the member that opened the channel; a guest who types them is told who the host is):
   - `--kick bob` (also `bob-agent`): bob's agent is dismissed now, without asking. Bob stays in the channel and can start another one.
   - `--ban bob`: bob's program is told to close (its agent ends with it), a moment later (1.5 s) the host cuts the link whatever bob's program did, bob leaves the roster, and the name

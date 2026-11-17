@@ -109,6 +109,7 @@ Session :: struct {
     watchers: [MAX_WATCHERS]u8,          // members that get the idle reports of MY agent
     watcher_count: int,
     watching: [MAX_MEMBERS]bool,         // members whose idle reports I get (they agreed)
+    spawn_watch: bool,                   // `--subscribe_spawned`: my agent is told when an agent of the channel starts or ends (everybody already sees those, no consent needed)
     turn_text: [AGENT_REPORT_MAX]byte,   // what the agent said since its last tool call: the end of its turn
     turn_text_length: int,
     turn_said: [INBOX_LINE_MAX]byte,     // the last thing it sent to the channel in this turn (when it said nothing else)
@@ -249,7 +250,7 @@ SessionPrompt :: proc(s: ^Session, model: string) -> string {
 How you are used:
 - Lines that %s types arrive as "[%s] text". They are for you alone: answer in your normal reply and it is shown in their terminal. The rest of the channel does not see your replies.
 - To talk to the channel use the tool say (everybody) or tell (one member by name). To offer a file or folder use send (only from your own folder, %s). To see who is there use who. To read what the channel said since you last looked use inbox. Be brief: everybody reads it and other agents may answer you.
-- Messages of other members arrive as "[group bob] text" or "[private bob] text" ("bob's agent" when it is their agent speaking). "[idle bob] text" is the last message of bob's agent when it finished its work and went idle (you asked to be told). %s
+- Messages of other members arrive as "[group bob] text" or "[private bob] text" ("bob's agent" when it is their agent speaking). "[idle bob] text" is the last message of bob's agent when it finished its work and went idle (you asked to be told). "[spawned] ..." says an agent of the channel started or ended and who has one now (you asked to be told): it is news for planning the work, not an order. %s
 - %s
 - You have no shell and no file access%s Say so plainly when asked to do something you cannot do.
 - Your name in the channel is "%s's agent"; others call you with @%s-agent.`,
@@ -483,6 +484,9 @@ SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
     case .MEMBER_LEFT:
         InboxAdd(s, fmt.tprintf("* %s left the channel", text))
         if int(event.member) < MAX_MEMBERS {
+            if s.members[event.member].running {
+                SessionSpawnedTell(s, fmt.tprintf("%s left the channel, their agent is gone", text))
+            }
             s.members[event.member] = {}
             s.watching[event.member] = false
             s.report_in_length[event.member] = 0
@@ -513,6 +517,7 @@ SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
     case .AGENT_STATUS:
         if !self && int(event.member) < MAX_MEMBERS && name != "" {
             member: ^MemberAgent = &s.members[event.member]
+            was_running: bool = member.running
             member.running = event.ok
             member.model_length = min(event.text_length, AGENT_MODEL_MAX)
             copy(member.model[:member.model_length], text)
@@ -521,6 +526,9 @@ SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
                 s.watching[event.member] = note == "idle reports on"
                 SessionNote(s, .INFO, fmt.tprintf("%s: %s", name, note))
                 return
+            }
+            if event.ok != was_running {
+                SessionSpawnedTell(s, fmt.tprintf("%s's agent %s%s", name, fmt.tprintf("started (%s)", text if text != "" else "default model") if event.ok else "ended", fmt.tprintf(": %s", note) if !event.ok && note != "" && note != "ended" && note != "dismissed" else ""))
             }
             if event.ok {
                 SessionNote(s, .INFO, fmt.tprintf("%s's agent is running (%s)%s", name, text, fmt.tprintf(": %s", note) if note != "" && note != "started" && note != "running" else ""))
@@ -793,6 +801,37 @@ SessionSubscribe :: proc(s: ^Session, name: string, subscribe: bool, now_ms: i64
         return fmt.tprintf("asked %s to send you the idle reports of their agent, waiting for the answer", MessengerName(s.m, member)), true
     }
     return fmt.tprintf("you will not get the idle reports of %s any more", MessengerName(s.m, member)), true
+}
+
+// `--subscribe_spawned` / `--unsubscribe_spawned`: my agent is told "[spawned bob] ..." when an agent of the channel starts or ends (also when its
+// member leaves), with the agents there are now, so a manager can hand out or take back work. Local: the status of agents is public in the channel already.
+SessionSubscribeSpawned :: proc(s: ^Session, subscribe: bool) -> string {
+    s.spawn_watch = subscribe
+    if !subscribe {
+        return "your agent will not be told when agents start or end any more"
+    }
+    return "your agent is told when an agent of the channel starts or ends" if AgentRunning(&s.agent) else "you will be told when an agent of the channel starts or ends (your agent gets it when you have one)"
+}
+
+// Passes a change of the agents to my agent: what happened and who has an agent now. Skipped when nobody asked.
+SessionSpawnedTell :: proc(s: ^Session, what: string) {
+    if !s.spawn_watch {
+        return
+    }
+    builder: strings.Builder
+    strings.builder_init(&builder, context.temp_allocator)
+    count: int
+    for i in 0 ..< MAX_MEMBERS {
+        if s.members[i].running && MessengerName(s.m, u8(i)) != "" {
+            strings.write_string(&builder, ", " if count > 0 else "")
+            strings.write_string(&builder, MessengerName(s.m, u8(i)))
+            count += 1
+        }
+    }
+    line: string = fmt.tprintf("[spawned] %s. Agents of the others now: %s", what, string(builder.buf[:]) if count > 0 else "none")
+    InboxAdd(s, line)
+    SessionToAgent(s, line)
+    SessionNote(s, .INFO, line)
 }
 
 // One line, starts with "/", no control characters: what can be handed to Claude Code as a command.

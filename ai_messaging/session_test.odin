@@ -635,3 +635,75 @@ IdleReportTest :: proc(t: ^testing.T) {
     _, ok = SessionSubscribe(manager.session, "nobody", true, p2p.LinkNow())
     testing.expect(t, !ok)
 }
+
+// `--subscribe_spawned`: the manager's agent hears when an agent of the channel starts or ends; nobody has to agree, the status is public already.
+@(test)
+SpawnedWatchTest :: proc(t: ^testing.T) {
+    fake: string = FakeAgent()
+    testing.expect(t, fake != "")
+    if fake == "" {
+        return
+    }
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("spawned-%x", random)
+    defer delete(channel)
+    folder: string = TempFolder("spawned")
+    defer os.remove_all(folder)
+    defer delete(folder)
+
+    names: [2]string = {"alice", "bob"}
+    nodes: [2]^Node
+    for name, i in names {
+        directory: string = fmt.aprintf("%s/%s", folder, name)
+        defer delete(directory)
+        receive: string = fmt.aprintf("%s/in", directory)
+        defer delete(receive)
+        agent_dir: string = fmt.aprintf("%s/agent", directory)
+        defer delete(agent_dir)
+        nodes[i] = NodeOpen({channel = channel, name = name, role = .HOST if i == 0 else .GUEST, lan = true, receive_dir = receive})
+        testing.expect(t, nodes[i] != nil)
+        nodes[i].session = new(Session)
+        testing.expect(t, SessionInit(nodes[i].session, nodes[i].m, {agent_command = fake, agent_dir = agent_dir}))
+    }
+    manager, worker := nodes[0], nodes[1]
+    defer {
+        for node in nodes {
+            SessionClose(node.session, p2p.LinkNow())
+            free(node.session)
+            NodeClose(node)
+        }
+    }
+    both: []^Node = nodes[:]
+    testing.expect(t, PumpUntil(both, proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 1 && nodes[1].connected
+    }))
+    message, started := SessionSpawn(manager.session, "", p2p.LinkNow())
+    testing.expect(t, started, message)
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return nodes[0].session.ready
+    }))
+    testing.expect(t, !strings.contains(SessionSubscribeSpawned(manager.session, false), "starts"))   // off: says so
+    testing.expect(t, strings.contains(SessionSubscribeSpawned(manager.session, true), "told"))
+
+    message, started = SessionSpawn(worker.session, "haiku", p2p.LinkNow())
+    testing.expect(t, started, message)
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[0], "echo: [spawned] bob's agent started (haiku). Agents of the others now: bob")
+    }))
+    SessionDismiss(worker.session, p2p.LinkNow())
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[0], "echo: [spawned] bob's agent ended. Agents of the others now: none")
+    }))
+
+    // off again: the next start is not passed on
+    SessionSubscribeSpawned(manager.session, false)
+    count: int = NoteCount(manager, "[spawned]")
+    _, started = SessionSpawn(worker.session, "", p2p.LinkNow())
+    testing.expect(t, started)
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return nodes[0].session.members[1].running
+    }))
+    Pump(both, 300)
+    testing.expect_value(t, NoteCount(manager, "[spawned]"), count)
+}
