@@ -14,10 +14,10 @@ import "core:net"
 import "core:testing"
 import serial "../serial"
 
-INVITE_VERSION :: u8(3)
+INVITE_VERSION :: u8(4)
 NAME_MAX :: 24
 MAX_CANDIDATES :: 6
-CODE_BINARY_MAX :: 1 + 1 + 8 + 4 + 1 + NAME_MAX + 1 + MAX_CANDIDATES * 7 + 12 + 5 + 4
+CODE_BINARY_MAX :: 1 + 1 + 8 + 4 + 1 + NAME_MAX + 1 + MAX_CANDIDATES * 7 + 12 + 5 + 1 + 32 + 4
 CODE_TEXT_MAX :: (CODE_BINARY_MAX * 8 + 4) / 5 + CODE_BINARY_MAX     // characters plus the dashes between groups of 5
 
 CODE_ALPHABET := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -40,6 +40,10 @@ Invite :: struct {
     nat_filtering: NatFiltering,
     port_delta: int,                // public port step of a symmetric NAT, 0 = unknown
     last_port: int,                 // the last public port it handed out while gathering
+    // A DERP relay both sides can use (see derp.odin): the index in DERP_SERVERS plus one (0 = none) and the sender's public key there.
+    // With it the code can be short (no candidates): the rest travels through the relay.
+    derp_server: u8,
+    derp_key: [32]byte,
 }
 
 InviteSetName :: proc(invite: ^Invite, name: string) {
@@ -73,12 +77,11 @@ InviteAddCandidate :: proc(invite: ^Invite, endpoint: net.Endpoint) -> bool {
     return true
 }
 
-// Writes the text code into `out` (CODE_TEXT_MAX is enough) and returns it as a view of `out`.
-InviteEncode :: proc(invite: Invite, out: []byte) -> (text: string, ok: bool) {
-    assert(len(out) >= CODE_TEXT_MAX)
-    binary: [CODE_BINARY_MAX]byte
+// The invite as bytes with its crc (what goes into a code and into a SIGNAL packet). Returns the length, 0 when it does not fit.
+InviteToBinary :: proc(invite: Invite, binary: []byte) -> int {
+    assert(len(binary) >= CODE_BINARY_MAX)
     writer: serial.Writer
-    serial.WriterInit(&writer, binary[:])
+    serial.WriterInit(&writer, binary)
     serial.WriteU8(&writer, INVITE_VERSION)
     serial.WriteU8(&writer, u8(invite.kind))
     serial.WriteU64(&writer, invite.session)
@@ -100,7 +103,7 @@ InviteEncode :: proc(invite: Invite, out: []byte) -> (text: string, ok: bool) {
                 serial.WriteU8(&writer, u8(u16(part)))
             }
         case:
-            return
+            return 0
         }
         serial.WriteU16(&writer, u16(invite.candidates[i].port))
     }
@@ -108,19 +111,39 @@ InviteEncode :: proc(invite: Invite, out: []byte) -> (text: string, ok: bool) {
     serial.WriteU8(&writer, u8(invite.nat_filtering))
     serial.WriteU8(&writer, u8(i8(invite.port_delta)))
     serial.WriteU16(&writer, u16(invite.last_port))
+    serial.WriteU8(&writer, invite.derp_server)
+    if invite.derp_server != 0 {
+        key: [32]byte = invite.derp_key
+        serial.WriteBytes(&writer, key[:])
+    }
     // the check catches a typo or a half copied code before any packet is sent
     serial.WriteU32(&writer, hash.crc32(binary[:writer.offset]))
     if !serial.WriterOk(&writer) {
+        return 0
+    }
+    return writer.offset
+}
+
+// Writes the text code into `out` (CODE_TEXT_MAX is enough) and returns it as a view of `out`.
+InviteEncode :: proc(invite: Invite, out: []byte) -> (text: string, ok: bool) {
+    assert(len(out) >= CODE_TEXT_MAX)
+    binary: [CODE_BINARY_MAX]byte
+    length: int = InviteToBinary(invite, binary[:])
+    if length == 0 {
         return
     }
-    length: int = TextEncode(serial.WriterBytes(&writer), out)
-    return string(out[:length]), true
+    return string(out[:TextEncode(binary[:length], out)]), true
 }
 
 // Reads a code the way people paste it: any case, with dashes, spaces, line breaks, I/L/O typed for 1/1/0.
 InviteDecode :: proc(text: string) -> (invite: Invite, ok: bool) {
     binary: [CODE_BINARY_MAX + 8]byte
     length: int = TextDecode(text, binary[:]) or_return
+    return InviteFromBinary(binary[:length])
+}
+
+InviteFromBinary :: proc(binary: []byte) -> (invite: Invite, ok: bool) {
+    length: int = len(binary)
     if length < 4 {
         return
     }
@@ -182,10 +205,18 @@ InviteDecode :: proc(text: string) -> (invite: Invite, ok: bool) {
     invite.nat_filtering = NatFiltering(filtering)
     invite.port_delta = int(i8(serial.ReadU8(&reader)))
     invite.last_port = int(serial.ReadU16(&reader))
+    invite.derp_server = serial.ReadU8(&reader)
+    if invite.derp_server != 0 {
+        if int(invite.derp_server) > len(DERP_SERVERS) {
+            return
+        }
+        copy(invite.derp_key[:], serial.ReadBytes(&reader, 32))
+    }
     if !serial.ReaderOk(&reader) || serial.ReaderRemaining(&reader) != 0 {
         return
     }
-    if invite.kind != .INVITE && invite.kind != .REPLY || invite.candidate_count == 0 {
+    // a code without addresses is only valid when it says where to find the sender: a relay both sides use
+    if invite.kind != .INVITE && invite.kind != .REPLY || invite.candidate_count == 0 && invite.derp_server == 0 {
         return
     }
     return invite, true
@@ -334,4 +365,53 @@ InviteRejectsDamageTest :: proc(t: ^testing.T) {
     testing.expect(t, !bad_ok)
     _, empty_ok := InviteDecode("")
     testing.expect(t, !empty_ok)
+}
+
+// The relay fields and the short form: a code with no addresses is accepted only when it names a relay and a key there.
+@(test)
+InviteDerpTest :: proc(t: ^testing.T) {
+    invite: Invite = {kind = .INVITE, session = 77, id = 5, derp_server = 8}
+    for i in 0 ..< 32 {
+        invite.derp_key[i] = u8(i + 1)
+    }
+    InviteSetName(&invite, "Host")
+    buffer: [CODE_TEXT_MAX]byte
+    text, ok := InviteEncode(invite, buffer[:])
+    testing.expect(t, ok)
+    testing.expect(t, len(text) < 130)                                   // no addresses, the relay and its key (32 bytes) take their place
+    decoded, decoded_ok := InviteDecode(text)
+    testing.expect(t, decoded_ok)
+    testing.expect(t, decoded == invite)
+
+    // addresses plus relay
+    InviteAddCandidate(&invite, {address = net.IP4_Address{203, 0, 113, 9}, port = 54321})
+    text, ok = InviteEncode(invite, buffer[:])
+    testing.expect(t, ok)
+    decoded, decoded_ok = InviteDecode(text)
+    testing.expect(t, decoded_ok && decoded == invite)
+
+    // no addresses and no relay is nothing to connect to
+    nothing: Invite = {kind = .INVITE, session = 77, id = 5}
+    text, ok = InviteEncode(nothing, buffer[:])
+    testing.expect(t, ok)
+    _, decoded_ok = InviteDecode(text)
+    testing.expect(t, !decoded_ok)
+
+    // a relay number that does not exist
+    invite.derp_server = u8(len(DERP_SERVERS) + 1)
+    text, ok = InviteEncode(invite, buffer[:])
+    testing.expect(t, ok)
+    _, decoded_ok = InviteDecode(text)
+    testing.expect(t, !decoded_ok)
+
+    // binary form with its crc, as used in SIGNAL packets
+    invite.derp_server = 3
+    binary: [CODE_BINARY_MAX]byte
+    length: int = InviteToBinary(invite, binary[:])
+    testing.expect(t, length > 0)
+    again, again_ok := InviteFromBinary(binary[:length])
+    testing.expect(t, again_ok && again == invite)
+    binary[5] ~= 1
+    _, again_ok = InviteFromBinary(binary[:length])
+    testing.expect(t, !again_ok)
 }

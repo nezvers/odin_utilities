@@ -247,6 +247,10 @@ TurnSendRequest :: proc(link: ^Link, now_ms: i64) {
 // Send indication: the server forwards `data` from our relayed address to `to`. No answer, no authentication.
 @(private)
 LinkSendRelayed :: proc(link: ^Link, to: net.Endpoint, data: []byte) {
+    if slot, is_derp := DerpEndpointSlot(to); is_derp {
+        LinkDerpSend(link, slot, data)                // a peer reached through the DERP relay is answered through it
+        return
+    }
     if link.turn.phase != .READY || len(data) > MAX_PAYLOAD + PACKET_HEADER + 8 {
         return
     }

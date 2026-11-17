@@ -82,6 +82,7 @@ SimHost :: struct {
     queue: [SIM_QUEUE]SimDatagram,
     head: int,
     count: int,
+    derp: SimDerpHost,              // its connection to the fake DERP relay (sim_derp_test.odin)
 }
 
 SimEntry :: struct {
@@ -136,6 +137,8 @@ Sim :: struct {
     allocations: [SIM_ALLOCATIONS]SimAllocation,
     now_ms: i64,                    // set by SimPump, for the lifetimes of the relay
     relayed_bytes: int,             // payload that went through the relay (either way)
+    derp_down: bool,                // the DERP relay does not answer (connections to it fail)
+    derp_relayed: int,              // packets that went through the DERP relay
 }
 
 SimInit :: proc(sim: ^Sim) {

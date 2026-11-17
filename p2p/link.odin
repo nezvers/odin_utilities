@@ -50,6 +50,7 @@ PacketKind :: enum u8 {
     DATA_RELIABLE,                  // seq u16, ack u16, message
     ACK,                            // ack u16 (also the keepalive)
     CLOSE,
+    SIGNAL,                         // an invite sent through the DERP relay (see derp_link.odin)
 }
 
 // How the NAT chooses the public port of a socket (RFC 4787 mapping behavior), measured by asking several STUN servers.
@@ -102,6 +103,8 @@ LinkEventKind :: enum {
     NAT_MEASURED,                   // the filtering test finished (it runs after GATHERED)
     RELAY_READY,                    // the TURN server gave a relayed address (now a candidate)
     RELAY_FAILED,                   // wrong credentials, no answer, quota: link.turn.failure says why
+    DERP_READY,                     // the DERP relay connection is up (codes made from now on carry it)
+    DERP_FAILED,                    // link.derp.failure says why
 }
 
 LinkEvent :: struct {
@@ -123,6 +126,11 @@ LinkConfig :: struct {
     // An IPv6 address to offer instead of the one found on the network cards (simulated network, tests).
     local_v6: net.IP6_Address,
     local_v6_set: bool,
+    // DERP relay identity: random unless set (a fixed key makes a fixed address there, which is what a rendezvous by name needs).
+    derp_private: BoxKey,
+    derp_private_set: bool,
+    // Offer only the DERP relay (no addresses): everything goes through it. For privacy and for testing the relay end to end.
+    derp_only: bool,
 }
 
 // Where datagrams go in and out. The default is the UDP socket; a program (or a test with a simulated network) can put its own
@@ -147,7 +155,11 @@ Peer :: struct {
     candidates: [MAX_CANDIDATES]net.Endpoint,
     candidate_count: int,
     endpoint: net.Endpoint,         // where it really answered from, set when connected
-    via_relay: bool,                // the packets from it arrive through our TURN allocation, so they are answered through it
+    via_relay: bool,                // the packets from it arrive through a relay (our TURN allocation or DERP), so they are answered through it
+    has_derp: bool,                 // it told us its key at the DERP relay we are connected to
+    derp_key: BoxKey,
+    signal_ms: i64,                 // last time a guest sent its reply through the relay
+    upgrade_ms: i64,                // last time a connection through a relay tried the direct path
     nat_mapping: NatMapping,        // from its code: how to reach it
     nat_filtering: NatFiltering,
     port_delta: int,                // public port step of its NAT between destinations (0 = unknown)
@@ -215,6 +227,7 @@ Link :: struct {
     nat_last_port: int,             // the last port allocated while gathering, the next one is probably last + delta
     portmap: ^PortMapState,         // set by LinkPortMap, given back by LinkClose
     turn: TurnClient,               // see LinkTurnBegin
+    derp: DerpPath,                 // see LinkDerpBegin
     filter_state: FilterState,
     filter_server: int,
     filter_txid: StunTxId,
@@ -311,6 +324,7 @@ LinkOpenV6 :: proc(link: ^Link) {
 }
 
 LinkClose :: proc(link: ^Link) {
+    LinkDerpClose(link)
     if !link.open {
         return
     }
@@ -333,6 +347,10 @@ LinkClose :: proc(link: ^Link) {
 
 @(private)
 LinkSendRaw :: proc(link: ^Link, to: net.Endpoint, data: []byte) {
+    if slot, is_derp := DerpEndpointSlot(to); is_derp {
+        LinkDerpSend(link, slot, data)
+        return
+    }
     if link.transport.send != nil {
         link.transport.send(link.transport.user, to, data)
         return
@@ -439,7 +457,7 @@ LinkGatherBegin :: proc(link: ^Link, servers: []net.Endpoint, now_ms: i64) {
 }
 
 LinkGathered :: proc(link: ^Link) -> bool {
-    return link.gather == .DONE && link.turn.phase != .ALLOCATING
+    return link.gather == .DONE && link.turn.phase != .ALLOCATING && link.derp.state != .CONNECTING
 }
 
 // Asks the router to forward this link's UDP port (PCP, NAT-PMP or UPnP, see portmap.odin). Call it after the gathering and
@@ -753,7 +771,7 @@ LinkJoin :: proc(link: ^Link, invite: Invite, name: string, now_ms: i64) -> bool
     link.tag = SessionTag(link.session)
     link.name_len = min(len(name), NAME_MAX)
     copy(link.name[:link.name_len], name)
-    PeerStart(&link.peers[0], invite, now_ms)
+    PeerStart(link, 0, invite, now_ms)
     return true
 }
 
@@ -775,13 +793,14 @@ LinkAcceptReply :: proc(link: ^Link, reply: Invite, now_ms: i64) -> (peer: int, 
         return
     }
     link.peers[free_slot] = {}
-    PeerStart(&link.peers[free_slot], reply, now_ms)
+    PeerStart(link, free_slot, reply, now_ms)
     return free_slot, true
 }
 
 // The code of this link: an INVITE for the host, a REPLY for a guest. Call it after the gathering is done.
-LinkMakeInvite :: proc(link: ^Link) -> (invite: Invite) {
+LinkMakeInvite :: proc(link: ^Link, short: bool = false) -> (invite: Invite) {
     assert(link.role != .NONE)
+    assert(!short || link.derp.state == .READY)
     invite.kind = .INVITE if link.role == .HOST else .REPLY
     invite.session = link.session
     invite.id = link.id
@@ -791,7 +810,14 @@ LinkMakeInvite :: proc(link: ^Link) -> (invite: Invite) {
     invite.nat_filtering = link.nat_filtering
     invite.port_delta = link.nat_port_delta
     invite.last_port = link.nat_last_port
+    if link.derp.state == .READY {
+        invite.derp_server = u8(link.derp.server)
+        invite.derp_key = link.derp.public
+    }
     for i in 0 ..< link.candidate_count {
+        if short || link.config.derp_only && link.derp.state == .READY {
+            break
+        }
         if link.config.relay_only && link.turn.phase == .READY && link.candidates[i] != link.turn.relayed {
             continue
         }
@@ -806,7 +832,8 @@ SessionTag :: proc(session: u64) -> u32 {
 }
 
 @(private)
-PeerStart :: proc(peer: ^Peer, invite: Invite, now_ms: i64) {
+PeerStart :: proc(link: ^Link, slot: int, invite: Invite, now_ms: i64) {
+    peer: ^Peer = &link.peers[slot]
     peer^ = {state = .PUNCHING, id = invite.id, name = invite.name, name_len = invite.name_len}
     peer.candidates = invite.candidates
     peer.candidate_count = invite.candidate_count
@@ -816,6 +843,12 @@ PeerStart :: proc(peer: ^Peer, invite: Invite, now_ms: i64) {
     peer.last_port = invite.last_port
     peer.punch_start_ms = now_ms
     peer.punch_last_ms = now_ms - PUNCH_INTERVAL_MS
+    // the same relay on both sides: its key is one more candidate, and the way to signal
+    if invite.derp_server != 0 && link.derp.state == .READY && int(invite.derp_server) == link.derp.server {
+        peer.has_derp = true
+        peer.derp_key = invite.derp_key
+        PeerAddDerpCandidate(peer, slot)
+    }
 }
 
 LinkPeerName :: proc(link: ^Link, peer: int) -> string {
@@ -1026,6 +1059,10 @@ LinkHandleDatagram :: proc(link: ^Link, from: net.Endpoint, data: []byte, now_ms
         if kind == .PUNCH {
             // always answer, the peer may still be punching because our earlier answer was lost
             LinkSendPacket(link, from, .PUNCH_ACK, nil, nil, relay)
+        } else if peer.state == .CONNECTED && peer.via_relay && !relay {
+            // our direct punch was answered: the direct path works both ways, leave the relay
+            peer.endpoint = from
+            peer.via_relay = false
         }
         if peer.state == .CONNECTED {
             peer.rx_ms = now_ms
@@ -1196,6 +1233,7 @@ LinkUpdate :: proc(link: ^Link, now_ms: i64) {
 
     LinkFilterUpdate(link, now_ms)
     TurnUpdate(link, now_ms)
+    LinkDerpUpdate(link, now_ms)
     if link.gather == .RUNNING {
         if now_ms - link.gather_start_ms >= GATHER_TIMEOUT_MS {
             LinkGatherFinish(link, now_ms)
@@ -1218,6 +1256,7 @@ LinkUpdate :: proc(link: ^Link, now_ms: i64) {
                 // guesses first, and not the advertised port itself: every send to a new destination uses up one port of a
                 // symmetric NAT, so what is sent first decides which port the peer has to guess. Starting the guesses at the
                 // next port on both sides makes the two sequences pair up exactly.
+                LinkDerpSignalGuest(link, peer, now_ms)
                 spray_base: net.Endpoint = LinkSpray(link, peer)
                 for c in 0 ..< peer.candidate_count {
                     if peer.candidates[c] != spray_base {
@@ -1279,6 +1318,15 @@ LinkUpdatePeer :: proc(link: ^Link, index: int, peer: ^Peer, now_ms: i64) {
     }
     if peer.ack_due || now_ms - peer.tx_ms >= KEEPALIVE_MS {
         LinkSendAck(link, peer, now_ms)
+    }
+    // through a relay: keep trying the direct path, the first punch that is answered moves the connection (LinkHandleDatagram)
+    if peer.via_relay && now_ms - peer.upgrade_ms >= DERP_UPGRADE_MS {
+        peer.upgrade_ms = now_ms
+        for c in 0 ..< peer.candidate_count {
+            if _, is_derp := DerpEndpointSlot(peer.candidates[c]); !is_derp {
+                LinkSendPacket(link, peer.candidates[c], .PUNCH, nil)
+            }
+        }
     }
 }
 
