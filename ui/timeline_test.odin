@@ -149,3 +149,33 @@ test_events_that_nobody_reads_do_not_pile_up_in_a_timeline :: proc(t: ^testing.T
     testing.expect_value(t, timeline.event_count, TIMELINE_EVENTS)
     testing.expect(t, timeline.events_lost > 0)
 }
+
+@(test)
+test_markers_are_told_with_their_user_pointer_and_cleared_with_the_selection :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    section: int = 7
+    marker, ok := TimelineMarkerAdd(timeline, 8, "Drop", user = &section)
+    testing.expect(t, ok)
+    event, _ := TimelinePollEvent(timeline)
+    testing.expect_value(t, event.kind, TimelineEventKind.MARKER_ADDED)
+    testing.expect(t, event.marker == marker && event.marker_user == &section && event.time == 8)
+    testing.expect_value(t, TimelineMarkerName(TimelineMarkerGet(timeline, marker)), "Drop")
+    testing.expect(t, TimelineMarkerMove(timeline, marker, 12))
+    event, _ = TimelinePollEvent(timeline)
+    testing.expect_value(t, event.kind, TimelineEventKind.MARKER_MOVED)
+    testing.expect(t, event.time == 12 && event.previous_start == 8)
+    testing.expect(t, TimelineMarkerMove(timeline, marker, 12) && timeline.event_count == 0, "the same time is nothing")
+    testing.expect(t, !TimelineMarkerMove(timeline, marker, -1), "not before the start")
+    _, negative := TimelineMarkerAdd(timeline, -2, "before")
+    testing.expect(t, !negative)
+    TimelineMarkerGet(timeline, marker).selected = true
+    TimelineSelectClear(timeline)
+    testing.expect(t, !TimelineMarkerGet(timeline, marker).selected, "clearing the selection clears the markers too")
+    testing.expect(t, TimelineMarkerRemove(timeline, marker))
+    event, _ = TimelinePollEvent(timeline)
+    testing.expect_value(t, event.kind, TimelineEventKind.MARKER_REMOVED)
+    testing.expect(t, event.marker_user == &section, "the user pointer comes with the removal too")
+    testing.expect(t, TimelineMarkerGet(timeline, marker) == nil && !TimelineMarkerRemove(timeline, marker))
+    testing.expect_value(t, TimelineMarkerCount(timeline), 0)
+}

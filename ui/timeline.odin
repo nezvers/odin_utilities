@@ -19,10 +19,12 @@ import hm "core:container/handle_map"
 TIMELINE_TRACKS :: #config(TIMELINE_TRACKS, 64)
 TIMELINE_CLIPS :: #config(TIMELINE_CLIPS, 4096)
 TIMELINE_EVENTS :: #config(TIMELINE_EVENTS, 256)
+TIMELINE_MARKERS :: #config(TIMELINE_MARKERS, 256)
 TIMELINE_NAME_MAX :: 48
 
 TrackHandle :: distinct hm.Handle32
 ClipHandle :: distinct hm.Handle32
+MarkerHandle :: distinct hm.Handle32
 
 TrackFlag :: enum u8 {
     MUTED,              // drawn faint, the program does not play it
@@ -57,6 +59,17 @@ TimelineClip :: struct {
     drag_track: int,
 }
 
+// A named point of time: a flag on the ruler with a line down through the tracks.
+TimelineMarker :: struct {
+    handle: MarkerHandle,
+    time: f64,
+    name: [TIMELINE_NAME_MAX]u8,
+    name_length: int,
+    color: Color,               // alpha 0: the style's own
+    user: rawptr,
+    selected: bool,
+}
+
 TimelineEventKind :: enum u8 {
     NONE,
     TRACK_ADDED,
@@ -68,6 +81,10 @@ TimelineEventKind :: enum u8 {
     PLAYHEAD,           // the person put the playhead somewhere (`time`)
     LOOP_CHANGED,       // the person made or changed the loop range (`start`, `length`)
     EMPTY_DOUBLE_CLICK, // a double click on an empty place of a track (`track`, `time`): a program may make a clip there
+    RULER_DOUBLE_CLICK, // a double click on the ruler (`time`): a program may put a marker there
+    MARKER_ADDED,
+    MARKER_REMOVED,
+    MARKER_MOVED,       // `time` is the new time, `previous_start` the old one
 }
 
 // What happened, with the user pointers of the clip, its track and the timeline, and what it was before (for an undo).
@@ -81,6 +98,8 @@ TimelineEvent :: struct {
     previous_start: f64,
     previous_length: f64,
     time: f64,
+    marker: MarkerHandle,
+    marker_user: rawptr,
     clip_user: rawptr,
     track_user: rawptr,
     timeline_user: rawptr,
@@ -100,6 +119,7 @@ TimelineRules :: struct {
 Timeline :: struct {
     tracks: hm.Static_Handle_Map(TIMELINE_TRACKS, TimelineTrack, TrackHandle),
     clips: hm.Static_Handle_Map(TIMELINE_CLIPS, TimelineClip, ClipHandle),
+    markers: hm.Static_Handle_Map(TIMELINE_MARKERS, TimelineMarker, MarkerHandle),
     order: [TIMELINE_TRACKS]TrackHandle,    // the tracks from the top
     track_count: int,
     rules: TimelineRules,
@@ -157,6 +177,7 @@ timelineEmit :: proc(timeline: ^Timeline, event: TimelineEvent) {
     stored.timeline_user = timeline.user
     if clip := TimelineClipGet(timeline, event.clip); clip != nil { stored.clip_user = clip.user }
     if track := TimelineTrackGet(timeline, event.track); track != nil { stored.track_user = track.user }
+    if marker := TimelineMarkerGet(timeline, event.marker); marker != nil { stored.marker_user = marker.user }
     if timeline.event_count == len(timeline.events) {
         timeline.event_head = (timeline.event_head + 1) % len(timeline.events)
         timeline.event_count -= 1
@@ -271,9 +292,12 @@ TimelineClipSelect :: proc(timeline: ^Timeline, handle: ClipHandle, selected: bo
     if clip := TimelineClipGet(timeline, handle); clip != nil { clip.selected = selected }
 }
 
+// Nothing is selected: no clip and no marker.
 TimelineSelectClear :: proc(timeline: ^Timeline) {
     it := hm.iterator_make(&timeline.clips)
     for clip, _ in hm.iterate(&it) { clip.selected = false }
+    markers := hm.iterator_make(&timeline.markers)
+    for marker, _ in hm.iterate(&markers) { marker.selected = false }
 }
 
 TimelineSelectedCount :: proc(timeline: ^Timeline) -> (count: int) {
@@ -328,5 +352,51 @@ TimelineRuleNoOverlap :: proc(timeline: ^Timeline, clip: ^TimelineClip, track: T
         if other.track != track || other == clip { continue }
         if start < other.start + other.length && other.start < start + length { return false }
     }
+    return true
+}
+
+// ------------------------------------------------------------------------------------------------------------------------
+// Markers
+
+TimelineMarkerGet :: proc(timeline: ^Timeline, handle: MarkerHandle) -> ^TimelineMarker {
+    if handle == {} { return nil }
+    item, ok := hm.get(&timeline.markers, handle)
+    return item if ok else nil
+}
+
+TimelineMarkerName :: proc(marker: ^TimelineMarker) -> string {
+    return string(marker.name[:marker.name_length])
+}
+
+TimelineMarkerCount :: proc(timeline: ^Timeline) -> int {
+    return int(hm.len(timeline.markers))
+}
+
+TimelineMarkerAdd :: proc(timeline: ^Timeline, time: f64, name: string, user: rawptr = nil, color: Color = {}) -> (handle: MarkerHandle, ok: bool) {
+    if time < 0 { return }
+    marker: TimelineMarker = {time = time, user = user, color = color}
+    timelineName(marker.name[:], &marker.name_length, name)
+    handle, ok = hm.add(&timeline.markers, marker)
+    if !ok { return }
+    timelineEmit(timeline, {kind = .MARKER_ADDED, marker = handle, time = time})
+    return
+}
+
+// Moves a marker (not before the start). False when it is gone or the time is below 0.
+TimelineMarkerMove :: proc(timeline: ^Timeline, handle: MarkerHandle, time: f64) -> bool {
+    marker: ^TimelineMarker = TimelineMarkerGet(timeline, handle)
+    if marker == nil || time < 0 { return false }
+    if marker.time == time { return true }
+    previous: f64 = marker.time
+    marker.time = time
+    timelineEmit(timeline, {kind = .MARKER_MOVED, marker = handle, time = time, previous_start = previous})
+    return true
+}
+
+TimelineMarkerRemove :: proc(timeline: ^Timeline, handle: MarkerHandle) -> bool {
+    marker: ^TimelineMarker = TimelineMarkerGet(timeline, handle)
+    if marker == nil { return false }
+    timelineEmit(timeline, {kind = .MARKER_REMOVED, marker = handle, time = marker.time})
+    hm.remove(&timeline.markers, handle)
     return true
 }

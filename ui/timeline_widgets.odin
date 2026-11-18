@@ -31,6 +31,7 @@ TimelineGesture :: enum u8 {
     LOOP_NEW,
     LOOP_START,
     LOOP_END,
+    MARKER,
 }
 
 // What a drag on an empty lane does (Ctrl makes it a box whatever the tool is).
@@ -50,8 +51,12 @@ TimelineView :: struct {
     loop_start: f64,            // the loop range: Shift + a drag on the ruler makes one, its edges are dragged; the program plays inside of it when `loop_enabled`
     loop_end: f64,
     loop_enabled: bool,
+    snap_to_edges: bool,        // starts and ends also snap to the edges of other clips, the markers and the playhead when they are within `snap_pixels`
+    snap_pixels: f32,           // 0: 8
     rect: Rect,                 // where the widget is on the screen (as drawn in the last frame)
     hover_clip: ClipHandle,
+    hover_marker: MarkerHandle,
+    gesture_marker: MarkerHandle,
     hover_track: int,           // the track under the pointer, -1: none
     // gesture state
     gesture: TimelineGesture,
@@ -99,6 +104,41 @@ TimelineRulerStep :: proc(zoom: f32, min_pixels: f32 = 80) -> f64 {
 timelineSnap :: proc(view: ^TimelineView, time: f64) -> f64 {
     if view.snap <= 0 { return time }
     return math.round(time / view.snap) * view.snap
+}
+
+// The nearest edge (a clip start or end, a marker, the playhead) to a time, when it is within the snap distance. Selected clips and markers are skipped when they are the ones being moved.
+@(private)
+timelineEdgeNear :: proc(timeline: ^Timeline, view: ^TimelineView, time: f64, skip_selected: bool) -> (edge: f64, found: bool) {
+    pixels: f32 = view.snap_pixels if view.snap_pixels > 0 else 8
+    best: f64 = f64(pixels) / f64(TimelineViewZoom(view))
+    consider :: proc(candidate: f64, time: f64, best: ^f64, edge: ^f64, found: ^bool) {
+        if abs(candidate - time) <= best^ {
+            best^ = abs(candidate - time)
+            edge^, found^ = candidate, true
+        }
+    }
+    it := hm.iterator_make(&timeline.clips)
+    for clip, _ in hm.iterate(&it) {
+        if skip_selected && clip.selected { continue }
+        consider(clip.start, time, &best, &edge, &found)
+        consider(clip.start + clip.length, time, &best, &edge, &found)
+    }
+    markers := hm.iterator_make(&timeline.markers)
+    for marker, _ in hm.iterate(&markers) {
+        if skip_selected && marker.selected { continue }
+        consider(marker.time, time, &best, &edge, &found)
+    }
+    if view.gesture != .PLAYHEAD { consider(view.playhead, time, &best, &edge, &found) }
+    return
+}
+
+// A time snapped to the edges when that is on, else to the grid.
+@(private)
+timelineSnapTime :: proc(timeline: ^Timeline, view: ^TimelineView, time: f64, skip_selected: bool) -> f64 {
+    if view.snap_to_edges {
+        if edge, found := timelineEdgeNear(timeline, view, time, skip_selected); found { return edge }
+    }
+    return timelineSnap(view, time)
 }
 
 // The top and the height of a track from the top of the lanes (before the scroll).
@@ -217,11 +257,34 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
         view.hover_track = row
     }
     min_length: f64 = max(timeline.rules.min_length, 4 / f64(zoom))
+    // the marker whose flag is under the pointer (on the ruler, in the upper half of it)
+    view.hover_marker = {}
+    if (hovering || view.gesture == .NONE) && ctx.hover == id && mouse.y >= view.rect.y && mouse.y < view.rect.y + style.ruler_height * 0.5 {
+        markers := hm.iterator_make(&timeline.markers)
+        for marker, handle in hm.iterate(&markers) {
+            x: f32 = TimelineX(view, marker.time)
+            if mouse.x >= x - 3 && mouse.x <= x + style.marker_width { view.hover_marker = handle }
+        }
+    }
 
     if interaction.pressed && ctx.input.mouse_pressed && view.gesture == .NONE {
         ctrl: bool = .CTRL in ctx.input.modifiers
         switch {
+        case view.hover_marker != {}:
+            marker: ^TimelineMarker = TimelineMarkerGet(timeline, view.hover_marker)
+            if shift {
+                marker.selected = !marker.selected
+            } else if !marker.selected {
+                TimelineSelectClear(timeline)
+                marker.selected = true
+            }
+            if marker.selected {
+                view.gesture, view.gesture_marker = .MARKER, view.hover_marker
+            }
         case mouse.y < lanes_top:
+            if interaction.double_clicked {
+                timelineEmit(timeline, {kind = .RULER_DOUBLE_CLICK, time = max(timelineSnapTime(timeline, view, time, false), 0)})
+            }
             near_start: f32 = abs(TimelineX(view, view.loop_start) - mouse.x)
             near_end: f32 = abs(TimelineX(view, view.loop_end) - mouse.x)
             switch {
@@ -229,7 +292,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 view.gesture = .LOOP_START if near_start <= near_end else .LOOP_END
             case shift:
                 view.gesture = .LOOP_NEW
-                view.loop_anchor = max(timelineSnap(view, time), 0)
+                view.loop_anchor = max(timelineSnapTime(timeline, view, time, false), 0)
             case:
                 view.gesture = .PLAYHEAD
             }
@@ -269,7 +332,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             view.gesture = .PAN
             if !shift { TimelineSelectClear(timeline) }
             if interaction.double_clicked && row >= 0 {
-                timelineEmit(timeline, {kind = .EMPTY_DOUBLE_CLICK, track = timeline.order[row], time = max(timelineSnap(view, time), 0)})
+                timelineEmit(timeline, {kind = .EMPTY_DOUBLE_CLICK, track = timeline.order[row], time = max(timelineSnapTime(timeline, view, time, false), 0)})
             }
         }
     }
@@ -279,7 +342,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             clip: ^TimelineClip = TimelineClipGet(timeline, view.gesture_clip)
             switch view.gesture {
             case .PLAYHEAD:
-                moved: f64 = max(timelineSnap(view, time), 0)
+                moved: f64 = max(timelineSnapTime(timeline, view, time, false), 0)
                 if moved != view.playhead {
                     view.playhead = moved
                     timelineEmit(timeline, {kind = .PLAYHEAD, time = moved})
@@ -292,23 +355,27 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                     other.selected = other.drag_selected || RectOverlaps(TimelineClipRect(timeline, view, &style, other), box)
                 }
             case .LOOP_NEW:
-                a, b: f64 = view.loop_anchor, max(timelineSnap(view, time), 0)
+                a, b: f64 = view.loop_anchor, max(timelineSnapTime(timeline, view, time, false), 0)
                 start, end: f64 = min(a, b), max(a, b)
                 if end - start >= min_length && (start != view.loop_start || end != view.loop_end || !view.loop_enabled) {
                     view.loop_start, view.loop_end, view.loop_enabled = start, end, true
                     timelineEmit(timeline, {kind = .LOOP_CHANGED, start = start, length = end - start})
                 }
             case .LOOP_START:
-                start: f64 = clamp(timelineSnap(view, time), 0, view.loop_end - min_length)
+                start: f64 = clamp(timelineSnapTime(timeline, view, time, false), 0, view.loop_end - min_length)
                 if start != view.loop_start {
                     view.loop_start = start
                     timelineEmit(timeline, {kind = .LOOP_CHANGED, start = start, length = view.loop_end - start})
                 }
             case .LOOP_END:
-                end: f64 = max(timelineSnap(view, time), view.loop_start + min_length)
+                end: f64 = max(timelineSnapTime(timeline, view, time, false), view.loop_start + min_length)
                 if end != view.loop_end {
                     view.loop_end = end
                     timelineEmit(timeline, {kind = .LOOP_CHANGED, start = view.loop_start, length = end - view.loop_start})
+                }
+            case .MARKER:
+                if marker := TimelineMarkerGet(timeline, view.gesture_marker); marker != nil {
+                    TimelineMarkerMove(timeline, view.gesture_marker, max(timelineSnapTime(timeline, view, time, true), 0))
                 }
             case .PAN:
                 view.origin = max(view.origin - f64(delta.x / zoom), 0)
@@ -316,7 +383,20 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             case .MOVE:
                 if clip != nil {
                     raw: f64 = clip.drag_start + (time - view.grab_time)
-                    shift_time: f64 = timelineSnap(view, raw) - clip.drag_start
+                    target_start: f64 = timelineSnap(view, raw)
+                    if view.snap_to_edges {
+                        // the start or the end of the clip, whichever is nearer to an edge
+                        near_start, found_start := timelineEdgeNear(timeline, view, raw, true)
+                        near_end, found_end := timelineEdgeNear(timeline, view, raw + clip.length, true)
+                        distance_start: f64 = abs(near_start - raw) if found_start else f64(INFINITE)
+                        distance_end: f64 = abs(near_end - (raw + clip.length)) if found_end else f64(INFINITE)
+                        if found_start && distance_start <= distance_end {
+                            target_start = near_start
+                        } else if found_end {
+                            target_start = near_end - clip.length
+                        }
+                    }
+                    shift_time: f64 = target_start - clip.drag_start
                     earliest: f64 = f64(INFINITE)
                     it := hm.iterator_make(&timeline.clips)
                     for other, _ in hm.iterate(&it) {
@@ -335,24 +415,35 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 }
             case .RESIZE_RIGHT:
                 if clip != nil {
-                    end: f64 = max(timelineSnap(view, time), clip.start + min_length)
+                    end: f64 = max(timelineSnapTime(timeline, view, time, true), clip.start + min_length)
                     TimelineClipPlace(timeline, view.gesture_clip, clip.track, clip.start, end - clip.start)
                 }
             case .RESIZE_LEFT:
                 if clip != nil {
                     end: f64 = clip.drag_start + clip.drag_length
-                    start: f64 = clamp(timelineSnap(view, time), 0, end - min_length)
+                    start: f64 = clamp(timelineSnapTime(timeline, view, time, true), 0, end - min_length)
                     TimelineClipPlace(timeline, view.gesture_clip, clip.track, start, end - start)
                 }
             case .NONE:
             }
         }
         if ctx.input.mouse_released || !ctx.input.mouse_down {
-            view.gesture, view.gesture_clip = .NONE, {}
+            view.gesture, view.gesture_clip, view.gesture_marker = .NONE, {}, {}
         }
     }
 
     if .DELETE in ctx.input.keys && (ctx.focus == 0 || ctx.focus == id) {
+        for removed := true; removed; {
+            removed = false
+            it := hm.iterator_make(&timeline.markers)
+            for marker, handle in hm.iterate(&it) {
+                if marker.selected {
+                    TimelineMarkerRemove(timeline, handle)
+                    removed = true
+                    break
+                }
+            }
+        }
         for removed := true; removed; {
             removed = false
             it := hm.iterator_make(&timeline.clips)
@@ -448,6 +539,21 @@ TimelineDraw :: proc(ctx: ^Context, info: ^DrawInfo) {
             loop_enabled = view.loop_enabled, loop_x = TimelineX(view, view.loop_start), loop_end_x = TimelineX(view, view.loop_end), user = style.user,
         }
         style.draw_ruler(ctx, &ruler)
+    }
+    if style.draw_marker != nil {
+        it := hm.iterator_make(&timeline.markers)
+        for marker, handle in hm.iterate(&it) {
+            x: f32 = TimelineX(view, marker.time)
+            if x < area.x - style.marker_width || x > area.x + area.z { continue }
+            draw: MarkerDraw = {
+                x = x, ruler = {area.x, area.y, area.z, style.ruler_height}, area = area, name = TimelineMarkerName(marker), color = marker.color, marker = handle,
+                time = marker.time, width = style.marker_width, user = style.user,
+            }
+            if marker.selected { draw.flags += {.SELECTED} }
+            if view.hover_marker == handle { draw.flags += {.HOVERED} }
+            if view.gesture_marker == handle && view.gesture == .MARKER { draw.flags += {.PRESSED} }
+            style.draw_marker(ctx, &draw)
+        }
     }
     if style.draw_playhead != nil {
         x: f32 = TimelineX(view, view.playhead)

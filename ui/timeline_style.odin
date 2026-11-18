@@ -44,6 +44,20 @@ RulerDraw :: struct {
     user: rawptr,
 }
 
+// A marker: a flag at the top of the ruler and a line down through the tracks.
+MarkerDraw :: struct {
+    x: f32,                     // where the line is
+    ruler: Rect,
+    area: Rect,                 // the whole widget
+    name: string,
+    color: Color,               // alpha 0: the style's own
+    marker: MarkerHandle,
+    time: f64,
+    flags: Flags,               // SELECTED, HOVERED, PRESSED: it is being dragged
+    width: f32,                 // the room of the flag to the right of the line (TimelineStyle.marker_width)
+    user: rawptr,
+}
+
 // The rectangle that is dragged to select clips (on the screen).
 BoxDraw :: struct {
     rect: Rect,
@@ -64,6 +78,7 @@ ClipDrawProc :: proc(ctx: ^Context, clip: ^ClipDraw)
 RulerDrawProc :: proc(ctx: ^Context, ruler: ^RulerDraw)
 PlayheadDrawProc :: proc(ctx: ^Context, head: ^PlayheadDraw)
 BoxDrawProc :: proc(ctx: ^Context, box: ^BoxDraw)
+MarkerDrawProc :: proc(ctx: ^Context, marker: ^MarkerDraw)
 
 TimelineStyle :: struct {
     draw_lane: LaneDrawProc,
@@ -71,20 +86,24 @@ TimelineStyle :: struct {
     draw_ruler: RulerDrawProc,
     draw_playhead: PlayheadDrawProc,
     draw_box: BoxDrawProc,
+    draw_marker: MarkerDrawProc,
     ruler_height: f32,          // 0: 24
     track_height: f32,          // of a track that has none of its own: 0 is 48
     edge: f32,                  // the width of the part of a clip's side that resizes it: 0 is 6
+    marker_width: f32,          // the room of the flag of a marker, to the right of its line (the part of the ruler that picks it): 0 is 64
     user: rawptr,               // comes back in what is drawn
 }
 
 TIMELINE_RULER_HEIGHT :: f32(24)
 TIMELINE_TRACK_HEIGHT :: f32(48)
 TIMELINE_EDGE :: f32(6)
+TIMELINE_MARKER_WIDTH :: f32(64)
 
 TimelineStyleResolved :: proc(style: ^Style) -> TimelineStyle {
     result: TimelineStyle = style.timeline
     if result.ruler_height <= 0 { result.ruler_height = TIMELINE_RULER_HEIGHT }
     if result.track_height <= 0 { result.track_height = TIMELINE_TRACK_HEIGHT }
     if result.edge <= 0 { result.edge = TIMELINE_EDGE }
+    if result.marker_width <= 0 { result.marker_width = TIMELINE_MARKER_WIDTH }
     return result
 }

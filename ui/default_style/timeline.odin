@@ -11,6 +11,7 @@ TimelineStyleInstall :: proc(style: ^ui.Style) {
     style.timeline.draw_ruler = DrawRuler
     style.timeline.draw_playhead = DrawPlayhead
     style.timeline.draw_box = DrawTimelineBox
+    style.timeline.draw_marker = DrawMarker
 }
 
 DrawTimeline :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
@@ -107,4 +108,18 @@ DrawTimelineBox :: proc(ctx: ^ui.Context, box: ^ui.BoxDraw) {
     painter.fill_rect(painter, {rect.x, rect.y + rect.w - 1, rect.z, 1}, accent)
     painter.fill_rect(painter, {rect.x, rect.y, 1, rect.w}, accent)
     painter.fill_rect(painter, {rect.x + rect.z - 1, rect.y, 1, rect.w}, accent)
+}
+
+DrawMarker :: proc(ctx: ^ui.Context, marker: ^ui.MarkerDraw) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    color: ui.Color = marker.color if marker.color.a > 0 else ui.Color{250, 200, 80, 255}
+    if .SELECTED in marker.flags { color = theme.accent }
+    painter.fill_rect(painter, {marker.x, marker.ruler.y + marker.ruler.w, 1, marker.area.w - marker.ruler.w}, {color.r, color.g, color.b, 110})
+    size: f32 = ctx.style.metrics.font_size * 0.8
+    flag: ui.Rect = {marker.x, marker.ruler.y, min(painter.measure_text(painter, marker.name, size).x + 12, marker.width), marker.ruler.w * 0.5}
+    body: ui.Color = ui.ColorLerp(theme.panel, color, 0.6 if .HOVERED in marker.flags || .PRESSED in marker.flags else 0.45)
+    painter.fill_rect(painter, flag, body)
+    painter.fill_rect(painter, {marker.x, marker.ruler.y, 2, marker.ruler.w}, color)
+    painter.draw_text(painter, marker.name, {marker.x + 6, marker.ruler.y + 1}, size, theme.text)
 }

@@ -2886,3 +2886,82 @@ test_the_style_gets_the_loop_range_and_the_box_to_draw :: proc(t: ^testing.T) {
     testing.expect(t, boxes_drawn > 0)
     testing.expect(t, abs(drawn_box.rect.x - 50) < 0.5 && abs(drawn_box.rect.y - 30) < 0.5 && abs(drawn_box.rect.z - 100) < 0.5 && abs(drawn_box.rect.w - 70) < 0.5)
 }
+
+@(test)
+test_a_marker_is_dragged_on_the_ruler_and_removed_with_delete_and_the_ruler_has_a_double_click :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, _, _ := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    marker, _ := TimelineMarkerAdd(timeline, 2, "Drop")
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrain(timeline)
+    // the flag is at x 200 and to the right, in the upper half of the ruler (24 high)
+    timelineDrag(harness, timeline, view, {210, 5}, {310, 5})
+    testing.expect_value(t, TimelineMarkerGet(timeline, marker).time, 3)
+    testing.expect(t, TimelineMarkerGet(timeline, marker).selected)
+    testing.expect_value(t, view.playhead, 0)                            // the press was for the marker
+    moved: int
+    for {
+        e, has := TimelinePollEvent(timeline)
+        if !has { break }
+        if e.kind == .MARKER_MOVED { moved += 1 }
+    }
+    testing.expect(t, moved > 0)
+    // the lower half of the ruler is the playhead, and a double click there is told
+    timelineDrag(harness, timeline, view, {150, 18}, {150, 18})
+    testing.expect_value(t, view.playhead, 1.5)
+    timelineDrain(timeline)
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineFrame(harness, timeline, view, pointerAt({390, 18}))
+    timelineFrame(harness, timeline, view, pointerAt({390, 18}, true, true))
+    timelineFrame(harness, timeline, view, pointerAt({390, 18}, false, false, true))
+    timelineFrame(harness, timeline, view, pointerAt({390, 18}, true, true))
+    double: TimelineEvent
+    for {
+        e, has := TimelinePollEvent(timeline)
+        if !has { break }
+        if e.kind == .RULER_DOUBLE_CLICK { double = e }
+    }
+    testing.expect_value(t, double.kind, TimelineEventKind.RULER_DOUBLE_CLICK)
+    testing.expect_value(t, double.time, 4)                               // x 390 is 3.9: rounded to the grid
+    // delete removes the selected marker
+    TimelineSelectClear(timeline)
+    TimelineMarkerGet(timeline, marker).selected = true
+    timelineDrain(timeline)
+    deleting: Input = pointerAt({-10, -10})
+    deleting.keys = {.DELETE}
+    testing.expect(t, timelineFrame(harness, timeline, view, deleting))
+    testing.expect_value(t, TimelineMarkerCount(timeline), 0)
+}
+
+@(test)
+test_with_snap_to_edges_clips_markers_and_the_playhead_snap_to_each_other :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, second, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    view.snap = 0                                                        // no grid: only the edges
+    other, _ := TimelineClipAdd(timeline, second, 3.2, 0.7, "other")
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    // "other" (x 320 .. 390 in the second lane) is dragged 14 pixels to the left: 3.06, 6 pixels from the end of the first clip (3)
+    timelineDrag(harness, timeline, view, {350, 90}, {336, 90})
+    testing.expect(t, abs(TimelineClipGet(timeline, other).start - 3.06) < 0.001, "without it the clip is where the pointer put it")
+    view.snap_to_edges = true
+    TimelineClipPlace(timeline, other, second, 3.2, 0.7)
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {350, 90}, {336, 90})
+    testing.expect_value(t, TimelineClipGet(timeline, other).start, 3)    // it snapped to the end of the first one
+    // the end of a clip snaps too: its end (start + 0.7) 4 pixels from the start of the first clip (1)
+    TimelineClipPlace(timeline, other, second, 3.2, 0.7)
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {350, 90}, {64, 90})
+    testing.expect(t, abs(TimelineClipGet(timeline, other).start + TimelineClipGet(timeline, other).length - 1) < 0.001, "its end is at the start of the other clip")
+    // a marker: the playhead pressed 4 pixels from it goes to it
+    marker, _ := TimelineMarkerAdd(timeline, 3.5, "m")
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {354, 18}, {354, 18})
+    testing.expect_value(t, view.playhead, 3.5)
+    testing.expect(t, TimelineMarkerGet(timeline, marker) != nil && clip != {})
+    // a long way from every edge: no snapping
+    timelineDrag(harness, timeline, view, {380, 18}, {380, 18})
+    testing.expect_value(t, view.playhead, 3.8)
+}

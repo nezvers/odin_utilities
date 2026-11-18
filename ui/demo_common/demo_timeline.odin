@@ -6,6 +6,7 @@ package demo_common
 // The last event of the timeline, with the name of the track it happened on (the user pointer of the track), is shown under it.
 
 import "core:fmt"
+import hm "core:container/handle_map"
 import ui ".."
 import kit "../../demo_kit"
 
@@ -52,6 +53,8 @@ init :: proc(ctx: ^kit.Context) {
     ui.TimelineClipAdd(&state.timeline, state.tracks[1], 2, 8, "Line")
     ui.TimelineClipAdd(&state.timeline, state.tracks[2], 8, 4, "Hook")
     ui.TimelineClipAdd(&state.timeline, state.tracks[3], 4, 6, "Verse")
+    ui.TimelineMarkerAdd(&state.timeline, 0, "Intro")
+    ui.TimelineMarkerAdd(&state.timeline, 8, "Drop")
     for {
         _, has := ui.TimelinePollEvent(&state.timeline)
         if !has { break }
@@ -69,6 +72,8 @@ onEvent :: proc(timeline: ^ui.Timeline, event: ^ui.TimelineEvent) {
         s.log_length = len(fmt.bprintf(s.log[:], "resized on %s: %.2f .. %.2f", track, event.start, event.start + event.length))
     case .PLAYHEAD:
         s.log_length = len(fmt.bprintf(s.log[:], "playhead at %.2f", event.time))
+    case .MARKER_MOVED:
+        s.log_length = len(fmt.bprintf(s.log[:], "marker moved to %.2f", event.time))
     case .CLIP_REMOVED:
         s.log_length = len(fmt.bprintf(s.log[:], "clip removed from %s", track))
     case .EMPTY_DOUBLE_CLICK:
@@ -134,9 +139,9 @@ script: []kit.Step = {
     // Shift and a drag on the ruler makes a loop range (its edges can be dragged), Ctrl and a drag over the lanes selects the clips the box touches
     kit.KeyDownStep(.LEFT_SHIFT),
     kit.Wait(1),
-    kit.MoveTo({300, 20}),
+    kit.MoveTo({450, 20}),
     kit.Wait(2),
-    kit.Drag({300, 20}, {500, 20}, 8),
+    kit.Drag({450, 20}, {650, 20}, 8),
     kit.Wait(3),
     kit.KeyUpStep(.LEFT_SHIFT),
     kit.Wait(2),
@@ -151,5 +156,22 @@ script: []kit.Step = {
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.TimelineSelectedCount(&state.timeline) >= 3 }, "Ctrl and a drag selected the clips the box touched"),
     kit.Capture("timeline_loop_box"),
+    // a marker is dragged on the ruler; with snap_to_edges it lands on the end of a clip when it is near
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        state.view.snap_to_edges = true
+        return true
+    }, "snap to the edges of clips and markers"),
+    kit.MoveTo({253, 15}),
+    kit.Wait(3),
+    kit.Drag({253, 15}, {353, 15}, 10),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        it := hm.iterator_make(&state.timeline.markers)
+        for marker, _ in hm.iterate(&it) {
+            if ui.TimelineMarkerName(marker) == "Drop" { return marker.time == 10 && marker.selected }
+        }
+        return false
+    }, "the marker was dragged 1.9 beats and snapped to the end of the Line clip"),
+    kit.Capture("timeline_markers"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
