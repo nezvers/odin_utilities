@@ -519,8 +519,9 @@ SessionLogEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
     text: string = EventText(event)
     #partial switch event.kind {
     case .CONNECTED:
-        LogMember(&s.log, now_ms, event.member, text)
-        LogRecord(&s.log, now_ms, "n", "", "", fmt.tprintf("connected as %s (member %d)%s", text, event.member, ", hosting" if s.m.is_host else ""))
+        own: string = MessengerName(s.m, event.member)       // (the text of this event is not the name for a host)
+        LogMember(&s.log, now_ms, event.member, own)
+        LogRecord(&s.log, now_ms, "n", "", "", fmt.tprintf("connected as %s (member %d)%s", own, event.member, ", hosting" if s.m.is_host else ""))
     case .MEMBER_JOINED:
         LogMember(&s.log, now_ms, event.member, text)
         LogRecord(&s.log, now_ms, "j", id, "", "")

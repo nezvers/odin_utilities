@@ -156,7 +156,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (33 tests, about 9 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (34 tests, about 9 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -239,6 +239,9 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
     the same number (`g`, `p`) and the sender's instance (`I` record), so the global id `<instance>:<seq>` is the same in all the files. The agent's turns are `<run>.<turn>`: `i` (what started the
     turn, naming the message that caused it), `a` `t` `e` `d` (what came of it), and the messages the agent sent during it (`GA`/`PA` carry the turn), so a trace can go from a typed line through
     the agent to the message it sent and to the members that heard it, and on through their agents.
+  - `logview FILE... --cost` shows what the agents cost: for each instance and run (a run is one start of the agent) the turns, the turns that ended in an error, the tool calls, the dollars, the seconds and the
+    price per turn, a row for all the runs of an instance that had several, the total, and the five dearest turns with what started each (the message of a member, a line typed, or an idle report).
+    The prices are what Claude Code reported for each turn (checked: they are per turn, not a running total); a run that was killed before its last block was written is missing that block.
   - `logview FILE... [--trace ID] [--kind g,p] [--ids] [--raw]` merges files of any number of instances into one timeline (sorted by each writer's clock: computers whose clocks differ show it),
     `--trace ID` shows only what belongs with that message or turn id (the id column of `--ids`), `--raw` prints the text as written. Empty or damaged files are skipped with a warning.
 - **Orders of the host** (only the member that opened the channel; a guest who types them is told who the host is):

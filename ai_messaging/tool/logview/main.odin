@@ -6,6 +6,8 @@
 //                                         it (their turns), the messages those sent, and so on
 //   logview FILE... --kind g,p,G,P        only these kinds of records (the kinds are listed in log.odin)
 //   logview FILE... --ids                 add the id column (message ids "<instance>:<seq>", turn ids "<name>/<instance>#<run>.<turn>")
+//   logview FILE... --cost                what the agents cost: turns, errors, tool calls, dollars and seconds per instance and run, and the dearest turns
+//                                         with what started each (the costs are what Claude Code reported for each turn)
 //   logview FILE...  --raw                the text of the files as it was written (what `zcat` shows)
 // The clocks of different computers are not in step: records of different files are ordered by the time each one wrote.
 package main
@@ -22,6 +24,7 @@ main :: proc() {
     kinds: string
     show_ids: bool
     raw: bool
+    cost: bool
     for i := 1; i < len(os.args); i += 1 {
         switch os.args[i] {
         case "--trace":
@@ -34,6 +37,8 @@ main :: proc() {
             show_ids = true
         case "--raw":
             raw = true
+        case "--cost":
+            cost = true
         case "--help", "-h":
             fmt.println("logview FILE... [--trace ID] [--kind g,p,...] [--ids] [--raw]   (see the top of tool/logview/main.odin)")
             return
@@ -65,6 +70,10 @@ main :: proc() {
     if skipped > 0 {
         fmt.eprintfln("%d file(s) held nothing readable (empty: the program was killed before its first block was written, or not a log of amsg)", skipped)
     }
+    if cost {
+        print_cost(entries)
+        return
+    }
     if trace != "" {
         entries = ai.LogTrace(entries, trace)
         if len(entries) == 0 {
@@ -87,6 +96,34 @@ main :: proc() {
             ids = fmt.tprintf("  [%s%s%s]", entry.msg, " " if entry.msg != "" && entry.turn != "" else "", entry.turn)
         }
         fmt.printfln("%04d-%02d-%02d %02d:%02d:%02d.%03d  %-14s %-3s %-16s %s%s", year, int(month), day, hour, minute, second, entry.time_ms % 1000, owner_name(entry.owner), entry.kind, entry.who, strings.trim_right(entry.text, "\n"), ids)
+    }
+}
+
+// What the agents cost: a table per instance and run, then the dearest turns.
+print_cost :: proc(entries: []ai.LogEntry) {
+    rows, turns := ai.LogSummary(entries)
+    if len(rows) == 0 {
+        fmt.println("no turns of an agent in these logs")
+        return
+    }
+    fmt.printfln("%-22s %-5s %6s %7s %6s %9s %9s %9s", "instance", "run", "turns", "errors", "tools", "cost USD", "seconds", "per turn")
+    for row in rows {
+        per_turn: f64 = row.cost / f64(max(row.turns, 1))
+        fmt.printfln("%-22s %-5s %6d %7d %6d %9.4f %9d %9.4f", row.owner, "all" if row.run == 0 else fmt.tprintf("%d", row.run), row.turns, row.errors, row.tools, row.cost, row.seconds, per_turn)
+    }
+    total: f64
+    for row in rows {
+        if row.run != 0 { total += row.cost }
+    }
+    fmt.printfln("total: $%.4f", total)
+    if len(turns) > 0 {
+        fmt.println("the dearest turns:")
+        for turn, i in turns {
+            if i >= 5 { break }
+            started: string = strings.trim_space(turn.started_by)
+            if len(started) > 100 { started = fmt.tprintf("%s...", started[:100]) }
+            fmt.printfln("  $%.4f %4ds  %-22s run %d turn %d%s  %s", turn.cost, turn.seconds, turn.owner, turn.run, turn.turn, "" if turn.ok else " (error)", started)
+        }
     }
 }
 

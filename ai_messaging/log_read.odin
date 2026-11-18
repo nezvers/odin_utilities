@@ -233,3 +233,119 @@ LogTrace :: proc(entries: []LogEntry, id: string, allocator := context.allocator
     }
     return result[:]
 }
+
+// ------------------------------------------------------------------------------------------------------------------------
+// What the agents cost
+
+// The turns of the agent of one instance in one run (a run is one start of the agent; `run` 0 is all the runs of that instance together).
+LogCost :: struct {
+    owner: string,
+    run: int,
+    turns: int,
+    errors: int,                         // turns that ended with an error
+    tools: int,                          // tool calls
+    replies: int,                        // texts the agent wrote
+    cost: f64,                           // US dollars, as Claude Code reported them for each turn
+    seconds: i64,
+}
+
+// One turn with what it cost and what started it.
+LogTurn :: struct {
+    owner: string,
+    run: int,
+    turn: int,
+    cost: f64,
+    seconds: i64,
+    ok: bool,
+    started_by: string,                  // the text of the message that started it, or what was handed to the agent
+}
+
+// The cost of the agents in the entries: a row per instance and run, a row for all the runs of an instance (when it has more than one), and
+// the turns sorted by cost, the dearest first, with what started each. Records of turns are `d` (cost, seconds, ok / error), `t`, `a` and `i`.
+LogSummary :: proc(entries: []LogEntry, allocator := context.allocator) -> (rows: []LogCost, turns: []LogTurn) {
+    list: [dynamic]LogCost
+    list.allocator = allocator
+    dear: [dynamic]LogTurn
+    dear.allocator = allocator
+    text_of: map[string]string                              // message id -> text, for what started a turn
+    text_of.allocator = context.temp_allocator
+    started: map[string]string                              // turn id -> the message that caused it, or what was handed to the agent
+    started.allocator = context.temp_allocator
+    for entry in entries {
+        switch entry.kind {
+        case "g", "p", "u", "G", "P", "GA", "PA":
+            if entry.msg != "" { text_of[entry.msg] = entry.text }
+        }
+    }
+    for entry in entries {
+        if entry.kind == "i" && entry.turn != "" {
+            started[entry.turn] = text_of[entry.msg] if entry.msg != "" && entry.msg in text_of else entry.text
+        }
+    }
+    row_of :: proc(list: ^[dynamic]LogCost, owner: string, run: int) -> ^LogCost {
+        for &row in list {
+            if row.owner == owner && row.run == run { return &row }
+        }
+        append(list, LogCost{owner = owner, run = run})
+        return &list[len(list) - 1]
+    }
+    for entry in entries {
+        switch entry.kind {
+        case "t", "a", "d":
+        case:
+            continue
+        }
+        run, turn: int
+        if dot := strings.index_byte(entry.ref, '.'); dot > 0 {
+            run, _ = strconv.parse_int(entry.ref[:dot])
+            turn, _ = strconv.parse_int(entry.ref[dot + 1:])
+        }
+        row: ^LogCost = row_of(&list, entry.owner, run)
+        switch entry.kind {
+        case "t":
+            row.tools += 1
+        case "a":
+            row.replies += 1
+        case "d":
+            // "<cost> <seconds> ok|error [text]"
+            fields: []string = strings.split_n(entry.text, " ", 4, context.temp_allocator)
+            cost: f64
+            seconds: i64
+            ok: bool = true
+            if len(fields) >= 1 { cost, _ = strconv.parse_f64(fields[0]) }
+            if len(fields) >= 2 { seconds, _ = strconv.parse_i64(fields[1]) }
+            if len(fields) >= 3 { ok = fields[2] == "ok" }
+            row.turns += 1
+            row.cost += cost
+            row.seconds += seconds
+            if !ok { row.errors += 1 }
+            begin: string = started[entry.turn] if entry.turn in started else ""
+            append(&dear, LogTurn{owner = entry.owner, run = run, turn = turn, cost = cost, seconds = seconds, ok = ok, started_by = strings.clone(begin, allocator)})
+        }
+    }
+    // all the runs of an instance together, when it had several
+    counted: [dynamic]string
+    counted.allocator = context.temp_allocator
+    for row in list[:] {
+        if row.run == 0 || slice.contains(counted[:], row.owner) { continue }
+        runs: int
+        total: LogCost = {owner = row.owner}
+        for other in list[:] {
+            if other.owner == row.owner && other.run != 0 {
+                runs += 1
+                total.turns += other.turns
+                total.errors += other.errors
+                total.tools += other.tools
+                total.replies += other.replies
+                total.cost += other.cost
+                total.seconds += other.seconds
+            }
+        }
+        append(&counted, row.owner)
+        if runs > 1 { append(&list, total) }
+    }
+    slice.stable_sort_by(dear[:], proc(a, b: LogTurn) -> bool {
+        return a.cost > b.cost
+    })
+    return list[:], dear[:]
+}

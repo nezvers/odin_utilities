@@ -200,3 +200,77 @@ LogTraceTest :: proc(t: ^testing.T) {
         delete(path)
     }
 }
+
+// What the agents cost, from a log that was written by hand: two runs of one agent, an error, a turn that bob's message started and one that
+// an idle report started, and the agent of another instance.
+@(test)
+LogCostTest :: proc(t: ^testing.T) {
+    folder: string = TempFolder("logcost")
+    defer os.remove_all(folder)
+    defer delete(folder)
+    paths: [2]string
+    names: [2]string = {"alice", "carol"}
+    for name, i in names {
+        log: Log
+        path, ok := LogOpen(&log, folder, "chan", name, 1000)
+        testing.expect(t, ok)
+        paths[i] = strings.clone(path)
+        if i == 0 {
+            LogMember(&log, 1001, 0, "alice")
+            LogMember(&log, 1002, 1, "bob")
+            LogInstance(&log, 1003, 1, u64(0xB0B) << 32 | 7)
+            LogRecord(&log, 1100, "g", "1", "1.7", "please summarise the report")           // bob's message, as alice heard it
+            LogRecord(&log, 1110, "i", "0", "1.1", "@1.7")                                   // it started turn 1 of run 1
+            LogRecord(&log, 1200, "t", "0", "1.1", "Read report.txt")
+            LogRecord(&log, 1300, "a", "0", "1.1", "the summary")
+            LogRecord(&log, 1400, "d", "0", "1.1", "0.0100 8 ok")
+            LogRecord(&log, 1500, "i", "0", "1.2", "[idle carol] all done")                  // turn 2: an idle report
+            LogRecord(&log, 1600, "d", "0", "1.2", "0.0020 2 error the turn failed")
+            LogRecord(&log, 2000, "i", "0", "2.1", "@1.7")                                   // a second run of the agent
+            LogRecord(&log, 2100, "t", "0", "2.1", "Glob *")
+            LogRecord(&log, 2200, "t", "0", "2.1", "Read a")
+            LogRecord(&log, 2300, "d", "0", "2.1", "0.0300 20 ok")
+        } else {
+            LogRecord(&log, 1100, "i", "0", "1.1", "[amsg] you are online")
+            LogRecord(&log, 1200, "d", "0", "1.1", "0.0005 1 ok")
+        }
+        LogClose(&log)
+    }
+    entries, _, loaded := LogLoad(paths[:], context.temp_allocator)
+    testing.expect(t, loaded)
+    rows, turns := LogSummary(entries, context.temp_allocator)
+    find :: proc(rows: []LogCost, name: string, run: int) -> LogCost {
+        for row in rows {
+            if strings.has_prefix(row.owner, name) && row.run == run { return row }
+        }
+        return {}
+    }
+    first: LogCost = find(rows, "alice/", 1)
+    testing.expect_value(t, first.turns, 2)
+    testing.expect_value(t, first.errors, 1)
+    testing.expect_value(t, first.tools, 1)
+    testing.expect_value(t, first.replies, 1)
+    testing.expect_value(t, first.seconds, 10)
+    testing.expect(t, abs(first.cost - 0.0120) < 1e-9)
+    second: LogCost = find(rows, "alice/", 2)
+    testing.expect_value(t, second.turns, 1)
+    testing.expect_value(t, second.tools, 2)
+    all: LogCost = find(rows, "alice/", 0)                                                  // an instance with two runs also gets a row for both
+    testing.expect_value(t, all.turns, 3)
+    testing.expect(t, abs(all.cost - 0.0420) < 1e-9)
+    testing.expect_value(t, find(rows, "carol/", 0).turns, 0)                               // one run: no row for "all"
+    testing.expect_value(t, find(rows, "carol/", 1).turns, 1)
+
+    // the dearest turn first, with what started it: the message of bob, the idle report, the intro
+    testing.expect_value(t, len(turns), 4)
+    testing.expect(t, abs(turns[0].cost - 0.0300) < 1e-9 && turns[0].run == 2)
+    testing.expect_value(t, turns[0].started_by, "please summarise the report")           // the same message started the second run's turn
+    testing.expect(t, abs(turns[1].cost - 0.0100) < 1e-9)
+    testing.expect_value(t, turns[1].started_by, "please summarise the report")
+    testing.expect(t, abs(turns[2].cost - 0.0020) < 1e-9 && !turns[2].ok)
+    testing.expect_value(t, turns[2].started_by, "[idle carol] all done")
+    testing.expect_value(t, turns[3].started_by, "[amsg] you are online")
+    for path in paths {
+        delete(path)
+    }
+}
