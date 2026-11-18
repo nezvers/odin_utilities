@@ -130,6 +130,7 @@ script: []kit.Step = {
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.table.list.selected == ROWS - 1 && state.table.list.last == ROWS }, "End went to the last row and the view followed"),
     kit.Capture("table"),
+    kit.Wait(1),
     // a header dragged to another place moves its column (and does not sort): Size goes first, then back
     kit.Drag({300, 24}, {60, 24}, 8),
     kit.Wait(3),
