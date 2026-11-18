@@ -3834,3 +3834,58 @@ test_a_stretch_and_a_marker_move_are_steps_of_the_history :: proc(t: ^testing.T)
     timelineActions(harness, timeline, view, {200, 40}, {.REDO})
     testing.expect_value(t, TimelineMarkerGet(timeline, marker).time, 2)
 }
+
+@(test)
+test_the_keys_move_the_current_cell_of_a_table_and_a_click_sets_it :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    table: Table
+    TableInit(&table, {{name = "Name", width = 100}, {name = "Size", width = 80}, {name = "Kind", width = 60}})
+    table.cells = true
+    for _ in 0 ..< 3 { tableFrame(harness, &table, pointerAt({-10, -10})) }
+    // a click on the "Size" cell of the third row (the header is 28 high, the rows 20): the row and the column
+    tableClick(harness, &table, {140, 28 + 20 * 2 + 5})
+    testing.expect_value(t, table.list.selected, 2)
+    testing.expect_value(t, table.cell, 1)
+    action :: proc(harness: ^Harness, table: ^Table, action: Action) {
+        input: Input = pointerAt({-10, -10})
+        input.actions = {action}
+        tableFrame(harness, table, input)
+    }
+    action(harness, &table, .RIGHT)
+    testing.expect_value(t, table.cell, 2)
+    testing.expect(t, table.cell_changed)
+    action(harness, &table, .RIGHT)
+    testing.expect_value(t, table.cell, 2)                                       // the last one: it stays
+    testing.expect(t, !table.cell_changed)
+    action(harness, &table, .LEFT)
+    action(harness, &table, .LEFT)
+    testing.expect_value(t, table.cell, 0)
+    action(harness, &table, .LEFT)
+    testing.expect_value(t, table.cell, 0)
+    // down moves the row and keeps the column; Enter tells the program which cell
+    action(harness, &table, .RIGHT)
+    action(harness, &table, .DOWN)
+    testing.expect_value(t, table.list.selected, 3)
+    testing.expect_value(t, table.cell, 1)
+    action(harness, &table, .ACCEPT)
+    testing.expect(t, table.cell_activated && table.cell == 1 && table.list.selected == 3, "Enter activates the current cell")
+    tableFrame(harness, &table, pointerAt({-10, -10}))
+    testing.expect(t, !table.cell_activated, "told once")
+    // the places follow the order of the columns when they were moved
+    table.reorderable = true
+    table.order[0], table.order[1], table.order[2] = 2, 0, 1
+    action(harness, &table, .RIGHT)                                              // the cell is column 1, at the place 2 now: the last one
+    testing.expect_value(t, table.cell, 1)
+    action(harness, &table, .LEFT)
+    testing.expect_value(t, table.cell, 0)                                       // the column that is at the place before it
+    // a table without cells ignores the keys
+    plain: Table
+    TableInit(&plain, {{name = "A", width = 100}, {name = "B", width = 80}})
+    for _ in 0 ..< 3 { tableFrame(harness, &plain, pointerAt({-10, -10})) }
+    tableClick(harness, &plain, {140, 28 + 5})
+    action(harness, &plain, .RIGHT)
+    testing.expect_value(t, plain.cell, 0)
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}

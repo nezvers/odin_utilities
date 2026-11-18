@@ -186,6 +186,11 @@ Table :: struct {
     shown: [TABLE_MAX_COLUMNS]f32,  // the widths of this frame: the widths of the columns, the last one wider when it fills
     body_id: Id,                // the id of the rows (what UiTable made it: the end of the table needs the same one)
     content_width: f32,         // all the columns together: the table scrolls sideways when this is more than its width
+    cells: bool,                // the cells can be moved to with the keys: a cell of the selected row is the current one (drawn marked while the table has the focus), left and right move it, a click sets it
+    cell: int,                  // the column of the current cell (the places follow the order of the columns when they were moved)
+    cell_changed: bool,         // it changed in this frame
+    cell_activated: bool,       // Enter (or a double click) on the current cell: the program toggles, opens its editor, ... in `list.selected`, `cell`
+    current_row: int,           // the row that UiTableRow declared last (what UiTableCell marks)
     reorderable: bool,          // a header can be dragged to another place: the program declares the cells by place (TableColumnAt) and not by column
     order: [TABLE_MAX_COLUMNS]int,  // the column that is at each place from the left: the identity until a header is moved
     fit: int,                   // the column whose edge was double clicked in this frame, VIRTUAL_NONE for none: the program measures its cells and calls TableFit (the table only declares the rows in view)
@@ -224,6 +229,7 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
     metrics: ^Metrics = &ctx.style.metrics
     table.sort_changed = false
     table.moved, table.fit = VIRTUAL_NONE, VIRTUAL_NONE
+    table.cell_changed, table.cell_activated = false, false
     table.body_id = id
     // the widths of this frame: the columns, the last one wider when it fills the room (from the last frame); the table scrolls sideways when they are more than the room
     body: ^WidgetState = stateFind(ctx, id)
@@ -302,6 +308,33 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
     ElementClose(ctx)
     tableReorder(ctx, table, id)
     fixed_body: f32 = size.height.min - metrics.control_height if size.height.kind == .FIXED else 0
+    if table.cells && table.column_count > 0 {
+        table.cell = clamp(table.cell, 0, table.column_count - 1)
+        place: int
+        for p in 0 ..< table.column_count {
+            if table.order[p] == table.cell { place = p }
+        }
+        before: int = table.cell
+        if ctx.focus == id {
+            if .LEFT in ctx.input.actions { place = max(place - 1, 0) }
+            if .RIGHT in ctx.input.actions { place = min(place + 1, table.column_count - 1) }
+            table.cell = table.order[place]
+        }
+        // a click on a row sets the column under the pointer
+        if ctx.hover == id && ctx.input.mouse_pressed {
+            first: ^WidgetState = stateFind(ctx, IdFromIndex(u32(table.order[0]), IdFromString("header", id)))
+            if first != nil {
+                left: f32 = first.rect.x
+                clicked_place: int
+                for clicked_place < table.column_count - 1 && ctx.input.mouse_position.x >= left + table.shown[table.order[clicked_place]] {
+                    left += table.shown[table.order[clicked_place]]
+                    clicked_place += 1
+                }
+                table.cell = table.order[clicked_place]
+            }
+        }
+        table.cell_changed = table.cell != before
+    }
     return virtualOpen(ctx, id, &table.list, count, row_height, {Grow(), Grow()}, fixed_body, table.content_width)
 }
 
@@ -354,6 +387,7 @@ tableReorder :: proc(ctx: ^Context, table: ^Table, id: Id) {
 
 UiTableEnd :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_height: f32, size: Size = {}) {
     virtualClose(ctx, &table.list)
+    if table.cells && table.list.activated { table.cell_activated = true }
     // the bar for the sideways scrolling, under the rows, while the columns are wider than the table
     id: Id = table.body_id
     body: ^WidgetState = stateFind(ctx, id)
@@ -390,6 +424,7 @@ UiTableEnd :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_h
 @(deferred_in = UiTableRowEnd)
 UiTableRow :: proc(ctx: ^Context, table: ^Table, row: int) -> bool {
     metrics: ^Metrics = &ctx.style.metrics
+    table.current_row = row
     return ElementOpen(ctx, {
         layout = {size = {Fixed(table.list.row_width) if table.list.row_width > 0 else Grow(), Fixed(table.list.row_height)}, direction = .LEFT_TO_RIGHT, align = {y = .CENTER}},
         draw = {kind = .SELECTABLE, hover = 1 if table.list.hover == row else 0, flags = {.SELECTED} if table.list.selected == row else {}, font_size = metrics.font_size},
@@ -404,9 +439,12 @@ UiTableRowEnd :: proc(ctx: ^Context, table: ^Table, row: int) {
 @(deferred_in = UiTableCellEnd)
 UiTableCell :: proc(ctx: ^Context, table: ^Table, column: int) -> bool {
     width: f32 = table.shown[clamp(column, 0, TABLE_MAX_COLUMNS - 1)]
+    // the current cell of the selected row is marked while the table has the focus
+    current: bool = table.cells && column == table.cell && table.current_row == table.list.selected && ctx.focus == table.body_id
     return ElementOpen(ctx, {
         layout = {size = {Fixed(width), Grow()}, padding = PaddingXY(TABLE_CELL_PADDING, 0), align = {y = .CENTER}},
         clip = {horizontal = true, cut = true},
+        draw = {kind = .HIGHLIGHT, color = {90, 190, 255, 255}} if current else {},
     })
 }
 

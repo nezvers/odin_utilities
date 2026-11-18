@@ -26,6 +26,7 @@ State :: struct {
     app: UiDemo,
     table: ui.Table,
     order: [ROWS]int,
+    activated_cell: int,
 }
 
 state: State
@@ -104,6 +105,7 @@ draw :: proc(ctx: ^kit.Context) {
                 }
             }
         }
+        if state.table.cell_activated { state.activated_cell = state.table.cell }
         ui.UiLabelf(c, "%d rows, the table declares %d of them", ROWS, state.table.list.last - state.table.list.first)
     }
     ui_demo_end(&state.app)
@@ -185,5 +187,22 @@ script: []kit.Step = {
     kit.Click({367, 24}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.table.columns[1].width < 100 && state.table.columns[1].width > 40 }, "a double click on the edge fitted the Size column to its cells"),
+    // the keys inside of a row: the current cell is marked, left and right move it, Enter tells which cell (a program toggles or edits there)
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        state.table.cells = true
+        return true
+    }, "the cells of a row can be moved to"),
+    kit.Wait(40),
+    kit.Click({280, 98}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.table.list.selected == state.table.list.first + 2 && state.table.cell == 1 }, "a click selected the third row in view and set the cell under the pointer"),
+    kit.Tap(.RIGHT),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.table.cell == 2 }, "right moved to the next cell"),
+    kit.Capture("table_cells"),
+    kit.Wait(1),
+    kit.Tap(.ENTER),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.activated_cell == 2 }, "Enter activated the current cell"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

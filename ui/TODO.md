@@ -39,7 +39,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Table: sideways scrolling (wheel with Shift, bar, header goes along) and a last column that fills the room
 - [x] Table: reordering columns by dragging a header (`table.reorderable`, `TableColumnAt`, `table.moved`)
 - [x] Table: a double click on the edge of a header asks for a fit (`table.fit`, `TableFit`, `UiTextWidth`: the program measures its cells)
-- [ ] Table: keys inside of a row (cells that are widgets)
+- [x] Table: keys inside of a row (`table.cells`: the current cell, left and right, Enter tells which cell), demo step with a screenshot
 - [x] Tree (`Tree`, `UiTree`): fixed storage model, visible rows flattened, arrows, keys, lazy loading through `view.toggled`; demo with a screenshot
 - [x] Tree: drag and drop of nodes (`TreeMove`, `view.moved`, `view.can_drop`) and rename in place (F2, `TreeRename`, `view.renamed`), demo with a screenshot
 - [x] Tree: a filter that opens the parents of what matches (`TreeViewFilter`, `TreeVisibleFiltered`)
