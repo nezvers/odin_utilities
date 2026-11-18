@@ -17,11 +17,13 @@ import ui "../../ui"
 import reports ".."
 import "core:fmt"
 import "core:math"
+import "core:strconv"
 import "core:strings"
 
 VIEW_FILTER_MAX :: 64
 VIEW_SCRATCH :: 8192            // numbers of charts that are plotted in one frame
-VIEW_CELL_PAD :: 16
+VIEW_CELL_PAD :: 22            // the box of a cell has 16 of padding: the rest is slack, so a text that measures a pixel more than expected is not cut
+VIEW_BAR_WIDTH :: 64            // the bar of a ratio: the same in every row
 VIEW_COLUMN_MAX :: 360          // the widest a column may be: a longer text is cut with "..."
 VIEW_CHART_WIDTH :: 560         // a plot: the widget sits in a row that fits its content, so it cannot grow into the room that is left
 VIEW_CHART_HEIGHT :: 72
@@ -157,7 +159,10 @@ drawContent :: proc(c: ^ui.Context, view: ^View, report: ^reports.Report) {
 drawBlock :: proc(c: ^ui.Context, view: ^View, block: ^reports.Block, key: int) {
     switch block.kind {
     case .PARAGRAPH:
-        ui.UiLabel(c, block.text, .WORDS)
+        // in a box that takes the width of the view: the text wraps at the edge of the view, not at its own length
+        if ui.UiBox(c, {layout = {size = {ui.Grow(), ui.Fit()}}}) {
+            ui.UiLabel(c, block.text, .WORDS)
+        }
     case .CODE:
         for line in strings.split_lines(block.text, context.temp_allocator) {
             ui.UiLabelColored(c, line, COLOR_DIM)
@@ -187,21 +192,69 @@ drawBlock :: proc(c: ^ui.Context, view: ^View, block: ^reports.Block, key: int) 
     }
 }
 
-// Column widths from the text they hold.
+// What a column needs to look the same in every row: its width, the width of the number label, and how many decimals every number has.
 @(private)
-columnWidths :: proc(c: ^ui.Context, table: ^reports.Table, order: []int, options: reports.RenderOptions) -> []f32 {
-    font: f32 = c.style.metrics.font_size
-    widths: []f32 = make([]f32, len(table.columns), context.temp_allocator)
-    for &column, i in table.columns {
-        widths[i] = c.measure(c, reports.ColumnHeading(&column), font).x + 22                 // room for the sort arrow
-        for row in order {
-            text: string = reports.CellDisplay(&column, reports.TableCell(table, row, i), options)
-            widths[i] = max(widths[i], c.measure(c, text, font).x)
-        }
-        if column.kind == .RATIO { widths[i] += 66 }                                          // the bar
-        widths[i] = min(widths[i] + VIEW_CELL_PAD, VIEW_COLUMN_MAX)
+ColumnPlan :: struct {
+    width: f32,
+    label_width: f32,           // the widest number of the column: every label is this wide and aligned to the right
+    decimals: int,              // the most decimals any number of the column has: the others are padded with zeros to it
+    numeric: bool,              // a column of numbers (cells that have one)
+}
+
+// How many digits follow the point in a text that is a plain number; -1 when the text is not one.
+@(private)
+decimalsOf :: proc(text: string) -> int {
+    trimmed: string = strings.trim_space(text)
+    if _, ok := strconv.parse_f64(trimmed); !ok { return -1 }
+    point: int = strings.index_byte(trimmed, '.')
+    if point < 0 { return 0 }
+    count: int
+    for c in trimmed[point + 1:] {
+        if c < '0' || c > '9' { break }
+        count += 1
     }
-    return widths
+    return count
+}
+
+// The text of a cell of the column: a number is written with the decimals of the whole column (1.79, 7.10, 118.00), anything else as it is.
+@(private)
+cellText :: proc(column: ^reports.Column, cell: ^reports.Cell, plan: ColumnPlan) -> string {
+    shown: string = reports.CellDisplay(column, cell, {})
+    if plan.numeric && cell.has_number && (cell.text == "" || decimalsOf(cell.text) >= 0) {
+        return reports.FormatNumber(cell.number, i8(plan.decimals) if plan.decimals > 0 else -1)
+    }
+    return shown
+}
+
+// Widths from the text they hold, and the shape of the numbers of every column.
+@(private)
+columnPlans :: proc(c: ^ui.Context, table: ^reports.Table, order: []int) -> []ColumnPlan {
+    font: f32 = c.style.metrics.font_size
+    plans: []ColumnPlan = make([]ColumnPlan, len(table.columns), context.temp_allocator)
+    for &column, i in table.columns {
+        plan: ^ColumnPlan = &plans[i]
+        if column.kind != .TEXT {
+            for row in order {
+                cell: ^reports.Cell = reports.TableCell(table, row, i)
+                if !cell.has_number { continue }
+                plan.numeric = true
+                digits: int = decimalsOf(reports.CellDisplay(&column, cell, {}))
+                plan.decimals = max(plan.decimals, digits)
+            }
+            if column.kind == .RATIO { plan.decimals = max(plan.decimals, 2) }
+        }
+        width: f32 = c.measure(c, reports.ColumnHeading(&column), font).x + 22                  // room for the sort arrow
+        for row in order {
+            cell: ^reports.Cell = reports.TableCell(table, row, i)
+            text: string = cellText(&column, cell, plan^)
+            measured: f32 = c.measure(c, text, font).x
+            if column.kind != .TEXT { plan.label_width = max(plan.label_width, measured) }
+            width = max(width, measured)
+        }
+        if column.kind == .RATIO { width = max(width, VIEW_BAR_WIDTH + 6 + plan.label_width) }     // the bar, then the number
+        plan.width = min(width + VIEW_CELL_PAD, VIEW_COLUMN_MAX)
+    }
+    return plans
 }
 
 @(private)
@@ -219,12 +272,12 @@ drawTable :: proc(c: ^ui.Context, view: ^View, table: ^reports.Table, key: int) 
         if filter != "" && !strings.contains(strings.to_lower(reports.TableRowLabel(table, row), context.temp_allocator), filter) { continue }
         append(&order, row)
     }
-    widths: []f32 = columnWidths(c, table, order[:], options)
+    plans: []ColumnPlan = columnPlans(c, table, order[:])
     if ui.UiRow(c, {gap = 0}) {
         for &column, i in table.columns {
             arrow: string
             if view.sort_block == key && view.sort_column == i { arrow = " v" if view.sort_descending else " ^" }
-            if ui.UiButton(c, nextName(c, view, fmt.tprintf("%s%s", reports.ColumnHeading(&column), arrow)), {ui.Fixed(widths[i]), {}}) {
+            if ui.UiButton(c, nextName(c, view, fmt.tprintf("%s%s", reports.ColumnHeading(&column), arrow)), {ui.Fixed(plans[i].width), {}}) {
                 // the same heading again: ascending, then descending, then back to the order of the report
                 if view.sort_block == key && view.sort_column == i {
                     if view.sort_descending {
@@ -242,9 +295,11 @@ drawTable :: proc(c: ^ui.Context, view: ^View, table: ^reports.Table, key: int) 
         if ui.UiRow(c, {gap = 0}) {
             for &column, i in table.columns {
                 cell: ^reports.Cell = reports.TableCell(table, row, i)
-                layout: ui.Layout = {size = {ui.Fixed(widths[i]), ui.Fit()}, direction = .LEFT_TO_RIGHT, padding = ui.PaddingXY(8, 2), gap = 6, align = {x = .RIGHT if column.kind != .TEXT else .LEFT, y = .CENTER}}
+                // numbers are aligned to the right, text and the bar of a ratio to the left
+                align_right: bool = column.kind == .NUMBER
+                layout: ui.Layout = {size = {ui.Fixed(plans[i].width), ui.Fit()}, direction = .LEFT_TO_RIGHT, padding = ui.PaddingXY(8, 2), gap = 6, align = {x = .RIGHT if align_right else .LEFT, y = .CENTER}}
                 if ui.UiBox(c, {layout = layout}) {
-                    drawCell(c, view, &column, cell)
+                    drawCell(c, view, &column, cell, plans[i])
                 }
             }
         }
@@ -252,13 +307,16 @@ drawTable :: proc(c: ^ui.Context, view: ^View, table: ^reports.Table, key: int) 
 }
 
 @(private)
-drawCell :: proc(c: ^ui.Context, view: ^View, column: ^reports.Column, cell: ^reports.Cell) {
-    text: string = reports.CellDisplay(column, cell, {})
+drawCell :: proc(c: ^ui.Context, view: ^View, column: ^reports.Column, cell: ^reports.Cell, plan: ColumnPlan) {
+    text: string = cellText(column, cell, plan)
     switch {
     case column.kind == .RATIO && cell.has_number:
-        // a bar from 0 to 2 (1 is equal) and the number in the colour of the verdict
-        ui.UiProgress(c, nextName(c, view, "ratio"), f32(clamp(cell.number, 0, 2)), 0, 2, {ui.Fixed(56), ui.Fixed(10)}, "")
-        ui.UiLabelColored(c, text, VerdictColor(reports.RatioVerdict(cell.number, column.better)) if cell.status == .NONE else StatusColor(cell.status))
+        // a bar from 0 to 2 (1 is equal), the same size in every row, at the left; then the number in the colour of its verdict, in a box as wide as the
+        // widest number of the column and aligned to the right, so the decimal points line up
+        ui.UiProgress(c, nextName(c, view, ""), f32(clamp(cell.number, 0, 2)), 0, 2, {ui.Fixed(VIEW_BAR_WIDTH), ui.Fixed(10)}, "")
+        if ui.UiBox(c, {layout = {size = {ui.Fixed(plan.label_width), ui.Fit()}, align = {x = .RIGHT}}}) {
+            ui.UiLabelColored(c, text, VerdictColor(reports.RatioVerdict(cell.number, column.better)) if cell.status == .NONE else StatusColor(cell.status))
+        }
     case cell.status != .NONE:
         ui.UiLabelColored(c, text, StatusColor(cell.status))
     case text == "":

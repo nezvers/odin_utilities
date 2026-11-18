@@ -108,7 +108,7 @@ prints `RESULT<TAB>case<TAB>value` lines (any program) is `reports results --odi
 
 ## The viewer and the demos
 `reports/view` (`reports_view.ViewDraw(&ctx, &view, &report)`) draws a report with `odin_utilities/ui`: a split with the sections on the left (coloured by their status) and the blocks of the chosen section on the right. Tables
-are columns sized to their text whose headings sort them (first click ascending, second descending, third back to the order of the report), ratio columns carry a bar from 0 to 2 and the colour of their verdict, budgets and checks are coloured by status, findings by severity,
+are columns sized to their text whose headings sort them (first click ascending, second descending, third back to the order of the report), ratio columns carry a bar from 0 to 2 (always at the left, the same size in every row) and the number in the colour of its verdict, in a box as wide as the widest number and aligned to the right; the numbers of a column have the same decimals (1.79, 7.10, 118.00) and are aligned to the right, budgets and checks are coloured by status, findings by severity,
 charts are plotted (a log scale is plotted as logarithms), a filter field keeps the rows whose first cell contains a text. The view keeps only what the person chose; the report is the program's, and a report that changes
 between frames is fine. The ui storage needs room for the tables (a cell is two to four elements): the demos use `ui.Storage(6144, 12288, 1024, 65536)`.
 

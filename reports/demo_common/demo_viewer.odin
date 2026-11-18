@@ -50,6 +50,9 @@ script: []kit.Step = {
     kit.Click({60, 125}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return view.section == 1 && report.sections[view.section].title == "oscillator" }, "a click on a section shows that section"),
+    // the table of a section with a ratio column, as a picture that is kept (captures/): the bars are at the left in one size, the numbers are aligned to the right with the
+    // same decimals in a column
+    kit.Capture("ratio_oscillator"),
     // the heading of the ratio column (x 821 to 965): a click sorts by it, a second click turns the order round, a third one restores the order of the report
     kit.Click({893, 50}),
     kit.Wait(3),
@@ -60,6 +63,10 @@ script: []kit.Step = {
     kit.Click({893, 50}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return view.sort_block == -1 && !view.sort_descending }, "a third click puts the table back in the order of the report"),
+    // a section whose numbers have different decimals ("8.3", "118") and notes in the cells
+    kit.Click({60, 333}),
+    kit.Wait(4),
+    kit.Capture("numbers_convolution"),
     // the filter field of the left side
     kit.Click({156, 692}),
     kit.Wait(2),

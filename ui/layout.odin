@@ -327,6 +327,15 @@ textNextWord :: proc(ctx: ^Context, text: string, position: int, font_size: f32,
     return {start = end + 1, length = 0, width = 0}, end + 1, true
 }
 
+// What a space takes between two words. A measure of " " alone leaves out the spacing that a font puts between letters (and a word that is measured alone
+// loses the spacing after its last letter too), so a line that is the sum of its words came out a few percent narrower than it is drawn and ran over the
+// edge of its container. The difference with two letters around the space is what it really adds.
+@(private)
+textSpaceWidth :: proc(ctx: ^Context, font_size: f32) -> f32 {
+    letter: f32 = ctx.measure(ctx, "A", font_size).x
+    return max(ctx.measure(ctx, "A A", font_size).x - 2 * letter, ctx.measure(ctx, " ", font_size).x)
+}
+
 // How a text measures as one line (the longest line when it has new lines), and the width of its longest word
 @(private)
 textMeasure :: proc(ctx: ^Context, text: string, config: TextConfig) -> (preferred: Vec2, min_width: f32, newlines: bool) {
@@ -334,7 +343,7 @@ textMeasure :: proc(ctx: ^Context, text: string, config: TextConfig) -> (preferr
         ctx.problems += {.NO_MEASURE}
         return {}, 0, false
     }
-    space_width: f32 = ctx.measure(ctx, " ", config.font_size).x
+    space_width: f32 = textSpaceWidth(ctx, config.font_size)
     line_width: f32 = 0
     widest: f32 = 0
     height: f32 = ctx.measure(ctx, "A", config.font_size).y
@@ -600,7 +609,7 @@ textWrapAll :: proc(ctx: ^Context) {
             continue
         }
 
-        space_width: f32 = ctx.measure(ctx, " ", config.font_size).x
+        space_width: f32 = textSpaceWidth(ctx, config.font_size)
         line_width: f32 = 0
         line_length: int = 0
         line_start: int = 0
