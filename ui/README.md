@@ -231,6 +231,7 @@ yourself with the raylib and Karl2D glue when the scale can change), `UiMeasureC
 
 ## Editing text
 `UiTextField` has a selection (anchor and cursor in bytes: `WidgetState`, `DrawInfo.anchor` for the style): the pointer drags one, a double click takes a word, Shift with the arrows, Home and End extends it, Ctrl moves and deletes by words, typing and pasting replace it.
+The rows of a text area (where its lines wrap) are kept from one frame to the next for up to `UI_TEXT_AREA_CACHES` areas (4): they are found again only when the text, the width, the wrap, the font size or the measure cache (a new font or scale, `UiMeasureCacheClear`) changed, so an area that is only shown costs a hash of its bytes and a copy of its rows.
 `Input.modifiers` (Shift, Ctrl, the command key of a Mac is Ctrl) and the actions `COPY`, `CUT`, `PASTE`, `SELECT_ALL` (Ctrl + C, X, V, A; glues map them, and drop the typed letter when Ctrl is held) drive it.
 The clipboard: `UiClipboardSet` / `UiClipboardGet`; a glue that knows the system's connects it (`ui_raylib.ClipboardInstall(&ctx)`), without it the text stays in a buffer of the context (`CLIPBOARD_LOCAL` bytes), so copy and paste work inside of the program and in the tests.
 Karl2D has no clipboard: its glue uses the local one. Pasted newlines and tabs become spaces (a field is one line).

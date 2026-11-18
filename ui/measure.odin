@@ -22,6 +22,7 @@ MeasureCache :: struct {
     hits: u64,
     misses: u64,
     scale: f32,             // the UI scale the entries were measured at
+    epoch: u32,             // counts the times the table was cleared: what was found with the old sizes (the rows of a text area) is not valid
 }
 
 // The size of `text` at `font_size`, from the cache when it has it.
@@ -56,6 +57,7 @@ UiTextWidth :: proc(ctx: ^Context, text: string) -> f32 {
 
 UiMeasureCacheClear :: proc(ctx: ^Context) {
     ctx.measure_cache.entries = {}
+    ctx.measure_cache.epoch += 1
 }
 
 // Tells the cache the UI scale of this frame (the painter's): a different one than before clears it, because a glue measures the text it draws, and the size of the same text
@@ -63,6 +65,7 @@ UiMeasureCacheClear :: proc(ctx: ^Context) {
 UiMeasureCacheScale :: proc(ctx: ^Context, scale: f32) {
     if ctx.measure_cache.scale != scale {
         ctx.measure_cache.entries = {}
+        ctx.measure_cache.epoch += 1
         ctx.measure_cache.scale = scale
     }
 }

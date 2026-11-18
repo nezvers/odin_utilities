@@ -12,6 +12,73 @@ package ui
 import "core:unicode/utf8"
 
 UI_TEXT_AREA_LINES :: #config(UI_TEXT_AREA_LINES, 2048)
+UI_TEXT_AREA_CACHES :: #config(UI_TEXT_AREA_CACHES, 4)      // text areas whose rows are kept from one frame to the next (the least recently used one is replaced)
+
+// The rows of one text area as they were found, with what they depend on: they are used again while the text, the width, the wrap and the font are the same.
+@(private)
+AreaCache :: struct {
+    id: Id,                 // 0: free
+    key: u64,
+    count: int,
+    used: u32,              // the frame it was used in last
+    rows: [UI_TEXT_AREA_LINES]AreaLine,
+}
+
+@(private)
+AreaCaches :: struct {
+    entries: [UI_TEXT_AREA_CACHES]AreaCache,
+    hits: u64,              // rows that were found again without measuring / that were measured
+    misses: u64,
+}
+
+// What the rows of a text depend on, in one number: the bytes of the text, the width, the wrap, the font size and the generation of the measure cache (a new font or scale).
+@(private)
+areaKey :: proc(ctx: ^Context, text: string, max_width: f32, wrap: bool) -> u64 {
+    hash: u64 = 14695981039346656037
+    for byte in transmute([]u8)text {
+        hash ~= u64(byte)
+        hash *= 1099511628211
+    }
+    for part in ([4]u64{u64(transmute(u32)max_width), u64(transmute(u32)ctx.style.metrics.font_size), u64(ctx.measure_cache.epoch), u64(wrap)}) {
+        hash ~= part
+        hash *= 1099511628211
+    }
+    return hash | 1
+}
+
+// The rows of the text of the area `owner` in `ctx.area_lines`: the ones kept from the last time when nothing they depend on changed, else they are found (areaLines) and kept.
+@(private)
+areaLinesCached :: proc(ctx: ^Context, owner: Id, text: string, max_width: f32, wrap: bool) -> int {
+    key: u64 = areaKey(ctx, text, max_width, wrap)
+    caches: ^AreaCaches = &ctx.area_caches
+    slot: ^AreaCache
+    for &entry in caches.entries {
+        if entry.id == owner { slot = &entry }
+    }
+    if slot != nil && slot.key == key {
+        count: int = slot.count
+        copy(ctx.area_lines[:count], slot.rows[:count])
+        slot.used = ctx.frame
+        caches.hits += 1
+        return count
+    }
+    count: int = areaLines(ctx, text, max_width, wrap)
+    caches.misses += 1
+    if slot == nil {
+        // a free slot, else the one that was used the longest ago
+        slot = &caches.entries[0]
+        for &entry in caches.entries {
+            if entry.id == 0 {
+                slot = &entry
+                break
+            }
+            if entry.used < slot.used { slot = &entry }
+        }
+    }
+    slot.id, slot.key, slot.count, slot.used = owner, key, count, ctx.frame
+    copy(slot.rows[:count], ctx.area_lines[:count])
+    return count
+}
 
 // One row of the text on the screen: a part of a line of the text that fits the width (or the whole line), `hard` when it ends at a new line.
 @(private)
@@ -116,7 +183,7 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
     bar_width: f32 = metrics.scrollbar_width
     room: f32 = view.z - 2 * padding.x - bar_width                 // from the last frame: the first one has no wrap
     text: string = string(buffer[:length^])
-    count: int = areaLines(ctx, text, room if view.z > 0 else 0, wrap)
+    count: int = areaLinesCached(ctx, id, text, room if view.z > 0 else 0, wrap)
     lines: []AreaLine = ctx.area_lines[:]
 
     cursor_on_screen :: proc(ctx: ^Context, text: string, lines: []AreaLine, count: int, offset: int, line_height: f32, padding: Vec2) -> (position: Vec2, row: int) {
@@ -159,7 +226,7 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
             changed = textInsert(state, buffer, length, "\n") || changed
         }
         text = string(buffer[:length^])
-        if changed { count = areaLines(ctx, text, room if view.z > 0 else 0, wrap) }
+        if changed { count = areaLinesCached(ctx, id, text, room if view.z > 0 else 0, wrap) }
         row: int = areaLineOf(lines, count, state.cursor)
         move :: proc(state: ^WidgetState, to: int, extend: bool) {
             state.cursor = to
@@ -193,7 +260,7 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
         }
     }
     text = string(buffer[:length^])
-    count = areaLines(ctx, text, room if view.z > 0 else 0, wrap)
+    count = areaLinesCached(ctx, id, text, room if view.z > 0 else 0, wrap)
 
     // scrolling: the wheel, and the cursor stays in view when it moved
     content: f32 = f32(count) * line_height + 2 * padding.y

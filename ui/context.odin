@@ -82,6 +82,7 @@ Context :: struct {
     timeline_frame_count: int,
     measure_cache: MeasureCache,                    // sizes of texts already measured (measure.odin)
     area_lines: [UI_TEXT_AREA_LINES]AreaLine,        // the rows of the text area that is declared (textarea.odin)
+    area_caches: AreaCaches,                         // the rows of the last text areas, kept between frames
     roots: [UI_MAX_ROOTS]Root,
     root_count: int,
 

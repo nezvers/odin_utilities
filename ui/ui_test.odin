@@ -4033,3 +4033,39 @@ test_a_double_click_on_a_title_collapses_the_node_and_on_a_cable_puts_a_reroute_
     for _ in 0 ..< 3 { coveredGraphFrame(harness, graph, &view, {}) }
     testing.expect_value(t, harness.ctx.problems, Problems{})
 }
+
+@(test)
+test_the_rows_of_a_text_area_are_kept_while_nothing_they_depend_on_changes :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    buffer: [256]u8
+    length: int
+    text :: "the quick brown fox jumps over the lazy dog and runs away"
+    copy(buffer[:], text)
+    length = len(text)
+    for _ in 0 ..< 4 { areaFrame(harness, pointerAt({-10, -10}), buffer[:], &length) }
+    caches: ^AreaCaches = &harness.ctx.area_caches
+    testing.expect(t, caches.hits > 0 && caches.misses >= 1, "the rows come from the cache after the first frames")
+    hits, misses := caches.hits, caches.misses
+    measures: u64 = harness.ctx.measure_cache.misses
+    for _ in 0 ..< 5 { areaFrame(harness, pointerAt({-10, -10}), buffer[:], &length) }
+    testing.expect_value(t, caches.misses, misses)                               // nothing was found again
+    testing.expect(t, caches.hits >= hits + 5)
+    testing.expect_value(t, harness.ctx.measure_cache.misses, measures)
+    // an edit changes the text: found again, and the rows are right
+    buffer[length] = 'X'
+    length += 1
+    areaFrame(harness, pointerAt({-10, -10}), buffer[:], &length)
+    testing.expect(t, caches.misses > misses)
+    after: u64 = caches.misses
+    count: int = areaLines(&harness.ctx, string(buffer[:length]), 100 - 2 * DEFAULT_METRICS.padding.x - DEFAULT_METRICS.scrollbar_width, true)
+    testing.expect(t, count > 2)
+    for _ in 0 ..< 3 { areaFrame(harness, pointerAt({-10, -10}), buffer[:], &length) }
+    testing.expect_value(t, caches.misses, after)
+    // a new font or UI scale: the measure cache is cleared, the rows are not trusted
+    UiMeasureCacheClear(&harness.ctx)
+    areaFrame(harness, pointerAt({-10, -10}), buffer[:], &length)
+    testing.expect(t, caches.misses > after)
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}
