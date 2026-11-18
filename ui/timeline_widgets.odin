@@ -18,6 +18,8 @@ TIMELINE_ZOOM_MIN :: f32(0.001)             // pixels per unit
 TIMELINE_ZOOM_MAX :: f32(100000)
 TIMELINE_ZOOM_STEP :: f32(1.15)             // per notch of the wheel
 TIMELINE_DEFAULT_ZOOM :: f32(100)
+TIMELINE_TRACK_ZOOM_MIN :: f32(0.4)
+TIMELINE_TRACK_ZOOM_MAX :: f32(3)
 
 @(private)
 TimelineGesture :: enum u8 {
@@ -51,6 +53,7 @@ TimelineView :: struct {
     loop_start: f64,            // the loop range: Shift + a drag on the ruler makes one, its edges are dragged; the program plays inside of it when `loop_enabled`
     loop_end: f64,
     loop_enabled: bool,
+    track_zoom: f32,            // the heights of the tracks are multiplied by this (0 is 1): Ctrl + the wheel changes it, around the pointer
     snap_to_edges: bool,        // starts and ends also snap to the edges of other clips, the markers and the playhead when they are within `snap_pixels`
     snap_pixels: f32,           // 0: 8
     rect: Rect,                 // where the widget is on the screen (as drawn in the last frame)
@@ -75,6 +78,11 @@ TimelineFrame :: struct {
     timeline: ^Timeline,
     view: ^TimelineView,
     style: TimelineStyle,
+}
+
+// The vertical zoom of a view (1 when it was left at 0).
+TimelineViewTrackZoom :: proc(view: ^TimelineView) -> f32 {
+    return clamp(view.track_zoom, TIMELINE_TRACK_ZOOM_MIN, TIMELINE_TRACK_ZOOM_MAX) if view.track_zoom > 0 else 1
 }
 
 TimelineViewZoom :: proc(view: ^TimelineView) -> f32 {
@@ -146,7 +154,7 @@ timelineSnapTime :: proc(timeline: ^Timeline, view: ^TimelineView, time: f64, sk
 timelineTrackRow :: proc(timeline: ^Timeline, style: ^TimelineStyle, index: int) -> (top: f32, height: f32) {
     for i in 0 ..< timeline.track_count {
         track: ^TimelineTrack = TimelineTrackGet(timeline, timeline.order[i])
-        height = track.height if track != nil && track.height > 0 else style.track_height
+        height = (track.height if track != nil && track.height > 0 else style.track_height) * (style.track_scale if style.track_scale > 0 else 1)
         if i == index { return }
         top += height
     }
@@ -166,7 +174,7 @@ timelineTrackAt :: proc(timeline: ^Timeline, style: ^TimelineStyle, y: f32) -> i
     top: f32
     for i in 0 ..< timeline.track_count {
         track: ^TimelineTrack = TimelineTrackGet(timeline, timeline.order[i])
-        height: f32 = track.height if track != nil && track.height > 0 else style.track_height
+        height: f32 = (track.height if track != nil && track.height > 0 else style.track_height) * (style.track_scale if style.track_scale > 0 else 1)
         if y < top + height { return i }
         top += height
     }
@@ -224,6 +232,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
     state: ^WidgetState = stateGet(ctx, id)
     interaction: Interaction = widgetBehavior(ctx, id)
     style: TimelineStyle = TimelineStyleResolved(ctx.style)
+    style.track_scale = TimelineViewTrackZoom(view)
     view.rect = state.rect
     mouse: Vec2 = ctx.input.mouse_position
     shift: bool = .SHIFT in ctx.input.modifiers
@@ -234,7 +243,15 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
 
     if ctx.hover == id && ctx.input.wheel.y != 0 && view.gesture == .NONE && ctx.disabled_depth == 0 {
         before: f32 = TimelineViewZoom(view)
-        if shift {
+        if .CTRL in ctx.input.modifiers {
+            // Ctrl: the tracks get taller or shorter around the pointer (the track under it stays under it)
+            track_before: f32 = TimelineViewTrackZoom(view)
+            track_after: f32 = clamp(track_before * math.pow(TIMELINE_ZOOM_STEP, ctx.input.wheel.y), TIMELINE_TRACK_ZOOM_MIN, TIMELINE_TRACK_ZOOM_MAX)
+            under: f32 = mouse.y - (view.rect.y + style.ruler_height) + view.scroll
+            if under > 0 { view.scroll += under * (track_after / track_before - 1) }
+            view.track_zoom = track_after
+            style.track_scale = track_after
+        } else if shift {
             view.origin -= f64(ctx.input.wheel.y * 60 / before)
         } else {
             after: f32 = clamp(before * math.pow(TIMELINE_ZOOM_STEP, ctx.input.wheel.y), TIMELINE_ZOOM_MIN, TIMELINE_ZOOM_MAX)
@@ -477,6 +494,16 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                     }
                 }
             }
+        }
+        if .DUPLICATE in actions && TimelineSelectedCount(timeline) > 0 {
+            // a copy of the selected clips right after the last of them, on the tracks they are on
+            last_end: f64
+            it := hm.iterator_make(&timeline.clips)
+            for clip, _ in hm.iterate(&it) {
+                if clip.selected { last_end = max(last_end, clip.start + clip.length) }
+            }
+            TimelineCopy(timeline)
+            TimelinePaste(timeline, last_end)
         }
         if .PASTE in actions {
             lane: int = row if mouse.y >= lanes_top && row >= 0 && ctx.hover == id else -1

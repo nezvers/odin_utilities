@@ -3032,3 +3032,71 @@ test_a_timeline_that_has_the_focus_copies_cuts_pastes_and_selects_all_with_the_a
     testing.expect_value(t, TimelineSelectedCount(timeline), TimelineClipCount(timeline))
     testing.expect(t, TimelineSelectedCount(timeline) >= 1)
 }
+
+@(test)
+test_ctrl_and_the_wheel_make_the_tracks_taller_around_the_pointer :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, first, second, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    TimelineClipAdd(timeline, second, 1, 1, "low")
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    _ = first
+    testing.expect_value(t, TimelineViewTrackZoom(view), 1)
+    wheel: Input = pointerAt({200, 60})
+    wheel.wheel = {0, 2}
+    wheel.modifiers = {.CTRL}
+    timelineFrame(harness, timeline, view, pointerAt({200, 60}))
+    timelineFrame(harness, timeline, view, wheel)
+    zoom: f32 = TimelineViewTrackZoom(view)
+    testing.expect(t, abs(zoom - TIMELINE_ZOOM_STEP * TIMELINE_ZOOM_STEP) < 0.001, "two notches")
+    testing.expect_value(t, TimelineViewZoom(view), 100)                  // the time zoom did not change
+    // the rows are taller: a clip is as high as the track (48 times the zoom) less its margins
+    style: TimelineStyle = TimelineStyleResolved(&harness.style)
+    style.track_scale = zoom
+    rect: Rect = TimelineClipRect(timeline, view, &style, TimelineClipGet(timeline, clip))
+    testing.expect(t, abs(rect.w - (48 * zoom - 4)) < 0.01)
+    // and the pointer finds the track by the taller rows: what was the second lane (y 72 .. 120) is lower now
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    lane_two: f32 = 24 + 48 * zoom
+    timelineDrag(harness, timeline, view, {150, lane_two + 10}, {150, lane_two + 10})
+    testing.expect(t, TimelineClipGet(timeline, TimelineClipAt(timeline, second, 1.5)).selected, "a click at the new place of the second lane is on the clip that is there")
+    // never beyond the limits
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, wheel) }
+    testing.expect_value(t, TimelineViewTrackZoom(view), TIMELINE_TRACK_ZOOM_MAX)
+    down: Input = pointerAt({200, 60})
+    down.wheel = {0, -40}
+    down.modifiers = {.CTRL}
+    timelineFrame(harness, timeline, view, down)
+    testing.expect_value(t, TimelineViewTrackZoom(view), TIMELINE_TRACK_ZOOM_MIN)
+}
+
+@(test)
+test_duplicate_puts_a_copy_of_the_selected_clips_right_after_them :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, first, _, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    timelineClick(harness, timeline, view, {200, 40}, {})
+    testing.expect(t, TimelineClipGet(timeline, clip).selected)
+    timelineDrain(timeline)
+    timelineActions(harness, timeline, view, {200, 40}, {.DUPLICATE})
+    testing.expect_value(t, TimelineClipCount(timeline), 2)
+    copy: ClipHandle = TimelineClipAt(timeline, first, 3.5)
+    testing.expect(t, copy != clip && copy != {})
+    testing.expect(t, TimelineClipGet(timeline, copy).start == 3 && TimelineClipGet(timeline, copy).length == 2 && TimelineClipGet(timeline, copy).selected)
+    testing.expect(t, !TimelineClipGet(timeline, clip).selected, "the copy is the selection now")
+    added: TimelineEvent
+    for {
+        e, has := TimelinePollEvent(timeline)
+        if !has { break }
+        if e.kind == .CLIP_ADDED { added = e }
+    }
+    testing.expect_value(t, added.copied_from, clip)
+    // again: after the copy
+    timelineActions(harness, timeline, view, {200, 40}, {.DUPLICATE})
+    testing.expect_value(t, TimelineClipCount(timeline), 3)
+    testing.expect(t, TimelineClipAt(timeline, first, 5.5) != {})
+    // nothing selected: nothing happens
+    TimelineSelectClear(timeline)
+    timelineActions(harness, timeline, view, {200, 40}, {.DUPLICATE})
+    testing.expect_value(t, TimelineClipCount(timeline), 3)
+}

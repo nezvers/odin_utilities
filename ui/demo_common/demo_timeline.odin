@@ -200,5 +200,27 @@ script: []kit.Step = {
         return ui.TimelineClipName(copy) == "Fill" && abs(copy.start - 11) < 0.01 && copy.selected
     }, "Ctrl + C and Ctrl + V made a copy of Fill at the playhead"),
     kit.Capture("timeline_paste"),
+    kit.Wait(1),
+    // Ctrl + D: a copy of the selected clip right after it; Ctrl and the wheel: the tracks get taller around the pointer
+    kit.KeyDownStep(.LEFT_CTRL),
+    kit.Wait(1),
+    kit.Tap(.D),
+    kit.Wait(2),
+    kit.MoveTo({600, 150}),
+    kit.Wait(2),
+    kit.Scroll(2),
+    kit.Wait(3),
+    kit.KeyUpStep(.LEFT_CTRL),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if ui.TimelineClipCount(&state.timeline) != 7 { return false }
+        out: [8]ui.ClipHandle
+        count: int = ui.TimelineTrackClips(&state.timeline, state.tracks[0], out[:])
+        if count != 3 { return false }
+        copy: ^ui.TimelineClip = ui.TimelineClipGet(&state.timeline, out[2])
+        return abs(copy.start - 13) < 0.01 && copy.selected
+    }, "Ctrl + D put a copy of the pasted clip right after it"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.TimelineViewTrackZoom(&state.view) > 1.3 }, "Ctrl and the wheel made the tracks taller"),
+    kit.Capture("timeline_duplicate_zoom"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

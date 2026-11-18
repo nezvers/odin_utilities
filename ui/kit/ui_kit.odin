@@ -85,6 +85,7 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
         if .X in source.keys_pressed { result.actions += {.CUT} }
         if .V in source.keys_pressed { result.actions += {.PASTE} }
         if .A in source.keys_pressed { result.actions += {.SELECT_ALL} }
+        if .D in source.keys_pressed { result.actions += {.DUPLICATE} }
     }
     for i in 0 ..< int(result.text_count) {
         result.text[i] = source.text[i]

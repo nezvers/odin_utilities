@@ -90,6 +90,7 @@ TimelineStyle :: struct {
     ruler_height: f32,          // 0: 24
     track_height: f32,          // of a track that has none of its own: 0 is 48
     edge: f32,                  // the width of the part of a clip's side that resizes it: 0 is 6
+    track_scale: f32,           // set by the widget from the vertical zoom of the view: the heights of all the tracks are multiplied by it (0 is 1)
     marker_width: f32,          // the room of the flag of a marker, to the right of its line (the part of the ruler that picks it): 0 is 64
     user: rawptr,               // comes back in what is drawn
 }

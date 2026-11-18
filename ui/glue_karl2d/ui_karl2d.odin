@@ -109,6 +109,7 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if karl2d.key_went_down(.X) { input.actions += {.CUT} }
         if karl2d.key_went_down(.V) { input.actions += {.PASTE} }
         if karl2d.key_went_down(.A) { input.actions += {.SELECT_ALL} }
+        if karl2d.key_went_down(.D) { input.actions += {.DUPLICATE} }
     }
     return input
 }

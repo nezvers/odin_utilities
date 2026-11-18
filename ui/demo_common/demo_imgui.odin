@@ -146,7 +146,7 @@ draw :: proc(ctx: ^kit.Context) {
 ui_action_names: [ui.Action]string = {
     .ACCEPT = "ui_accept", .SELECT = "ui_select", .CANCEL = "ui_cancel", .FOCUS_NEXT = "ui_focus_next", .FOCUS_PREV = "ui_focus_prev",
     .UP = "ui_up", .DOWN = "ui_down", .LEFT = "ui_left", .RIGHT = "ui_right", .PAGE_UP = "ui_page_up", .PAGE_DOWN = "ui_page_down",
-    .HOME = "ui_home", .END = "ui_end", .COPY = "ui_copy", .CUT = "ui_cut", .PASTE = "ui_paste", .SELECT_ALL = "ui_text_select_all",
+    .HOME = "ui_home", .END = "ui_end", .COPY = "ui_copy", .CUT = "ui_cut", .PASTE = "ui_paste", .SELECT_ALL = "ui_text_select_all", .DUPLICATE = "ui_duplicate",
 }
 
 // ------------------------------------------------------------------------------------------------------------------------

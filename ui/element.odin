@@ -319,6 +319,7 @@ Action :: enum u8 {
     CUT,
     PASTE,
     SELECT_ALL,
+    DUPLICATE,      // ui_duplicate: Ctrl + D: a copy of what is selected, put right after it (the timeline)
 }
 Actions :: bit_set[Action; u32]
 

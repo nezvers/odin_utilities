@@ -128,6 +128,7 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if rl.IsKeyPressed(.X) { input.actions += {.CUT} }
         if rl.IsKeyPressed(.V) { input.actions += {.PASTE} }
         if rl.IsKeyPressed(.A) { input.actions += {.SELECT_ALL} }
+        if rl.IsKeyPressed(.D) { input.actions += {.DUPLICATE} }
     }
     return input
 }
