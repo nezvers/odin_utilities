@@ -168,12 +168,12 @@ Nothing here depends on one company: the relay is one candidate path among other
   replaced, `LinkConfig.derp_no_failover` turns it off for the list too.
 - **Behind a proxy.** The relay connection (and `derp map` / `diagnose`) goes through `HTTPS_PROXY` / `https_proxy` / `ALL_PROXY` (`NO_PROXY` respected); the scheme of the URL
   says which kind (user name and password may be percent encoded, `%5C` = backslash), `proxy.odin`:
-  - `http://[user:password@]host[:3128]`: CONNECT, Basic with the first request. When the proxy asks for **NTLM** or **Negotiate** instead: with `DOMAIN\user:password` in the URL
+  - `http://[user:password@]host[:3128]`: CONNECT, Basic with the first request. When the proxy asks for **NTLM** instead: with `DOMAIN\user:password` in the URL
     NTLMv2 is done by hand on every platform (`proxy_ntlm.odin`, MD4 included; checked against the MS-NLMP example and a fake proxy that verifies the response); **on Windows
-    without credentials in the URL** the login of the user goes through SSPI (`proxy_sspi_windows.odin`: Negotiate = Kerberos with NTLM as the fallback, the service name is
-    `HTTP/<proxy host>`; tested against this computer's accounts through `AcceptSecurityContext`, NTLM only, a real Kerberos domain was not available). Kerberos needs Windows:
-    no GSSAPI is used elsewhere, there the message asks for `DOMAIN\user:password`. The login runs on one connection (the 407 bodies are read and dropped); a proxy that closes it
-    after each 407 cannot be used for NTLM (the message says so).
+    without credentials in the URL** the login of the user goes through SSPI (`proxy_sspi_windows.odin`, the NTLM package; tested against this computer's accounts through
+    `AcceptSecurityContext`); elsewhere the message asks for `DOMAIN\user:password`. **Kerberos (the Negotiate scheme) is not supported**: a proxy that offers Negotiate and NTLM gets
+    NTLM, one that offers only Negotiate is told so in the message (it has to offer NTLM or Basic). The login runs on one connection (the 407 bodies are read and dropped); a proxy
+    that closes it after each 407 cannot be used for NTLM (the message says so).
   - `https://[user:password@]host[:443]`: the same CONNECT inside TLS to the proxy, its certificate checked like a relay's (`P2P_CA_FILE` for a company authority; the name must be
     a name, not an address). TLS goes inside TLS through a loopback pair and a thread (`proxy_tunnel.odin`): callers see an ordinary socket. Verified against a real TLS server
     (a Python proxy with its own authority): `derp diagnose` reached 17 relays through it, `chat selftest --derp-only` passed (200 messages over 20% loss), and it is refused
@@ -255,7 +255,7 @@ CertificateVerify signature (ECDSA P-256 / P-384, RSA-PSS, Ed25519) that it hold
 
 ## Tests
 ```
-odin test p2p -strict-style -vet                 # 64 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
+odin test p2p -strict-style -vet                 # 65 tests: codes, STUN/TURN/PCP/NAT-PMP/UPnP parsing against independent values and fake routers,
                                                  # 36 NAT pairs, NAT measurement, relay and renewal, IPv6, loss, failure timeouts
 odin run p2p/tool/chat -- selftest [--upnp]      # both ends in one process, real STUN servers, real LAN addresses, 20% loss
 odin run p2p/tool/chat -- host Ann               # computer 1 (flags: --upnp --turn host:port user pass --relay-only --no-ipv6 --find-relay --wireguard)

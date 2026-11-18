@@ -3,9 +3,8 @@ package p2p
 
 foreign import p2p_secur32 "system:secur32.lib"
 
-// Windows login for a proxy that asks for "Negotiate" (Kerberos, falling back to NTLM) or "NTLM": SSPI does it with the credentials of the
-// user who is logged in, so nothing is written in the proxy URL. The proxy is addressed by the service name HTTP/<host> (Kerberos needs the real
-// name of the proxy, an address can only do NTLM).
+// Windows login for a proxy that asks for "NTLM": SSPI does it with the credentials of the user who is logged in, so nothing is written in the
+// proxy URL. Only the NTLM package is used: Kerberos (Negotiate) is not supported.
 
 @(private = "file")
 SecHandle :: struct {
@@ -56,7 +55,7 @@ SspiState :: struct {
 // SSPI is there on Windows.
 SSPI_AVAILABLE :: true
 
-// A client of the package ("Negotiate" or "NTLM") for the proxy `host`, using the login of the current user.
+// A client of the package ("NTLM") for the proxy `host` (NTLM does not use the name), using the login of the current user.
 @(private)
 SspiOpen :: proc(package_name: string, host: string) -> (state: ^SspiState, ok: bool) {
     state = new(SspiState)
@@ -147,7 +146,7 @@ SspiServer :: struct {
 @(private)
 SspiServerOpen :: proc(server: ^SspiServer) -> bool {
     name: [16]u16
-    for c, i in ([?]u16{'N', 'e', 'g', 'o', 't', 'i', 'a', 't', 'e'}) {
+    for c, i in ([?]u16{'N', 'T', 'L', 'M'}) {
         name[i] = c
     }
     expiry: i64
