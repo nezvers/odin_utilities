@@ -1,0 +1,125 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run chat host",
+            "request": "launch",
+            "preLaunchTask": "Build Chat",
+            "args": ["host", "alice"],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_chat.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_chat.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_chat.bin"
+            }
+        },
+        {
+            "name": "Run chat join",
+            "request": "launch",
+            "preLaunchTask": "Build Chat",
+            "args": ["join", "bob"],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_chat.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_chat.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_chat.bin"
+            }
+        },
+        {
+            "name": "Run chat selftest",
+            "request": "launch",
+            "preLaunchTask": "Build Chat",
+            "args": ["selftest"],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_chat.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_chat.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_chat.bin"
+            }
+        },
+        {
+            "name": "Run derp diagnose",
+            "request": "launch",
+            "preLaunchTask": "Build Derp",
+            "args": ["diagnose"],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_derp.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_derp.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_derp.bin"
+            }
+        },
+        {
+            "name": "Run multi (3 instances)",
+            "request": "launch",
+            "preLaunchTask": "Build Multi",
+            "args": ["3"],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_multi.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_multi.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_multi.bin"
+            }
+        },
+        {
+            "name": "Debug Tests",
+            "request": "launch",
+            "preLaunchTask": "Build Tests",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_test.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_test.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_test.bin"
+            }
+        }
+    ]
+}

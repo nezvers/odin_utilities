@@ -13,7 +13,14 @@ Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git
                        demo_common_test.odin plays the scripts headless
         demo_raylib/main.odin   one call: kit_raylib.Run("<lib>", demo_common.demos[:])
         demo_karl2d/main.odin   one call: kit_karl2d.Run("<lib>", demo_common.demos[:])
+        .vscode/       launch.json, tasks.json, settings.json: REQUIRED, see below
 ```
+- **Every library has a `.vscode/` folder** (`launch.json`, `tasks.json`, `settings.json` with `"project_name": "demo"`; the executables are git ignored), so that opening the library folder in VS Code runs and debugs what it has. Copy
+  `templates/library/.vscode` and keep what applies: `Run Debug` / `Run Release` for `demo_raylib`, `Run Debug Karl2D` / `Run Release Karl2D` for `demo_karl2d` (a library with only one of them keeps only those),
+  one `Build <Tool>` task and `Run <tool> (...)` configurations with the usual arguments for every program in `tool/<name>` (see `reports`, `ai_messaging`, `p2p`), and `Debug Tests` (a task that builds the tests with
+  `odin build . -build-mode:test -debug -out:${config:project_name}_test.exe` and a configuration that runs that executable under the debugger, so breakpoints work inside tests) plus the tasks `Test` and `Check`:
+  all libraries without demos have at least `Debug Tests`. Tasks run in the library folder (`cwd` = `${workspaceFolder}`), build with `-strict-style -vet`, and have the `.bin` variants for Linux and macOS like the others.
+  A new library, a new demo or a new tool is not finished until its `.vscode` runs it (try the task once).
 - Every library keeps its raylib demo in `demo_raylib/` (package `demo_raylib`) and its karl2d demo in `demo_karl2d/`, both thin. VS Code tasks build with `-out:${config:project_name}.exe` (`project_name` = `demo`).
 - A demo that needs something the kit does not have (3D, a framework specific draw proc) puts the framework part in an extra file of `demo_raylib/` / `demo_karl2d/` and hooks it into demo_common (see fps_controller: `SceneDrawer`). The Karl2D 3D demo needs the custom fork, said in that README.
 - A library that draws (tilemap, box2d_odin debug draw) also gets a `kit/` glue package (`tilemap/kit`, `box2d_odin/kit`: package `<lib>_kit`) that draws through `kit.Context`, so its demos stay in demo_common. Glue that is only for one framework (input, scene loaders, mic_meter) is reached from demo_common through an adapter table or the demo lives in `demo_<framework>/`.

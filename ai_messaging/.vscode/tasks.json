@@ -1,0 +1,55 @@
+{
+    "version": "2.0.0",
+    "command": "",
+    "args": [],
+    "tasks": [
+        {
+            "label": "Build Amsg",
+            "type": "shell",
+            "command": "odin build tool/amsg -strict-style -vet -out:${config:project_name}_amsg.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build tool/amsg -strict-style -vet -out:${config:project_name}_amsg.bin -debug"
+            },
+            "osx": {
+                "command": "odin build tool/amsg -strict-style -vet -out:${config:project_name}_amsg.bin -debug"
+            }
+        },
+        {
+            "label": "Build Logview",
+            "type": "shell",
+            "command": "odin build tool/logview -strict-style -vet -out:${config:project_name}_logview.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build tool/logview -strict-style -vet -out:${config:project_name}_logview.bin -debug"
+            },
+            "osx": {
+                "command": "odin build tool/logview -strict-style -vet -out:${config:project_name}_logview.bin -debug"
+            }
+        },
+        {
+            "label": "Build Tests",
+            "type": "shell",
+            "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            },
+            "osx": {
+                "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            }
+        },
+        {
+            "label": "Test",
+            "type": "shell",
+            "command": "odin test . -strict-style -vet",
+            "group": "test"
+        },
+        {
+            "label": "Check",
+            "type": "shell",
+            "command": "odin check . -no-entry-point -strict-style -vet",
+            "group": "test"
+        }
+    ]
+}

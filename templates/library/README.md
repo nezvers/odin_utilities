@@ -13,7 +13,8 @@ The structure is the same for every library of odin_utilities, so any of them is
 ├── demo_common/              the demos, written once against demo_kit: one file per demo, demos.odin lists them,
 │                             demo_common_test.odin plays their scripts headless
 ├── demo_raylib/main.odin     one call: kit_raylib.Run("<lib>", demo_common.demos[:])
-└── demo_karl2d/main.odin     one call: kit_karl2d.Run("<lib>", demo_common.demos[:])
+├── demo_karl2d/main.odin     one call: kit_karl2d.Run("<lib>", demo_common.demos[:])
+└── .vscode/                  launch.json, tasks.json, settings.json: run and debug the demos (raylib, Karl2D), the tools (tool/<name>) and the tests (Debug Tests)
 ```
 
 ## Rules

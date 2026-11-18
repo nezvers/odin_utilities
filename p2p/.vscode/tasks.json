@@ -1,0 +1,67 @@
+{
+    "version": "2.0.0",
+    "command": "",
+    "args": [],
+    "tasks": [
+        {
+            "label": "Build Chat",
+            "type": "shell",
+            "command": "odin build tool/chat -strict-style -vet -out:${config:project_name}_chat.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build tool/chat -strict-style -vet -out:${config:project_name}_chat.bin -debug"
+            },
+            "osx": {
+                "command": "odin build tool/chat -strict-style -vet -out:${config:project_name}_chat.bin -debug"
+            }
+        },
+        {
+            "label": "Build Derp",
+            "type": "shell",
+            "command": "odin build tool/derp -strict-style -vet -out:${config:project_name}_derp.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build tool/derp -strict-style -vet -out:${config:project_name}_derp.bin -debug"
+            },
+            "osx": {
+                "command": "odin build tool/derp -strict-style -vet -out:${config:project_name}_derp.bin -debug"
+            }
+        },
+        {
+            "label": "Build Multi",
+            "type": "shell",
+            "command": "odin build tool/multi -strict-style -vet -out:${config:project_name}_multi.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build tool/multi -strict-style -vet -out:${config:project_name}_multi.bin -debug"
+            },
+            "osx": {
+                "command": "odin build tool/multi -strict-style -vet -out:${config:project_name}_multi.bin -debug"
+            }
+        },
+        {
+            "label": "Build Tests",
+            "type": "shell",
+            "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            },
+            "osx": {
+                "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            }
+        },
+        {
+            "label": "Test",
+            "type": "shell",
+            "command": "odin test . -strict-style -vet",
+            "group": "test"
+        },
+        {
+            "label": "Check",
+            "type": "shell",
+            "command": "odin check . -no-entry-point -strict-style -vet",
+            "group": "test"
+        }
+    ]
+}
