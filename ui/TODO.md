@@ -27,7 +27,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [ ] Timeline: automation lanes (keys on a line), a vertical zoom of the tracks, duplicate (a copy right after the clip)
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot
 - [x] Inspector panel (`UiInspector`): element tree of the last frame, buffer usage, measure cache, picking by the pointer; demo with a screenshot
-- [ ] Inspector: the layout of the selected element (sizing, padding, gap, floating), the draw commands of a frame as a list, a filter by name, collapsing of the tree
+- [x] Inspector: the layout details of the selected element, a filter by name, text or kind, a selection that follows its element
+- [ ] Inspector: the draw commands of a frame as a list, collapsing of the tree, a frame history (the cost of the last frames as a plot)
 - [x] Table: sideways scrolling (wheel with Shift, bar, header goes along) and a last column that fills the room
 - [ ] Table: reordering columns by dragging a header, double click on an edge to fit the column, keys inside of a row (cells that are widgets)
 - [x] Tree (`Tree`, `UiTree`): fixed storage model, visible rows flattened, arrows, keys, lazy loading through `view.toggled`; demo with a screenshot

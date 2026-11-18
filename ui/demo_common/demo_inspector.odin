@@ -33,7 +33,7 @@ init :: proc(ctx: ^kit.Context) {
 draw :: proc(ctx: ^kit.Context) {
     ui_demo_begin(&state.app, ctx)
     c: ^ui.Context = &state.app.ctx
-    if ui.UiPanel(c, "demo", {size = {ui.Fixed(780), ui.Fixed(420)}, direction = .LEFT_TO_RIGHT, padding = ui.PaddingAll(10), gap = 10}) {
+    if ui.UiPanel(c, "demo", {size = {ui.Fixed(780), ui.Fixed(560)}, direction = .LEFT_TO_RIGHT, padding = ui.PaddingAll(10), gap = 10}) {
         if ui.UiPanel(c, "app", {size = {ui.Fixed(240), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(10), gap = 8}) {
             ui.UiToggle(c, "Mute", &state.mute)
             ui.UiSlider(c, "Volume", &state.volume, 0, 1, {ui.Fixed(200), {}})

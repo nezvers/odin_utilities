@@ -2595,6 +2595,33 @@ test_the_inspector_lists_the_elements_of_the_last_frame_without_its_own_and_pick
     selected: int = ctx.inspector.list.selected
     testing.expect(t, selected != VIRTUAL_NONE && InspectorRows(ctx)[selected].id == UiIdPath("Target"), "the button is selected in the tree")
     testing.expect(t, ctx.inspector.list.reveal || ctx.inspector.list.selected >= 0)
+    // what its layout was told: a fixed width of 100 and a fixed height of 28, and the size it got
+    detail, found := UiInspectorDetail(ctx)
+    testing.expect(t, found)
+    testing.expect(t, detail.layout.size.width.kind == .FIXED && detail.layout.size.width.min == 100 && detail.layout.size.height.kind == .FIXED && detail.layout.size.height.min == 28)
+    testing.expect(t, detail.size == Vec2{100, 28} && !detail.floating.capture && !detail.absolute.enabled)
+    // a filter keeps the rows that match (the selected element stays, wherever it is) and the selection follows its element
+    filter: string = "targ"
+    copy(ctx.inspector.filter[:], filter)
+    ctx.inspector.filter_length = len(filter)
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    testing.expect_value(t, ctx.inspector.row_count, 1)
+    testing.expect(t, ctx.inspector.list.selected == 0 && InspectorRows(ctx)[0].id == UiIdPath("Target"))
+    ctx.inspector.filter_length = 0
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    testing.expect(t, ctx.inspector.row_count > 1)
+    selected = ctx.inspector.list.selected
+    testing.expect(t, selected != VIRTUAL_NONE && InspectorRows(ctx)[selected].id == UiIdPath("Target"), "the same element is selected when the rows change")
+    // the kind of an element can be filtered by too
+    kind_filter: string = "button"
+    copy(ctx.inspector.filter[:], kind_filter)
+    ctx.inspector.filter_length = len(kind_filter)
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    testing.expect_value(t, ctx.inspector.row_count, 1)
+    ctx.inspector.filter_length = 0
     // the texts come in when asked for
     ctx.inspector.show_text = true
     inspectorFrame(ctx, &style, pointerAt({-10, -10}))
@@ -2603,6 +2630,8 @@ test_the_inspector_lists_the_elements_of_the_last_frame_without_its_own_and_pick
         if row.is_text { texts += 1 }
     }
     testing.expect(t, texts > 0)
+    selected = ctx.inspector.list.selected
+    testing.expect(t, selected != VIRTUAL_NONE && InspectorRows(ctx)[selected].id == UiIdPath("Target"), "and the selection stays on its element")
     // a frame without the inspector takes no snapshot
     UiBegin(ctx, pointerAt({-10, -10}), 1.0 / 60, {800, 600}, &style)
     UiButton(ctx, "Only")
