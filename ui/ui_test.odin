@@ -2613,3 +2613,93 @@ test_the_inspector_lists_the_elements_of_the_last_frame_without_its_own_and_pick
     UiEnd(ctx)
     testing.expect_value(t, len(InspectorRows(ctx)), previous)
 }
+
+@(private = "file")
+treeFrame :: proc(ctx: ^Context, style: ^Style, tree: ^Tree, view: ^TreeView, input: Input) {
+    UiBegin(ctx, input, 1.0 / 60, {800, 600}, style)
+    UiTree(ctx, "Files", tree, view, {Fixed(200), Fixed(200)}, 20)
+    UiEnd(ctx)
+    UiRender(ctx)
+}
+
+@(private = "file")
+treeClick :: proc(ctx: ^Context, style: ^Style, tree: ^Tree, view: ^TreeView, at: Vec2) {
+    treeFrame(ctx, style, tree, view, pointerAt(at))
+    treeFrame(ctx, style, tree, view, pointerAt(at, true, true))
+    treeFrame(ctx, style, tree, view, pointerAt(at, false, false, true))
+}
+
+@(private = "file")
+treeAction :: proc(ctx: ^Context, style: ^Style, tree: ^Tree, view: ^TreeView, action: Action) {
+    input: Input = pointerAt({-10, -10})
+    input.actions = {action}
+    treeFrame(ctx, style, tree, view, input)
+}
+
+@(test)
+test_a_tree_widget_opens_with_the_arrow_selects_with_a_click_and_moves_with_left_and_right :: proc(t: ^testing.T) {
+    storage: ^InspectorStorage = new(InspectorStorage)
+    defer free(storage)
+    ctx: ^Context = new(Context)
+    defer free(ctx)
+    style: Style = makeStyle()
+    UiInit(ctx, storage, testMeasure)
+    tree: ^Tree = new(Tree)
+    defer free(tree)
+    TreeInit(tree)
+    view: ^TreeView = new(TreeView)
+    defer free(view)
+    TreeViewInit(view)
+    src, _ := TreeAdd(tree, {}, "src", branch = true)
+    main, _ := TreeAdd(tree, src, "main.odin")
+    util, _ := TreeAdd(tree, src, "util", branch = true)
+    TreeAdd(tree, util, "deep.odin")
+    TreeAdd(tree, {}, "README")
+    for _ in 0 ..< 3 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    testing.expect_value(t, ctx.problems, Problems{})
+    testing.expect_value(t, view.row_count, 2)
+
+    // the arrow of the first row (after the 4 pixels of indent, 16 wide): the node opens, the program is told
+    treeClick(ctx, &style, tree, view, {12, 10})
+    testing.expect_value(t, TreeGet(tree, src).expanded, true)
+    treeFrame(ctx, &style, tree, view, pointerAt({-10, -10}))
+    testing.expect_value(t, view.row_count, 4)                          // the rows are found at the start of the next frame
+    testing.expect_value(t, view.toggled, TreeHandle{})                 // told in the frame it happened
+
+    // a click on the name of the second row selects it, and does not open anything
+    treeClick(ctx, &style, tree, view, {120, 30})
+    testing.expect_value(t, view.selected, main)
+    testing.expect(t, view.changed || view.selected == main)
+    // left: a node without children goes to its parent; on an open node it closes it
+    treeAction(ctx, &style, tree, view, .LEFT)
+    testing.expect_value(t, view.selected, src)
+    treeAction(ctx, &style, tree, view, .LEFT)
+    testing.expect_value(t, TreeGet(tree, src).expanded, false)
+    testing.expect_value(t, view.toggled, src)
+    testing.expect_value(t, view.row_count, 2)
+    // right: a closed node opens, an open one goes to its first child
+    treeAction(ctx, &style, tree, view, .RIGHT)
+    testing.expect_value(t, TreeGet(tree, src).expanded, true)
+    treeAction(ctx, &style, tree, view, .RIGHT)
+    testing.expect_value(t, view.selected, main)
+    // down and up through the visible rows
+    treeAction(ctx, &style, tree, view, .DOWN)
+    testing.expect_value(t, view.selected, util)
+    // a node that is closed while it holds the selection hands it to its visible parent
+    TreeExpand(tree, util)
+    treeAction(ctx, &style, tree, view, .DOWN)
+    deep: TreeHandle = TreeGet(tree, util).first_child
+    testing.expect_value(t, view.selected, deep)
+    TreeExpand(tree, src, false)
+    treeFrame(ctx, &style, tree, view, pointerAt({-10, -10}))
+    testing.expect_value(t, view.selected, src)
+    // a double click on a branch activates and toggles it (after the time of a double click since the last press)
+    for _ in 0 ..< 30 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    treeFrame(ctx, &style, tree, view, pointerAt({120, 10}))
+    treeFrame(ctx, &style, tree, view, pointerAt({120, 10}, true, true))
+    treeFrame(ctx, &style, tree, view, pointerAt({120, 10}, false, false, true))
+    treeFrame(ctx, &style, tree, view, pointerAt({120, 10}, true, true))
+    testing.expect(t, view.activated)
+    testing.expect_value(t, view.toggled, src)
+    testing.expect_value(t, TreeGet(tree, src).expanded, true)
+}

@@ -159,6 +159,13 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
 and `UiMeter` (a level and a peak mark that the program holds and lets fall, standing or lying). Each is one element with a style kind (`KNOB`, `FADER`, `METER`): value 0..1, the real number, its text, where the default is. Nothing allocates;
 the scroll areas have a draggable scrollbar (the thumb keeps its place under the pointer, a press on the track centers it).
 
+## Tree
+`tree.odin`: a tree of rows that open and close (a file browser, an outline, presets in folders). The model is the program's, in fixed storage with checked handles (`Tree`, `TreeAdd` as the last child of a parent, `TreeRemove` with the subtree,
+`TreeExpand`, `TreeReveal`, a node with `branch = true` shows an arrow before it has children). `UiTree(&ctx, "Files", &tree, &view, size, row_height)` shows the visible nodes (the children of open nodes) as a virtual list (only the rows in view are
+declared): the arrow opens and closes, a click on a name selects, a double click or Enter activates (a branch opens too), right opens a closed branch or goes to its first child, left closes an open branch or goes to the parent, up, down, page up, page down, Home and End move.
+`TreeView` tells what happened in the frame: `changed`, `activated`, `toggled` (the node that was opened or closed: a program that reads a folder when it is opened adds the children then, see the demo), and holds the selection (`selected`).
+`TreeVisible` flattens the tree into rows for a program that wants its own row look (with `UiVirtual`). Demo: `demo_common/demo_tree.odin`.
+
 ## Inspector
 `UiInspector(&ctx, "Inspector", size)` (`inspector.odin`) is a panel for looking at the ui while it runs: the tree of the elements of the last frame (kind, name, indented by depth, `Text` adds the text elements), what the buffers cost against the sizes of the
 `Storage` (elements with their peak, commands, text bytes, lines, roots, states, hits), the measure cache and the frame time, and picking: with `Pick` on (or `UiInspectorPick(&ctx)` from a key) a press outside of the panel does not click what is under the pointer, it selects

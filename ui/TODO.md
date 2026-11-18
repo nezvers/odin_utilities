@@ -26,7 +26,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Inspector panel (`UiInspector`): element tree of the last frame, buffer usage, measure cache, picking by the pointer; demo with a screenshot
 - [ ] Inspector: the layout of the selected element (sizing, padding, gap, floating), the draw commands of a frame as a list, a filter by name, collapsing of the tree
 - [ ] Table: horizontal scrolling when the columns are wider than the table, a column that fills the room, reordering columns by dragging a header, double click on an edge to fit the column, keys inside of a row (cells that are widgets)
-- [ ] Tree view: a helper that flattens an open or closed tree into rows (indent, arrow, keys left and right to close and open)
+- [x] Tree (`Tree`, `UiTree`): fixed storage model, visible rows flattened, arrows, keys, lazy loading through `view.toggled`; demo with a screenshot
+- [ ] Tree: drag and drop of nodes, rename in place, icons or custom row content, several selected nodes, a filter that opens the parents of what matches
 - [ ] Text area: rows are found from the whole text every frame (measures per word): keep them between frames while the text and the width do not change
 - [x] Text measure cache (`measure.odin`): a fixed table by hash of text and size, cleared by a new font or UI scale
 - [x] UI scale factor (`Painter.scale`): layout and styles in logical units, the glue scales the drawing and divides the pointer; demo `scale`
