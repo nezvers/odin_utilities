@@ -23,6 +23,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Timeline (`UiTimeline`): tracks and clips model with rules and events, ruler, playhead, move across tracks, resize, multi selection, zoom around the pointer, lock; demo with a screenshot
 - [ ] Timeline: box selection, a loop range on the ruler, markers, automation lanes (keys on a line), a vertical zoom of the tracks, copy and paste of clips
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot
+- [x] Inspector panel (`UiInspector`): element tree of the last frame, buffer usage, measure cache, picking by the pointer; demo with a screenshot
+- [ ] Inspector: the layout of the selected element (sizing, padding, gap, floating), the draw commands of a frame as a list, a filter by name, collapsing of the tree
 - [ ] Table: horizontal scrolling when the columns are wider than the table, a column that fills the room, reordering columns by dragging a header, double click on an edge to fit the column, keys inside of a row (cells that are widgets)
 - [ ] Tree view: a helper that flattens an open or closed tree into rows (indent, arrow, keys left and right to close and open)
 - [ ] Text area: rows are found from the whole text every frame (measures per word): keep them between frames while the text and the width do not change

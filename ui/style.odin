@@ -49,6 +49,7 @@ StyleKind :: enum u8 {
     BULLET,             // the dot of a bullet text
     SEPARATOR_TEXT,     // a line with a name in it
     BACKDROP,           // what dims the screen behind a modal dialog
+    HIGHLIGHT,          // a rectangle that marks something (the inspector's pick): color, the style draws an outline and a faint fill
     TIMELINE,           // a timeline: draw the background, then call TimelineDraw(ctx, info) (lanes, clips, ruler, playhead); user: the frame
     TEXT_AREA,          // the box of a text of several lines: name (shown when it is empty and not focused), text, FOCUSED flag; its lines, selection and caret are children
     TEXT_SELECTION,     // a rectangle of the selected text of a text area

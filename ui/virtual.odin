@@ -23,6 +23,7 @@ VirtualList :: struct {
     selected: int,              // the selected row, VIRTUAL_NONE for none (the zero value is the first row: start with `{selected = VIRTUAL_NONE}`)
     first: int,                 // the rows to declare: first ..< last (set by UiVirtual)
     last: int,
+    reveal: bool,               // set by the program to scroll the selected row into view in the next frame (the selection that the person changes is always revealed)
     changed: bool,              // the selection changed in this frame by the person
     activated: bool,            // a double click or Enter on the selected row in this frame
     hover: int,                 // the row under the pointer, VIRTUAL_NONE for none
@@ -82,7 +83,8 @@ virtualOpen :: proc(ctx: ^Context, id: Id, list: ^VirtualList, count: int, row_h
         if .ACCEPT in actions && list.selected != VIRTUAL_NONE { list.activated = true }
     }
     // the selected row stays in view when the selection moved (the wheel and the bar can take it out again)
-    if list.changed && list.selected != VIRTUAL_NONE && view.w > 0 {
+    if (list.changed || list.reveal) && list.selected != VIRTUAL_NONE && view.w > 0 {
+        list.reveal = false
         top: f32 = f32(list.selected) * height + state.scroll.y
         if top < 0 {
             state.scroll.y -= top

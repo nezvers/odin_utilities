@@ -159,6 +159,13 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
 and `UiMeter` (a level and a peak mark that the program holds and lets fall, standing or lying). Each is one element with a style kind (`KNOB`, `FADER`, `METER`): value 0..1, the real number, its text, where the default is. Nothing allocates;
 the scroll areas have a draggable scrollbar (the thumb keeps its place under the pointer, a press on the track centers it).
 
+## Inspector
+`UiInspector(&ctx, "Inspector", size)` (`inspector.odin`) is a panel for looking at the ui while it runs: the tree of the elements of the last frame (kind, name, indented by depth, `Text` adds the text elements), what the buffers cost against the sizes of the
+`Storage` (elements with their peak, commands, text bytes, lines, roots, states, hits), the measure cache and the frame time, and picking: with `Pick` on (or `UiInspectorPick(&ctx)` from a key) a press outside of the panel does not click what is under the pointer, it selects
+that element in the tree (marked on the screen with a `HIGHLIGHT` rectangle, the hovered one orange, the selected one blue); the details show its id, rect and hit kinds. The elements are copied at the end of a frame that declared the panel into a fixed table
+(`INSPECTOR_ROWS`, 1024), so a frame without it costs nothing, and its own elements are left out. `InspectorRows`, `UiInspectorSelected` give the data to a program. Demo: `demo_common/demo_inspector.odin`.
+A `Context` is big now (about 300 KB: the tables of the measure cache, the inspector, the text area rows): make it a global or allocate it, as the `Storage`.
+
 ## Lists and tables of many rows
 `virtual.odin`: only the rows in view are declared, the rest of the height is a spacer, so a hundred thousand rows cost the rows on screen. The program owns the data and the selection (`VirtualList`, `selected` is `VIRTUAL_NONE` for none).
 `if ui.UiVirtual(&ctx, "Files", &list, len(files), 24, size) { for row in list.first ..< list.last { if ui.UiVirtualRow(&ctx, &list, row) { ...widgets... } } }`: a click selects the row under the pointer (`list.changed`), a double click or

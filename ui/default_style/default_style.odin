@@ -148,6 +148,7 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.SEPARATOR_TEXT] = DrawSeparatorText
     style.procs[.BACKDROP] = DrawBackdrop
     style.procs[.TEXT_AREA] = DrawTextArea
+    style.procs[.HIGHLIGHT] = DrawHighlight
     style.procs[.TEXT_SELECTION] = DrawTextSelection
     style.procs[.TEXT_CARET] = DrawTextCaret
     GraphStyleInstall(&style)
@@ -636,4 +637,15 @@ DrawTextCaret :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     if math.mod(ctx.time, 1.0) < 0.5 {
         painter.fill_rect(painter, info.rect, painter.theme.text)
     }
+}
+
+DrawHighlight :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    color: ui.Color = info.color
+    rect: ui.Rect = info.rect
+    painter.fill_rect(painter, rect, {color.r, color.g, color.b, 50})
+    painter.fill_rect(painter, {rect.x, rect.y, rect.z, 2}, color)
+    painter.fill_rect(painter, {rect.x, rect.y + rect.w - 2, rect.z, 2}, color)
+    painter.fill_rect(painter, {rect.x, rect.y, 2, rect.w}, color)
+    painter.fill_rect(painter, {rect.x + rect.z - 2, rect.y, 2, rect.w}, color)
 }

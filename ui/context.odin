@@ -76,6 +76,7 @@ Context :: struct {
     graph_minimaps: [UI_MAX_GRAPHS]GraphMinimapData,
     graph_minimap_count: int,
     clipboard: Clipboard,
+    inspector: Inspector,                           // the snapshot of the inspector panel (inspector.odin)
     timeline_frames: [UI_MAX_TIMELINES]TimelineFrame,   // the timelines of this frame (timeline_widgets.odin)
     timeline_frame_count: int,
     measure_cache: MeasureCache,                    // sizes of texts already measured (measure.odin)
@@ -163,6 +164,7 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
     ctx.screen = screen
     ctx.style = style
     ctx.input = input
+    inspectorFilterInput(ctx)
     ctx.element_count = 0
     ctx.children_count = 0
     ctx.child_buffer_count = 0
@@ -234,6 +236,7 @@ UiEnd :: proc(ctx: ^Context) {
         ctx.command_count = 0
     }
     graphAfterLayout(ctx)
+    inspectorCapture(ctx)
     stateCollect(ctx)
     focusMemoryRecord(ctx)
     dragEnd(ctx)

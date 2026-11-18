@@ -780,11 +780,12 @@ test_keyboard_focus_scrolls_the_container_to_show_it :: proc(t: ^testing.T) {
 test_every_widget_leaves_the_containers_balanced :: proc(t: ^testing.T) {
     storage: ^Storage(512, 512, 128, 4096) = new(Storage(512, 512, 128, 4096))
     defer free(storage)
-    big: Context
+    big: ^Context = new(Context)
+    defer free(big)
     style: Style = makeStyle()
-    UiInit(&big, storage, testMeasure)
+    UiInit(big, storage, testMeasure)
     seen = {}
-    c: ^Context = &big
+    c: ^Context = big
     @(static) a: bool
     @(static) number: int
     @(static) real: f32
@@ -2540,4 +2541,75 @@ test_a_table_sorts_by_a_click_on_a_header_and_resizes_a_column_by_its_edge :: pr
     testing.expect(t, count == 4)
     testing.expect(t, abs(labels[0].y - labels[1].y) < 0.5 && labels[1].x - labels[0].x > 20, "two cells of one row: one line, one after the other")
     testing.expect(t, labels[2].y - labels[0].y > 15 && labels[2].y - labels[0].y < 25, "the next row is one row height below")
+}
+
+@(private = "file")
+InspectorStorage :: Storage(512, 512, 128, 8192)
+
+@(private = "file")
+inspectorFrame :: proc(ctx: ^Context, style: ^Style, input: Input) {
+    UiBegin(ctx, input, 1.0 / 60, {800, 600}, style)
+    if ElementOpen(ctx, {layout = {direction = .LEFT_TO_RIGHT}}) {
+        UiInspector(ctx, "Inspector", {Fixed(300), Fixed(300)})
+        UiButton(ctx, "Target", {Fixed(100), Fixed(28)})
+        UiLabel(ctx, "a note")
+        ElementClose(ctx)
+    }
+    UiEnd(ctx)
+    UiRender(ctx)
+}
+
+@(test)
+test_the_inspector_lists_the_elements_of_the_last_frame_without_its_own_and_picks_by_the_pointer :: proc(t: ^testing.T) {
+    storage: ^InspectorStorage = new(InspectorStorage)
+    defer free(storage)
+    ctx: ^Context = new(Context)
+    defer free(ctx)
+    style: Style = makeStyle()
+    UiInit(ctx, storage, testMeasure)
+    seen = {}
+    for _ in 0 ..< 4 { inspectorFrame(ctx, &style, pointerAt({-10, -10})) }
+    testing.expect_value(t, ctx.problems, Problems{})
+    rows: []InspectorRow = InspectorRows(ctx)
+    testing.expect(t, len(rows) > 0)
+    target: int = -1
+    for row, i in rows {
+        testing.expect(t, row.id != UiIdPath("Inspector"), "its own elements are not in the list")
+        testing.expect(t, !row.is_text, "texts are left out until asked for")
+        if row.id == UiIdPath("Target") { target = i }
+    }
+    testing.expect(t, target >= 0, "the button is in the list")
+    testing.expect_value(t, rows[target].kind, StyleKind.BUTTON)
+    testing.expect_value(t, rows[target].rect, Rect{300, 0, 100, 28})
+    testing.expect(t, rows[target].depth >= 1, "it is inside of the row that holds it")
+    testing.expect_value(t, inspectorRowAt(ctx, {350, 14}), target)
+    testing.expect_value(t, inspectorRowAt(ctx, {750, 500}), VIRTUAL_NONE)
+
+    // picking: the pointer inside of the panel picks nothing, outside a press selects what is under it and ends the picking
+    ctx.inspector.pick = true
+    inspectorFrame(ctx, &style, pointerAt({100, 100}, true, true))
+    testing.expect(t, ctx.inspector.pick, "a press on the panel is for the panel")
+    inspectorFrame(ctx, &style, pointerAt({350, 14}))
+    inspectorFrame(ctx, &style, pointerAt({350, 14}, true, true))
+    testing.expect(t, !ctx.inspector.pick)
+    selected: int = ctx.inspector.list.selected
+    testing.expect(t, selected != VIRTUAL_NONE && InspectorRows(ctx)[selected].id == UiIdPath("Target"), "the button is selected in the tree")
+    testing.expect(t, ctx.inspector.list.reveal || ctx.inspector.list.selected >= 0)
+    // the texts come in when asked for
+    ctx.inspector.show_text = true
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    texts: int
+    for row in InspectorRows(ctx) {
+        if row.is_text { texts += 1 }
+    }
+    testing.expect(t, texts > 0)
+    // a frame without the inspector takes no snapshot
+    UiBegin(ctx, pointerAt({-10, -10}), 1.0 / 60, {800, 600}, &style)
+    UiButton(ctx, "Only")
+    UiEnd(ctx)
+    previous: int = len(InspectorRows(ctx))
+    UiBegin(ctx, pointerAt({-10, -10}), 1.0 / 60, {800, 600}, &style)
+    UiButton(ctx, "Only")
+    UiEnd(ctx)
+    testing.expect_value(t, len(InspectorRows(ctx)), previous)
 }
