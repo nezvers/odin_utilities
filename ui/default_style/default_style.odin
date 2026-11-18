@@ -342,6 +342,15 @@ DrawTextField :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
         TextLeft(painter, info.name, info.rect, info.font_size, padding, theme.text_dim)
         return
     }
+    // the selection under the text
+    if focused && info.anchor != info.cursor {
+        low: int = clamp(min(info.anchor, info.cursor), 0, len(info.text))
+        high: int = clamp(max(info.anchor, info.cursor), 0, len(info.text))
+        start: f32 = painter.measure_text(painter, info.text[:low], info.font_size).x
+        finish: f32 = painter.measure_text(painter, info.text[:high], info.font_size).x
+        highlight: ui.Color = {theme.accent.r, theme.accent.g, theme.accent.b, 130}
+        painter.fill_rect(painter, {info.rect.x + padding + start, info.rect.y + 4, finish - start, info.rect.w - 8}, highlight)
+    }
     TextLeft(painter, info.text, info.rect, info.font_size, padding, textColor(theme, info))
     // the caret blinks twice a second
     if focused && math.mod(ctx.time, 1.0) < 0.5 {

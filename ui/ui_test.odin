@@ -1870,3 +1870,138 @@ test_a_zoomed_graph_zooms_around_the_pointer_and_still_connects_and_drags :: pro
     coveredGraphFrame(harness, graph, &view, pointerAt(title + {40, 0}, false, false, true))
     testing.expect(t, abs(GraphNode(graph, right).position.x - (before + 40 / zoom)) < 0.5, "the node followed the pointer")
 }
+
+@(private = "file")
+fieldFrame :: proc(harness: ^Harness, input: Input, buffer: []u8, length: ^int) -> bool {
+    frame(harness, input)
+    changed, _ := UiTextField(&harness.ctx, "Field", buffer, length, {Fixed(200), Fixed(28)})
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return changed
+}
+
+@(private = "file")
+fieldText :: proc(buffer: []u8, length: int) -> string {
+    return string(buffer[:length])
+}
+
+@(test)
+test_a_text_field_selects_copies_cuts_and_pastes :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    buffer: [32]u8
+    length: int
+    // the field is focused by a click, then "hello world" is typed
+    for _ in 0 ..< 2 { fieldFrame(harness, pointerAt({20, 10}), buffer[:], &length) }
+    fieldFrame(harness, pointerAt({20, 10}, true, true), buffer[:], &length)
+    fieldFrame(harness, pointerAt({20, 10}, false, false, true), buffer[:], &length)
+    typing: Input = pointerAt({20, 10})
+    copy(typing.text[:], "hello world")
+    typing.text_count = 11
+    fieldFrame(harness, typing, buffer[:], &length)
+    testing.expect_value(t, fieldText(buffer[:], length), "hello world")
+
+    // shift + left: the selection grows from the cursor; ctrl + shift + left: by a word
+    shift_left: Input = pointerAt({20, 10})
+    shift_left.modifiers = {.SHIFT, .CTRL}
+    shift_left.keys = {.LEFT}
+    fieldFrame(harness, shift_left, buffer[:], &length)
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("Field"))
+    testing.expect_value(t, state.cursor, 6)                            // the start of "world"
+    testing.expect_value(t, state.anchor, 11)
+    // copy it, then type over it: the selection is replaced
+    copy_input: Input = pointerAt({20, 10})
+    copy_input.actions = {.COPY}
+    fieldFrame(harness, copy_input, buffer[:], &length)
+    replacement: Input = pointerAt({20, 10})
+    copy(replacement.text[:], "there")
+    replacement.text_count = 5
+    fieldFrame(harness, replacement, buffer[:], &length)
+    testing.expect_value(t, fieldText(buffer[:], length), "hello there")
+    // select all, cut: the field is empty, the clipboard has it
+    select_all: Input = pointerAt({20, 10})
+    select_all.actions = {.SELECT_ALL, .CUT}
+    fieldFrame(harness, select_all, buffer[:], &length)
+    testing.expect_value(t, length, 0)
+    clipboard: [32]u8
+    count: int = UiClipboardGet(&harness.ctx, clipboard[:])
+    testing.expect_value(t, string(clipboard[:count]), "hello there")
+    // paste twice
+    paste: Input = pointerAt({20, 10})
+    paste.actions = {.PASTE}
+    fieldFrame(harness, paste, buffer[:], &length)
+    fieldFrame(harness, paste, buffer[:], &length)
+    testing.expect_value(t, fieldText(buffer[:], length), "hello therehello there")
+    // the buffer is full at 32 bytes: a paste that does not fit is cut, never in the middle of a rune
+    for _ in 0 ..< 3 { fieldFrame(harness, paste, buffer[:], &length) }
+    testing.expect_value(t, length, 32)
+}
+
+@(test)
+test_a_text_field_moves_by_words_and_deletes_the_selection_with_the_keys :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    buffer: [32]u8
+    text: string = "one two  three"
+    copy(buffer[:], text)
+    length: int = len(text)
+    for _ in 0 ..< 2 { fieldFrame(harness, pointerAt({500, 10}), buffer[:], &length) }
+    // the focus comes with a press on the field
+    fieldFrame(harness, pointerAt({195, 10}, true, true), buffer[:], &length)
+    fieldFrame(harness, pointerAt({195, 10}, false, false, true), buffer[:], &length)
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("Field"))
+    testing.expect_value(t, state.cursor, length)
+    ctrl_left: Input = pointerAt({500, 10})
+    ctrl_left.modifiers = {.CTRL}
+    ctrl_left.keys = {.LEFT}
+    fieldFrame(harness, ctrl_left, buffer[:], &length)
+    testing.expect_value(t, state.cursor, 9)                            // before "three"
+    fieldFrame(harness, ctrl_left, buffer[:], &length)
+    testing.expect_value(t, state.cursor, 4)                            // before "two"
+    // ctrl + backspace: the word before the cursor
+    ctrl_backspace: Input = pointerAt({500, 10})
+    ctrl_backspace.modifiers = {.CTRL}
+    ctrl_backspace.keys = {.BACKSPACE}
+    fieldFrame(harness, ctrl_backspace, buffer[:], &length)
+    testing.expect_value(t, fieldText(buffer[:], length), "two  three")
+    // shift + end selects to the end, delete removes it
+    shift_end: Input = pointerAt({500, 10})
+    shift_end.modifiers = {.SHIFT}
+    shift_end.keys = {.END}
+    fieldFrame(harness, shift_end, buffer[:], &length)
+    testing.expect_value(t, state.anchor, 0)
+    testing.expect_value(t, state.cursor, length)
+    deleting: Input = pointerAt({500, 10})
+    deleting.keys = {.DELETE}
+    fieldFrame(harness, deleting, buffer[:], &length)
+    testing.expect_value(t, length, 0)
+}
+
+@(test)
+test_dragging_in_a_text_field_selects_and_a_double_click_takes_a_word :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    buffer: [32]u8
+    text: string = "alpha beta"
+    copy(buffer[:], text)
+    length: int = len(text)
+    for _ in 0 ..< 2 { fieldFrame(harness, pointerAt({100, 10}), buffer[:], &length) }
+    // the test font is half as wide as it is high (16 px: 8 per letter), the text starts after the padding
+    padding: f32 = DEFAULT_METRICS.padding.x
+    fieldFrame(harness, pointerAt({padding + 8 * 2, 10}, true, true), buffer[:], &length)
+    for x in 3 ..= 8 { fieldFrame(harness, pointerAt({padding + 8 * f32(x), 10}, true), buffer[:], &length) }
+    fieldFrame(harness, pointerAt({padding + 8 * 8, 10}, false, false, true), buffer[:], &length)
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("Field"))
+    testing.expect_value(t, state.anchor, 2)
+    testing.expect_value(t, state.cursor, 8)
+    // a second press within the double click time takes the word under the pointer ("beta" is at 6 .. 10)
+    fieldFrame(harness, pointerAt({padding + 8 * 7, 10}), buffer[:], &length)
+    fieldFrame(harness, pointerAt({padding + 8 * 7, 10}, true, true), buffer[:], &length)
+    fieldFrame(harness, pointerAt({padding + 8 * 7, 10}, false, false, true), buffer[:], &length)
+    fieldFrame(harness, pointerAt({padding + 8 * 7, 10}, true, true), buffer[:], &length)
+    testing.expect_value(t, state.anchor, 6)
+    testing.expect_value(t, state.cursor, 10)
+}

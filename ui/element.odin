@@ -315,8 +315,19 @@ Action :: enum u8 {
     PAGE_DOWN,
     HOME,           // ui_home, ui_end: the first and the last widget
     END,
+    COPY,           // ui_copy, ui_cut, ui_paste, ui_text_select_all: Ctrl + C, X, V, A (the command key on a Mac): the text field takes them
+    CUT,
+    PASTE,
+    SELECT_ALL,
 }
-Actions :: bit_set[Action; u16]
+Actions :: bit_set[Action; u32]
+
+// Keys that change what another key means: Shift extends a selection, Ctrl moves by a word
+Modifier :: enum u8 {
+    SHIFT,
+    CTRL,           // the command key on a Mac
+}
+Modifiers :: bit_set[Modifier; u8]
 
 INPUT_TEXT_CAPACITY :: 32
 
@@ -328,6 +339,7 @@ Input :: struct {
     mouse_released: bool,           // went up this frame
     wheel: Vec2,                    // scrolled lines this frame, up is positive
     keys: Keys,                     // pressed this frame (key repeat counts)
+    modifiers: Modifiers,           // held now
     actions: Actions,               // the default actions pressed this frame (key repeat counts for directions and pages)
     text: [INPUT_TEXT_CAPACITY]u8,  // typed this frame, UTF-8
     text_count: u8,
@@ -356,6 +368,7 @@ WidgetState :: struct {
     pending_adjust: int,            // steps asked by UiNavigate, taken by the widget in its next call
     editing: bool,                  // a text field that has the focus: it keeps left, right, home and end for the caret
     initialized: bool,              // the widget was declared before (a header that starts open sets its state once)
+    anchor: int,                    // a text field: the other end of the selection (the cursor is one end; the same as the cursor: nothing is selected)
     drag: Vec2,                     // where the pointer was in the last frame of a drag (a drag widget, a window title)
     press_time: f32,                // seconds the widget has been held (a button that repeats)
     anim: f32,                      // UiAnimate: a value that follows a target

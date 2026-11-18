@@ -486,8 +486,16 @@ UiTextField :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, siz
     length^ = clamp(length^, 0, len(buffer))
     state.cursor = clamp(state.cursor, 0, length^)
 
+    state.anchor = clamp(state.anchor, 0, length^)
     if interaction.hovered && ctx.input.mouse_pressed {
         ctx.focus = id
+        state.cursor = textFieldCursorAt(ctx, string(buffer[:length^]), ctx.input.mouse_position.x - state.rect.x - metrics.padding.x)
+        if .SHIFT not_in ctx.input.modifiers { state.anchor = state.cursor }       // shift keeps the old end: the selection grows to the pointer
+        if interaction.double_clicked {
+            state.anchor, state.cursor = textWordAt(string(buffer[:length^]), state.cursor)
+        }
+    } else if interaction.pressed && ctx.input.mouse_down && !ctx.input.mouse_pressed && ctx.focus == id {
+        // dragging with the button held selects from where it went down
         state.cursor = textFieldCursorAt(ctx, string(buffer[:length^]), ctx.input.mouse_position.x - state.rect.x - metrics.padding.x)
     }
     state.editing = ctx.focus == id
@@ -504,7 +512,7 @@ UiTextField :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, siz
         cursor = .TEXT,
         draw = {
             kind = .TEXT_FIELD, name = IdSplitName(name), text = string(buffer[:length^]),
-            cursor = state.cursor, font_size = metrics.font_size, flags = flags,
+            cursor = state.cursor, anchor = state.anchor, font_size = metrics.font_size, flags = flags,
         },
     })
     ElementClose(ctx)
@@ -529,51 +537,6 @@ textFieldCursorAt :: proc(ctx: ^Context, text: string, x: f32) -> int {
     return best
 }
 
-@(private)
-textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: ^int) -> (changed: bool, submitted: bool) {
-    input: ^Input = &ctx.input
-    // typed text goes in at the cursor
-    typed: int = int(input.text_count)
-    if typed > 0 && length^ + typed <= len(buffer) {
-        copy(buffer[state.cursor + typed:length^ + typed], buffer[state.cursor:length^])
-        copy(buffer[state.cursor:], input.text[:typed])
-        length^ += typed
-        state.cursor += typed
-        changed = true
-    }
-    text: string = string(buffer[:length^])
-    if .LEFT in input.keys && state.cursor > 0 {
-        _, width := utf8.decode_last_rune_in_string(text[:state.cursor])
-        state.cursor -= width
-    }
-    if .RIGHT in input.keys && state.cursor < length^ {
-        _, width := utf8.decode_rune_in_string(text[state.cursor:])
-        state.cursor += width
-    }
-    if .HOME in input.keys { state.cursor = 0 }
-    if .END in input.keys { state.cursor = length^ }
-    if .BACKSPACE in input.keys && state.cursor > 0 {
-        _, width := utf8.decode_last_rune_in_string(text[:state.cursor])
-        copy(buffer[state.cursor - width:], buffer[state.cursor:length^])
-        state.cursor -= width
-        length^ -= width
-        changed = true
-    }
-    if .DELETE in input.keys && state.cursor < length^ {
-        _, width := utf8.decode_rune_in_string(text[state.cursor:])
-        copy(buffer[state.cursor:], buffer[state.cursor + width:length^])
-        length^ -= width
-        changed = true
-    }
-    if .ENTER in input.keys {
-        submitted = true
-    }
-    if ctx.cancel_pending {
-        ctx.focus = 0                   // cancel leaves the field
-        ctx.cancel_pending = false
-    }
-    return
-}
 
 // A box that opens a list of options below it. `selected` is an index of `options`, true in the frame it changed.
 // The list is a floating element: it is above everything and closes with a click anywhere else or Escape.

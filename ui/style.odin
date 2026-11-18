@@ -96,6 +96,7 @@ DrawInfo :: struct {
     font_size: f32,
     align: TextAlign,
     cursor: int,            // text field: byte offset of the cursor
+    anchor: int,            // text field: the other end of the selection (the same as `cursor`: nothing is selected)
     tags: [DRAW_TAGS]Id,    // the tags that were pushed when the widget was declared, the innermost first (UiPushTag); DrawInfoHasTag
     values: []f32,          // plots: the numbers (they have to live until the frame is rendered)
     color: Color,           // swatches and colored text

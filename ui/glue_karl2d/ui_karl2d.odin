@@ -76,13 +76,16 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         mouse_pressed = karl2d.mouse_button_went_down(.Left),
         mouse_released = karl2d.mouse_button_went_up(.Left),
     }
+    ctrl: bool = karl2d.key_is_held(.Left_Control) || karl2d.key_is_held(.Right_Control) || karl2d.key_is_held(.Left_Super) || karl2d.key_is_held(.Right_Super)
+    if karl2d.key_is_held(.Left_Shift) || karl2d.key_is_held(.Right_Shift) { input.modifiers += {.SHIFT} }
+    if ctrl { input.modifiers += {.CTRL} }
     for event in karl2d.get_events() {
         #partial switch e in event {
         case karl2d.Event_Mouse_Wheel:
             input.wheel.y += e.delta
         case karl2d.Event_Typed_Rune:
             // printable characters only: a control character (backspace, enter) arrives as a key
-            if e.typed >= 32 && e.typed != 127 {
+            if e.typed >= 32 && e.typed != 127 && !ctrl {
                 encoded, width := encodeRune(e.typed)
                 if int(input.text_count) + width <= ui.INPUT_TEXT_CAPACITY {
                     for i in 0 ..< width {
@@ -101,6 +104,12 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if karl2d.key_went_down(keys[key], allow_repeat = true) { input.keys += {key} }
     }
     input.actions = actionsPoll()
+    if ctrl {
+        if karl2d.key_went_down(.C) { input.actions += {.COPY} }
+        if karl2d.key_went_down(.X) { input.actions += {.CUT} }
+        if karl2d.key_went_down(.V) { input.actions += {.PASTE} }
+        if karl2d.key_went_down(.A) { input.actions += {.SELECT_ALL} }
+    }
     return input
 }
 

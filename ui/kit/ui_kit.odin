@@ -77,7 +77,16 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
         result.mouse_position = {-10000, -10000}
         result.mouse_pressed = false
     }
-    for i in 0 ..< int(source.text_count) {
+    if kit.ShiftDown(source) { result.modifiers += {.SHIFT} }
+    if kit.CtrlDown(source) {
+        result.modifiers += {.CTRL}
+        result.text_count = 0               // Ctrl + a letter is a command, not text
+        if .C in source.keys_pressed { result.actions += {.COPY} }
+        if .X in source.keys_pressed { result.actions += {.CUT} }
+        if .V in source.keys_pressed { result.actions += {.PASTE} }
+        if .A in source.keys_pressed { result.actions += {.SELECT_ALL} }
+    }
+    for i in 0 ..< int(result.text_count) {
         result.text[i] = source.text[i]
     }
     keys: [ui.Key]kit.Key = {

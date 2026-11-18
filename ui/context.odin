@@ -75,6 +75,7 @@ Context :: struct {
     graph_stack_count: int,
     graph_minimaps: [UI_MAX_GRAPHS]GraphMinimapData,
     graph_minimap_count: int,
+    clipboard: Clipboard,
     roots: [UI_MAX_ROOTS]Root,
     root_count: int,
 

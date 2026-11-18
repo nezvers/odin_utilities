@@ -100,10 +100,14 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         mouse_released = rl.IsMouseButtonReleased(.LEFT),
         wheel = rl.GetMouseWheelMoveV(),
     }
-    // typed characters come as runes: written as UTF-8
+    ctrl: bool = rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL) || rl.IsKeyDown(.LEFT_SUPER) || rl.IsKeyDown(.RIGHT_SUPER)
+    if rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT) { input.modifiers += {.SHIFT} }
+    if ctrl { input.modifiers += {.CTRL} }
+    // typed characters come as runes: written as UTF-8 (with Ctrl held they are commands: drained and dropped)
     for int(input.text_count) < ui.INPUT_TEXT_CAPACITY - 4 {
         character: rune = rl.GetCharPressed()
         if character == 0 { break }
+        if ctrl { continue }
         encoded, width := encodeRune(character)
         for i in 0 ..< width {
             input.text[input.text_count] = encoded[i]
@@ -119,6 +123,12 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if rl.IsKeyPressed(keys[key]) || rl.IsKeyPressedRepeat(keys[key]) { input.keys += {key} }
     }
     input.actions = actionsPoll()
+    if ctrl {
+        if rl.IsKeyPressed(.C) { input.actions += {.COPY} }
+        if rl.IsKeyPressed(.X) { input.actions += {.CUT} }
+        if rl.IsKeyPressed(.V) { input.actions += {.PASTE} }
+        if rl.IsKeyPressed(.A) { input.actions += {.SELECT_ALL} }
+    }
     return input
 }
 
@@ -182,4 +192,21 @@ ApplyCursor :: proc(ctx: ^ui.Context) {
     case .NOT_ALLOWED: cursor = .NOT_ALLOWED
     }
     rl.SetMouseCursor(cursor)
+}
+
+// Connects the clipboard of the system to the text fields (call it once after ui.UiInit). Without it copy and paste work inside of the program only.
+ClipboardInstall :: proc(ctx: ^ui.Context) {
+    ctx.clipboard.get = proc(ctx: ^ui.Context, buffer: []u8) -> int {
+        text: string = string(rl.GetClipboardText())
+        count: int = min(len(text), len(buffer))
+        copy(buffer[:count], text[:count])
+        return count
+    }
+    ctx.clipboard.set = proc(ctx: ^ui.Context, text: string) {
+        buffer: [ui.CLIPBOARD_LOCAL + 1]u8
+        count: int = min(len(text), ui.CLIPBOARD_LOCAL)
+        copy(buffer[:count], text[:count])
+        buffer[count] = 0
+        rl.SetClipboardText(cstring(raw_data(buffer[:])))
+    }
 }
