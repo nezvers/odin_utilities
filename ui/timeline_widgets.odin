@@ -54,6 +54,7 @@ TimelineView :: struct {
     scroll: f32,                // how far the tracks are scrolled up, in pixels
     playhead: f64,              // the program moves it while it plays; the pointer moves it on the ruler
     snap: f64,                  // starts and ends are rounded to a multiple of this (0: no snapping)
+    value_snap: f32,            // the values of automation points are rounded to a multiple of this, in the unit of the lane (0: no snapping)
     tool: TimelineTool,
     loop_start: f64,            // the loop range: Shift + a drag on the ruler makes one, its edges are dragged; the program plays inside of it when `loop_enabled`
     loop_end: f64,
@@ -119,6 +120,12 @@ TimelineRulerStep :: proc(zoom: f32, min_pixels: f32 = 80) -> f64 {
         if factor * magnitude >= target { return factor * magnitude }
     }
     return 10 * magnitude
+}
+
+@(private)
+timelineSnapValue :: proc(view: ^TimelineView, value: f32) -> f32 {
+    if view.value_snap <= 0 { return value }
+    return math.round(value / view.value_snap) * view.value_snap
 }
 
 @(private)
@@ -447,7 +454,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
         case row >= 0 && TimelineTrackGet(timeline, timeline.order[row]).kind == .AUTOMATION && interaction.double_clicked && !ctrl && view.tool != .BOX:
             // a double click on an automation lane puts a point there
             lane: ^TimelineTrack = TimelineTrackGet(timeline, timeline.order[row])
-            added, ok := TimelinePointAdd(timeline, lane.handle, max(timelineSnapTime(timeline, view, time, false), 0), timelineValueAt(timeline, view, &style, lane, row, mouse.y))
+            added, ok := TimelinePointAdd(timeline, lane.handle, max(timelineSnapTime(timeline, view, time, false), 0), timelineSnapValue(view, timelineValueAt(timeline, view, &style, lane, row, mouse.y)))
             if ok {
                 TimelineSelectClear(timeline)
                 TimelinePointGet(timeline, added).selected = true
@@ -578,6 +585,11 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                     row_index: int = TimelineTrackIndex(timeline, primary.track)
                     _, lane_height := timelineTrackRow(timeline, &style, row_index)
                     fraction: f32 = -(mouse.y - view.grab_y) / max(lane_height - 2 * TIMELINE_LANE_MARGIN, 1)
+                    if view.value_snap > 0 {
+                        // the grabbed point lands on the grid, the others keep their distance to it (as a part of the height of their lane)
+                        range: f32 = TimelineTrackGet(timeline, primary.track).value_max - TimelineTrackGet(timeline, primary.track).value_min
+                        fraction = (timelineSnapValue(view, primary.drag_value + fraction * range) - primary.drag_value) / range
+                    }
                     points = hm.iterator_make(&timeline.points)
                     for other, handle in hm.iterate(&points) {
                         if !other.selected { continue }
@@ -691,8 +703,16 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             it := hm.iterator_make(&timeline.clips)
             for clip, _ in hm.iterate(&it) { clip.selected = true }
         }
-        if .COPY in actions || .CUT in actions { TimelineCopy(timeline) }
-        if .CUT in actions {
+        // selected points are what is copied when no clip is selected
+        points_win: bool = TimelineSelectedCount(timeline) == 0 && TimelineSelectedPoints(timeline) > 0
+        if (.COPY in actions || .CUT in actions) && points_win {
+            TimelineCopyPoints(timeline)
+            if .CUT in actions { TimelinePointsRemove(timeline) }
+        } else if .COPY in actions || .CUT in actions {
+            TimelineCopy(timeline)
+            timeline.copy_is_points = false
+        }
+        if .CUT in actions && !points_win {
             for removed := true; removed; {
                 removed = false
                 it := hm.iterator_make(&timeline.clips)
@@ -718,7 +738,10 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
         if .INVERT in actions { TimelinePointsFlip(timeline) }
         if .REVERSE in actions { TimelinePointsMirror(timeline) }
         if .REPEAT in actions { TimelinePointsRepeat(timeline, max(view.snap, 1)) }
-        if .PASTE in actions {
+        if .PASTE in actions && timeline.copy_is_points {
+            lane: int = row if mouse.y >= lanes_top && row >= 0 && ctx.hover == id else -1
+            TimelinePastePoints(timeline, max(timelineSnapTime(timeline, view, view.playhead, false), 0), lane)
+        } else if .PASTE in actions {
             lane: int = row if mouse.y >= lanes_top && row >= 0 && ctx.hover == id else -1
             TimelinePaste(timeline, max(timelineSnapTime(timeline, view, view.playhead, false), 0), lane)
         }

@@ -3339,3 +3339,30 @@ test_alt_keys_edit_the_selected_points_and_alt_and_the_wheel_bends_the_lane :: p
     testing.expect_value(t, TimelineTrackGet(timeline, lane).bend_fall, TIMELINE_BEND_STEP)
     testing.expect_value(t, TimelineTrackGet(timeline, lane).bend_rise, TIMELINE_BEND_STEP)
 }
+
+
+@(test)
+test_the_widget_copies_and_pastes_selected_points_and_snaps_their_values :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, lane, first, second := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    timelineClick(harness, timeline, view, {100, 48}, {})                        // selects the first point and focuses the timeline
+    testing.expect(t, TimelinePointGet(timeline, first).selected)
+    count: int = TimelinePointCount(timeline)
+    timelineActions(harness, timeline, view, {200, 40}, {.COPY})
+    timeline_view_playhead: f64 = 6
+    view.playhead = timeline_view_playhead
+    timelineActions(harness, timeline, view, {200, 40}, {.PASTE})
+    testing.expect_value(t, TimelinePointCount(timeline), count + 1)
+    testing.expect(t, !TimelinePointGet(timeline, first).selected && TimelineSelectedPoints(timeline) == 1)
+    timelineActions(harness, timeline, view, {200, 40}, {.CUT})
+    testing.expect_value(t, TimelinePointCount(timeline), count)
+    // value grid: the lane runs 0 .. 100, a drag lands on a multiple of 25
+    view.value_snap = 25
+    TimelineSelectClear(timeline)
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {300, 29}, {300, 37})
+    value: f32 = TimelinePointGet(timeline, second).value
+    testing.expect(t, abs(value - 25 * f32(int(value / 25 + 0.5))) < 0.001, "the value is on the grid")
+    _ = lane
+}

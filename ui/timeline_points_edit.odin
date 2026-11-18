@@ -107,3 +107,68 @@ TimelinePointsRepeat :: proc(timeline: ^Timeline, minimum_span: f64 = 1) -> (add
     }
     return
 }
+
+// Copies the selected points (as many as TIMELINE_POINT_COPIES) into the point copy of the timeline, in place of what was there: what a paste puts back. How many.
+TimelineCopyPoints :: proc(timeline: ^Timeline) -> int {
+    timeline.point_copy_count = 0
+    earliest: f64 = f64(INFINITE)
+    top: int = timeline.track_count
+    it := hm.iterator_make(&timeline.points)
+    for point, _ in hm.iterate(&it) {
+        if !point.selected { continue }
+        earliest = min(earliest, point.time)
+        top = min(top, TimelineTrackIndex(timeline, point.track))
+    }
+    timeline.point_copy_top_track = top
+    it = hm.iterator_make(&timeline.points)
+    for point, _ in hm.iterate(&it) {
+        if !point.selected || timeline.point_copy_count >= len(timeline.point_copies) { continue }
+        timeline.point_copies[timeline.point_copy_count] = {
+            track_offset = TimelineTrackIndex(timeline, point.track) - top, time_offset = point.time - earliest, value = point.value, shape = point.shape, curve = point.curve,
+        }
+        timeline.point_copy_count += 1
+    }
+    timeline.copy_is_points = timeline.point_copy_count > 0
+    return timeline.point_copy_count
+}
+
+// Puts the copied points back: the earliest at `time`, the top lane of the copy on the lane at `track` (an index from the top; -1: where it was). Values stay what they were, kept within
+// the range of the lane they land on; a lane that is not there, or is not an automation lane, takes none. The pasted points are selected, the others are not. How many were made.
+TimelinePastePoints :: proc(timeline: ^Timeline, time: f64, track: int = -1) -> int {
+    if timeline.point_copy_count == 0 { return 0 }
+    base: int = timeline.point_copy_top_track if track < 0 else track
+    pasted: [TIMELINE_POINT_COPIES]PointHandle
+    count: int
+    for i in 0 ..< timeline.point_copy_count {
+        entry: ^TimelinePointCopy = &timeline.point_copies[i]
+        index: int = base + entry.track_offset
+        if index < 0 || index >= timeline.track_count { continue }
+        handle, ok := TimelinePointAdd(timeline, timeline.order[index], max(time + entry.time_offset, 0), entry.value)
+        if !ok { continue }
+        TimelinePointShape(timeline, handle, entry.shape, entry.curve)
+        pasted[count] = handle
+        count += 1
+    }
+    if count > 0 {
+        TimelineSelectClear(timeline)
+        for i in 0 ..< count { TimelinePointGet(timeline, pasted[i]).selected = true }
+    }
+    return count
+}
+
+// Removes the selected points. How many.
+TimelinePointsRemove :: proc(timeline: ^Timeline) -> (removed: int) {
+    doomed: [TIMELINE_POINTS]PointHandle
+    count: int
+    it := hm.iterator_make(&timeline.points)
+    for point, handle in hm.iterate(&it) {
+        if point.selected && count < len(doomed) {
+            doomed[count] = handle
+            count += 1
+        }
+    }
+    for i in 0 ..< count {
+        if TimelinePointRemove(timeline, doomed[i]) { removed += 1 }
+    }
+    return
+}

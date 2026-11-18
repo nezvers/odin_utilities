@@ -22,6 +22,7 @@ TIMELINE_EVENTS :: #config(TIMELINE_EVENTS, 256)
 TIMELINE_MARKERS :: #config(TIMELINE_MARKERS, 256)
 TIMELINE_POINTS :: #config(TIMELINE_POINTS, 8192)           // the points of all the automation lanes together
 TIMELINE_COPIES :: #config(TIMELINE_COPIES, 256)             // the clips one copy can hold
+TIMELINE_POINT_COPIES :: #config(TIMELINE_POINT_COPIES, 1024)  // the points one copy can hold
 TIMELINE_NAME_MAX :: 48
 
 TrackHandle :: distinct hm.Handle32
@@ -174,6 +175,16 @@ TimelineCopyEntry :: struct {
     user: rawptr,
 }
 
+// One point of the copy: where it was, relative to the earliest time and the top lane of the copied points.
+@(private)
+TimelinePointCopy :: struct {
+    track_offset: int,
+    time_offset: f64,
+    value: f32,
+    shape: CurveShape,
+    curve: f32,
+}
+
 Timeline :: struct {
     tracks: hm.Static_Handle_Map(TIMELINE_TRACKS, TimelineTrack, TrackHandle),
     clips: hm.Static_Handle_Map(TIMELINE_CLIPS, TimelineClip, ClipHandle),
@@ -185,6 +196,10 @@ Timeline :: struct {
     user: rawptr,
     copies: [TIMELINE_COPIES]TimelineCopyEntry,        // the copied clips (TimelineCopy)
     copy_count: int,
+    point_copies: [TIMELINE_POINT_COPIES]TimelinePointCopy,   // the copied points (TimelineCopyPoints)
+    point_copy_count: int,
+    point_copy_top_track: int,
+    copy_is_points: bool,       // what was copied last: points (a paste puts points back) or clips
     copy_top_track: int,        // the place of the top track of the copied clips when they were copied
     on_event: TimelineEventProc,
     events: [TIMELINE_EVENTS]TimelineEvent,

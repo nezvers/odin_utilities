@@ -671,3 +671,34 @@ test_the_blocks_of_the_shapes_that_repeat_follow_the_exact_value :: proc(t: ^tes
         free(timeline)
     }
 }
+
+@(test)
+test_points_are_copied_cut_and_pasted_with_their_curves :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    top, _ := TimelineAutomationAdd(timeline, "a", 0, 100)
+    low, _ := TimelineAutomationAdd(timeline, "b", 0, 10)
+    a, _ := TimelinePointAdd(timeline, top, 2, 40)
+    b, _ := TimelinePointAdd(timeline, top, 4, 80)
+    TimelinePointAdd(timeline, top, 9, 5)                                 // not selected
+    TimelinePointShape(timeline, a, .EXP, 0.5)
+    TimelinePointGet(timeline, a).selected, TimelinePointGet(timeline, b).selected = true, true
+    testing.expect_value(t, TimelineCopyPoints(timeline), 2)
+    testing.expect(t, timeline.copy_is_points)
+    // pasted at 10 on the same lane: the earliest at 10, the other 2 later, the curve with it; the pasted ones are the selection
+    testing.expect_value(t, TimelinePastePoints(timeline, 10), 2)
+    testing.expect_value(t, TimelinePointCount(timeline), 5)
+    testing.expect_value(t, TimelineSelectedPoints(timeline), 2)
+    testing.expect(t, !TimelinePointGet(timeline, a).selected)
+    out: [8]PointHandle
+    testing.expect_value(t, TimelineTrackPoints(timeline, top, out[:]), 5)
+    testing.expect(t, TimelinePointGet(timeline, out[3]).time == 10 && TimelinePointGet(timeline, out[3]).shape == .EXP && TimelinePointGet(timeline, out[3]).curve == 0.5)
+    testing.expect(t, TimelinePointGet(timeline, out[4]).time == 12 && TimelinePointGet(timeline, out[4]).value == 80)
+    // on the lane below (the range is 10: the values are limited to it)
+    testing.expect_value(t, TimelinePastePoints(timeline, 0, 1), 2)
+    testing.expect_value(t, TimelineTrackPoints(timeline, low, out[:]), 2)
+    testing.expect(t, TimelinePointGet(timeline, out[0]).value == 10 && TimelinePointGet(timeline, out[1]).value == 10)
+    // cut: removes the selected points
+    testing.expect_value(t, TimelinePointsRemove(timeline), 2)
+    testing.expect_value(t, TimelinePointCount(timeline), 5)
+}
