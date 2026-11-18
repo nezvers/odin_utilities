@@ -102,6 +102,7 @@ TimelineMarker :: struct {
     color: Color,               // alpha 0: the style's own
     user: rawptr,
     selected: bool,
+    drag_time: f64,             // where it was when a stretch began (timeline_widgets.odin)
 }
 
 TimelineEventKind :: enum u8 {
@@ -662,6 +663,34 @@ TimelinePointRemove :: proc(timeline: ^Timeline, handle: PointHandle) -> bool {
     timelineEmit(timeline, {kind = .POINT_REMOVED, point = handle, track = point.track, time = point.time, value = point.value})
     hm.remove(&timeline.points, handle)
     return true
+}
+
+// Remembers where the selected clips and markers are: the start of a stretch (TimelineClipsStretch always works from this, so a drag does not add up errors).
+TimelineClipsSnapshot :: proc(timeline: ^Timeline) {
+    it := hm.iterator_make(&timeline.clips)
+    for clip, _ in hm.iterate(&it) {
+        clip.drag_start, clip.drag_length = clip.start, clip.length
+    }
+    markers := hm.iterator_make(&timeline.markers)
+    for marker, _ in hm.iterate(&markers) { marker.drag_time = marker.time }
+}
+
+// Stretches the selected clips and markers from the snapshot (TimelineClipsSnapshot): the distance of every start from `anchor` and every length grow by `scale`, so the pattern of the
+// clips is the same, longer or shorter. The rules decide for each clip (one that may not be there stays where it was: the shortest length, a place that is not free). Returns how many
+// clips and markers moved or stayed at the new place.
+TimelineClipsStretch :: proc(timeline: ^Timeline, anchor: f64, scale: f64) -> (moved: int) {
+    factor: f64 = max(scale, 0)
+    it := hm.iterator_make(&timeline.clips)
+    for clip, handle in hm.iterate(&it) {
+        if !clip.selected { continue }
+        // the stretch is made from the snapshot, but a clip that could not be there keeps its last good place: nothing here asks for another one
+        if TimelineClipPlace(timeline, handle, clip.track, max(anchor + (clip.drag_start - anchor) * factor, 0), clip.drag_length * factor) { moved += 1 }
+    }
+    markers := hm.iterator_make(&timeline.markers)
+    for marker, handle in hm.iterate(&markers) {
+        if marker.selected && TimelineMarkerMove(timeline, handle, max(anchor + (marker.drag_time - anchor) * factor, 0)) { moved += 1 }
+    }
+    return
 }
 
 // Remembers where the selected points are: the start of a stretch (TimelinePointsStretch always works from this, so a drag does not add up errors).

@@ -41,6 +41,7 @@ TimelineGesture :: enum u8 {
     CURVE,
     STRETCH,
     BEND,
+    STRETCH_CLIPS,
 }
 
 // What a drag on an empty lane does (Ctrl makes it a box whatever the tool is).
@@ -513,6 +514,21 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                     other.drag_start, other.drag_length = other.start, other.length
                     other.drag_track = TimelineTrackIndex(timeline, other.track)
                 }
+                TimelineClipsSnapshot(timeline)
+                // Alt and a drag with several clips selected: they are stretched from the end that is farther from the pointer instead of moved
+                if .ALT in ctx.input.modifiers && !shift && zone == .BODY {
+                    first, last: f64 = f64(INFINITE), -1
+                    count: int
+                    clips := hm.iterator_make(&timeline.clips)
+                    for other, _ in hm.iterate(&clips) {
+                        if other.selected { first, last, count = min(first, other.start), max(last, other.start + other.length), count + 1 }
+                    }
+                    if count >= 2 && last > first {
+                        view.gesture = .STRETCH_CLIPS
+                        view.stretch_anchor = last if time < (first + last) * 0.5 else first
+                        view.stretch_far = first if time < (first + last) * 0.5 else last
+                    }
+                }
             }
         case view.tool == .BOX || ctrl:
             view.gesture = .BOX
@@ -604,6 +620,13 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                         sign: f32 = -1 if CurveIsCounted(shape) && owner.curve < 0 else 1
                         TimelinePointShape(timeline, view.gesture_handle, shape, sign * CurveFromHandle(shape, covered) - (points[k].bend if !CurveIsCounted(shape) else 0))
                     }
+                }
+            case .STRETCH_CLIPS:
+                // the end that was nearer to the pointer follows it (on the grid); the other one stays
+                target: f64 = timelineSnapTime(timeline, view, time, true)
+                if view.stretch_far != view.stretch_anchor {
+                    scale: f64 = (target - view.stretch_anchor) / (view.stretch_far - view.stretch_anchor)
+                    TimelineClipsStretch(timeline, view.stretch_anchor, max(scale, 0.02))
                 }
             case .BEND:
                 if lane := TimelineTrackGet(timeline, view.gesture_bend); lane != nil {

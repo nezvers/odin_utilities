@@ -3781,3 +3781,56 @@ test_the_bend_control_of_a_lane_is_dragged_and_alt_and_the_arrows_rotate_the_poi
     testing.expect_value(t, TimelinePointGet(timeline, first).time, 1)
     testing.expect_value(t, TimelinePointGet(timeline, second).time, 3)
 }
+
+@(test)
+test_alt_and_a_drag_stretches_the_selected_clips_and_markers_from_the_far_end :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, first, _, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    TimelineClipPlace(timeline, clip, first, 2, 1)                              // 2 .. 3
+    early, _ := TimelineClipAdd(timeline, first, 0.5, 1, "early")               // 0.5 .. 1.5
+    marker, _ := TimelineMarkerAdd(timeline, 1, "m")
+    TimelineClipGet(timeline, clip).selected, TimelineClipGet(timeline, early).selected = true, true
+    TimelineMarkerGet(timeline, marker).selected = true
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    // the right clip dragged from its middle (x 250) to x 350 with Alt: the pointer is in the right half of the selection, so the left end (0.5) stays: the right end 3 follows to 3.5, a scale of 1.2
+    timelineDrag(harness, timeline, view, {250, 40}, {350, 40}, {.ALT})
+    right, left: ^TimelineClip = TimelineClipGet(timeline, clip), TimelineClipGet(timeline, early)
+    testing.expect_value(t, left.start, 0.5)
+    testing.expect(t, abs(left.length - 1.2) < 0.001 && abs(right.start - 2.3) < 0.001 && abs(right.length - 1.2) < 0.001, "everything is 1.2 times as wide around the left end")
+    testing.expect(t, abs(TimelineMarkerGet(timeline, marker).time - 1.1) < 0.001, "the marker too")
+    // without Alt it is a move, and the same drag keeps the lengths
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {300, 40}, {250, 40})
+    testing.expect(t, abs(TimelineClipGet(timeline, clip).length - 1.2) < 0.001)
+}
+
+@(test)
+test_a_stretch_and_a_marker_move_are_steps_of_the_history :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, first, _, clip := timelineSetup(harness)
+    history: ^TimelineHistory = new(TimelineHistory)
+    states: []TimelineState = make([]TimelineState, 6)
+    defer { free(timeline); free(view); free(harness); free(history); delete(states) }
+    TimelineClipPlace(timeline, clip, first, 2, 1)
+    early, _ := TimelineClipAdd(timeline, first, 0.5, 1, "early")
+    marker, _ := TimelineMarkerAdd(timeline, 1, "m")
+    TimelineClipGet(timeline, clip).selected, TimelineClipGet(timeline, early).selected = true, true
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    TimelineHistoryInit(history, states, timeline)
+    view.history = history
+    timelineDrag(harness, timeline, view, {250, 40}, {350, 40}, {.ALT})                     // the stretch
+    testing.expect(t, abs(TimelineClipGet(timeline, clip).length - 1.2) < 0.001)
+    testing.expect(t, TimelineHistoryCanUndo(history), "the finished stretch is one step")
+    timelineActions(harness, timeline, view, {200, 40}, {.UNDO})
+    testing.expect_value(t, TimelineClipGet(timeline, clip).length, 1)
+    testing.expect_value(t, TimelineClipGet(timeline, clip).start, 2)
+    testing.expect_value(t, TimelineClipGet(timeline, early).length, 1)
+    // the marker is moved by the program: a step when it commits, and an undo brings the old time back
+    TimelineMarkerMove(timeline, marker, 2)
+    TimelineHistoryCommit(history, timeline)
+    timelineActions(harness, timeline, view, {200, 40}, {.UNDO})
+    testing.expect_value(t, TimelineMarkerGet(timeline, marker).time, 1)
+    timelineActions(harness, timeline, view, {200, 40}, {.REDO})
+    testing.expect_value(t, TimelineMarkerGet(timeline, marker).time, 2)
+}

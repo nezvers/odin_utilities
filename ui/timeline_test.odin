@@ -738,3 +738,24 @@ test_the_tangents_of_the_points_shape_a_hermite_segment_and_are_events :: proc(t
     testing.expect_value(t, TimelinePointGet(timeline, b).tangent_out, 0.5)
     testing.expect_value(t, TimelinePointGet(timeline, a).tangent_in, 2)
 }
+
+@(test)
+test_a_clip_stretch_works_from_the_snapshot_and_keeps_clips_that_may_not_be_there :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    timeline.rules.min_length = 0.5
+    track, _ := TimelineTrackAdd(timeline, "a")
+    a, _ := TimelineClipAdd(timeline, track, 0, 1, "a")
+    b, _ := TimelineClipAdd(timeline, track, 2, 2, "b")
+    TimelineClipGet(timeline, a).selected, TimelineClipGet(timeline, b).selected = true, true
+    TimelineClipsSnapshot(timeline)
+    testing.expect_value(t, TimelineClipsStretch(timeline, 0, 2), 2)
+    testing.expect_value(t, TimelineClipGet(timeline, b).start, 4)
+    testing.expect_value(t, TimelineClipGet(timeline, b).length, 4)
+    TimelineClipsStretch(timeline, 0, 2)                                           // again: the same, not 8
+    testing.expect_value(t, TimelineClipGet(timeline, b).start, 4)
+    // a scale that makes a clip shorter than the least: that clip does not take it, the other one does
+    testing.expect_value(t, TimelineClipsStretch(timeline, 0, 0.4), 1)
+    testing.expect(t, abs(TimelineClipGet(timeline, b).start - 0.8) < 1e-9 && abs(TimelineClipGet(timeline, b).length - 0.8) < 1e-9)
+    testing.expect_value(t, TimelineClipGet(timeline, a).length, 2)                 // it keeps the last place it had
+}
