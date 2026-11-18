@@ -10,6 +10,7 @@
 [tilemap]: ## "Purely data driven Tile map system, with capability and demo to create in-game level editors."
 [fps_controller]: ## "Camera rotation, camera animation, strafe jump velocity"
 [input]: ## "Helper functions for rebinding and gamepad axis as buttons functionality"
+[reports]: ## "Reports of measurements, checks and findings (benchmarks, test runs, budgets, reviews): build or import them, save as JSON, read as Markdown, text, XML or a short digest, compare two, show them with the ui library. Command line for scripts and agents."
 
 - ✅ 3D models (glTF/GLB, skinning, raylib) `odin run 3d_models/demo_raylib`
 - ✅ [App state][app_state] `odin run app_state/demo_raylib`
