@@ -46,7 +46,7 @@
             "request": "launch",
             "preLaunchTask": "Build Tests",
             "args": [],
-            "cwd": "${workspaceFolder}/..",
+            "cwd": "${workspaceFolder}",
 
             // Default for Linux
             "type": "cppvsdbg",
