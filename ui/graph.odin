@@ -186,6 +186,7 @@ GraphEvent :: struct {
     to_node_user: rawptr,
     graph_user: rawptr,
     node: NodeHandle,           // NODE_*
+    copied_from: NodeHandle,    // NODE_ADDED by a paste: the node it is a copy of (it may be gone): a program that keeps data for a node makes its own copy of it now
     tie: TieHandle,             // TIE_*
     position: Vec2,
 }
@@ -322,13 +323,18 @@ linkEvent :: proc(graph: ^Graph, kind: GraphEventKind, link: ^Link) -> GraphEven
 
 // A node at `position` (canvas coordinates). False when the graph has no room.
 GraphNodeAdd :: proc(graph: ^Graph, name: string, position: Vec2, user: rawptr = nil, color: Color = {}) -> (handle: NodeHandle, ok: bool) {
+    return graphNodeAdd(graph, name, position, user, color, {})
+}
+
+@(private)
+graphNodeAdd :: proc(graph: ^Graph, name: string, position: Vec2, user: rawptr, color: Color, copied_from: NodeHandle) -> (handle: NodeHandle, ok: bool) {
     node: Node = {position = position, user = user, color = color, element = -1}
     setName(node.name[:], &node.name_length, name)
     graph.z_counter += 1
     node.z = graph.z_counter
     handle, ok = hm.add(&graph.nodes, node)
     if !ok { return }
-    graphEmit(graph, {kind = .NODE_ADDED, node = handle, position = position})
+    graphEmit(graph, {kind = .NODE_ADDED, node = handle, position = position, copied_from = copied_from})
     return
 }
 

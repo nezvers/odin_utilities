@@ -1,6 +1,7 @@
 #+build !js
 package ui
 
+import hm "core:container/handle_map"
 import "core:testing"
 
 // A font where every character is half as wide as it is high: no framework needed to test a layout
@@ -3940,4 +3941,48 @@ test_a_tree_row_shows_an_icon_before_the_name_and_a_program_can_declare_the_row 
     testing.expect_value(t, ctx.problems, Problems{})
     // the pictures of the library are drawn for the icons it has, and the numbers above are the program's
     testing.expect(t, Icon.USER > Icon.AUDIO)
+}
+
+@(test)
+test_the_graph_widget_copies_cuts_and_pastes_the_selected_nodes_with_the_keys :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    graph: ^Graph = new(Graph)
+    clipboard: ^GraphClipboard = new(GraphClipboard)
+    defer { free(graph); free(clipboard) }
+    GraphInit(graph)
+    view: GraphView
+    view.clipboard = clipboard
+    one, _ := GraphNodeAdd(graph, "one", {20, 20})
+    GraphPortAdd(graph, one, "out", .OUTPUT, 1)
+    two, _ := GraphNodeAdd(graph, "two", {220, 20})
+    GraphPortAdd(graph, two, "in", .INPUT, 1)
+    for _ in 0 ..< 4 { coveredGraphFrame(harness, graph, &view, {}) }
+    GraphNodeSelect(graph, one)
+    actions :: proc(harness: ^Harness, graph: ^Graph, view: ^GraphView, at: Vec2, actions: Actions) {
+        input: Input = pointerAt(at)
+        input.actions = actions
+        coveredGraphFrame(harness, graph, view, input)
+    }
+    actions(harness, graph, &view, {300, 250}, {.COPY})
+    testing.expect_value(t, clipboard.node_count, 1)
+    testing.expect_value(t, GraphNodeCount(graph), 2)
+    actions(harness, graph, &view, {300, 250}, {.PASTE})
+    testing.expect_value(t, GraphNodeCount(graph), 3)
+    pasted: ^Node
+    it := hm.iterator_make(&graph.nodes)
+    for node, _ in hm.iterate(&it) {
+        if node.selected { pasted = node }
+    }
+    testing.expect(t, pasted != nil && abs(pasted.position.x - 300) < 1 && abs(pasted.position.y - 250) < 1, "pasted at the pointer")
+    actions(harness, graph, &view, {300, 250}, {.DUPLICATE})
+    testing.expect_value(t, GraphNodeCount(graph), 4)
+    actions(harness, graph, &view, {300, 250}, {.CUT})
+    testing.expect_value(t, GraphNodeCount(graph), 3)                                // the duplicate was the selection
+    // without a clipboard the keys do nothing
+    view.clipboard = nil
+    GraphNodeSelect(graph, two)
+    actions(harness, graph, &view, {300, 250}, {.COPY, .DUPLICATE})
+    testing.expect_value(t, GraphNodeCount(graph), 3)
 }

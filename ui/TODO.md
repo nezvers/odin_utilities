@@ -52,7 +52,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Node graph: box selection, moving several nodes together, Delete for selected nodes
 - [x] `Decl.zoom`: one container laid out in logical units and shown bigger or smaller (`Style.zoom`, `Painter.offset`); node graph zoom with the wheel around the pointer
 - [ ] Zoom: floating elements (a popup, a tooltip) inside of a zoomed container, and scroll areas that scroll in screen units
-- [ ] Node graph: copy and paste of a selection
+- [x] Node graph: copy and paste of a selection (`GraphClipboard`, `GraphCopy`, `GraphPaste`, `GraphDuplicate`; Ctrl + C, X, V, D with `view.clipboard`)
 - [ ] Node graph: reroute points on a cable, labels on cables, a node that collapses to its title
 - [x] `Decl.absolute`: a child out of the flow of its parent at an offset (no root, no limit but the storage); the graph nodes use it
 - [x] Node graph: nodes outside of the view are not declared (`GraphNodesByDepth` with a view)

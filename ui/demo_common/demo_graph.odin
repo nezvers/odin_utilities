@@ -29,6 +29,9 @@ State :: struct {
     app: UiDemo,
     graph: ui.Graph,
     view: ui.GraphView,
+    clipboard: ui.GraphClipboard,                       // Ctrl + C, X, V, D
+    before_nodes: int,
+    before_links: int,
     channels: [16]Channel,
     channel_count: int,
     nodes: [8]ui.NodeHandle,
@@ -76,6 +79,7 @@ init :: proc(ctx: ^kit.Context) {
     state = {}
     ui_demo_init(&state.app)
     ui.GraphInit(&state.graph)
+    state.view.clipboard = &state.clipboard
     ctx.background = {24, 26, 32, 255}
     osc: ui.NodeHandle = addNode("Oscillator", {40, 50}, {}, {"saw"})
     noise: ui.NodeHandle = addNode("Noise", {40, 210}, {}, {"white"})
@@ -276,5 +280,26 @@ script: []kit.Step = {
         return ui.GraphNodeVisible(&state.view, output)
     }, "the Output node is in the view now"),
     kit.Capture("graph_zoom"),
+    kit.Wait(1),
+    // Ctrl + D: a copy of the selected nodes with the links between them, put next to them and selected
+    kit.Click({400, 500}),                                // the canvas has the focus (an empty place of it)
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        ui.GraphSelectClear(&state.graph)
+        ui.GraphNodeSelect(&state.graph, state.nodes[0])
+        ui.GraphNodeSelect(&state.graph, state.nodes[2])
+        state.before_nodes, state.before_links = ui.GraphNodeCount(&state.graph), ui.GraphLinkCount(&state.graph)
+        return true
+    }, "select the oscillator and the gain it feeds"),
+    kit.Wait(2),
+    kit.KeyDownStep(.LEFT_CTRL),
+    kit.Wait(1),
+    kit.Tap(.D),
+    kit.Wait(2),
+    kit.KeyUpStep(.LEFT_CTRL),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        return ui.GraphNodeCount(&state.graph) == state.before_nodes + 2 && ui.GraphLinkCount(&state.graph) >= state.before_links + 1 && ui.GraphSelectedCount(&state.graph) == 2
+    }, "Ctrl + D copied the two nodes and the link between them"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

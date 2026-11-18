@@ -1,6 +1,7 @@
 #+build !js
 package ui
 
+import hm "core:container/handle_map"
 import "core:testing"
 
 // The graphs are big (fixed storage): on the heap, one per test.
@@ -562,4 +563,93 @@ test_nodes_outside_of_the_view_are_left_out_of_the_order_to_declare :: proc(t: ^
     // the node that is held stays declared wherever it is
     view.moving = near
     testing.expect_value(t, GraphNodesByDepth(graph, order[:], &view), 3)
+}
+
+@(test)
+test_a_copy_of_nodes_keeps_their_ports_and_the_links_between_them :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    clipboard: ^GraphClipboard = new(GraphClipboard)
+    defer { free(graph); free(clipboard) }
+    a, _, a_out := makeNode(graph, "A", 0, 1, {100, 50})
+    b, b_in, b_out := makeNode(graph, "B", 1, 1, {300, 80})
+    c, c_in, _ := makeNode(graph, "C", 1, 0, {500, 50})
+    ab, _ := GraphConnect(graph, a_out[0], b_in[0])
+    GraphConnect(graph, b_out[0], c_in[0])                                           // leaves the copied part
+    GraphLink(graph, ab).color = {1, 2, 3, 255}
+    tie, _ := GraphTieAdd(graph, {200, 60}, 0, {ab})
+    GraphNode(graph, a).size, GraphNode(graph, b).size = {80, 40}, {80, 40}
+    GraphNodeSelect(graph, a)
+    GraphNodeSelect(graph, b)
+    testing.expect_value(t, GraphCopy(graph, clipboard), 2)
+    testing.expect_value(t, clipboard.port_count, 3)
+    testing.expect_value(t, clipboard.link_count, 1)                                 // only A to B
+    testing.expect_value(t, clipboard.tie_count, 1)
+    testing.expect(t, clipboard.size.x == 280 && clipboard.size.y == 70, "the box around the copied nodes")
+    drain(graph)
+    testing.expect_value(t, GraphPaste(graph, clipboard, {1000, 400}), 2)
+    testing.expect_value(t, GraphNodeCount(graph), 5)
+    testing.expect_value(t, GraphLinkCount(graph), 3)                                // the two before and the copy of A to B
+    testing.expect_value(t, GraphTieCount(graph), 2)
+    testing.expect_value(t, GraphSelectedCount(graph), 2)                            // the copies
+    testing.expect(t, !GraphNode(graph, a).selected && !GraphNode(graph, b).selected)
+    added: [2]GraphEvent
+    count: int
+    for {
+        event, has := GraphPollEvent(graph)
+        if !has { break }
+        if event.kind == .NODE_ADDED && count < 2 {
+            added[count] = event
+            count += 1
+        }
+    }
+    testing.expect(t, count == 2 && added[0].copied_from == a && added[1].copied_from == b, "the events say what they are copies of")
+    testing.expect(t, added[0].position == Vec2{1000, 400} && added[1].position == Vec2{1200, 430}, "the top left of the copy at the position, the others around it as they were")
+    // the new nodes are wired among themselves, the old ones are not touched
+    copy_a, copy_b: NodeHandle = added[0].node, added[1].node
+    out: ^Port = GraphPort(graph, GraphNode(graph, copy_a).first_port)
+    testing.expect_value(t, out.link_count, 1)
+    link: ^Link = GraphLink(graph, out.first_link)
+    testing.expect(t, GraphPort(graph, link.to).node == copy_b)
+    testing.expect_value(t, link.color, Color{1, 2, 3, 255})
+    testing.expect_value(t, GraphPort(graph, GraphNode(graph, b).first_port).link_count, 1)
+    testing.expect_value(t, GraphTie(graph, tie).member_count, 1)
+    // the copy outlives the nodes: cut them and paste again
+    GraphNodeRemove(graph, a)
+    GraphNodeRemove(graph, b)
+    testing.expect_value(t, GraphPaste(graph, clipboard, {0, 0}), 2)
+    testing.expect_value(t, GraphNodeCount(graph), 5)
+    // nothing selected: nothing copied
+    GraphSelectClear(graph)
+    testing.expect_value(t, GraphCopy(graph, clipboard), 0)
+    testing.expect_value(t, GraphPaste(graph, clipboard, {0, 0}), 0)
+    _ = c
+}
+
+@(test)
+test_a_duplicate_is_a_copy_next_to_the_originals_and_the_rules_decide_for_the_links :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    clipboard: ^GraphClipboard = new(GraphClipboard)
+    defer { free(graph); free(clipboard) }
+    a, _, a_out := makeNode(graph, "A", 0, 1, {10, 10})
+    b, b_in, _ := makeNode(graph, "B", 1, 0, {200, 10})
+    GraphConnect(graph, a_out[0], b_in[0])
+    GraphNodeSelect(graph, a)
+    GraphNodeSelect(graph, b)
+    testing.expect_value(t, GraphDuplicate(graph, clipboard, {0, 100}), 2)
+    testing.expect_value(t, GraphNodeCount(graph), 4)
+    testing.expect_value(t, GraphLinkCount(graph), 2)
+    it := hm.iterator_make(&graph.nodes)
+    found: bool
+    for node, _ in hm.iterate(&it) {
+        if node.selected && GraphNodeName(node) == "A" { found = node.position == Vec2{10, 110} }
+    }
+    testing.expect(t, found, "the copy of A is 100 below A")
+    // a rule that refuses every link: the nodes come, the links do not
+    graph.rules.can_connect = proc(graph: ^Graph, output: ^Port, input: ^Port, user: rawptr) -> ConnectResult { return .TYPE }
+    GraphSelectClear(graph)
+    GraphNodeSelect(graph, a)
+    GraphNodeSelect(graph, b)
+    testing.expect_value(t, GraphDuplicate(graph, clipboard), 2)
+    testing.expect_value(t, GraphNodeCount(graph), 6)
+    testing.expect_value(t, GraphLinkCount(graph), 2)
 }

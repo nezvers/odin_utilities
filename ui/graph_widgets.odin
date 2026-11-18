@@ -69,6 +69,7 @@ GraphView :: struct {
     pickup_link: LinkHandle,    // the link whose end is being dragged
     drag_source: PortHandle,    // where the cable that is dragged starts
     drag_target: PortHandle,    // the pin under the pointer that it fits
+    clipboard: ^GraphClipboard, // set: Ctrl + C, X, V and D copy, cut, paste (at the pointer) and duplicate the selected nodes (graph_copy.odin)
 }
 
 // The zoom of a view (1 when it was left at 0).
@@ -461,6 +462,30 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
             view.gesture = .NONE
             view.gesture_tie = {}
         }
+    }
+    // copy, cut, paste and duplicate while the canvas has the focus (or nothing has it)
+    if view.clipboard != nil && (ctx.focus == 0 || ctx.focus == id) && ctx.disabled_depth == 0 && view.gesture == .NONE {
+        actions: Actions = ctx.input.actions
+        if .COPY in actions || .CUT in actions { GraphCopy(graph, view.clipboard) }
+        if .CUT in actions {
+            for removed := true; removed; {
+                removed = false
+                it := hm.iterator_make(&graph.nodes)
+                for node, handle in hm.iterate(&it) {
+                    if node.selected {
+                        GraphNodeRemove(graph, handle)
+                        removed = true
+                        break
+                    }
+                }
+            }
+        }
+        if .PASTE in actions {
+            // at the pointer when it is over the canvas, else in the middle of the view
+            inside: bool = RectContains(state.rect, mouse)
+            GraphPaste(graph, view.clipboard, canvas_mouse if inside else view.origin + view.viewport * 0.5 - view.clipboard.size * 0.5)
+        }
+        if .DUPLICATE in actions { GraphDuplicate(graph, view.clipboard) }
     }
     // the delete key removes what is selected
     if .DELETE in ctx.input.keys || .BACKSPACE in ctx.input.keys {
