@@ -119,6 +119,8 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if karl2d.key_went_down(.I) { input.actions += {.INVERT} }
         if karl2d.key_went_down(.R) { input.actions += {.REVERSE} }
         if karl2d.key_went_down(.D) { input.actions += {.REPEAT} }
+        if karl2d.key_went_down(.Left, allow_repeat = true) { input.actions = input.actions + {.ROTATE_LEFT} - {.LEFT} }
+        if karl2d.key_went_down(.Right, allow_repeat = true) { input.actions = input.actions + {.ROTATE_RIGHT} - {.RIGHT} }
     }
     return input
 }

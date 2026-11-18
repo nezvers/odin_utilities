@@ -45,6 +45,12 @@ CurveDraw :: struct {
     track: TrackHandle,
     value_min: f32,
     value_max: f32,
+    bend_rect: Rect,            // the small control of the bend macro of the lane (top right): two bars, the rising and the falling segments
+    bend_rise: f32,             // -1 .. 1
+    bend_fall: f32,
+    bend_hover: u8,             // 0: the pointer is not on it, 1: on the left half (rise), 2: on the right half (fall)
+    bend_pressed: bool,
+    lane_hovered: bool,         // the pointer is over the lane: a style may show the bend control only then and when it is not 0
     user: rawptr,
 }
 

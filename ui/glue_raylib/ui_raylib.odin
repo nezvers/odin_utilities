@@ -138,6 +138,8 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if rl.IsKeyPressed(.I) { input.actions += {.INVERT} }
         if rl.IsKeyPressed(.R) { input.actions += {.REVERSE} }
         if rl.IsKeyPressed(.D) { input.actions += {.REPEAT} }
+        if rl.IsKeyPressed(.LEFT) || rl.IsKeyPressedRepeat(.LEFT) { input.actions = input.actions + {.ROTATE_LEFT} - {.LEFT} }
+        if rl.IsKeyPressed(.RIGHT) || rl.IsKeyPressedRepeat(.RIGHT) { input.actions = input.actions + {.ROTATE_RIGHT} - {.RIGHT} }
     }
     return input
 }

@@ -220,7 +220,7 @@ UiAction :: proc(ctx: ^Context, action: Action) -> bool {
     case .END: return !editing && focusEdge(ctx, true)
     case .PAGE_UP: return !editing && focusPage(ctx, .UP)
     case .PAGE_DOWN: return !editing && focusPage(ctx, .DOWN)
-    case .COPY, .CUT, .PASTE, .SELECT_ALL, .DUPLICATE, .UNDO, .REDO, .INVERT, .REVERSE, .REPEAT, .RENAME: return false         // the text field that has the focus takes them from the input (textedit.odin)
+    case .COPY, .CUT, .PASTE, .SELECT_ALL, .DUPLICATE, .UNDO, .REDO, .INVERT, .REVERSE, .REPEAT, .RENAME, .ROTATE_LEFT, .ROTATE_RIGHT: return false         // the text field that has the focus takes them from the input (textedit.odin)
     }
     return false
 }

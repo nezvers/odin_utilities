@@ -3754,3 +3754,30 @@ test_the_two_handles_of_a_hermite_segment_set_the_tangents_of_its_points :: proc
     timelineDrag(harness, timeline, view, {167, 38}, {167, 5})
     testing.expect_value(t, TimelinePointGet(timeline, first).tangent_out, TANGENT_LIMIT)
 }
+
+@(test)
+test_the_bend_control_of_a_lane_is_dragged_and_alt_and_the_arrows_rotate_the_points :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, lane, first, second := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    // the control is in the top right corner of the lane: the lane runs from y 28 (below the ruler) and is 400 wide: its left half is at x 362 .. 378, y 32 .. 48
+    timelineDrag(harness, timeline, view, {370, 40}, {370, 10})
+    testing.expect(t, abs(TimelineTrackGet(timeline, lane).bend_rise - 0.5) < 0.05, "up bends the rising segments: 30 pixels are half")
+    testing.expect_value(t, TimelineTrackGet(timeline, lane).bend_fall, 0)
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {386, 40}, {386, 64})
+    testing.expect(t, abs(TimelineTrackGet(timeline, lane).bend_fall - -0.4) < 0.05, "down on the right half bends the falling ones the other way")
+    testing.expect_value(t, TimelinePointGet(timeline, first).time, 1)                         // no point was grabbed
+    // rotate: the points move by the snap step around the whole timeline and a step (0 .. 3.5)
+    view.snap = 0.5
+    TimelinePointGet(timeline, first).selected, TimelinePointGet(timeline, second).selected = true, true
+    timelineClick(harness, timeline, view, {200, 150}, {})                                      // the focus (an empty place of the widget)
+    TimelinePointGet(timeline, first).selected, TimelinePointGet(timeline, second).selected = true, true
+    timelineActions(harness, timeline, view, {200, 150}, {.ROTATE_RIGHT})
+    testing.expect_value(t, TimelinePointGet(timeline, first).time, 1.5)
+    testing.expect_value(t, TimelinePointGet(timeline, second).time, 0)                         // 3 + 0.5 wraps around 3.5 (the end and a step)
+    timelineActions(harness, timeline, view, {200, 150}, {.ROTATE_LEFT})
+    testing.expect_value(t, TimelinePointGet(timeline, first).time, 1)
+    testing.expect_value(t, TimelinePointGet(timeline, second).time, 3)
+}

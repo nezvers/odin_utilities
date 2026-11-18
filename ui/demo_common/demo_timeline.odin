@@ -206,6 +206,19 @@ script: []kit.Step = {
         return true
     }, "back to a line"),
     kit.Wait(2),
+    // the control in the corner of the lane bends all its curves: up on the left half for the segments that rise
+    kit.MoveTo({758, 237}),
+    kit.Wait(2),
+    kit.Drag({758, 237}, {758, 207}, 6),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return abs(ui.TimelineTrackGet(&state.timeline, state.cutoff).bend_rise - 0.5) < 0.06 }, "dragging the left half of the control up bent the rising segments"),
+    kit.Capture("timeline_bend"),
+    kit.Wait(1),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        ui.TimelineTrackBend(&state.timeline, state.cutoff, 0, 0)
+        return true
+    }, "bend back to 0"),
+    kit.Wait(2),
     // "Beat" (beats 0 .. 4, x 10 .. 170) two beats later and two tracks down, on the free part of "Lead"
     kit.MoveTo({60, 50}),
     kit.Wait(3),
@@ -252,9 +265,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.view.loop_enabled && state.view.loop_end - state.view.loop_start > 2 }, "Shift and a drag on the ruler made a loop range"),
     kit.KeyDownStep(.LEFT_CTRL),
     kit.Wait(1),
-    kit.MoveTo({770, 235}),
+    kit.MoveTo({740, 235}),
     kit.Wait(2),
-    kit.Drag({770, 235}, {20, 60}, 10),
+    kit.Drag({740, 235}, {20, 60}, 10),
     kit.Wait(3),
     kit.KeyUpStep(.LEFT_CTRL),
     kit.Wait(2),

@@ -23,6 +23,7 @@ TIMELINE_TRACK_ZOOM_MAX :: f32(3)
 
 @(private)
 TIMELINE_BEND_STEP :: f32(0.1)       // how much a notch of the wheel with Alt bends a lane
+TIMELINE_BEND_PIXELS :: f32(60)      // how far the pointer goes to bend a lane from 0 to 1 by the control at its corner
 
 TimelineGesture :: enum u8 {
     NONE,
@@ -39,6 +40,7 @@ TimelineGesture :: enum u8 {
     POINTS,
     CURVE,
     STRETCH,
+    BEND,
 }
 
 // What a drag on an empty lane does (Ctrl makes it a box whatever the tool is).
@@ -69,6 +71,13 @@ TimelineView :: struct {
     gesture_point: PointHandle,
     hover_handle: PointHandle,          // the point whose segment has the handle that is under the pointer
     hover_handle_end: bool,             // HERMITE: it is the second handle of the segment (at its end)
+    hover_bend: TrackHandle,            // the lane whose bend control is under the pointer, and which half of it
+    hover_bend_fall: bool,
+    gesture_bend: TrackHandle,
+    gesture_bend_fall: bool,
+    bend_start: f32,                    // the bend when the drag began
+    rotate_period: f64,                 // the length of the pattern that Alt and the arrows rotate (without a loop), kept from one rotation to the next
+    rotate_serial: u64,                 // timeline.serial after the last rotation: another edit makes the length be measured again
     gesture_handle: PointHandle,
     gesture_handle_end: bool,
     history: ^TimelineHistory,          // set: finished edits become steps and Ctrl + Z, Ctrl + Y go through them (timeline_history.odin)
@@ -122,6 +131,12 @@ TimelineRulerStep :: proc(zoom: f32, min_pixels: f32 = 80) -> f64 {
         if factor * magnitude >= target { return factor * magnitude }
     }
     return 10 * magnitude
+}
+
+// The small control of the bend macro in the top right corner of a lane.
+@(private)
+timelineBendRect :: proc(lane: Rect) -> Rect {
+    return {lane.x + lane.z - 38, lane.y + 4, 32, 16}
 }
 
 @(private)
@@ -378,6 +393,16 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
     min_length: f64 = max(timeline.rules.min_length, 4 / f64(zoom))
     view.hover_point = {}
     view.hover_handle, view.hover_handle_end = {}, false
+    view.hover_bend = {}
+    if hovering && mouse.y >= lanes_top && row >= 0 {
+        lane_track: ^TimelineTrack = TimelineTrackGet(timeline, timeline.order[row])
+        top, height := timelineTrackRow(timeline, &style, row)
+        lane_rect: Rect = {view.rect.x, view.rect.y + style.ruler_height + top - view.scroll, view.rect.z, height}
+        if lane_track.kind == .AUTOMATION && RectContains(timelineBendRect(lane_rect), mouse) {
+            view.hover_bend = lane_track.handle
+            view.hover_bend_fall = mouse.x > timelineBendRect(lane_rect).x + 16
+        }
+    }
     if hovering && mouse.y >= lanes_top {
         view.hover_point = timelinePickPoint(timeline, view, &style, mouse)
         if view.hover_point == {} { view.hover_handle, view.hover_handle_end = timelinePickHandle(timeline, view, &style, mouse) }
@@ -395,6 +420,10 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
     if interaction.pressed && ctx.input.mouse_pressed && view.gesture == .NONE {
         ctrl: bool = .CTRL in ctx.input.modifiers
         switch {
+        case view.hover_bend != {}:
+            lane: ^TimelineTrack = TimelineTrackGet(timeline, view.hover_bend)
+            view.gesture, view.gesture_bend, view.gesture_bend_fall = .BEND, view.hover_bend, view.hover_bend_fall
+            view.grab_y, view.bend_start = mouse.y, lane.bend_fall if view.hover_bend_fall else lane.bend_rise
         case view.hover_marker != {}:
             marker: ^TimelineMarker = TimelineMarkerGet(timeline, view.hover_marker)
             if shift {
@@ -576,6 +605,15 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                         TimelinePointShape(timeline, view.gesture_handle, shape, sign * CurveFromHandle(shape, covered) - (points[k].bend if !CurveIsCounted(shape) else 0))
                     }
                 }
+            case .BEND:
+                if lane := TimelineTrackGet(timeline, view.gesture_bend); lane != nil {
+                    bend: f32 = view.bend_start + (view.grab_y - mouse.y) / TIMELINE_BEND_PIXELS
+                    if view.gesture_bend_fall {
+                        TimelineTrackBend(timeline, view.gesture_bend, lane.bend_rise, bend)
+                    } else {
+                        TimelineTrackBend(timeline, view.gesture_bend, bend, lane.bend_fall)
+                    }
+                }
             case .STRETCH:
                 if primary := TimelinePointGet(timeline, view.gesture_point); primary != nil {
                     // sideways: the distance from the end that stays; up: the far end of the selection is taller (the factor is 1 at the end that stays)
@@ -665,7 +703,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             }
         }
         if ctx.input.mouse_released || !ctx.input.mouse_down {
-            view.gesture, view.gesture_clip, view.gesture_marker, view.gesture_point, view.gesture_handle = .NONE, {}, {}, {}, {}
+            view.gesture, view.gesture_clip, view.gesture_marker, view.gesture_point, view.gesture_handle, view.gesture_bend = .NONE, {}, {}, {}, {}, {}
         }
     }
 
@@ -747,6 +785,20 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             }
             TimelineCopy(timeline)
             TimelinePaste(timeline, last_end)
+        }
+        if (.ROTATE_LEFT in actions || .ROTATE_RIGHT in actions) && view.gesture == .NONE {
+            // around the loop when there is one, else around the whole timeline and one more step (so that the last point has a place): a step of the snap (1 without one)
+            step: f64 = view.snap if view.snap > 0 else 1
+            from, to: f64 = 0, 0
+            if view.loop_enabled {
+                from, to = view.loop_start, view.loop_end
+            } else {
+                // the length of the pattern is kept while only rotating (the points move, the end would): it is measured again after any other edit
+                if timeline.serial != view.rotate_serial || view.rotate_period <= 0 { view.rotate_period = TimelineEnd(timeline) + step }
+                to = view.rotate_period
+            }
+            TimelinePointsRotate(timeline, from, max(to, from + step), -step if .ROTATE_LEFT in actions else step)
+            view.rotate_serial = timeline.serial
         }
         if .INVERT in actions { TimelinePointsFlip(timeline) }
         if .REVERSE in actions { TimelinePointsMirror(timeline) }
@@ -961,6 +1013,9 @@ timelineDrawCurve :: proc(ctx: ^Context, timeline: ^Timeline, view: ^TimelineVie
     }
     curve: CurveDraw = {
         rect = lane, inner = timelineLaneInner(lane), points = points[:count], name = TimelineTrackName(track), color = track.color, steps = track.steps,
+        bend_rect = timelineBendRect(lane), bend_rise = track.bend_rise, bend_fall = track.bend_fall,
+        bend_hover = (2 if view.hover_bend_fall else 1) if view.hover_bend == track.handle else 0,
+        bend_pressed = view.gesture == .BEND && view.gesture_bend == track.handle, lane_hovered = view.hover_track >= 0 && timeline.order[view.hover_track] == track.handle,
         track = track.handle, value_min = track.value_min, value_max = track.value_max, user = style.user,
     }
     style.draw_curve(ctx, &curve)

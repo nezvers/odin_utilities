@@ -156,6 +156,23 @@ DrawCurve :: proc(ctx: ^ui.Context, curve: ^ui.CurveDraw) {
             }
         }
     }
+    // the control of the bend macro: two bars, the segments that rise and the ones that fall; shown while the lane is hovered or bent
+    if curve.bend_rise != 0 || curve.bend_fall != 0 || curve.lane_hovered || curve.bend_pressed {
+        box: ui.Rect = curve.bend_rect
+        painter.fill_rect(painter, box, ui.ColorLerp(theme.track, ui.Color{255, 255, 255, 255}, 0.1))
+        middle: f32 = box.y + box.w * 0.5
+        for half in 0 ..< 2 {
+            value: f32 = curve.bend_fall if half == 1 else curve.bend_rise
+            active: bool = int(curve.bend_hover) == half + 1 || curve.bend_pressed && int(curve.bend_hover) == half + 1
+            x: f32 = box.x + 3 + f32(half) * (box.z * 0.5)
+            width: f32 = box.z * 0.5 - 6
+            bar: ui.Color = ui.ColorLerp(color, ui.Color{255, 255, 255, 255}, 0.5 if active else 0)
+            // up is a bend above 0: the segments go fast first
+            height: f32 = value * (box.w * 0.5 - 2)
+            painter.fill_rect(painter, {x, middle - max(height, 0), width, max(abs(height), 1)}, bar)
+        }
+        painter.fill_rect(painter, {box.x + 1, middle, box.z - 2, 1}, ui.ColorLerp(color, theme.track, 0.5))
+    }
     for point in curve.points {
         if point.x < curve.rect.x - 4 || point.x > curve.rect.x + curve.rect.z + 4 { continue }
         size: f32 = 4
