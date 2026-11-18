@@ -2790,3 +2790,99 @@ test_the_last_column_fills_the_room_and_the_table_does_not_scroll_then :: proc(t
     _, found := UiElementRect(&harness.ctx, IdFromString("sideways", UiIdPath("T")))
     testing.expect(t, !found)
 }
+
+@(test)
+test_a_box_selects_the_clips_it_touches_by_the_tool_or_by_ctrl_and_shift_keeps_the_others :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, first, second, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    other, _ := TimelineClipAdd(timeline, second, 1, 1, "other")
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    _ = first
+    // Ctrl and a drag over an empty place (x 50, left of the clips): a box over both clips
+    timelineDrag(harness, timeline, view, {50, 30}, {150, 100}, {.CTRL})
+    testing.expect(t, TimelineClipGet(timeline, clip).selected && TimelineClipGet(timeline, other).selected)
+    testing.expect_value(t, view.gesture, TimelineGesture.NONE)
+    // a smaller box: only the first one (the selection is replaced)
+    timelineDrag(harness, timeline, view, {50, 30}, {120, 60}, {.CTRL})
+    testing.expect(t, TimelineClipGet(timeline, clip).selected && !TimelineClipGet(timeline, other).selected)
+    // Shift adds to what is selected
+    timelineDrag(harness, timeline, view, {50, 80}, {120, 110}, {.CTRL, .SHIFT})
+    testing.expect(t, TimelineClipGet(timeline, clip).selected && TimelineClipGet(timeline, other).selected)
+    // the tool does the same without Ctrl, and a box on nothing clears the selection
+    view.tool = .BOX
+    timelineDrag(harness, timeline, view, {20, 150}, {60, 190})
+    testing.expect_value(t, TimelineSelectedCount(timeline), 0)
+    // the clips that were moved by the box are not moved: the press on a clip is a move, not a box
+    timelineDrag(harness, timeline, view, {200, 40}, {200, 40})
+    testing.expect_value(t, TimelineClipGet(timeline, clip).start, 1)
+}
+
+@(test)
+test_a_loop_range_is_made_with_shift_on_the_ruler_and_its_edges_are_dragged :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, _, _ := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    testing.expect(t, !view.loop_enabled)
+    timelineDrag(harness, timeline, view, {150, 10}, {350, 10}, {.SHIFT})
+    testing.expect(t, view.loop_enabled && view.loop_start == 1.5 && view.loop_end == 3.5)
+    event: TimelineEvent
+    count: int
+    for {
+        e, has := TimelinePollEvent(timeline)
+        if !has { break }
+        if e.kind == .LOOP_CHANGED {
+            event = e
+            count += 1
+        }
+    }
+    testing.expect(t, count > 0 && event.start == 1.5 && event.length == 2, "the program is told the range")
+    testing.expect_value(t, view.playhead, 0)                           // a Shift drag is a loop, not a playhead
+    // a press on the ruler away from the edges is the playhead again
+    timelineDrag(harness, timeline, view, {250, 10}, {250, 10})
+    testing.expect_value(t, view.playhead, 2.5)
+    testing.expect(t, view.loop_start == 1.5 && view.loop_end == 3.5)
+    // the left edge (x 150) to x 50, the right edge (x 350) to x 450
+    timelineDrag(harness, timeline, view, {152, 10}, {52, 10})
+    testing.expect_value(t, view.loop_start, 0.5)
+    timelineDrag(harness, timeline, view, {348, 10}, {448, 10})
+    testing.expect_value(t, view.loop_end, 4.5)
+    // the left edge cannot go past the right one: the least length is kept
+    timelineDrag(harness, timeline, view, {52, 10}, {390, 10})
+    testing.expect(t, view.loop_start < view.loop_end && view.loop_end == 4.5)
+}
+
+@(private = "file", thread_local)
+drawn_loop: RulerDraw
+@(private = "file", thread_local)
+drawn_box: BoxDraw
+@(private = "file", thread_local)
+boxes_drawn: int
+
+@(test)
+test_the_style_gets_the_loop_range_and_the_box_to_draw :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, _, _ := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    harness.style.procs[.TIMELINE] = proc(ctx: ^Context, info: ^DrawInfo) { TimelineDraw(ctx, info) }
+    harness.style.timeline.draw_ruler = proc(ctx: ^Context, ruler: ^RulerDraw) { drawn_loop = ruler^ }
+    harness.style.timeline.draw_box = proc(ctx: ^Context, box: ^BoxDraw) {
+        drawn_box = box^
+        boxes_drawn += 1
+    }
+    view.loop_start, view.loop_end, view.loop_enabled = 1, 3, true
+    timelineFrame(harness, timeline, view, pointerAt({-10, -10}))
+    testing.expect(t, drawn_loop.loop_enabled && drawn_loop.loop_x == 100 && drawn_loop.loop_end_x == 300)
+    // while a box is dragged it is drawn: from the press to the pointer
+    boxes_drawn = 0
+    timelineFrame(harness, timeline, view, pointerAt({50, 30}))
+    press: Input = pointerAt({50, 30}, true, true)
+    press.modifiers = {.CTRL}
+    timelineFrame(harness, timeline, view, press)
+    move: Input = pointerAt({150, 100}, true)
+    move.modifiers = {.CTRL}
+    timelineFrame(harness, timeline, view, move)
+    timelineFrame(harness, timeline, view, move)
+    testing.expect(t, boxes_drawn > 0)
+    testing.expect(t, abs(drawn_box.rect.x - 50) < 0.5 && abs(drawn_box.rect.y - 30) < 0.5 && abs(drawn_box.rect.z - 100) < 0.5 && abs(drawn_box.rect.w - 70) < 0.5)
+}

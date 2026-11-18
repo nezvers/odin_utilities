@@ -190,6 +190,8 @@ and/or `TimelinePollEvent`. A program that plays the clips reads them in the ord
 `UiTimeline(&ctx, "Arrangement", &timeline, &view, size)` (`timeline_widgets.odin`) draws a ruler (ticks at 1, 2 or 5 times a power of ten), the lanes, the clips and the playhead, and returns true when the person changed something: a press on the ruler puts the playhead
 (and drags it), a press on a clip selects it (Shift adds or removes) and drags it with every selected clip to another start or track, the edges resize it, an empty lane pans, a double click on one is an event, the wheel zooms around the pointer
 (Shift + wheel pans), Delete removes the selected clips, a locked track (`TrackFlag.LOCKED`) keeps its clips. `TimelineView` (origin, zoom in pixels per unit, scroll, playhead, snap) is plain data a project can save.
+Ctrl and a drag over the lanes (or `view.tool = .BOX`, then a drag on an empty lane) draws a box that selects the clips it touches, live (Shift keeps the selection). Shift and a drag on the ruler makes a loop range (`view.loop_start`, `loop_end`, `loop_enabled`,
+`LOOP_CHANGED` events): its edges are dragged on the ruler, the style draws it as a band (`RulerDraw.loop_x`, `loop_end_x`); a plain press on the ruler is still the playhead.
 Lanes, clips, the ruler and the playhead are drawn by `TimelineStyle` procs (`timeline_style.odin`, default in `default_style/timeline.odin`) from the model, only what is in view, so thousands of clips cost the ones on screen. Demo: `demo_common/demo_timeline.odin`.
 
 ## Measuring text

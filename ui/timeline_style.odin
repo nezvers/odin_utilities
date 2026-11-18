@@ -38,6 +38,15 @@ RulerDraw :: struct {
     origin: f64,
     zoom: f32,
     step: f64,
+    loop_enabled: bool,         // a loop range: from `loop_x` to `loop_end_x` on the screen
+    loop_x: f32,
+    loop_end_x: f32,
+    user: rawptr,
+}
+
+// The rectangle that is dragged to select clips (on the screen).
+BoxDraw :: struct {
+    rect: Rect,
     user: rawptr,
 }
 
@@ -54,12 +63,14 @@ LaneDrawProc :: proc(ctx: ^Context, lane: ^LaneDraw)
 ClipDrawProc :: proc(ctx: ^Context, clip: ^ClipDraw)
 RulerDrawProc :: proc(ctx: ^Context, ruler: ^RulerDraw)
 PlayheadDrawProc :: proc(ctx: ^Context, head: ^PlayheadDraw)
+BoxDrawProc :: proc(ctx: ^Context, box: ^BoxDraw)
 
 TimelineStyle :: struct {
     draw_lane: LaneDrawProc,
     draw_clip: ClipDrawProc,
     draw_ruler: RulerDrawProc,
     draw_playhead: PlayheadDrawProc,
+    draw_box: BoxDrawProc,
     ruler_height: f32,          // 0: 24
     track_height: f32,          // of a track that has none of its own: 0 is 48
     edge: f32,                  // the width of the part of a clip's side that resizes it: 0 is 6

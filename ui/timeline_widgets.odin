@@ -27,6 +27,16 @@ TimelineGesture :: enum u8 {
     RESIZE_LEFT,
     RESIZE_RIGHT,
     PAN,
+    BOX,
+    LOOP_NEW,
+    LOOP_START,
+    LOOP_END,
+}
+
+// What a drag on an empty lane does (Ctrl makes it a box whatever the tool is).
+TimelineTool :: enum u8 {
+    PAN,                // it pans the view
+    BOX,                // it draws a rectangle that selects the clips it touches
 }
 
 // What the widget keeps for the program: where it looks, the playhead, the snap. Plain data, so a program can save it with the project.
@@ -36,6 +46,10 @@ TimelineView :: struct {
     scroll: f32,                // how far the tracks are scrolled up, in pixels
     playhead: f64,              // the program moves it while it plays; the pointer moves it on the ruler
     snap: f64,                  // starts and ends are rounded to a multiple of this (0: no snapping)
+    tool: TimelineTool,
+    loop_start: f64,            // the loop range: Shift + a drag on the ruler makes one, its edges are dragged; the program plays inside of it when `loop_enabled`
+    loop_end: f64,
+    loop_enabled: bool,
     rect: Rect,                 // where the widget is on the screen (as drawn in the last frame)
     hover_clip: ClipHandle,
     hover_track: int,           // the track under the pointer, -1: none
@@ -44,6 +58,11 @@ TimelineView :: struct {
     gesture_clip: ClipHandle,
     grab_time: f64,
     grab_track: int,
+    loop_anchor: f64,
+    box_time: f64,              // the corners of the box: a time and a distance from the top of the lanes (before the scroll)
+    box_y: f32,
+    box_time_to: f64,
+    box_y_to: f32,
     last_mouse: Vec2,
 }
 
@@ -124,6 +143,15 @@ TimelineClipRect :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^Timel
     return {x0, y + 2, max(x1 - x0, 1), max(height - 4, 1)}
 }
 
+// The box that is being dragged, on the screen.
+@(private)
+timelineBoxRect :: proc(view: ^TimelineView, style: ^TimelineStyle) -> Rect {
+    x0, x1: f32 = TimelineX(view, view.box_time), TimelineX(view, view.box_time_to)
+    top: f32 = view.rect.y + style.ruler_height - view.scroll
+    y0, y1: f32 = top + view.box_y, top + view.box_y_to
+    return {min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0)}
+}
+
 TimelineZone :: enum u8 {
     BODY,
     LEFT_EDGE,
@@ -191,9 +219,20 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
     min_length: f64 = max(timeline.rules.min_length, 4 / f64(zoom))
 
     if interaction.pressed && ctx.input.mouse_pressed && view.gesture == .NONE {
+        ctrl: bool = .CTRL in ctx.input.modifiers
         switch {
         case mouse.y < lanes_top:
-            view.gesture = .PLAYHEAD
+            near_start: f32 = abs(TimelineX(view, view.loop_start) - mouse.x)
+            near_end: f32 = abs(TimelineX(view, view.loop_end) - mouse.x)
+            switch {
+            case view.loop_enabled && min(near_start, near_end) <= style.edge:
+                view.gesture = .LOOP_START if near_start <= near_end else .LOOP_END
+            case shift:
+                view.gesture = .LOOP_NEW
+                view.loop_anchor = max(timelineSnap(view, time), 0)
+            case:
+                view.gesture = .PLAYHEAD
+            }
         case view.hover_clip != {}:
             clip: ^TimelineClip = TimelineClipGet(timeline, view.hover_clip)
             locked: bool = TimelineTrackGet(timeline, clip.track).flags >= {.LOCKED}
@@ -217,6 +256,15 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                     other.drag_track = TimelineTrackIndex(timeline, other.track)
                 }
             }
+        case view.tool == .BOX || ctrl:
+            view.gesture = .BOX
+            view.box_time, view.box_y = time, mouse.y - lanes_top + view.scroll
+            view.box_time_to, view.box_y_to = view.box_time, view.box_y
+            it := hm.iterator_make(&timeline.clips)
+            for other, _ in hm.iterate(&it) {
+                if !shift { other.selected = false }
+                other.drag_selected = other.selected
+            }
         case:
             view.gesture = .PAN
             if !shift { TimelineSelectClear(timeline) }
@@ -235,6 +283,32 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 if moved != view.playhead {
                     view.playhead = moved
                     timelineEmit(timeline, {kind = .PLAYHEAD, time = moved})
+                }
+            case .BOX:
+                view.box_time_to, view.box_y_to = time, mouse.y - lanes_top + view.scroll
+                box: Rect = timelineBoxRect(view, &style)
+                it := hm.iterator_make(&timeline.clips)
+                for other, _ in hm.iterate(&it) {
+                    other.selected = other.drag_selected || RectOverlaps(TimelineClipRect(timeline, view, &style, other), box)
+                }
+            case .LOOP_NEW:
+                a, b: f64 = view.loop_anchor, max(timelineSnap(view, time), 0)
+                start, end: f64 = min(a, b), max(a, b)
+                if end - start >= min_length && (start != view.loop_start || end != view.loop_end || !view.loop_enabled) {
+                    view.loop_start, view.loop_end, view.loop_enabled = start, end, true
+                    timelineEmit(timeline, {kind = .LOOP_CHANGED, start = start, length = end - start})
+                }
+            case .LOOP_START:
+                start: f64 = clamp(timelineSnap(view, time), 0, view.loop_end - min_length)
+                if start != view.loop_start {
+                    view.loop_start = start
+                    timelineEmit(timeline, {kind = .LOOP_CHANGED, start = start, length = view.loop_end - start})
+                }
+            case .LOOP_END:
+                end: f64 = max(timelineSnap(view, time), view.loop_start + min_length)
+                if end != view.loop_end {
+                    view.loop_end = end
+                    timelineEmit(timeline, {kind = .LOOP_CHANGED, start = view.loop_start, length = end - view.loop_start})
                 }
             case .PAN:
                 view.origin = max(view.origin - f64(delta.x / zoom), 0)
@@ -363,9 +437,16 @@ TimelineDraw :: proc(ctx: ^Context, info: ^DrawInfo) {
             }
         }
     }
+    if style.draw_box != nil && view.gesture == .BOX {
+        box: BoxDraw = {rect = timelineBoxRect(view, style), user = style.user}
+        style.draw_box(ctx, &box)
+    }
     if style.draw_ruler != nil {
         zoom: f32 = TimelineViewZoom(view)
-        ruler: RulerDraw = {rect = {area.x, area.y, area.z, style.ruler_height}, origin = view.origin, zoom = zoom, step = TimelineRulerStep(zoom), user = style.user}
+        ruler: RulerDraw = {
+            rect = {area.x, area.y, area.z, style.ruler_height}, origin = view.origin, zoom = zoom, step = TimelineRulerStep(zoom),
+            loop_enabled = view.loop_enabled, loop_x = TimelineX(view, view.loop_start), loop_end_x = TimelineX(view, view.loop_end), user = style.user,
+        }
         style.draw_ruler(ctx, &ruler)
     }
     if style.draw_playhead != nil {

@@ -51,6 +51,7 @@ TimelineClip :: struct {
     color: Color,
     user: rawptr,               // of the program (an audio file, a pattern)
     selected: bool,
+    drag_selected: bool,        // was it selected when a box was started (Shift keeps those)
     drag_start: f64,            // where the clip was when a drag began (timeline_widgets.odin)
     drag_length: f64,
     drag_track: int,
@@ -65,6 +66,7 @@ TimelineEventKind :: enum u8 {
     CLIP_MOVED,         // another track or another start, the same length
     CLIP_RESIZED,       // another length (and start, when the left edge was dragged)
     PLAYHEAD,           // the person put the playhead somewhere (`time`)
+    LOOP_CHANGED,       // the person made or changed the loop range (`start`, `length`)
     EMPTY_DOUBLE_CLICK, // a double click on an empty place of a track (`track`, `time`): a program may make a clip there
 }
 

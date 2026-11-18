@@ -10,6 +10,7 @@ TimelineStyleInstall :: proc(style: ^ui.Style) {
     style.timeline.draw_clip = DrawClip
     style.timeline.draw_ruler = DrawRuler
     style.timeline.draw_playhead = DrawPlayhead
+    style.timeline.draw_box = DrawTimelineBox
 }
 
 DrawTimeline :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
@@ -63,6 +64,16 @@ DrawRuler :: proc(ctx: ^ui.Context, ruler: ^ui.RulerDraw) {
     theme: ^Theme = &painter.theme
     painter.fill_rect(painter, ruler.rect, ui.ColorLerp(theme.panel, theme.control, 0.5))
     painter.fill_rect(painter, {ruler.rect.x, ruler.rect.y + ruler.rect.w - 1, ruler.rect.z, 1}, theme.border)
+    if ruler.loop_enabled {
+        left: f32 = max(ruler.loop_x, ruler.rect.x)
+        right: f32 = min(ruler.loop_end_x, ruler.rect.x + ruler.rect.z)
+        if right > left {
+            accent: ui.Color = theme.accent
+            painter.fill_rect(painter, {left, ruler.rect.y, right - left, ruler.rect.w - 1}, {accent.r, accent.g, accent.b, 90})
+            if ruler.loop_x >= ruler.rect.x { painter.fill_rect(painter, {ruler.loop_x, ruler.rect.y, 2, ruler.rect.w - 1}, accent) }
+            if ruler.loop_end_x <= ruler.rect.x + ruler.rect.z { painter.fill_rect(painter, {ruler.loop_end_x - 2, ruler.rect.y, 2, ruler.rect.w - 1}, accent) }
+        }
+    }
     size: f32 = ctx.style.metrics.font_size * 0.8
     first: f64 = math.ceil(ruler.origin / ruler.step) * ruler.step
     last: f64 = ruler.origin + f64(ruler.rect.z / ruler.zoom)
@@ -85,4 +96,15 @@ DrawPlayhead :: proc(ctx: ^ui.Context, head: ^ui.PlayheadDraw) {
         points: [3]ui.Vec2 = {{head.x - 6, head.rect.y + head.ruler_height * 0.35}, {head.x + 6, head.rect.y + head.ruler_height * 0.35}, {head.x, head.rect.y + head.ruler_height - 1}}
         painter.fill_polygon(painter, points[:], color)
     }
+}
+
+DrawTimelineBox :: proc(ctx: ^ui.Context, box: ^ui.BoxDraw) {
+    painter: ^Painter = painterOf(ctx)
+    accent: ui.Color = painter.theme.accent
+    rect: ui.Rect = box.rect
+    painter.fill_rect(painter, rect, {accent.r, accent.g, accent.b, 45})
+    painter.fill_rect(painter, {rect.x, rect.y, rect.z, 1}, accent)
+    painter.fill_rect(painter, {rect.x, rect.y + rect.w - 1, rect.z, 1}, accent)
+    painter.fill_rect(painter, {rect.x, rect.y, 1, rect.w}, accent)
+    painter.fill_rect(painter, {rect.x + rect.z - 1, rect.y, 1, rect.w}, accent)
 }
