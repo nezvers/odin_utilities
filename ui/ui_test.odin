@@ -1744,3 +1744,28 @@ test_a_fader_follows_the_pointer_and_a_meter_shows_a_level_and_its_peak :: proc(
     meter: DrawInfo = seen.last[.METER]
     testing.expect(t, near(meter.value, 0.5) && near(meter.ratio, 0.8) && meter.cursor == 0)
 }
+
+@(test)
+test_the_delete_key_removes_the_selected_nodes_and_their_cables :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    graph: ^Graph = new(Graph)
+    defer free(graph)
+    GraphInit(graph)
+    view: GraphView
+    first, _ := GraphNodeAdd(graph, "a", {0, 0})
+    out, _ := GraphPortAdd(graph, first, "out", .OUTPUT, 1)
+    second, _ := GraphNodeAdd(graph, "b", {200, 0})
+    input, _ := GraphPortAdd(graph, second, "in", .INPUT, 1)
+    third, _ := GraphNodeAdd(graph, "c", {0, 150})
+    GraphConnect(graph, out, input)
+    for _ in 0 ..< 3 { coveredGraphFrame(harness, graph, &view, {}) }
+    GraphNodeSelect(graph, second)
+    GraphNodeSelect(graph, third)
+    deleting: Input = {mouse_position = {5, 290}, keys = {.DELETE}}
+    coveredGraphFrame(harness, graph, &view, deleting)
+    testing.expect(t, GraphNode(graph, second) == nil && GraphNode(graph, third) == nil, "the selected nodes are gone")
+    testing.expect(t, GraphNode(graph, first) != nil, "the other stays")
+    testing.expect_value(t, GraphLinkCount(graph), 0)
+}

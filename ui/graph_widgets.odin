@@ -29,7 +29,8 @@ UI_MAX_GRAPHS :: 4              // canvases in one frame
 GRAPH_CABLE_KIND :: "graph cable"
 
 GraphTool :: enum u8 {
-    SELECT,             // a press on a cable or a tie selects it, a press on the canvas pans
+    SELECT,             // a press on a cable or a tie selects it, a press on the canvas pans and clears the selection of nodes
+    BOX,                // dragging across the canvas draws a rectangle: the nodes it touches are selected (a press without a drag clears the selection)
     TIES,               // dragging across the canvas draws a cut: the cables it crosses are gathered by a zip tie, a tie it crosses is removed
 }
 
@@ -40,6 +41,7 @@ GraphGesture :: enum u8 {
     TIE_MOVE,
     TIE_ROTATE,
     CUT,
+    BOX,
 }
 
 // What the canvas keeps for the program: where it looks, what is selected, which tool is on. Everything is plain data, so a program can save the view with the graph.
@@ -48,7 +50,8 @@ GraphView :: struct {
     viewport: Vec2,             // the size of the view in pixels (as drawn in the last frame)
     rect: Rect,                 // where the canvas is on the screen (the same)
     tool: GraphTool,
-    selected_node: NodeHandle,
+    moving: NodeHandle,         // the node whose title is held: every selected node moves with it
+    move_last: Vec2,            // where the pointer was in the last frame of the move
     selected_link: LinkHandle,
     selected_tie: TieHandle,
     hover_link: LinkHandle,
@@ -56,7 +59,7 @@ GraphView :: struct {
     // gesture state
     gesture: GraphGesture,
     gesture_tie: TieHandle,
-    cut_from: Vec2,             // canvas coordinates
+    cut_from: Vec2,             // the cut of the tie tool, or the rectangle of the box tool: canvas coordinates
     cut_to: Vec2,
     last_mouse: Vec2,
     pickup_link: LinkHandle,    // the link whose end is being dragged
@@ -104,11 +107,15 @@ graphPinId :: proc(canvas: Id, handle: PortHandle) -> Id {
 
 // The nodes in the order they are to be declared: the one in front last (nodes are floating elements, the later one is drawn above).
 // Writes into `order` and returns how many (the nodes of the graph, or as many as fit).
-GraphNodesByDepth :: proc(graph: ^Graph, order: []NodeHandle) -> int {
+//
+// With a `view`, the nodes that are known to be outside of it are left out (they are not declared, so they cost nothing in the layout; cables and
+// ties are drawn from the model and anchors are kept by `GraphNodeMove`). A node that has not been laid out yet is always included, so is the one that is moved.
+GraphNodesByDepth :: proc(graph: ^Graph, order: []NodeHandle, view: ^GraphView = nil) -> int {
     count: int
     it := hm.iterator_make(&graph.nodes)
     for node, handle in hm.iterate(&it) {
         if count >= len(order) { break }
+        if view != nil && !GraphNodeVisible(view, node) && view.moving != handle { continue }
         // an insertion by z (stable: nodes with one z keep the order of their handles)
         position: int = count
         for position > 0 {
@@ -121,6 +128,13 @@ GraphNodesByDepth :: proc(graph: ^Graph, order: []NodeHandle) -> int {
         count += 1
     }
     return count
+}
+
+// Does the node touch the part of the canvas that is shown? A node of unknown size (it was never declared) does.
+GraphNodeVisible :: proc(view: ^GraphView, node: ^Node, margin: f32 = 0) -> bool {
+    if node.size.x <= 0 || node.size.y <= 0 || view.viewport.x <= 0 { return true }
+    shown: Rect = {view.origin.x - margin, view.origin.y - margin, view.viewport.x + 2 * margin, view.viewport.y + 2 * margin}
+    return RectOverlaps({node.position.x, node.position.y, node.size.x, node.size.y}, shown)
 }
 
 // The rectangle of all the nodes (canvas coordinates), false for a graph without nodes.
@@ -269,7 +283,33 @@ graphCut :: proc(graph: ^Graph, view: ^GraphView, style: ^GraphStyle) {
     if tie, ok := GraphTieAdd(graph, middle, angle, links[:count]); ok {
         view.selected_tie = tie
         view.selected_link = {}
-        view.selected_node = {}
+        GraphSelectClear(graph)
+    }
+}
+
+// Moves every selected node by `delta` (and snaps them to the grid of the style when the move ends, then tells the program about each).
+@(private)
+graphMoveSelected :: proc(graph: ^Graph, snap: f32, delta: Vec2, done: bool) {
+    it := hm.iterator_make(&graph.nodes)
+    for node, handle in hm.iterate(&it) {
+        if !node.selected { continue }
+        position: Vec2 = node.position + delta
+        if done && snap > 0 { position = {math.round(position.x / snap) * snap, math.round(position.y / snap) * snap} }
+        GraphNodeMove(graph, handle, position)
+        if done { graphEmit(graph, {kind = .NODE_MOVED, node = handle, position = position}) }
+    }
+}
+
+// The box of the box tool ended: the nodes it touches are selected, a press that did not drag clears the selection.
+@(private)
+graphBoxSelect :: proc(graph: ^Graph, view: ^GraphView) {
+    a, b: Vec2 = view.cut_from, view.cut_to
+    box: Rect = {min(a.x, b.x), min(a.y, b.y), abs(a.x - b.x), abs(a.y - b.y)}
+    GraphSelectClear(graph)
+    if box.z < 3 && box.w < 3 { return }
+    it := hm.iterator_make(&graph.nodes)
+    for node, _ in hm.iterate(&it) {
+        node.selected = RectOverlaps({node.position.x, node.position.y, node.size.x, node.size.y}, box)
     }
 }
 
@@ -314,6 +354,16 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
         graphEmit(graph, event)
     }
 
+    // the nodes that are moved by the title that is held (applied here, before the nodes are declared, so they all move in the same frame)
+    if view.moving != {} {
+        if GraphNode(graph, view.moving) == nil || (!ctx.input.mouse_down && !ctx.input.mouse_released) {
+            view.moving = {}
+        } else {
+            graphMoveSelected(graph, style.snap, mouse - view.move_last, ctx.input.mouse_released)
+            view.move_last = mouse
+            if ctx.input.mouse_released { view.moving = {} }
+        }
+    }
     // what the pointer is over (cables and ties are not elements: the model says)
     if view.gesture == .NONE {
         view.hover_tie, view.hover_link = {}, {}
@@ -328,18 +378,25 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
         case view.tool == .TIES:
             view.gesture = .CUT
             view.cut_from, view.cut_to = canvas_mouse, canvas_mouse
+        case view.tool == .BOX:
+            view.gesture = .BOX
+            view.cut_from, view.cut_to = canvas_mouse, canvas_mouse
+            view.selected_link, view.selected_tie = {}, {}
         case view.hover_tie != {}:
             tie: ^Tie = GraphTie(graph, view.hover_tie)
             view.gesture_tie = view.hover_tie
             head: Vec2 = TieHead(tie, style.tie_spacing)
             delta_head: Vec2 = canvas_mouse - head
             view.gesture = .TIE_ROTATE if dot2(delta_head, delta_head) < style.tie_width * style.tie_width * 2.25 else .TIE_MOVE
-            view.selected_tie, view.selected_link, view.selected_node = view.hover_tie, {}, {}
+            view.selected_tie, view.selected_link = view.hover_tie, {}
+            GraphSelectClear(graph)
         case view.hover_link != {}:
-            view.selected_link, view.selected_tie, view.selected_node = view.hover_link, {}, {}
+            view.selected_link, view.selected_tie = view.hover_link, {}
+            GraphSelectClear(graph)
         case:
             view.gesture = .PAN
-            view.selected_link, view.selected_tie, view.selected_node = {}, {}, {}
+            view.selected_link, view.selected_tie = {}, {}
+            GraphSelectClear(graph)
         }
     }
     // the gesture goes on while the button is held, and ends with it
@@ -362,7 +419,7 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
                         tie.angle = angle
                     }
                 }
-            case .CUT:
+            case .CUT, .BOX:
                 view.cut_to = canvas_mouse
             case .NONE:
             }
@@ -377,6 +434,9 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
             case .CUT:
                 view.cut_to = canvas_mouse
                 graphCut(graph, view, &style)
+            case .BOX:
+                view.cut_to = canvas_mouse
+                graphBoxSelect(graph, view)
             }
             view.gesture = .NONE
             view.gesture_tie = {}
@@ -393,11 +453,21 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
                 GraphTieRemove(graph, view.selected_tie)
                 view.selected_tie = {}
             }
+            for removed := true; removed; {
+                removed = false
+                it := hm.iterator_make(&graph.nodes)
+                for node, handle in hm.iterate(&it) {
+                    if node.selected {
+                        GraphNodeRemove(graph, handle)
+                        removed = true
+                        break
+                    }
+                }
+            }
         }
     }
     if GraphLink(graph, view.selected_link) == nil { view.selected_link = {} }
     if GraphTie(graph, view.selected_tie) == nil { view.selected_tie = {} }
-    if GraphNode(graph, view.selected_node) == nil { view.selected_node = {} }
 
     frame_index: int = ctx.graph_frame_count
     ctx.graph_frames[frame_index] = {graph = graph, view = view, style = style, canvas = id, element = i32(ctx.element_count), stamp = graph.frame}
@@ -454,26 +524,21 @@ UiGraphNode :: proc(ctx: ^Context, graph: ^Graph, handle: NodeHandle) -> bool {
     title_id: Id = IdFromString("title", id)
     title_state: ^WidgetState = stateGet(ctx, title_id)
     interaction: Interaction = widgetBehavior(ctx, title_id)
-    if interaction.pressed && (ctx.input.mouse_down || ctx.input.mouse_released) {
-        if ctx.input.mouse_pressed {
-            title_state.drag = ctx.input.mouse_position
-            GraphNodeRaise(graph, handle)
-            view.selected_node, view.selected_link, view.selected_tie = handle, {}, {}
-        } else {
-            node.position += ctx.input.mouse_position - title_state.drag
-            title_state.drag = ctx.input.mouse_position
+    _ = title_state
+    if interaction.pressed && ctx.input.mouse_pressed {
+        // a node that is not selected becomes the only selected one; one that is selected keeps the others: they move together
+        GraphNodeRaise(graph, handle)
+        if !node.selected {
+            GraphSelectClear(graph)
+            node.selected = true
         }
-        if ctx.input.mouse_released {
-            if style.snap > 0 {
-                node.position = {math.round(node.position.x / style.snap) * style.snap, math.round(node.position.y / style.snap) * style.snap}
-            }
-            graphEmit(graph, {kind = .NODE_MOVED, node = handle, position = node.position})
-        }
+        view.selected_link, view.selected_tie = {}, {}
+        view.moving, view.move_last = handle, ctx.input.mouse_position
     }
     metrics: ^Metrics = &ctx.style.metrics
     node_element: i32 = i32(ctx.element_count)
     node.element, node.stamp = node_element, frame.stamp
-    selected: bool = view.selected_node == handle
+    selected: bool = node.selected
     ElementOpen(ctx, {
         id = id,
         layout = {size = {Fit(style.node_width), Fit()}, direction = .TOP_TO_BOTTOM},
@@ -598,6 +663,7 @@ graphAfterLayout :: proc(ctx: ^Context) {
             rect: Rect = ctx.elements[port.element].rect
             port.anchor = {rect.x + rect.z * 0.5 - canvas.x + origin.x, rect.y + rect.w * 0.5 - canvas.y + origin.y}
             port.anchor_known = true
+            if node := GraphNode(graph, port.node); node != nil { port.offset = port.anchor - node.position }
         }
     }
     ctx.graph_frame_count = 0
@@ -733,6 +799,14 @@ GraphDrawOverlay :: proc(ctx: ^Context, info: ^DrawInfo) {
             draw: CableDraw = {route = &route, color = source.color, width = style.cable_width, flags = {.PRESSED}, dragging = true, from_type = source.data_type, user = style.user}
             style.draw_cable(ctx, &draw)
         }
+    }
+    if view.gesture == .BOX {
+        a, b: Vec2 = GraphToScreen(view, view.cut_from), GraphToScreen(view, view.cut_to)
+        corners: [4]Vec2 = {a, {b.x, a.y}, b, {a.x, b.y}}
+        route: CableRoute = {count = 4}
+        for i in 0 ..< 4 { route.segments[i] = lineSegment(corners[i], corners[(i + 1) % 4]) }
+        draw: CableDraw = {route = &route, color = {120, 180, 255, 255}, width = 1.5, flags = {.PRESSED}, dragging = true, user = style.user}
+        style.draw_cable(ctx, &draw)
     }
     if view.gesture == .CUT {
         input: CableRouteInput = {from = GraphToScreen(view, view.cut_from), to = GraphToScreen(view, view.cut_to), dragging = true, user = style.user}

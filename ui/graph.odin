@@ -64,6 +64,7 @@ Port :: struct {
     next_in_node: PortHandle,
     anchor: Vec2,               // where the pin is, in canvas coordinates (the widgets keep it up to date)
     anchor_known: bool,
+    offset: Vec2,               // where the pin is from the position of its node: it keeps the anchor right when the node moves while it is not on screen
     element: i32,               // the element of the last frame (graph_widgets.odin)
     stamp: u32,
     buffer: u32,                // GraphCompile: the buffer an output writes
@@ -888,4 +889,40 @@ GraphCompile :: proc(graph: ^Graph, steps: []GraphStep, bindings: []GraphBinding
     }
     plan.buffers = int(next_buffer)
     return plan, .OK
+}
+
+// ------------------------------------------------------------------------------------------------------------------------
+// Moving and selecting nodes
+
+// Moves a node and the anchors of its pins with it (the widgets measure the anchors only for nodes that are declared, a node that is not on screen keeps the
+// offsets it had). Does not tell: the caller emits NODE_MOVED when a move is done.
+GraphNodeMove :: proc(graph: ^Graph, handle: NodeHandle, position: Vec2) {
+    node: ^Node = GraphNode(graph, handle)
+    if node == nil { return }
+    node.position = position
+    port_handle: PortHandle = node.first_port
+    for port_handle != {} {
+        port: ^Port = GraphPort(graph, port_handle)
+        if port == nil { break }
+        if port.anchor_known { port.anchor = position + port.offset }
+        port_handle = port.next_in_node
+    }
+}
+
+GraphNodeSelect :: proc(graph: ^Graph, handle: NodeHandle, selected: bool = true) {
+    node: ^Node = GraphNode(graph, handle)
+    if node != nil { node.selected = selected }
+}
+
+GraphSelectClear :: proc(graph: ^Graph) {
+    it := hm.iterator_make(&graph.nodes)
+    for node, _ in hm.iterate(&it) { node.selected = false }
+}
+
+GraphSelectedCount :: proc(graph: ^Graph) -> (count: int) {
+    it := hm.iterator_make(&graph.nodes)
+    for node, _ in hm.iterate(&it) {
+        if node.selected { count += 1 }
+    }
+    return
 }

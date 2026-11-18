@@ -36,6 +36,7 @@ State :: struct {
     log: [160]u8,
     log_length: int,
     zip_tool: bool,
+    box_tool: bool,
     events: int,
     connected: int,
     disconnected: int,
@@ -124,15 +125,20 @@ draw :: proc(ctx: ^kit.Context) {
     if ui.UiPanel(c, "graph demo", {size = {ui.Fixed(1000), ui.Fixed(600)}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(8), gap = 8}) {
         if ui.UiPanel(c, "toolbar", {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 12, align = {y = .CENTER}}, blocks_pointer = false) {
             if ui.UiToggle(c, "Zip tie tool", &state.zip_tool) {
+                state.box_tool = false
                 state.view.tool = .TIES if state.zip_tool else .SELECT
             }
             if ui.UiButton(c, "Fit view") { ui.GraphViewFit(&state.graph, &state.view) }
+            if ui.UiToggle(c, "Box select", &state.box_tool) {
+                state.zip_tool = false
+                state.view.tool = .BOX if state.box_tool else .SELECT
+            }
             ui.UiLabel(c, string(state.log[:state.log_length]))
         }
         if ui.UiPanel(c, "body", {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, gap = 8}, blocks_pointer = false) {
             if ui.UiGraph(c, "canvas", &state.graph, &state.view) {
                 order: [8]ui.NodeHandle
-                count: int = ui.GraphNodesByDepth(&state.graph, order[:])
+                count: int = ui.GraphNodesByDepth(&state.graph, order[:], &state.view)      // the nodes outside of the view are not declared
                 for node in order[:count] {
                     if ui.UiGraphNode(c, &state.graph, node) {
                         port: ^ui.Port = ui.GraphPort(&state.graph, ui.GraphNode(&state.graph, node).first_port)
@@ -224,6 +230,32 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.GraphTieCount(&state.graph) == 0 && ui.GraphLinkCount(&state.graph) == 5 }, "a stroke across the tie removed it, the cables stay"),
     // the minimap: pressing near its right edge moves the view to the Output node
     kit.Click({40, 22}),
+    kit.Wait(3),
+    // the box tool: a rectangle selects the nodes it touches, a title that is dragged moves all of them
+    kit.Click({262, 22}),
+    kit.Wait(3),
+    kit.MoveTo({20, 60}),
+    kit.Wait(3),
+    kit.Drag({20, 60}, {290, 330}, 10),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        return ui.GraphSelectedCount(&state.graph) == 2 && ui.GraphNode(&state.graph, state.nodes[0]).selected && ui.GraphNode(&state.graph, state.nodes[1]).selected
+    }, "the box selected the two nodes it touches"),
+    kit.Capture("graph_box"),
+    kit.MoveTo({100, 108}),
+    kit.Wait(3),
+    kit.Drag({100, 108}, {130, 128}, 8),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        a: ^ui.Node = ui.GraphNode(&state.graph, state.nodes[0])
+        b: ^ui.Node = ui.GraphNode(&state.graph, state.nodes[1])
+        return abs(a.position.x - 70) < 1 && abs(a.position.y - 70) < 1 && abs(b.position.x - 90) < 1 && abs(b.position.y - 230) < 1
+    }, "dragging the title of a selected node moved both nodes by the same amount"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        port: ^ui.Port = ui.GraphPort(&state.graph, firstPort(state.nodes[0], .OUTPUT))
+        return abs(port.anchor.x - (70 + 174)) < 1.5      // the pin followed it
+    }, "the pins moved with the nodes"),
+    kit.Click({262, 22}),
     kit.Wait(3),
     kit.Click({985, 100}),
     kit.Wait(3),

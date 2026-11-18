@@ -144,6 +144,11 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
   of cables runs as a ribbon and comes apart after it. A tie is moved by its middle, turned by its head (steps of `rotate_snap` degrees), removed by a stroke across it or by Delete; a cable passes up to `GRAPH_LINK_TIES`
   ties, ties made later keep the lane order of earlier ones, and a tie without cables goes away. The idea follows the zip ties of the ComfyUI extension `comfyui-zip-ties` (MIT) and the Blender add-on
   `Zip-ties-for-Blender` (GPL-3): no code was taken from either.
+- **Selecting and moving nodes.** Selection is a flag of the node (`GraphNodeSelect`, `GraphSelectClear`, `GraphSelectedCount`). Pressing a title selects that node alone, unless it is already selected: then a drag moves all selected nodes
+  together, in the same frame (snapped to `GraphStyle.snap` at the end, one `NODE_MOVED` each). With `view.tool = .BOX` a drag on the canvas draws a rectangle that selects the nodes it touches. Delete removes the selected nodes
+  (with their cables, events included), a cable or a tie.
+- **Many nodes.** `GraphNodesByDepth(graph, order, &view)` leaves out the nodes that are known to be outside of the view: they are not declared, so they cost nothing in layout. Cables and ties are drawn from the model, and `GraphNodeMove`
+  keeps the anchors of the pins right for a node that is not on screen (the offsets of the pins are measured while it is).
 - **Minimap and view.** `GraphView` (plain data: the origin of the view, tool, selection) can be saved with the graph. `GraphMinimapTransform` gives a style the scale and the offset of the content span in its rectangle.
 - A node is an absolute child of the canvas (`Decl.absolute`: out of the flow of its parent, placed at an offset from its top left corner, drawn and hit in declaration order, not a floating root), so the number of nodes is limited only by the elements of the `Storage`. Demo: `demo_common/demo_graph.odin`.
 

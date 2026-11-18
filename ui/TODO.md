@@ -21,7 +21,9 @@ Tick an item when it is done and verified (tests pass, committed).
 - [ ] Text field: selection, copy and paste, several lines
 - [ ] Text measure cache (text hash and size) so big tables and logs do not measure every frame
 - [ ] UI scale factor for high DPI screens (metrics and input)
-- [ ] Node graph: zoom of the canvas (the view only pans), box selection and moving several nodes, copy and paste of a selection
+- [x] Node graph: box selection, moving several nodes together, Delete for selected nodes
+- [ ] Node graph: zoom of the canvas (the view only pans). Nodes are real widgets with pixel metrics, so a true zoom needs the UI scale factor below first (scale metrics, text and input together)
+- [ ] Node graph: copy and paste of a selection
 - [ ] Node graph: reroute points on a cable, labels on cables, a node that collapses to its title
 - [x] `Decl.absolute`: a child out of the flow of its parent at an offset (no root, no limit but the storage); the graph nodes use it
-- [ ] Node graph: the canvas still declares every node each frame: skip the nodes outside of the view when a graph has thousands
+- [x] Node graph: nodes outside of the view are not declared (`GraphNodesByDepth` with a view)

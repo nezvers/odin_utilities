@@ -519,3 +519,47 @@ test_a_zip_tie_is_a_strap_across_the_cables :: proc(t: ^testing.T) {
     testing.expect(t, TieCrossedBy(&tie, 10, 8, {60, 100}, {140, 100}), "a stroke across it")
     testing.expect(t, !TieCrossedBy(&tie, 10, 8, {60, 160}, {140, 160}), "a stroke beside it")
 }
+
+@(test)
+test_moving_a_node_moves_its_pins_and_selection_is_kept_in_the_nodes :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    defer free(graph)
+    node, _, out := makeNode(graph, "a", 0, 1, {100, 100})
+    port: ^Port = GraphPort(graph, out[0])
+    port.anchor, port.offset, port.anchor_known = {270, 130}, {170, 30}, true
+    GraphNodeMove(graph, node, {10, 20})
+    testing.expect_value(t, GraphNode(graph, node).position, Vec2{10, 20})
+    testing.expect_value(t, port.anchor, Vec2{180, 50})                 // it followed, without a frame of layout
+    other, _, _ := makeNode(graph, "b", 0, 0)
+    GraphNodeSelect(graph, node)
+    GraphNodeSelect(graph, other)
+    testing.expect_value(t, GraphSelectedCount(graph), 2)
+    GraphSelectClear(graph)
+    testing.expect_value(t, GraphSelectedCount(graph), 0)
+}
+
+@(test)
+test_nodes_outside_of_the_view_are_left_out_of_the_order_to_declare :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    defer free(graph)
+    near, _, _ := makeNode(graph, "near", 0, 0, {10, 10})
+    far, _, _ := makeNode(graph, "far", 0, 0, {5000, 10})
+    fresh, _, _ := makeNode(graph, "fresh", 0, 0, {9000, 10})            // never laid out: the size is not known, so it is declared
+    GraphNode(graph, near).size = {100, 50}
+    GraphNode(graph, far).size = {100, 50}
+    view: GraphView = {viewport = {800, 600}}
+    order: [8]NodeHandle
+    count: int = GraphNodesByDepth(graph, order[:], &view)
+    testing.expect_value(t, count, 2)
+    testing.expect(t, order[0] == near && order[1] == fresh)
+    // the whole graph without a view
+    testing.expect_value(t, GraphNodesByDepth(graph, order[:]), 3)
+    // a view that moved there
+    view.origin = {4950, 0}
+    count = GraphNodesByDepth(graph, order[:], &view)
+    testing.expect_value(t, count, 2)
+    testing.expect(t, order[0] == far && order[1] == fresh)
+    // the node that is held stays declared wherever it is
+    view.moving = near
+    testing.expect_value(t, GraphNodesByDepth(graph, order[:], &view), 3)
+}
