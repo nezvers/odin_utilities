@@ -47,7 +47,7 @@ init :: proc(ctx: ^kit.Context) {
     state = {}
     ui_demo_init(&state.app)
     ctx.background = {24, 26, 32, 255}
-    ui.TableInit(&state.table, {{name = "Name", width = 200}, {name = "Size", width = 120}, {name = "Kind", width = 140}})
+    ui.TableInit(&state.table, {{name = "Name", width = 200}, {name = "Size", width = 120}, {name = "Kind", width = 140}, {name = "Path", width = 260}})
     for i in 0 ..< ROWS { state.order[i] = i }
 }
 
@@ -75,6 +75,7 @@ draw :: proc(ctx: ^kit.Context) {
                     ui.UiTableText(c, &state.table, 0, ui.UiFormat(c, "file_%06d.dat", item))
                     ui.UiTableText(c, &state.table, 1, ui.UiFormat(c, "%d", sizeOf(item)))
                     ui.UiTableText(c, &state.table, 2, KINDS[item % len(KINDS)])
+                    ui.UiTableText(c, &state.table, 3, ui.UiFormat(c, "/data/%s/file_%06d.dat", KINDS[item % len(KINDS)], item))
                 }
             }
         }
@@ -123,5 +124,18 @@ script: []kit.Step = {
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.table.list.selected == ROWS - 1 && state.table.list.last == ROWS }, "End went to the last row and the view followed"),
     kit.Capture("table"),
+    kit.KeyDownStep(.LEFT_SHIFT),
+    kit.Wait(1),
+    kit.MoveTo({300, 150}),
+    kit.Wait(2),
+    kit.Scroll(-4),
+    kit.Wait(3),
+    kit.KeyUpStep(.LEFT_SHIFT),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        x: f32 = ui.UiTableScrollX(&state.app.ctx, &state.table)
+        return x > 80 && state.table.content_width == 760
+    }, "shift and the wheel scrolled the columns sideways"),
+    kit.Capture("table_sideways"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

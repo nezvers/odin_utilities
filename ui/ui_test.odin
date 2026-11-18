@@ -2703,3 +2703,90 @@ test_a_tree_widget_opens_with_the_arrow_selects_with_a_click_and_moves_with_left
     testing.expect_value(t, view.toggled, src)
     testing.expect_value(t, TreeGet(tree, src).expanded, true)
 }
+
+@(private = "file")
+wideTableFrame :: proc(harness: ^Harness, table: ^Table, input: Input) {
+    frame(harness, input)
+    if UiTable(&harness.ctx, "T", table, 100, 20, {Fixed(200), Fixed(120)}) {
+        for row in table.list.first ..< table.list.last {
+            if UiTableRow(&harness.ctx, table, row) {
+                UiTableText(&harness.ctx, table, 0, "name")
+                UiTableText(&harness.ctx, table, 1, "size")
+            }
+        }
+    }
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(test)
+test_a_table_wider_than_its_room_scrolls_sideways_with_its_header :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    table: Table
+    TableInit(&table, {{name = "Name", width = 150}, {name = "Size", width = 150}})
+    for _ in 0 ..< 3 { wideTableFrame(harness, &table, pointerAt({50, 80})) }
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+    testing.expect_value(t, table.content_width, 300)
+    header: Id = IdFromIndex(0, IdFromString("header", UiIdPath("T")))
+    rect, _ := UiElementRect(&harness.ctx, header)
+    testing.expect_value(t, rect.x, 0)
+    row: Rect = {}
+    for command in UiCommands(&harness.ctx) {
+        if command.kind == .DRAW && command.info.kind == .SELECTABLE && command.info.rect.y > 28 {
+            row = command.info.rect
+            break
+        }
+    }
+    testing.expect_value(t, row.z, 300)                                 // a row is as wide as all the columns
+    // shift and the wheel (or the sideways wheel) scroll the columns, the header goes with them
+    wheel: Input = pointerAt({50, 80})
+    wheel.wheel = {0, -1}
+    wheel.modifiers = {.SHIFT}
+    wideTableFrame(harness, &table, wheel)
+    wideTableFrame(harness, &table, pointerAt({50, 80}))
+    rect, _ = UiElementRect(&harness.ctx, header)
+    testing.expect(t, rect.x < -20 && rect.x > -60, "the header moved with the rows")
+    // the vertical wheel alone still scrolls the rows
+    vertical: Input = pointerAt({50, 80})
+    vertical.wheel = {0, -1}
+    wideTableFrame(harness, &table, vertical)
+    wideTableFrame(harness, &table, pointerAt({50, 80}))
+    testing.expect(t, table.list.first >= 0)
+    side: Id = UiIdPath("T")
+    state: ^WidgetState = stateFind(&harness.ctx, side)
+    before: f32 = state.scroll.x
+    testing.expect(t, before < 0 && state.scroll.y < 0)
+    // never past the end
+    for _ in 0 ..< 10 { wideTableFrame(harness, &table, wheel) }
+    wideTableFrame(harness, &table, pointerAt({50, 80}))
+    testing.expect_value(t, state.scroll.x, -(300 - state.rect.z))
+    // the bar under the rows: dragged back to the start
+    bar, found := UiElementRect(&harness.ctx, IdFromString("sideways", UiIdPath("T")))
+    testing.expect(t, found && bar.z > 100)
+    end: Vec2 = {bar.x + bar.z - 4, bar.y + 4}
+    wideTableFrame(harness, &table, pointerAt(end))
+    wideTableFrame(harness, &table, pointerAt(end, true, true))
+    for i in 1 ..= 10 { wideTableFrame(harness, &table, pointerAt({end.x - f32(i) * bar.z / 10, end.y}, true)) }
+    wideTableFrame(harness, &table, pointerAt({bar.x - 4, end.y}, false, false, true))
+    testing.expect_value(t, state.scroll.x, 0)
+}
+
+@(test)
+test_the_last_column_fills_the_room_and_the_table_does_not_scroll_then :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    table: Table
+    TableInit(&table, {{name = "Name", width = 60}, {name = "Size", width = 60}})
+    table.fill_last = true
+    for _ in 0 ..< 4 { wideTableFrame(harness, &table, pointerAt({-10, -10})) }
+    testing.expect(t, table.shown[0] == 60 && table.shown[1] > 100, "the last one took the room the first one left")
+    testing.expect(t, table.content_width <= 200 && table.content_width > 150)
+    testing.expect_value(t, stateFind(&harness.ctx, UiIdPath("T")).scroll.x, 0)
+    testing.expect_value(t, table.columns[1].width, 60)                 // the width the person set is kept: it is the least
+    // narrower than the room: the bar is not there
+    _, found := UiElementRect(&harness.ctx, IdFromString("sideways", UiIdPath("T")))
+    testing.expect(t, !found)
+}

@@ -29,15 +29,16 @@ VirtualList :: struct {
     hover: int,                 // the row under the pointer, VIRTUAL_NONE for none
     row_height: f32,
     count: int,
+    row_width: f32,             // 0: a row is as wide as the list; else it is this wide and the list scrolls sideways when it is wider than the view (tables)
 }
 
 @(private)
-virtualOpen :: proc(ctx: ^Context, id: Id, list: ^VirtualList, count: int, row_height: f32, size: Size, fixed_height: f32 = 0) -> bool {
+virtualOpen :: proc(ctx: ^Context, id: Id, list: ^VirtualList, count: int, row_height: f32, size: Size, fixed_height: f32 = 0, content_width: f32 = 0) -> bool {
     state: ^WidgetState = stateGet(ctx, id)
     interaction: Interaction = widgetBehavior(ctx, id)
     metrics: ^Metrics = &ctx.style.metrics
     height: f32 = max(row_height, 1)
-    list.row_height, list.count = height, count
+    list.row_height, list.count, list.row_width = height, count, content_width
     list.changed, list.activated = false, false
     list.hover = VIRTUAL_NONE
     list.selected = clamp(list.selected, VIRTUAL_NONE, count - 1) if count > 0 else VIRTUAL_NONE
@@ -45,8 +46,13 @@ virtualOpen :: proc(ctx: ^Context, id: Id, list: ^VirtualList, count: int, row_h
     mouse: Vec2 = ctx.input.mouse_position
 
     scrollbarDrag(ctx, id, state)
-    if ctx.hover_scroll == id && ctx.input.wheel.y != 0 {
-        state.scroll.y += ctx.input.wheel.y * metrics.font_size * 2.5
+    if ctx.hover_scroll == id {
+        sideways: bool = content_width > 0 && (ctx.input.wheel.x != 0 || (.SHIFT in ctx.input.modifiers && ctx.input.wheel.y != 0))
+        if sideways {
+            state.scroll.x += (ctx.input.wheel.x if ctx.input.wheel.x != 0 else ctx.input.wheel.y) * metrics.font_size * 2.5
+        } else if ctx.input.wheel.y != 0 {
+            state.scroll.y += ctx.input.wheel.y * metrics.font_size * 2.5
+        }
     }
     row_at :: proc(state: ^WidgetState, view: Rect, mouse: Vec2, height: f32, count: int) -> int {
         row: int = int(math.floor((mouse.y - view.y - state.scroll.y) / height))
@@ -95,6 +101,7 @@ virtualOpen :: proc(ctx: ^Context, id: Id, list: ^VirtualList, count: int, row_h
     total: f32 = f32(count) * height
     limit: f32 = max(total - view.w, 0)
     state.scroll.y = clamp(state.scroll.y, -limit, 0)
+    state.scroll.x = clamp(state.scroll.x, -max(content_width - view.z, 0), 0) if content_width > 0 else 0
 
     visible: f32 = view.w
     if visible <= 0 { visible = fixed_height if fixed_height > 0 else height * VIRTUAL_DEFAULT_VIEW_ROWS }
@@ -104,7 +111,7 @@ virtualOpen :: proc(ctx: ^Context, id: Id, list: ^VirtualList, count: int, row_h
     ElementOpen(ctx, {
         id = id,
         layout = {size = {size.width if size.width != {} else Grow(), size.height if size.height != {} else Grow()}, direction = .TOP_TO_BOTTOM},
-        clip = {vertical = true, offset = state.scroll},
+        clip = {horizontal = content_width > 0, vertical = true, offset = state.scroll},
         hit = {.INTERACTIVE, .SCROLL},
         draw = {kind = .SCROLL_AREA, font_size = metrics.font_size},
     })
@@ -135,7 +142,7 @@ UiVirtualEnd :: proc(ctx: ^Context, name: string, list: ^VirtualList, count: int
 UiVirtualRow :: proc(ctx: ^Context, list: ^VirtualList, row: int) -> bool {
     metrics: ^Metrics = &ctx.style.metrics
     return ElementOpen(ctx, {
-        layout = {size = {Grow(), Fixed(list.row_height)}, direction = .LEFT_TO_RIGHT, align = {y = .CENTER}},
+        layout = {size = {Fixed(list.row_width) if list.row_width > 0 else Grow(), Fixed(list.row_height)}, direction = .LEFT_TO_RIGHT, align = {y = .CENTER}},
         draw = {kind = .SELECTABLE, hover = 1 if list.hover == row else 0, flags = {.SELECTED} if list.selected == row else {}, font_size = metrics.font_size},
     })
 }
@@ -168,6 +175,10 @@ Table :: struct {
     sort_descending: bool,
     sort_changed: bool,
     resizing: int,              // the column whose edge is dragged, VIRTUAL_NONE for none
+    fill_last: bool,            // the last column takes the room that the others leave (never narrower than its width)
+    shown: [TABLE_MAX_COLUMNS]f32,  // the widths of this frame: the widths of the columns, the last one wider when it fills
+    body_id: Id,                // the id of the rows (what UiTable made it: the end of the table needs the same one)
+    content_width: f32,         // all the columns together: the table scrolls sideways when this is more than its width
 }
 
 TableInit :: proc(table: ^Table, columns: []TableColumn) {
@@ -182,14 +193,30 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
     id: Id = UiId(ctx, name)
     metrics: ^Metrics = &ctx.style.metrics
     table.sort_changed = false
+    table.body_id = id
+    // the widths of this frame: the columns, the last one wider when it fills the room (from the last frame); the table scrolls sideways when they are more than the room
+    body: ^WidgetState = stateFind(ctx, id)
+    scroll_x: f32 = body.scroll.x if body != nil else 0
+    room: f32 = body.rect.z - metrics.scrollbar_width if body != nil else 0
+    table.content_width = 0
+    for i in 0 ..< table.column_count {
+        column: ^TableColumn = &table.columns[i]
+        column.width = max(column.width, column.min_width if column.min_width > 0 else TABLE_MIN_COLUMN)
+        table.shown[i] = column.width
+        table.content_width += column.width
+    }
+    if table.fill_last && table.column_count > 0 && room > table.content_width {
+        table.shown[table.column_count - 1] += room - table.content_width
+        table.content_width = room
+    }
     ElementOpen(ctx, {
         id = IdFromString("table", id),
         layout = {size = {size.width if size.width != {} else Grow(), size.height if size.height != {} else Grow()}, direction = .TOP_TO_BOTTOM},
     })
-    ElementOpen(ctx, {layout = {size = {Grow(), Fixed(metrics.control_height)}, direction = .LEFT_TO_RIGHT}})
+    ElementOpen(ctx, {layout = {size = {Grow(), Fixed(metrics.control_height)}}, clip = {horizontal = true, cut = true, offset = {scroll_x, 0}}})
+    ElementOpen(ctx, {layout = {size = {Fixed(table.content_width), Grow()}, direction = .LEFT_TO_RIGHT}})
     for i in 0 ..< table.column_count {
         column: ^TableColumn = &table.columns[i]
-        column.width = max(column.width, column.min_width if column.min_width > 0 else TABLE_MIN_COLUMN)
         header_id: Id = IdFromIndex(u32(i), IdFromString("header", id))
         _ = stateGet(ctx, header_id)
         interaction: Interaction = widgetBehavior(ctx, header_id)
@@ -207,7 +234,7 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
         if table.sort_column == i { label = UiFormat(ctx, "%s %s", column.name, "v" if table.sort_descending else "^") }
         ElementOpen(ctx, {
             id = header_id,
-            layout = {size = {Fixed(column.width - TABLE_HANDLE), Grow()}},
+            layout = {size = {Fixed(table.shown[i] - TABLE_HANDLE), Grow()}},
             hit = {.INTERACTIVE},
             draw = {kind = .SELECTABLE, name = label, hover = 1 if interaction.hovered else 0, flags = {.SELECTED} if table.sort_column == i else {}, font_size = metrics.font_size},
         })
@@ -236,12 +263,42 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
         ElementClose(ctx)
     }
     ElementClose(ctx)
-    body: f32 = size.height.min - metrics.control_height if size.height.kind == .FIXED else 0
-    return virtualOpen(ctx, id, &table.list, count, row_height, {Grow(), Grow()}, body)
+    ElementClose(ctx)
+    fixed_body: f32 = size.height.min - metrics.control_height if size.height.kind == .FIXED else 0
+    return virtualOpen(ctx, id, &table.list, count, row_height, {Grow(), Grow()}, fixed_body, table.content_width)
 }
 
 UiTableEnd :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_height: f32, size: Size = {}) {
     virtualClose(ctx, &table.list)
+    // the bar for the sideways scrolling, under the rows, while the columns are wider than the table
+    id: Id = table.body_id
+    body: ^WidgetState = stateFind(ctx, id)
+    if body != nil && body.rect.z > 0 && table.content_width > body.rect.z + 0.5 {
+        metrics: ^Metrics = &ctx.style.metrics
+        bar_id: Id = IdFromString("sideways", id)
+        bar_state: ^WidgetState = stateGet(ctx, bar_id)
+        bar: Interaction = widgetBehavior(ctx, bar_id)
+        limit: f32 = table.content_width - body.rect.z
+        ratio: f32 = clamp(body.rect.z / table.content_width, 0, 1)
+        track: Rect = bar_state.rect
+        thumb: f32 = max(track.z * ratio, metrics.scrollbar_width * 2)
+        free: f32 = track.z - thumb
+        if bar.pressed && (ctx.input.mouse_down || ctx.input.mouse_released) && free > 0 {
+            if ctx.input.mouse_pressed {
+                left: f32 = track.x + free * clamp(-body.scroll.x / limit, 0, 1)
+                x: f32 = ctx.input.mouse_position.x
+                bar_state.drag.x = x - left if x >= left && x <= left + thumb else thumb * 0.5
+            }
+            body.scroll.x = -clamp((ctx.input.mouse_position.x - bar_state.drag.x - track.x) / free, 0, 1) * limit
+        }
+        ElementOpen(ctx, {
+            id = bar_id,
+            layout = {size = {Grow(), Fixed(metrics.scrollbar_width + 2)}},
+            hit = {.INTERACTIVE, .NO_FOCUS},
+            draw = {kind = .SCROLLBAR, actual = 1, value = clamp(-body.scroll.x / limit, 0, 1), ratio = ratio},
+        })
+        ElementClose(ctx)
+    }
     ElementClose(ctx)
 }
 
@@ -250,7 +307,7 @@ UiTableEnd :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_h
 UiTableRow :: proc(ctx: ^Context, table: ^Table, row: int) -> bool {
     metrics: ^Metrics = &ctx.style.metrics
     return ElementOpen(ctx, {
-        layout = {size = {Grow(), Fixed(table.list.row_height)}, direction = .LEFT_TO_RIGHT, align = {y = .CENTER}},
+        layout = {size = {Fixed(table.list.row_width) if table.list.row_width > 0 else Grow(), Fixed(table.list.row_height)}, direction = .LEFT_TO_RIGHT, align = {y = .CENTER}},
         draw = {kind = .SELECTABLE, hover = 1 if table.list.hover == row else 0, flags = {.SELECTED} if table.list.selected == row else {}, font_size = metrics.font_size},
     })
 }
@@ -262,7 +319,7 @@ UiTableRowEnd :: proc(ctx: ^Context, table: ^Table, row: int) {
 // A cell: a box as wide as its column (cut at its edges) for what the program puts in it. True while it is declared.
 @(deferred_in = UiTableCellEnd)
 UiTableCell :: proc(ctx: ^Context, table: ^Table, column: int) -> bool {
-    width: f32 = table.columns[clamp(column, 0, TABLE_MAX_COLUMNS - 1)].width
+    width: f32 = table.shown[clamp(column, 0, TABLE_MAX_COLUMNS - 1)]
     return ElementOpen(ctx, {
         layout = {size = {Fixed(width), Grow()}, padding = PaddingXY(8, 0), align = {y = .CENTER}},
         clip = {horizontal = true, cut = true},
@@ -276,4 +333,15 @@ UiTableCellEnd :: proc(ctx: ^Context, table: ^Table, column: int) {
 // A cell with a text.
 UiTableText :: proc(ctx: ^Context, table: ^Table, column: int, text: string) {
     if UiTableCell(ctx, table, column) { UiLabel(ctx, text) }
+}
+
+// How far the columns are scrolled to the left, in pixels (0 or more).
+UiTableScrollX :: proc(ctx: ^Context, table: ^Table) -> f32 {
+    state: ^WidgetState = stateFind(ctx, table.body_id)
+    return -state.scroll.x if state != nil else 0
+}
+
+// Scrolls the columns sideways to a distance in pixels (it is kept within the table).
+UiTableScrollSet :: proc(ctx: ^Context, table: ^Table, x: f32) {
+    if state := stateFind(ctx, table.body_id); state != nil { state.scroll.x = -max(x, 0) }
 }

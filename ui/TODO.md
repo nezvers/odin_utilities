@@ -25,7 +25,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot
 - [x] Inspector panel (`UiInspector`): element tree of the last frame, buffer usage, measure cache, picking by the pointer; demo with a screenshot
 - [ ] Inspector: the layout of the selected element (sizing, padding, gap, floating), the draw commands of a frame as a list, a filter by name, collapsing of the tree
-- [ ] Table: horizontal scrolling when the columns are wider than the table, a column that fills the room, reordering columns by dragging a header, double click on an edge to fit the column, keys inside of a row (cells that are widgets)
+- [x] Table: sideways scrolling (wheel with Shift, bar, header goes along) and a last column that fills the room
+- [ ] Table: reordering columns by dragging a header, double click on an edge to fit the column, keys inside of a row (cells that are widgets)
 - [x] Tree (`Tree`, `UiTree`): fixed storage model, visible rows flattened, arrows, keys, lazy loading through `view.toggled`; demo with a screenshot
 - [ ] Tree: drag and drop of nodes, rename in place, icons or custom row content, several selected nodes, a filter that opens the parents of what matches
 - [ ] Text area: rows are found from the whole text every frame (measures per word): keep them between frames while the text and the width do not change

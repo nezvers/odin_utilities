@@ -178,7 +178,8 @@ A `Context` is big now (about 300 KB: the tables of the measure cache, the inspe
 `if ui.UiVirtual(&ctx, "Files", &list, len(files), 24, size) { for row in list.first ..< list.last { if ui.UiVirtualRow(&ctx, &list, row) { ...widgets... } } }`: a click selects the row under the pointer (`list.changed`), a double click or
 Enter sets `list.activated`, up, down, page up, page down, Home and End move the selection while the list has the focus (they do not move the keyboard focus away), the view follows it, the wheel and the scrollbar scroll, a button inside of a row takes its own clicks.
 `UiTable` adds a header: a click on a column makes it ascending, descending, then none (`table.sort_changed`, `sort_column`, `sort_descending`: the program sorts its own list of row numbers), the edge of a header is dragged to resize the column (`TableColumn.width`,
-never below `min_width`), `UiTableRow` / `UiTableCell` / `UiTableText` declare the cells at the width of their column. Before the size of the view is known the first frame declares a fixed height worth of rows (or ten): give a table a fixed height when its rows have many elements
+never below `min_width`), `UiTableRow` / `UiTableCell` / `UiTableText` declare the cells at the width of their column. A table wider than its room scrolls sideways (the wheel with Shift, a sideways wheel, or the bar under the rows; the header goes with the rows, `UiTableScrollX` / `UiTableScrollSet`); `table.fill_last` makes the last column take
+the room that the others leave, so a narrow table has no empty strip. Before the size of the view is known the first frame declares a fixed height worth of rows (or ten): give a table a fixed height when its rows have many elements
 and the storage is small. A tree is a list of the rows that are visible: the program flattens its tree and draws the indentation and the arrow in the row. Demo: `demo_common/demo_table.odin`.
 
 ## Timeline

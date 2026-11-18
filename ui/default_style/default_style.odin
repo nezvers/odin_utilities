@@ -406,8 +406,14 @@ DrawScrollbar :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
     track: ui.Rect = ui.RectShrink(info.rect, 1)
-    thumb_height: f32 = max(track.w * info.ratio, track.z * 2)
-    thumb: ui.Rect = {track.x, track.y + (track.w - thumb_height) * info.value, track.z, thumb_height}
+    thumb: ui.Rect
+    if info.actual == 1 {
+        thumb_width: f32 = max(track.z * info.ratio, track.w * 2)
+        thumb = {track.x + (track.z - thumb_width) * info.value, track.y, thumb_width, track.w}
+    } else {
+        thumb_height: f32 = max(track.w * info.ratio, track.z * 2)
+        thumb = {track.x, track.y + (track.w - thumb_height) * info.value, track.z, thumb_height}
+    }
     FillRounded(painter, track, 1, ui.Color{theme.track.r, theme.track.g, theme.track.b, 140})
     FillRounded(painter, thumb, 1, theme.text_dim)
 }
