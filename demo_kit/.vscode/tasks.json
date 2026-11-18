@@ -4,6 +4,18 @@
     "args": [],
     "tasks": [
         {
+            "label": "Build Captures",
+            "type": "shell",
+            "command": "odin build tool/captures -strict-style -vet -out:${config:project_name}_captures.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build tool/captures -strict-style -vet -out:${config:project_name}_captures.bin -debug"
+            },
+            "osx": {
+                "command": "odin build tool/captures -strict-style -vet -out:${config:project_name}_captures.bin -debug"
+            }
+        },
+        {
             "label": "Build Tests",
             "type": "shell",
             "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.exe -debug",

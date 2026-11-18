@@ -2,11 +2,51 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Run captures (every library, raylib)",
+            "request": "launch",
+            "preLaunchTask": "Build Captures",
+            "args": [],
+            "cwd": "${workspaceFolder}/..",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_captures.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_captures.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_captures.bin"
+            }
+        },
+        {
+            "name": "Run captures (ui and reports, with Karl2D)",
+            "request": "launch",
+            "preLaunchTask": "Build Captures",
+            "args": ["ui", "reports", "--karl2d"],
+            "cwd": "${workspaceFolder}/..",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_captures.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_captures.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_captures.bin"
+            }
+        },
+        {
             "name": "Debug Tests",
             "request": "launch",
             "preLaunchTask": "Build Tests",
             "args": [],
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/..",
 
             // Default for Linux
             "type": "cppvsdbg",

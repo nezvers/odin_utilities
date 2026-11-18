@@ -65,7 +65,12 @@ Keep the positions a script clicks fixed numbers (not relative to the window siz
 (`odin run <lib>/demo_raylib -define:DEMO_TEST=true -define:DEMO_CAPTURE=true`), so `odin test` and normal runs ignore it.
 - No golden image yet: the frame is written as the golden (look at it, commit it). Otherwise a pixel differs above `-define:DEMO_CAPTURE_TOLERANCE=8`
   per channel, and the step fails when more than 0.2 percent of the pixels differ; the frame is saved as `<name>.actual.png` (git ignored) next to the golden.
-- `-define:DEMO_CAPTURE_UPDATE=true` replaces the golden images with the current frames.
+- `-define:DEMO_CAPTURE_UPDATE=true` replaces the golden images with the current frames (all of them: restore the files that did not change before committing).
+- **`odin run demo_kit/tool/captures`** (from odin_utilities) runs the screenshot tests of every library that has `Capture` steps, in a window, and prints one line per library
+  (`ui  raylib  12 compared, 0 new, 0 failed`, then a line per changed picture with the pixel count and the path of the `.actual.png`). `-- ui reports` limits it to those libraries, `-- --karl2d` runs the
+  Karl2D demos too (their pictures are separate), `-- --update ui` replaces the stored pictures of a library. Exit code 0: every picture is as stored. 1: a picture changed or a demo failed. 2: pictures that
+  did not exist were stored (a missing golden passes by itself, so it is reported until someone has looked at it: `-- --allow-new` says that is fine). Nothing runs it automatically: run it before committing a
+  change to drawing, text layout or a style.
 - One folder per backend (fonts differ), and goldens depend on the window size and scale of the machine that made them.
 - Karl2D reads the screen back through the 3D layer of the fork, so `DEMO_CAPTURE` makes `Run` start Karl2D with `depth_test`.
 - `CaptureFrame` (pixels of the frame), `PngWrite`/`PngRead` (the writer compresses flat areas, a ui frame is about 50 KB) and `ImageDifference` are plain procs for your own checks.
