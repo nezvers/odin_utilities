@@ -49,6 +49,11 @@ measureText :: proc(ctx: ^Context, text: string, font_size: f32) -> Vec2 {
 }
 
 // Forgets every measured size (a new font, a new UI scale).
+// The width of a text in the font of the style, in pixels: what a program measures to fit a column to its cells.
+UiTextWidth :: proc(ctx: ^Context, text: string) -> f32 {
+    return measureText(ctx, text, ctx.style.metrics.font_size).x
+}
+
 UiMeasureCacheClear :: proc(ctx: ^Context) {
     ctx.measure_cache.entries = {}
 }

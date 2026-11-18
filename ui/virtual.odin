@@ -158,6 +158,7 @@ UiVirtualRowEnd :: proc(ctx: ^Context, list: ^VirtualList, row: int) {
 TABLE_MAX_COLUMNS :: 16
 TABLE_MIN_COLUMN :: f32(32)
 TABLE_HANDLE :: f32(6)
+TABLE_CELL_PADDING :: f32(8)       // what UiTableCell leaves at each side of its text
 
 TableColumn :: struct {
     name: string,               // the text of the header (it has to live as long as the table)
@@ -182,6 +183,7 @@ Table :: struct {
     content_width: f32,         // all the columns together: the table scrolls sideways when this is more than its width
     reorderable: bool,          // a header can be dragged to another place: the program declares the cells by place (TableColumnAt) and not by column
     order: [TABLE_MAX_COLUMNS]int,  // the column that is at each place from the left: the identity until a header is moved
+    fit: int,                   // the column whose edge was double clicked in this frame, VIRTUAL_NONE for none: the program measures its cells and calls TableFit (the table only declares the rows in view)
     moved: int,                 // the column that was dropped at a new place in this frame, VIRTUAL_NONE for none
     reorder: int,               // the column whose header is held, VIRTUAL_NONE for none
     reorder_active: bool,       // the pointer moved far enough: it is a drag and not a click
@@ -194,8 +196,15 @@ TableColumnAt :: proc(table: ^Table, place: int) -> int {
     return table.order[clamp(place, 0, TABLE_MAX_COLUMNS - 1)]
 }
 
+// Makes a column as wide as its widest content (a width in pixels, from UiTextWidth) plus the padding of a cell. Call it when `table.fit` names the column.
+TableFit :: proc(table: ^Table, column: int, content_width: f32) {
+    if column < 0 || column >= table.column_count { return }
+    least: f32 = table.columns[column].min_width if table.columns[column].min_width > 0 else TABLE_MIN_COLUMN
+    table.columns[column].width = max(content_width + TABLE_CELL_PADDING * 2, least)
+}
+
 TableInit :: proc(table: ^Table, columns: []TableColumn) {
-    table^ = {sort_column = VIRTUAL_NONE, resizing = VIRTUAL_NONE, moved = VIRTUAL_NONE, reorder = VIRTUAL_NONE, list = {selected = VIRTUAL_NONE}}
+    table^ = {sort_column = VIRTUAL_NONE, resizing = VIRTUAL_NONE, moved = VIRTUAL_NONE, fit = VIRTUAL_NONE, reorder = VIRTUAL_NONE, list = {selected = VIRTUAL_NONE}}
     table.column_count = min(len(columns), TABLE_MAX_COLUMNS)
     for i in 0 ..< table.column_count {
         table.columns[i] = columns[i]
@@ -209,7 +218,7 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
     id: Id = UiId(ctx, name)
     metrics: ^Metrics = &ctx.style.metrics
     table.sort_changed = false
-    table.moved = VIRTUAL_NONE
+    table.moved, table.fit = VIRTUAL_NONE, VIRTUAL_NONE
     table.body_id = id
     // the widths of this frame: the columns, the last one wider when it fills the room (from the last frame); the table scrolls sideways when they are more than the room
     body: ^WidgetState = stateFind(ctx, id)
@@ -263,6 +272,7 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
         handle_id: Id = IdFromIndex(u32(i), IdFromString("edge", id))
         handle_state: ^WidgetState = stateGet(ctx, handle_id)
         handle: Interaction = widgetBehavior(ctx, handle_id)
+        if handle.double_clicked && handle.pressed && ctx.input.mouse_pressed { table.fit = i }
         if handle.pressed && (ctx.input.mouse_down || ctx.input.mouse_released) {
             if ctx.input.mouse_pressed {
                 handle_state.drag = ctx.input.mouse_position
@@ -390,7 +400,7 @@ UiTableRowEnd :: proc(ctx: ^Context, table: ^Table, row: int) {
 UiTableCell :: proc(ctx: ^Context, table: ^Table, column: int) -> bool {
     width: f32 = table.shown[clamp(column, 0, TABLE_MAX_COLUMNS - 1)]
     return ElementOpen(ctx, {
-        layout = {size = {Fixed(width), Grow()}, padding = PaddingXY(8, 0), align = {y = .CENTER}},
+        layout = {size = {Fixed(width), Grow()}, padding = PaddingXY(TABLE_CELL_PADDING, 0), align = {y = .CENTER}},
         clip = {horizontal = true, cut = true},
     })
 }

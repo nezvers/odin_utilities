@@ -237,6 +237,61 @@ TreeVisible :: proc(tree: ^Tree, rows: []TreeRow) -> int {
     return count
 }
 
+// Like TreeVisible, but only the nodes whose name contains `filter` (without regard to case) and the nodes above them, all of them open: a filter that opens the parents of what matches.
+// An empty filter is TreeVisible.
+TreeVisibleFiltered :: proc(tree: ^Tree, rows: []TreeRow, filter: string) -> int {
+    if filter == "" { return TreeVisible(tree, rows) }
+    keep: [TREE_NODES + 1]bool
+    it := hm.iterator_make(&tree.nodes)
+    for node, handle in hm.iterate(&it) {
+        if !containsFold(TreeName(node), filter) { continue }
+        // the node and every node above it, until one that is kept already
+        for current: TreeHandle = handle; current != {}; {
+            if keep[current.idx] { break }
+            keep[current.idx] = true
+            current = TreeGet(tree, current).parent
+        }
+    }
+    count: int
+    depth: int
+    current: TreeHandle = tree.first
+    for current != {} && count < len(rows) {
+        node: ^TreeNode = TreeGet(tree, current)
+        if keep[current.idx] {
+            // it is open when something under it is kept
+            opened: bool
+            for child: TreeHandle = node.first_child; child != {}; child = TreeGet(tree, child).next {
+                if keep[child.idx] {
+                    opened = true
+                    break
+                }
+            }
+            rows[count] = {node = current, depth = u16(depth), expandable = node.branch || node.first_child != {}, expanded = opened}
+            count += 1
+            if opened {
+                current = node.first_child
+                depth += 1
+                for current != {} && !keep[current.idx] { current = TreeGet(tree, current).next }
+                if current != {} { continue }
+                // (not reached: `opened` says a child is kept)
+            }
+        }
+        // the next kept node: a sibling, else a sibling of the nearest parent that has one
+        for current != {} {
+            item: ^TreeNode = TreeGet(tree, current)
+            next: TreeHandle = item.next
+            for next != {} && !keep[next.idx] { next = TreeGet(tree, next).next }
+            if next != {} {
+                current = next
+                break
+            }
+            current = item.parent
+            depth -= 1
+        }
+    }
+    return count
+}
+
 // What the widget keeps and tells: the visible rows, the selection, and what happened in this frame.
 TreeView :: struct {
     list: VirtualList,
@@ -257,6 +312,19 @@ TreeView :: struct {
     rename_fresh: bool,         // the text field gets the focus in the next frame
     rename_buffer: [TREE_NAME_MAX]u8,
     rename_length: int,
+    filter: [TREE_NAME_MAX]u8,  // only the nodes that match and the nodes above them are shown, all open (TreeViewFilter)
+    filter_length: int,
+}
+
+// Sets the filter of the tree view (a text without regard to case; empty: no filter).
+TreeViewFilter :: proc(view: ^TreeView, text: string) {
+    view.filter_length = min(len(text), len(view.filter))
+    copy(view.filter[:view.filter_length], text[:view.filter_length])
+}
+
+@(private)
+treeRows :: proc(tree: ^Tree, view: ^TreeView) -> int {
+    return TreeVisibleFiltered(tree, view.rows[:], string(view.filter[:view.filter_length]))
 }
 
 // Says if a node may be dropped under a parent (none: at the top) before the node `before` (none: last).
@@ -285,7 +353,7 @@ UiTree :: proc(ctx: ^Context, name: string, tree: ^Tree, view: ^TreeView, size: 
     view.changed, view.activated, view.toggled, view.moved, view.renamed = false, false, {}, {}, {}
     if TreeGet(tree, view.renaming) == nil { view.renaming = {} }
     editing: bool = view.renaming != {}               // the Enter that ends an edit does not also activate the row
-    view.row_count = TreeVisible(tree, view.rows[:])
+    view.row_count = treeRows(tree, view)
     if TreeGet(tree, view.selected) == nil { view.selected = {} }
     // a selected node that is hidden (a parent was closed) is replaced by its nearest visible parent
     for view.selected != {} && treeRowOf(view, view.selected) == VIRTUAL_NONE {
@@ -318,7 +386,7 @@ UiTree :: proc(ctx: ^Context, name: string, tree: ^Tree, view: ^TreeView, size: 
             view.rename_length = node.name_length
             copy(view.rename_buffer[:node.name_length], node.name[:node.name_length])
         }
-        view.row_count = TreeVisible(tree, view.rows[:])
+        view.row_count = treeRows(tree, view)
         view.list.selected = treeRowOf(view, view.selected)
     }
 

@@ -5,6 +5,7 @@ package demo_common
 // the edge of a header is dragged to resize the column, a click selects a row, the keys, the wheel and the scrollbar move through the rows. The program sorts its own list of row numbers when the
 // table says the sorting changed; the table only draws the rows it is told to.
 
+import "core:fmt"
 import "core:slice"
 import ui ".."
 import kit "../../demo_kit"
@@ -64,12 +65,30 @@ sortRows :: proc() {
     })
 }
 
+// A double click on the edge of a header: the column gets as wide as its widest cell (every row is measured once: the table only declares the rows in view)
+fitColumn :: proc(c: ^ui.Context, column: int) {
+    widest: f32 = ui.UiTextWidth(c, state.table.columns[column].name) + 24          // the name and the arrow of the sorting
+    buffer: [64]u8
+    for row in 0 ..< ROWS {
+        text: string
+        switch column {
+        case 0: text = fmt.bprintf(buffer[:], "file_%06d.dat", row)
+        case 1: text = fmt.bprintf(buffer[:], "%d", sizeOf(row))
+        case 2: text = KINDS[row % len(KINDS)]
+        case 3: text = fmt.bprintf(buffer[:], "/data/%s/file_%06d.dat", KINDS[row % len(KINDS)], row)
+        }
+        widest = max(widest, ui.UiTextWidth(c, text))
+    }
+    ui.TableFit(&state.table, column, widest)
+}
+
 draw :: proc(ctx: ^kit.Context) {
     ui_demo_begin(&state.app, ctx)
     c: ^ui.Context = &state.app.ctx
     if ui.UiPanel(c, "table demo", {size = {ui.Fixed(640), ui.Fit()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(10), gap = 8}) {
         if ui.UiTable(c, "Files", &state.table, ROWS, 24, {ui.Fixed(600), ui.Fixed(300)}) {
             if state.table.sort_changed { sortRows() }
+            if state.table.fit != ui.VIRTUAL_NONE { fitColumn(c, state.table.fit) }
             for row in state.table.list.first ..< state.table.list.last {
                 item: int = state.order[row]
                 if ui.UiTableRow(c, &state.table, row) {
@@ -153,5 +172,18 @@ script: []kit.Step = {
         return x > 80 && state.table.content_width == 760
     }, "shift and the wheel scrolled the columns sideways"),
     kit.Capture("table_sideways"),
+    kit.Wait(1),
+    // a double click on the edge of a header fits the column to its widest cell: Size is 120 wide and its numbers are narrower
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        ui.UiTableScrollSet(&state.app.ctx, &state.table, 0)
+        return true
+    }, "scroll back to the first column"),
+    kit.Wait(3),
+    kit.MoveTo({367, 24}),
+    kit.Wait(3),
+    kit.Click({367, 24}),
+    kit.Click({367, 24}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.table.columns[1].width < 100 && state.table.columns[1].width > 40 }, "a double click on the edge fitted the Size column to its cells"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

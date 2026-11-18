@@ -2493,6 +2493,32 @@ tableClick :: proc(harness: ^Harness, table: ^Table, at: Vec2) {
 }
 
 @(test)
+test_a_double_click_on_the_edge_of_a_header_asks_for_a_fit :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    table: Table
+    TableInit(&table, {{name = "Name", width = 100}, {name = "Size", width = 80}})
+    for _ in 0 ..< 3 { tableFrame(harness, &table, pointerAt({-10, -10})) }
+    testing.expect_value(t, table.fit, VIRTUAL_NONE)
+    // the edge of "Name" (its last 6 pixels): two presses
+    tableFrame(harness, &table, pointerAt({97, 14}))
+    tableFrame(harness, &table, pointerAt({97, 14}, true, true))
+    tableFrame(harness, &table, pointerAt({97, 14}, false, false, true))
+    tableFrame(harness, &table, pointerAt({97, 14}, true, true))
+    testing.expect_value(t, table.fit, 0)
+    tableFrame(harness, &table, pointerAt({97, 14}, false, false, true))
+    tableFrame(harness, &table, pointerAt({-10, -10}))
+    testing.expect_value(t, table.fit, VIRTUAL_NONE)                          // told once
+    TableFit(&table, 0, 50)
+    testing.expect_value(t, table.columns[0].width, 66)                       // 50 and the padding of both sides
+    TableFit(&table, 1, 4)
+    testing.expect_value(t, table.columns[1].width, TABLE_MIN_COLUMN)         // never below the least
+    TableFit(&table, 7, 100)                                                  // a column that is not there: nothing
+    testing.expect(t, UiTextWidth(&harness.ctx, "abc") > 0)
+}
+
+@(test)
 test_a_header_dragged_to_another_place_moves_its_column_and_does_not_sort :: proc(t: ^testing.T) {
     harness: ^Harness = new(Harness)
     defer free(harness)
@@ -3539,5 +3565,52 @@ test_the_inspector_lists_commands_keeps_a_history_and_collapses_elements :: proc
     inspectorFrame(ctx, &style, pointerAt({-10, -10}))
     inspectorFrame(ctx, &style, pointerAt({-10, -10}))
     testing.expect(t, ctx.inspector.row_count < before, "the children of a collapsed element are left out")
+    testing.expect_value(t, ctx.problems, Problems{})
+}
+
+@(test)
+test_a_tree_filter_keeps_the_matches_and_opens_the_nodes_above_them :: proc(t: ^testing.T) {
+    storage: ^InspectorStorage = new(InspectorStorage)
+    ctx: ^Context = new(Context)
+    tree: ^Tree = new(Tree)
+    view: ^TreeView = new(TreeView)
+    defer { free(storage); free(ctx); free(tree); free(view) }
+    style: Style = makeStyle()
+    UiInit(ctx, storage, testMeasure)
+    TreeInit(tree)
+    TreeViewInit(view)
+    src, _ := TreeAdd(tree, {}, "src", branch = true)
+    TreeAdd(tree, src, "main.odin")
+    util, _ := TreeAdd(tree, src, "util", branch = true)
+    deep, _ := TreeAdd(tree, util, "deep.odin")
+    docs, _ := TreeAdd(tree, {}, "docs", branch = true)
+    readme, _ := TreeAdd(tree, docs, "readme")
+    top, _ := TreeAdd(tree, {}, "README")
+    rows: [16]TreeRow
+    testing.expect_value(t, TreeVisibleFiltered(tree, rows[:], ""), 3)                  // no filter: the closed tree
+    // "DEEP" (case does not matter): src and util are opened for it, nothing else is there
+    testing.expect_value(t, TreeVisibleFiltered(tree, rows[:], "DEEP"), 3)
+    testing.expect(t, rows[0].node == src && rows[0].expanded && rows[0].depth == 0)
+    testing.expect(t, rows[1].node == util && rows[1].expanded && rows[1].depth == 1)
+    testing.expect(t, rows[2].node == deep && rows[2].depth == 2 && !rows[2].expandable)
+    testing.expect_value(t, TreeGet(tree, src).expanded, false)                         // the nodes themselves are not changed
+    // "readme": the folder docs is kept for its child, and the one at the top
+    testing.expect_value(t, TreeVisibleFiltered(tree, rows[:], "readme"), 3)
+    testing.expect(t, rows[0].node == docs && rows[1].node == readme && rows[1].depth == 1 && rows[2].node == top && rows[2].depth == 0)
+    // a node that matches keeps itself closed unless a child matches too: "src" shows only itself
+    testing.expect_value(t, TreeVisibleFiltered(tree, rows[:], "src"), 1)
+    testing.expect(t, !rows[0].expanded)
+    testing.expect_value(t, TreeVisibleFiltered(tree, rows[:], "nothing like this"), 0)
+    // the widget: the filter of the view
+    for _ in 0 ..< 3 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    testing.expect_value(t, view.row_count, 3)
+    TreeViewFilter(view, "deep")
+    for _ in 0 ..< 2 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    testing.expect_value(t, view.row_count, 3)
+    testing.expect_value(t, view.rows[2].node, deep)
+    TreeViewFilter(view, "")
+    for _ in 0 ..< 2 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    testing.expect_value(t, view.row_count, 3)
+    testing.expect_value(t, view.rows[0].node, src)
     testing.expect_value(t, ctx.problems, Problems{})
 }
