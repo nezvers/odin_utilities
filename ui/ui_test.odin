@@ -1584,3 +1584,68 @@ test_an_absolute_child_is_out_of_the_flow_and_at_its_offset :: proc(t: ^testing.
     testing.expect_value(t, grown, Rect{0, 0, 70, 43})
     testing.expect_value(t, harness.ctx.problems, Problems{})
 }
+
+@(private = "file")
+coveredGraphFrame :: proc(harness: ^Harness, graph: ^Graph, view: ^GraphView, input: Input) {
+    frame(harness, input)
+    ctx: ^Context = &harness.ctx
+    if UiGraph(ctx, "g", graph, view, {Fixed(400), Fixed(300)}) {
+        order: [4]NodeHandle
+        count: int = GraphNodesByDepth(graph, order[:])
+        for node in order[:count] {
+            if UiGraphNode(ctx, graph, node) {
+                port: ^Port = GraphPort(graph, GraphNode(graph, node).first_port)
+                for port != nil {
+                    UiGraphPin(ctx, graph, port.handle)
+                    port = GraphPort(graph, port.next_in_node)
+                }
+            }
+        }
+    }
+    UiEnd(ctx)
+}
+
+@(test)
+test_a_pin_that_another_node_covers_neither_drags_nor_connects :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    graph: ^Graph = new(Graph)
+    defer free(graph)
+    GraphInit(graph)
+    view: GraphView
+    front_node, _ := GraphNodeAdd(graph, "back", {0, 0})            // declared first: below
+    back_out, _ := GraphPortAdd(graph, front_node, "out", .OUTPUT, 1)
+    cover, _ := GraphNodeAdd(graph, "front", {100, 0})              // declared second: above, over the right part of the first one
+    cover_in, _ := GraphPortAdd(graph, cover, "in", .INPUT, 1)
+    for _ in 0 ..< 4 { coveredGraphFrame(harness, graph, &view, {}) }
+    pin: ^Port = GraphPort(graph, back_out)
+    target: ^Port = GraphPort(graph, cover_in)
+    testing.expect(t, pin.anchor_known && target.anchor_known)
+    testing.expect(t, pin.anchor.x > 100, "the pin is under the second node")
+
+    coveredGraphFrame(harness, graph, &view, pointerAt(pin.anchor))
+    coveredGraphFrame(harness, graph, &view, pointerAt(pin.anchor, true, true))
+    for i in 1 ..= 10 {
+        position: Vec2 = pin.anchor + (target.anchor - pin.anchor) * (f32(i) / 10)
+        coveredGraphFrame(harness, graph, &view, pointerAt(position, true))
+        _, dragging := UiDragging(&harness.ctx)
+        testing.expect(t, !dragging, "no cable is dragged from a covered pin")
+    }
+    coveredGraphFrame(harness, graph, &view, pointerAt(target.anchor, false, false, true))
+    testing.expect_value(t, GraphLinkCount(graph), 0)
+
+    // and a cable from a pin that is free cannot end on a pin that is covered
+    free_node, _ := GraphNodeAdd(graph, "free", {0, 150})
+    free_out, _ := GraphPortAdd(graph, free_node, "in", .INPUT, 1)          // an input: it fits the covered output, so only the cover can stop it
+    for _ in 0 ..< 3 { coveredGraphFrame(harness, graph, &view, {}) }
+    source: ^Port = GraphPort(graph, free_out)
+    coveredGraphFrame(harness, graph, &view, pointerAt(source.anchor))
+    coveredGraphFrame(harness, graph, &view, pointerAt(source.anchor, true, true))
+    for i in 1 ..= 10 {
+        position: Vec2 = source.anchor + (pin.anchor - source.anchor) * (f32(i) / 10)
+        coveredGraphFrame(harness, graph, &view, pointerAt(position, true))
+    }
+    coveredGraphFrame(harness, graph, &view, pointerAt(pin.anchor, false, false, true))
+    testing.expect_value(t, GraphLinkCount(graph), 0)
+}
