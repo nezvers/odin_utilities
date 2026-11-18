@@ -36,6 +36,7 @@ TimelineGesture :: enum u8 {
     MARKER,
     POINTS,
     CURVE,
+    STRETCH,
 }
 
 // What a drag on an empty lane does (Ctrl makes it a box whatever the tool is).
@@ -65,6 +66,9 @@ TimelineView :: struct {
     gesture_point: PointHandle,
     hover_handle: PointHandle,          // the point whose segment has the handle that is under the pointer
     gesture_handle: PointHandle,
+    history: ^TimelineHistory,          // set: finished edits become steps and Ctrl + Z, Ctrl + Y go through them (timeline_history.odin)
+    stretch_anchor: f64,                // Alt and a drag of the first or last selected point stretches the selection: the time that stays
+    stretch_far: f64,                   // and the time of the end that is dragged, when it began
     grab_y: f32,
     gesture_marker: MarkerHandle,
     hover_track: int,           // the track under the pointer, -1: none
@@ -238,7 +242,7 @@ timelinePickHandle :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^Tim
         count: int = timelineLanePoints(timeline, view, style, track, lane, points[:])
         for k in 0 ..< count - 1 {
             a, b: CurveEntry = points[k], points[k + 1]
-            if a.shape == .HOLD || a.last_in_view { continue }
+            if !CurveHasHandle(a.shape) || a.last_in_view { continue }
             along, covered := CurveHandle(a.shape, a.curve)
             position: Vec2 = {a.x + (b.x - a.x) * along, a.y + (b.y - a.y) * covered}
             delta: Vec2 = position - mouse
@@ -411,8 +415,20 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             if point.selected && !ctrl {
                 view.gesture, view.gesture_point = .POINTS, view.hover_point
                 view.grab_time, view.grab_y = time, mouse.y
-                points := hm.iterator_make(&timeline.points)
-                for other, _ in hm.iterate(&points) { other.drag_time, other.drag_value = other.time, other.value }
+                TimelinePointsSnapshot(timeline)
+                // Alt on an end of a selection of several: the selection is stretched from the other end instead of moved
+                if .ALT in ctx.input.modifiers && !shift {
+                    first, last: f64 = f64(INFINITE), -1
+                    count: int
+                    points := hm.iterator_make(&timeline.points)
+                    for other, _ in hm.iterate(&points) {
+                        if other.selected { first, last, count = min(first, other.time), max(last, other.time), count + 1 }
+                    }
+                    if count >= 2 && last > first && (point.time == first || point.time == last) {
+                        view.gesture = .STRETCH
+                        view.stretch_anchor, view.stretch_far = (last if point.time == first else first), point.time
+                    }
+                }
             }
         case view.hover_handle != {}:
             view.gesture, view.gesture_handle = .CURVE, view.hover_handle
@@ -522,9 +538,20 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                         if points[k].point != view.gesture_handle || points[k + 1].y == points[k].y { continue }
                         // the part of the way from this value to the next that the handle is at; a segment that was straight or smooth becomes a bias when it is bent
                         covered: f32 = clamp((mouse.y - points[k].y) / (points[k + 1].y - points[k].y), 0.02, 0.98)
-                        shape: CurveShape = .S_CURVE if owner.shape == .S_CURVE else .CURVE
-                        TimelinePointShape(timeline, view.gesture_handle, shape, CurveFromHandle(shape, covered))
+                        shape: CurveShape = owner.shape if owner.shape == .S_CURVE || CurveIsCounted(owner.shape) else .CURVE
+                        // the sign of a count is the variant (a pulse that starts high): the handle sets the number only
+                        sign: f32 = -1 if CurveIsCounted(shape) && owner.curve < 0 else 1
+                        TimelinePointShape(timeline, view.gesture_handle, shape, sign * CurveFromHandle(shape, covered) - (points[k].bend if !CurveIsCounted(shape) else 0))
                     }
+                }
+            case .STRETCH:
+                if primary := TimelinePointGet(timeline, view.gesture_point); primary != nil {
+                    // sideways: the distance from the end that stays; up: the far end of the selection is taller (the factor is 1 at the end that stays)
+                    scale: f64 = (time - view.stretch_anchor) / (view.grab_time - view.stretch_anchor) if view.grab_time != view.stretch_anchor else 1
+                    row_index: int = TimelineTrackIndex(timeline, primary.track)
+                    _, lane_height := timelineTrackRow(timeline, &style, row_index)
+                    end_factor: f32 = 1 - 2 * (mouse.y - view.grab_y) / max(lane_height - 2 * TIMELINE_LANE_MARGIN, 1)
+                    TimelinePointsStretch(timeline, view.stretch_anchor, scale, end_factor)
                 }
             case .POINTS:
                 if primary := TimelinePointGet(timeline, view.gesture_point); primary != nil {
@@ -644,6 +671,10 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
     // copy, cut, paste and select all while the timeline has the focus: a paste goes to the playhead, on the track under the pointer when it is on a lane
     if ctx.focus == id && ctx.disabled_depth == 0 {
         actions: Actions = ctx.input.actions
+        if view.history != nil && view.gesture == .NONE {
+            if .UNDO in actions { TimelineHistoryUndo(view.history, timeline) }
+            if .REDO in actions { TimelineHistoryRedo(view.history, timeline) }
+        }
         if .SELECT_ALL in actions {
             it := hm.iterator_make(&timeline.clips)
             for clip, _ in hm.iterate(&it) { clip.selected = true }
@@ -695,6 +726,8 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
         draw = {kind = .TIMELINE, name = IdSplitName(name), user = &ctx.timeline_frames[index]},
     })
     ElementClose(ctx)
+    // an edit that is finished (no gesture is going on) is a step of the history
+    if view.history != nil && view.gesture == .NONE { TimelineHistoryCommit(view.history, timeline) }
     return timeline.serial != serial_before
 }
 
@@ -799,6 +832,7 @@ CurveEntry :: struct {
     shape: CurveShape,
     curve: f32,
     selected: bool,
+    bend: f32,                  // what the bend macro of the track added to `curve` (the handle is where the segment really is, a drag takes it off again)
     last_in_view: bool,         // the last point of the list: no segment leaves it
 }
 
@@ -845,6 +879,11 @@ timelineLanePoints :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^Tim
     if after != nil {
         points[count] = entry_of(after, view, track, inner, range)
         count += 1
+    }
+    for i in 0 ..< count - 1 {
+        // the curve of the segment as the track bends it: the handle and the line are where it really is
+        real: f32 = TimelineSegmentCurve(track, points[i].shape, points[i].curve, points[i + 1].value - points[i].value)
+        points[i].bend, points[i].curve = real - points[i].curve, real
     }
     if count > 0 { points[count - 1].last_in_view = true }
     return count

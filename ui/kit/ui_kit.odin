@@ -78,6 +78,7 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
         result.mouse_pressed = false
     }
     if kit.ShiftDown(source) { result.modifiers += {.SHIFT} }
+    if .LEFT_ALT in source.keys_down || .RIGHT_ALT in source.keys_down { result.modifiers += {.ALT} }
     if kit.CtrlDown(source) {
         result.modifiers += {.CTRL}
         result.text_count = 0               // Ctrl + a letter is a command, not text
@@ -86,6 +87,8 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
         if .V in source.keys_pressed { result.actions += {.PASTE} }
         if .A in source.keys_pressed { result.actions += {.SELECT_ALL} }
         if .D in source.keys_pressed { result.actions += {.DUPLICATE} }
+        if .Z in source.keys_pressed { result.actions += {.REDO} if .SHIFT in result.modifiers else {.UNDO} }
+        if .Y in source.keys_pressed { result.actions += {.REDO} }
     }
     for i in 0 ..< int(result.text_count) {
         result.text[i] = source.text[i]

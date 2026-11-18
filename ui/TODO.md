@@ -27,6 +27,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Timeline: duplicate (Ctrl + D) and a vertical zoom of the tracks (Ctrl and the wheel)
 - [x] Timeline: automation lanes (points on a curve in a lane, dragged in time and value, double click to add, events, interpolation for the program that plays them)
 - [x] Timeline: curve shapes between points (linear, hold, smooth, bias, S), a handle that bends a segment, Ctrl and a click that cycles the shape; a block renderer for the audio thread (`AutomationCompile`, `AutomationRender`) that is 150 to 650 times faster than asking for the value of every sample
+- [x] Timeline: more shapes that repeat (stairs, smooth stairs, pulse, triangle, wave), multi-point stretch (Alt drag), pattern tools (flip, mirror, rotate, repeat), undo and redo with snapshots, a bend macro per track (the ideas of TIME-12, see the README)
+- [ ] Timeline: the pattern tools and the bend macro have no keys or handles in the widget yet; the stretch and undo of clips and markers could use the same history; a cheaper WAVE (anchors and a ramp, or a rotation recurrence) and TRIANGLE (a ramp)
 - [ ] Timeline: copy and paste of points, snapping of values to a grid, bezier handles with a tangent at each point, an exponential shape for frequencies and decibels (a ramp by one multiply per sample, re-anchored per chunk)
 - [ ] Timeline: SIMD for the block renderer (ramps and fills with 8 or 16 lanes; the compiler may vectorize the loops already: check the assembly), a plan that several tracks share the cursor search of
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot

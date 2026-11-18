@@ -29,6 +29,8 @@ State :: struct {
     channels: [5]Channel,
     tracks: [4]ui.TrackHandle,
     cutoff: ui.TrackHandle,
+    states: [8]ui.TimelineState,            // the steps of undo and redo (Ctrl + Z, Ctrl + Y)
+    history: ui.TimelineHistory,
     log: [160]u8,
     log_length: int,
 }
@@ -64,6 +66,8 @@ init :: proc(ctx: ^kit.Context) {
         _, has := ui.TimelinePollEvent(&state.timeline)
         if !has { break }
     }
+    ui.TimelineHistoryInit(&state.history, state.states[:], &state.timeline)
+    state.view.history = &state.history
 }
 
 onEvent :: proc(timeline: ^ui.Timeline, event: ^ui.TimelineEvent) {
@@ -160,6 +164,27 @@ script: []kit.Step = {
     }, "Ctrl and a click made a segment smooth, the handle bent another one to start slowly"),
     kit.Capture("timeline_curves"),
     kit.Wait(1),
+    // undo takes the bend away, redo brings it back (the timeline has the focus from the clicks)
+    kit.KeyDownStep(.LEFT_CTRL),
+    kit.Tap(.Z),
+    kit.Wait(2),
+    kit.KeyUpStep(.LEFT_CTRL),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        out: [8]ui.PointHandle
+        ui.TimelineTrackPoints(&state.timeline, state.cutoff, out[:])
+        return ui.TimelinePointGet(&state.timeline, out[3]).shape == .LINEAR && ui.TimelinePointGet(&state.timeline, out[2]).shape == .SMOOTH
+    }, "Ctrl + Z took the last bend away and kept the smooth segment"),
+    kit.KeyDownStep(.LEFT_CTRL),
+    kit.Tap(.Y),
+    kit.Wait(2),
+    kit.KeyUpStep(.LEFT_CTRL),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        out: [8]ui.PointHandle
+        ui.TimelineTrackPoints(&state.timeline, state.cutoff, out[:])
+        return ui.TimelinePointGet(&state.timeline, out[3]).shape == .CURVE
+    }, "Ctrl + Y brought it back"),
     // "Beat" (beats 0 .. 4, x 10 .. 170) two beats later and two tracks down, on the free part of "Lead"
     kit.MoveTo({60, 50}),
     kit.Wait(3),

@@ -142,7 +142,7 @@ DrawCurve :: proc(ctx: ^ui.Context, curve: ^ui.CurveDraw) {
             previous = next
         }
         // the handle that bends the segment (a held one has none)
-        if a.shape != .HOLD && b.x >= curve.rect.x && a.x <= curve.rect.x + curve.rect.z {
+        if ui.CurveHasHandle(a.shape) && b.x >= curve.rect.x && a.x <= curve.rect.x + curve.rect.z {
             along, covered := ui.CurveHandle(a.shape, a.curve)
             center: ui.Vec2 = {a.x + (b.x - a.x) * along, a.y + (b.y - a.y) * covered}
             active: bool = .HOVERED in a.handle_flags || .PRESSED in a.handle_flags

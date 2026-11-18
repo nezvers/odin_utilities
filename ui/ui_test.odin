@@ -3275,3 +3275,40 @@ test_the_handle_of_a_segment_bends_it_and_a_held_segment_has_none :: proc(t: ^te
     timelineDrag(harness, timeline, view, {200, 38}, {200, 33})
     testing.expect_value(t, TimelinePointGet(timeline, first).shape, CurveShape.HOLD)
 }
+
+@(test)
+test_alt_and_a_drag_of_the_last_selected_point_stretches_the_selection :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, lane, first, second := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    TimelinePointGet(timeline, first).selected, TimelinePointGet(timeline, second).selected = true, true
+    // the points are at 1 and 3 (100 and 300 pixels): the right one dragged with Alt to 380 pixels, the left one stays: the span of 2 becomes 2.8
+    timelineDrag(harness, timeline, view, {300, 29}, {380, 29}, {.ALT})
+    testing.expect_value(t, TimelinePointGet(timeline, first).time, 1)
+    testing.expect(t, abs(TimelinePointGet(timeline, second).time - 3.8) < 0.1, "the span grew from the left end")
+    _ = lane
+}
+
+@(test)
+test_undo_and_redo_of_the_widget_step_back_through_finished_edits :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, first, _, clip := timelineSetup(harness)
+    history: ^TimelineHistory = new(TimelineHistory)
+    states: []TimelineState = make([]TimelineState, 8)
+    defer { free(timeline); free(view); free(harness); free(history); delete(states) }
+    TimelineHistoryInit(history, states, timeline)
+    view.history = history
+    timelineClick(harness, timeline, view, {200, 40}, {})
+    timelineActions(harness, timeline, view, {200, 40}, {.DUPLICATE})
+    testing.expect_value(t, TimelineClipCount(timeline), 2)
+    timelineDrag(harness, timeline, view, {250, 40}, {330, 40})              // moves the copy (selected, on top)
+    moved: bool = TimelineHistoryCanUndo(history)
+    testing.expect(t, moved)
+    timelineActions(harness, timeline, view, {200, 40}, {.UNDO})
+    testing.expect_value(t, TimelineClipCount(timeline), 2)                  // the move is gone, the copy is not
+    timelineActions(harness, timeline, view, {200, 40}, {.UNDO})
+    testing.expect_value(t, TimelineClipCount(timeline), 1)                  // the copy is gone
+    testing.expect(t, TimelineClipGet(timeline, clip) != nil && TimelineClipAt(timeline, first, 1.5) == clip)
+    timelineActions(harness, timeline, view, {200, 40}, {.REDO})
+    testing.expect_value(t, TimelineClipCount(timeline), 2)
+}

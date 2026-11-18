@@ -79,6 +79,7 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
     ctrl: bool = karl2d.key_is_held(.Left_Control) || karl2d.key_is_held(.Right_Control) || karl2d.key_is_held(.Left_Super) || karl2d.key_is_held(.Right_Super)
     if karl2d.key_is_held(.Left_Shift) || karl2d.key_is_held(.Right_Shift) { input.modifiers += {.SHIFT} }
     if ctrl { input.modifiers += {.CTRL} }
+    if karl2d.key_is_held(.Left_Alt) || karl2d.key_is_held(.Right_Alt) { input.modifiers += {.ALT} }
     for event in karl2d.get_events() {
         #partial switch e in event {
         case karl2d.Event_Mouse_Wheel:
@@ -110,6 +111,8 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if karl2d.key_went_down(.V) { input.actions += {.PASTE} }
         if karl2d.key_went_down(.A) { input.actions += {.SELECT_ALL} }
         if karl2d.key_went_down(.D) { input.actions += {.DUPLICATE} }
+        if karl2d.key_went_down(.Z) { input.actions += {.REDO} if .SHIFT in input.modifiers else {.UNDO} }
+        if karl2d.key_went_down(.Y) { input.actions += {.REDO} }
     }
     return input
 }

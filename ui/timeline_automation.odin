@@ -13,6 +13,7 @@ package ui
 //  - everything a segment needs is computed when the plan is made (the length's inverse, the difference of the values, the coefficient of its shape: no divisions to set up a block);
 //  - HOLD, and the stretches before the first point and after the last one, are a fill of one value;
 //  - LINEAR is a ramp: one add per sample (forward differencing), started again from an exact value every AUTOMATION_CHUNK samples so that the rounding of f32 cannot add up;
+//  - STAIRS, SMOOTH_STAIRS, PULSE, TRIANGLE and WAVE have edges and corners that a ramp would smear: exact at every sample (a few ns each);
 //  - SMOOTH, CURVE and S_CURVE are evaluated exactly only every few samples (the anchors) and ramped linearly between them. The distance between anchors is a part (1 / 125) of the length of the
 //    segment, at most AUTOMATION_ANCHOR samples, so the error is the same small part of the change of the value whatever the length: at most about 5e-5 for SMOOTH, more for a strongly bent CURVE
 //    (see the test). A segment shorter than 125 samples is evaluated at every sample, exactly. `AutomationRenderExact` is the per-sample reference.
@@ -62,7 +63,7 @@ AutomationCompile :: proc(timeline: ^Timeline, track: TrackHandle, storage: []Au
         length: f64 = b.time - a.time
         storage[i] = {
             start = a.time, end = b.time, inverse_length = 1 / length if length > 0 else 0, value = a.value, change = b.value - a.value,
-            coefficient = CurveCoefficient(shape, a.curve), shape = shape,
+            coefficient = CurveCoefficient(shape, TimelineSegmentCurve(owner, shape, a.curve, b.value - a.value)), shape = shape,
         }
     }
     plan.segments = storage[:count - 1]
@@ -136,6 +137,13 @@ automationSegmentFill :: proc(segment: ^AutomationSegment, time: f64, step: f64,
                 out[start + i] = value
                 value += delta
             }
+        }
+    case .STAIRS, .SMOOTH_STAIRS, .PULSE, .TRIANGLE, .WAVE:
+        // the edges of these are exact to the sample (a ramp between anchors would smear a step): one evaluation per sample
+        x0: f64 = (time - segment.start) * segment.inverse_length
+        delta_x: f64 = step * segment.inverse_length
+        for i in 0 ..< len(out) {
+            out[i] = segment.value + segment.change * CurveEvalCoefficient(segment.shape, segment.coefficient, f32(clamp(x0 + f64(i) * delta_x, 0, 1)))
         }
     case .SMOOTH, .CURVE, .S_CURVE:
         samples_in_segment: f64 = (segment.end - segment.start) / step

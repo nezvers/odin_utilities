@@ -103,6 +103,7 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
     ctrl: bool = rl.IsKeyDown(.LEFT_CONTROL) || rl.IsKeyDown(.RIGHT_CONTROL) || rl.IsKeyDown(.LEFT_SUPER) || rl.IsKeyDown(.RIGHT_SUPER)
     if rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT) { input.modifiers += {.SHIFT} }
     if ctrl { input.modifiers += {.CTRL} }
+    if rl.IsKeyDown(.LEFT_ALT) || rl.IsKeyDown(.RIGHT_ALT) { input.modifiers += {.ALT} }
     // typed characters come as runes: written as UTF-8 (with Ctrl held they are commands: drained and dropped)
     for int(input.text_count) < ui.INPUT_TEXT_CAPACITY - 4 {
         character: rune = rl.GetCharPressed()
@@ -129,6 +130,8 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if rl.IsKeyPressed(.V) { input.actions += {.PASTE} }
         if rl.IsKeyPressed(.A) { input.actions += {.SELECT_ALL} }
         if rl.IsKeyPressed(.D) { input.actions += {.DUPLICATE} }
+        if rl.IsKeyPressed(.Z) { input.actions += {.REDO} if .SHIFT in input.modifiers else {.UNDO} }
+        if rl.IsKeyPressed(.Y) { input.actions += {.REDO} }
     }
     return input
 }

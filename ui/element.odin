@@ -320,6 +320,8 @@ Action :: enum u8 {
     PASTE,
     SELECT_ALL,
     DUPLICATE,      // ui_duplicate: Ctrl + D: a copy of what is selected, put right after it (the timeline)
+    UNDO,           // Ctrl + Z
+    REDO,           // Ctrl + Y, Ctrl + Shift + Z
 }
 Actions :: bit_set[Action; u32]
 
@@ -327,6 +329,7 @@ Actions :: bit_set[Action; u32]
 Modifier :: enum u8 {
     SHIFT,
     CTRL,           // the command key on a Mac
+    ALT,
 }
 Modifiers :: bit_set[Modifier; u8]
 

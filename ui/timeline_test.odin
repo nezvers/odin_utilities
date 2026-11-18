@@ -471,3 +471,180 @@ test_the_value_of_an_automation_follows_the_shape_of_the_point_before_it :: proc
     drainTimeline(timeline)
     testing.expect(t, TimelinePointShape(timeline, a, .SMOOTH) && timeline.event_count == 0, "the same shape is nothing")
 }
+
+@(test)
+test_a_stretch_scales_the_times_from_one_end_and_ramps_the_heights :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    lane, _ := TimelineAutomationAdd(timeline, "p", 0, 100)
+    a, _ := TimelinePointAdd(timeline, lane, 2, 10)
+    b, _ := TimelinePointAdd(timeline, lane, 4, 10)
+    c, _ := TimelinePointAdd(timeline, lane, 6, 10)
+    other, _ := TimelinePointAdd(timeline, lane, 9, 50)
+    for handle in ([3]PointHandle{a, b, c}) { TimelinePointGet(timeline, handle).selected = true }
+    TimelinePointsSnapshot(timeline)
+    drainTimeline(timeline)
+    testing.expect_value(t, TimelinePointsStretch(timeline, 2, 2, 1), 3)                      // twice as wide from the left end, same heights
+    testing.expect_value(t, TimelinePointGet(timeline, a).time, 2)
+    testing.expect_value(t, TimelinePointGet(timeline, b).time, 6)
+    testing.expect_value(t, TimelinePointGet(timeline, c).time, 10)
+    testing.expect_value(t, TimelinePointGet(timeline, b).value, 10)
+    testing.expect_value(t, TimelinePointGet(timeline, other).time, 9)                         // not selected: untouched
+    // from the snapshot, not from where they are now: the same call again gives the same result
+    TimelinePointsStretch(timeline, 2, 2, 1)
+    testing.expect_value(t, TimelinePointGet(timeline, c).time, 10)
+    // a rising wedge: the factor is 1 at the anchor (left) and 3 at the right end
+    TimelinePointsStretch(timeline, 2, 1, 3)
+    testing.expect_value(t, TimelinePointGet(timeline, a).value, 10)
+    testing.expect_value(t, TimelinePointGet(timeline, b).value, 20)
+    testing.expect_value(t, TimelinePointGet(timeline, c).value, 30)
+    // anchored at the right end the ramp starts there; the values stay in the range and the times at 0 or above
+    TimelinePointsStretch(timeline, 6, 1, 20)
+    testing.expect_value(t, TimelinePointGet(timeline, c).value, 10)
+    testing.expect_value(t, TimelinePointGet(timeline, a).value, 100)
+    TimelinePointsStretch(timeline, 6, 3, 1)
+    testing.expect_value(t, TimelinePointGet(timeline, a).time, 0)                            // 6 + (2 - 6) * 3 = -6: at 0
+}
+
+
+@(test)
+test_undo_and_redo_bring_back_the_states_with_the_same_handles :: proc(t: ^testing.T) {
+    timeline: ^Timeline = new(Timeline)
+    history: ^TimelineHistory = new(TimelineHistory)
+    states: []TimelineState = make([]TimelineState, 4)
+    defer { free(timeline); free(history); delete(states) }
+    TimelineInit(timeline)
+    track, _ := TimelineTrackAdd(timeline, "a")
+    TimelineHistoryInit(history, states, timeline)
+    testing.expect(t, !TimelineHistoryCommit(history, timeline), "nothing changed")
+    clip, _ := TimelineClipAdd(timeline, track, 1, 2, "x")
+    testing.expect(t, TimelineHistoryCommit(history, timeline))
+    TimelineClipPlace(timeline, clip, track, 5, 2)
+    testing.expect(t, TimelineHistoryCommit(history, timeline))
+    TimelineClipRemove(timeline, clip)
+    testing.expect(t, TimelineHistoryCommit(history, timeline))
+    testing.expect_value(t, TimelineClipCount(timeline), 0)
+    testing.expect(t, TimelineHistoryUndo(history, timeline))
+    testing.expect_value(t, TimelineClipGet(timeline, clip).start, 5)                 // the same handle
+    event: TimelineEvent
+    for {
+        e, has := TimelinePollEvent(timeline)
+        if !has { break }
+        event = e
+    }
+    testing.expect_value(t, event.kind, TimelineEventKind.RESTORED)
+    testing.expect(t, TimelineHistoryUndo(history, timeline))
+    testing.expect_value(t, TimelineClipGet(timeline, clip).start, 1)
+    testing.expect(t, TimelineHistoryUndo(history, timeline))
+    testing.expect_value(t, TimelineClipCount(timeline), 0)
+    testing.expect(t, !TimelineHistoryUndo(history, timeline), "the oldest step")
+    testing.expect(t, TimelineHistoryRedo(history, timeline) && TimelineHistoryRedo(history, timeline) && TimelineHistoryRedo(history, timeline))
+    testing.expect_value(t, TimelineClipCount(timeline), 0)
+    testing.expect(t, !TimelineHistoryRedo(history, timeline))
+    // an edit after an undo drops the redo steps
+    TimelineHistoryUndo(history, timeline)
+    TimelineClipPlace(timeline, clip, track, 9, 2)
+    testing.expect(t, TimelineHistoryCommit(history, timeline) && !TimelineHistoryCanRedo(history))
+    // an edit that was not committed is not lost by an undo: a redo brings it back
+    TimelineClipPlace(timeline, clip, track, 11, 2)
+    testing.expect(t, TimelineHistoryUndo(history, timeline))
+    testing.expect_value(t, TimelineClipGet(timeline, clip).start, 9)
+    testing.expect(t, TimelineHistoryRedo(history, timeline))
+    testing.expect_value(t, TimelineClipGet(timeline, clip).start, 11)
+}
+
+@(test)
+test_the_history_forgets_the_oldest_step_when_it_is_full :: proc(t: ^testing.T) {
+    timeline: ^Timeline = new(Timeline)
+    history: ^TimelineHistory = new(TimelineHistory)
+    states: []TimelineState = make([]TimelineState, 3)
+    defer { free(timeline); free(history); delete(states) }
+    TimelineInit(timeline)
+    track, _ := TimelineTrackAdd(timeline, "a")
+    clip, _ := TimelineClipAdd(timeline, track, 0, 1, "x")
+    TimelineHistoryInit(history, states, timeline)
+    for i in 1 ..= 5 {
+        TimelineClipPlace(timeline, clip, track, f64(i), 1)
+        TimelineHistoryCommit(history, timeline)
+    }
+    testing.expect(t, TimelineHistoryUndo(history, timeline) && TimelineHistoryUndo(history, timeline))
+    testing.expect_value(t, TimelineClipGet(timeline, clip).start, 3)                 // 5 4 3 are what the three states kept
+    testing.expect(t, !TimelineHistoryUndo(history, timeline))
+}
+
+@(test)
+test_the_selection_of_points_flips_mirrors_rotates_and_repeats :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    lane, _ := TimelineAutomationAdd(timeline, "p", 0, 100)
+    a, _ := TimelinePointAdd(timeline, lane, 1, 10)
+    b, _ := TimelinePointAdd(timeline, lane, 2, 40)
+    c, _ := TimelinePointAdd(timeline, lane, 4, 90)
+    outside, _ := TimelinePointAdd(timeline, lane, 8, 50)
+    for handle in ([3]PointHandle{a, b, c}) { TimelinePointGet(timeline, handle).selected = true }
+    TimelinePointShape(timeline, a, .CURVE, 0.5)
+    TimelinePointShape(timeline, b, .PULSE, 0.0)
+    // flip: values upside down in the range 0 .. 100
+    testing.expect_value(t, TimelinePointsFlip(timeline), 3)
+    testing.expect_value(t, TimelinePointGet(timeline, a).value, 90)
+    testing.expect_value(t, TimelinePointGet(timeline, c).value, 10)
+    testing.expect_value(t, TimelinePointGet(timeline, outside).value, 50)
+    TimelinePointsFlip(timeline)
+    testing.expect_value(t, TimelinePointGet(timeline, a).value, 10)                          // twice is nothing
+    // mirror: 1, 2, 4 become 4, 3, 1; the curves of the segments go to the left point of the mirrored segment, reversed
+    testing.expect_value(t, TimelinePointsMirror(timeline), 3)
+    testing.expect_value(t, TimelinePointGet(timeline, a).time, 4)
+    testing.expect_value(t, TimelinePointGet(timeline, b).time, 3)
+    testing.expect_value(t, TimelinePointGet(timeline, c).time, 1)
+    testing.expect_value(t, TimelinePointGet(timeline, b).shape, CurveShape.CURVE)             // the segment a..b: now b..a
+    testing.expect_value(t, TimelinePointGet(timeline, b).curve, -0.5)                         // eased out, now eased in
+    testing.expect_value(t, TimelinePointGet(timeline, c).shape, CurveShape.PULSE)
+    testing.expect(t, TimelinePointGet(timeline, c).curve < 0, "the pulse starts high backwards")
+    testing.expect_value(t, TimelinePointGet(timeline, outside).time, 8)
+    // rotate by 2 inside 0 .. 5: 4 -> 1 (wraps), 3 -> 0 ... no: 3 + 2 = 5 -> 0, 1 + 2 = 3
+    testing.expect_value(t, TimelinePointsRotate(timeline, 0, 5, 2), 3)
+    testing.expect_value(t, TimelinePointGet(timeline, a).time, 1)
+    testing.expect_value(t, TimelinePointGet(timeline, b).time, 0)
+    testing.expect_value(t, TimelinePointGet(timeline, c).time, 3)
+    testing.expect_value(t, TimelinePointsRotate(timeline, 0, 5, -1), 3)
+    testing.expect_value(t, TimelinePointGet(timeline, b).time, 4)                             // 0 - 1 wraps to 4
+    // repeat: the three again after their span (from 0 to 3 now: 3 + 3 ...), the copies are the selection
+    before: int = TimelinePointCount(timeline)
+    testing.expect_value(t, TimelinePointsRepeat(timeline), 3)
+    testing.expect_value(t, TimelinePointCount(timeline), before + 3)
+    testing.expect_value(t, TimelineSelectedPoints(timeline), 3)
+    testing.expect(t, !TimelinePointGet(timeline, a).selected)
+}
+
+@(test)
+test_the_bend_of_a_track_adds_to_the_curve_of_rising_and_falling_segments :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    lane, _ := TimelineAutomationAdd(timeline, "p", 0, 100)
+    up, _ := TimelinePointAdd(timeline, lane, 0, 0)
+    down, _ := TimelinePointAdd(timeline, lane, 10, 100)
+    TimelinePointAdd(timeline, lane, 20, 0)
+    TimelinePointShape(timeline, up, .CURVE, 0)
+    TimelinePointShape(timeline, down, .CURVE, 0)
+    value, _ := TimelineAutomationValue(timeline, lane, 5)
+    testing.expect_value(t, value, 50)                                       // no bend: a line
+    drainTimeline(timeline)
+    testing.expect(t, TimelineTrackBend(timeline, lane, 0.6, -0.6))
+    event, _ := TimelinePollEvent(timeline)
+    testing.expect(t, event.kind == .TRACK_BENT && event.track == lane && event.value == 0.6 && event.curve == -0.6)
+    value, _ = TimelineAutomationValue(timeline, lane, 5)
+    testing.expect(t, abs(value - 80) < 0.01, "the rising segment is fast first")
+    value, _ = TimelineAutomationValue(timeline, lane, 15)
+    testing.expect(t, abs(value - 80) < 0.01, "the falling one has the opposite bend: it holds the high value longer (80, a line would be 50)")
+    // the plan has it in its coefficients, the renderer is not slower
+    storage: [4]AutomationSegment
+    plan, ok := AutomationCompile(timeline, lane, storage[:])
+    testing.expect(t, ok && abs(AutomationValueAt(&plan, 5) - 80) < 0.01)
+    // other shapes do not bend; the same bend is nothing
+    TimelinePointShape(timeline, up, .SMOOTH)
+    value, _ = TimelineAutomationValue(timeline, lane, 5)
+    testing.expect_value(t, value, 50)
+    drainTimeline(timeline)
+    testing.expect(t, TimelineTrackBend(timeline, lane, 0.6, -0.6) && timeline.event_count == 0)
+    testing.expect(t, !TimelineTrackBend(timeline, TrackHandle{}, 0, 0))
+}

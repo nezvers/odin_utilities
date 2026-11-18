@@ -5,7 +5,7 @@ import "core:testing"
 
 @(test)
 test_every_shape_starts_at_0_ends_at_1_and_never_goes_backwards :: proc(t: ^testing.T) {
-    shapes: [5]CurveShape = {.LINEAR, .HOLD, .SMOOTH, .CURVE, .S_CURVE}
+    shapes: [5]CurveShape = {.LINEAR, .HOLD, .SMOOTH, .CURVE, .S_CURVE}  // the counted shapes have their own test
     curves: [7]f32 = {-1, -0.7, -0.2, 0, 0.2, 0.7, 1}
     for shape in shapes {
         for curve in curves {
@@ -44,7 +44,7 @@ test_the_shapes_have_the_form_they_are_named_for :: proc(t: ^testing.T) {
     testing.expect(t, CurveEval(.CURVE, 1, 0.01) <= 1 && CurveEval(.CURVE, -1, 0.99) >= 0)
     testing.expect_value(t, CurveShapeNext(.LINEAR), CurveShape.SMOOTH)
     s: CurveShape = .LINEAR
-    for _ in 0 ..< 5 { s = CurveShapeNext(s) }
+    for _ in 0 ..< 10 { s = CurveShapeNext(s) }
     testing.expect_value(t, s, CurveShape.LINEAR)                       // a full turn
 }
 
@@ -86,4 +86,44 @@ test_the_handle_of_a_segment_is_where_the_curve_is_and_gives_the_curve_back :: p
     }
     along, covered := CurveHandle(.LINEAR, 0)
     testing.expect(t, along == 0.5 && covered == 0.5)
+}
+
+@(test)
+test_the_shapes_that_repeat_count_and_keep_their_ends :: proc(t: ^testing.T) {
+    near :: proc(a, b: f32) -> bool { return abs(a - b) < 1e-4 }
+    testing.expect_value(t, CurveCount(0), 1)
+    testing.expect_value(t, CurveCount(1), 30)                           // limited to the same 0.98 as the bends
+    testing.expect_value(t, CurveCount(0.5), 8)
+    for shape in ([5]CurveShape{.STAIRS, .SMOOTH_STAIRS, .PULSE, .TRIANGLE, .WAVE}) {
+        for curve in ([5]f32{0, 0.3, 0.6, 0.98, -0.5}) {
+            testing.expectf(t, CurveEval(shape, curve, 1) == 1 || near(CurveEval(shape, curve, 1), 1), "%v %v ends at the second value", shape, curve)
+            if shape != .PULSE || curve >= 0 { testing.expectf(t, near(CurveEval(shape, curve, 0), 0), "%v %v starts at the first value", shape, curve) }
+            for i in 0 ..= 200 {
+                v: f32 = CurveEval(shape, curve, f32(i) / 200)
+                testing.expectf(t, v >= -1e-4 && v <= 1 + 1e-4, "%v %v stays between the values: %v", shape, curve, v)
+            }
+        }
+    }
+    // stairs: 4 steps at curve 0.37 (count 1 + int(0.1369 * 31.5) = 5): five steps, the last one is the end value
+    count: int = CurveCount(0.37)
+    levels: map[f32]bool
+    defer delete(levels)
+    for i in 0 ..< 1000 { levels[CurveEval(.STAIRS, 0.37, f32(i) / 1000)] = true }
+    testing.expect_value(t, len(levels), count)
+    // pulse: two values only, below 0 it starts high
+    testing.expect(t, CurveEval(.PULSE, 0.6, 0.01) == 0 && CurveEval(.PULSE, -0.6, 0.01) == 1)
+    // triangle: goes there and back an odd number of times: one run at 0 is the line
+    testing.expect(t, near(CurveEval(.TRIANGLE, 0, 0.3), 0.3) && near(CurveEval(.WAVE, 0, 0.5), 0.5))
+    testing.expect(t, near(CurveEval(.TRIANGLE, 0.5, 0.5 / 15), 0.5), "8 cycles: 15 runs, half way of the first run")
+    // smooth stairs are monotonic and eased inside a step
+    previous: f32
+    for i in 0 ..= 400 {
+        v: f32 = CurveEval(.SMOOTH_STAIRS, 0.5, f32(i) / 400)
+        testing.expect(t, v >= previous - 1e-6)
+        previous = v
+    }
+    // the handle of a counted shape gives its number back
+    _, covered := CurveHandle(.STAIRS, 0.6)
+    testing.expect(t, near(CurveFromHandle(.STAIRS, covered), 0.6))
+    testing.expect(t, !CurveHasHandle(.HOLD) && CurveHasHandle(.PULSE))
 }

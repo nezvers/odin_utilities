@@ -47,6 +47,8 @@ TimelineTrack :: struct {
     value_min: f32,             // an automation track: the lowest and the highest value of its points, the bottom and the top of its lane
     value_max: f32,
     steps: bool,                // an automation track: the value is held until the next point (else it goes straight to it)
+    bend_rise: f32,             // an automation track: added to the `curve` of every CURVE and S_CURVE segment that goes up (-1 .. 1), a macro for the feel of all the curves of the lane
+    bend_fall: f32,             // and the same for the segments that go down: a snappy attack with a long release is bend_rise above 0 and bend_fall below
     point_count: int,
     name: [TIMELINE_NAME_MAX]u8,
     name_length: int,
@@ -118,6 +120,8 @@ TimelineEventKind :: enum u8 {
     POINT_MOVED,        // the new `time` and `value`, and `previous_start` and `previous_value`
     POINT_REMOVED,
     POINT_SHAPED,       // the curve after a point changed: `shape` and `curve` (and what they were)
+    TRACK_BENT,         // the bend macro of an automation track changed: `value` is the new bend of the rising segments, `curve` of the falling ones
+    RESTORED,           // an undo or a redo replaced everything (see timeline_history.odin): read the timeline again, the handles of things that came back are the old ones
 }
 
 // What happened, with the user pointers of the clip, its track and the timeline, and what it was before (for an undo).
@@ -596,6 +600,23 @@ TimelinePointShape :: proc(timeline: ^Timeline, handle: PointHandle, shape: Curv
     return true
 }
 
+// The `curve` a segment really has: the one of its point and the bend macro of its track, for the shapes that have a bend (`change` is the value of the next point minus this one).
+TimelineSegmentCurve :: proc(track: ^TimelineTrack, shape: CurveShape, curve: f32, change: f32) -> f32 {
+    if shape != .CURVE && shape != .S_CURVE { return curve }
+    return clamp(curve + (track.bend_rise if change >= 0 else track.bend_fall), -CURVE_LIMIT, CURVE_LIMIT)
+}
+
+// Sets the bend macro of an automation track (see TimelineTrack). One event. False for a track that is not an automation track.
+TimelineTrackBend :: proc(timeline: ^Timeline, handle: TrackHandle, rise: f32, fall: f32) -> bool {
+    owner: ^TimelineTrack = TimelineTrackGet(timeline, handle)
+    if owner == nil || owner.kind != .AUTOMATION { return false }
+    rise_clamped, fall_clamped: f32 = clamp(rise, -1, 1), clamp(fall, -1, 1)
+    if owner.bend_rise == rise_clamped && owner.bend_fall == fall_clamped { return true }
+    owner.bend_rise, owner.bend_fall = rise_clamped, fall_clamped
+    timelineEmit(timeline, {kind = .TRACK_BENT, track = handle, value = rise_clamped, curve = fall_clamped})
+    return true
+}
+
 TimelinePointRemove :: proc(timeline: ^Timeline, handle: PointHandle) -> bool {
     point: ^TimelinePoint = TimelinePointGet(timeline, handle)
     if point == nil { return false }
@@ -603,6 +624,37 @@ TimelinePointRemove :: proc(timeline: ^Timeline, handle: PointHandle) -> bool {
     timelineEmit(timeline, {kind = .POINT_REMOVED, point = handle, track = point.track, time = point.time, value = point.value})
     hm.remove(&timeline.points, handle)
     return true
+}
+
+// Remembers where the selected points are: the start of a stretch (TimelinePointsStretch always works from this, so a drag does not add up errors).
+TimelinePointsSnapshot :: proc(timeline: ^Timeline) {
+    it := hm.iterator_make(&timeline.points)
+    for point, _ in hm.iterate(&it) { point.drag_time, point.drag_value = point.time, point.value }
+}
+
+// Stretches the selected points from the snapshot (TimelinePointsSnapshot): the times grow by `time_scale` away from `anchor`, and the distance of the values from the bottom of their
+// lane by a factor that is 1 at the end of the selection that is at `anchor` and `end_factor` at the other end, a ramp between them: 1 for both leaves the values, above 1 makes a rising wedge toward
+// the far end. Times stay at 0 or above, the values within the range. Events like any move. How many points moved.
+TimelinePointsStretch :: proc(timeline: ^Timeline, anchor: f64, time_scale: f64, end_factor: f32) -> (moved: int) {
+    first, last: f64 = f64(INFINITE), -1
+    it := hm.iterator_make(&timeline.points)
+    for point, _ in hm.iterate(&it) {
+        if !point.selected { continue }
+        first, last = min(first, point.drag_time), max(last, point.drag_time)
+    }
+    if last < 0 { return }
+    from_left: bool = anchor <= first                       // the anchor is the left end: the far end is the right one
+    span: f64 = max(last - first, 1e-9)
+    it = hm.iterator_make(&timeline.points)
+    for point, handle in hm.iterate(&it) {
+        if !point.selected { continue }
+        owner: ^TimelineTrack = TimelineTrackGet(timeline, point.track)
+        along: f64 = (point.drag_time - first) / span if from_left else (last - point.drag_time) / span
+        factor: f32 = 1 + (end_factor - 1) * f32(along)
+        value: f32 = owner.value_min + (point.drag_value - owner.value_min) * max(factor, 0)
+        if TimelinePointMove(timeline, handle, max(anchor + (point.drag_time - anchor) * max(time_scale, 0), 0), value) { moved += 1 }
+    }
+    return
 }
 
 TimelineSelectedPoints :: proc(timeline: ^Timeline) -> (count: int) {
@@ -649,5 +701,5 @@ TimelineAutomationValue :: proc(timeline: ^Timeline, track: TrackHandle, time: f
     }
     shape: CurveShape = .HOLD if owner.steps else before.shape
     fraction: f32 = f32((time - before.time) / (after.time - before.time))
-    return before.value + (after.value - before.value) * CurveEval(shape, before.curve, fraction), true
+    return before.value + (after.value - before.value) * CurveEval(shape, TimelineSegmentCurve(owner, shape, before.curve, after.value - before.value), fraction), true
 }
