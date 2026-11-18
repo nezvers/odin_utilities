@@ -23,6 +23,8 @@ VIEW_FILTER_MAX :: 64
 VIEW_SCRATCH :: 8192            // numbers of charts that are plotted in one frame
 VIEW_CELL_PAD :: 16
 VIEW_COLUMN_MAX :: 360          // the widest a column may be: a longer text is cut with "..."
+VIEW_CHART_WIDTH :: 560         // a plot: the widget sits in a row that fits its content, so it cannot grow into the room that is left
+VIEW_CHART_HEIGHT :: 72
 
 View :: struct {
     section: int,                           // the chosen section, -1 for all of them
@@ -265,37 +267,60 @@ drawCell :: proc(c: ^ui.Context, view: ^View, column: ^reports.Column, cell: ^re
     }
 }
 
-// Every series as a plotted line (or bars), with its name and its last value.
+// Every series as a plotted line (or bars). The plots of one chart share one range, so they can be compared; each has a line above it with the name
+// of the series, its last value and its range. (The plot widget writes its own name next to the plot: the names given here have no visible part.)
 @(private)
 drawChart :: proc(c: ^ui.Context, view: ^View, chart: ^reports.Chart) {
-    if chart.title != "" { ui.UiLabelColored(c, fmt.tprintf("%s%s", chart.title, fmt.tprintf(" (%s)", chart.y_label) if chart.y_label != "" else ""), {200, 205, 220, 255}) }
+    if chart.title != "" { ui.UiLabelColored(c, ui.UiFormat(c, "%s%s", chart.title, fmt.tprintf(" (%s)", chart.y_label) if chart.y_label != "" else ""), {200, 205, 220, 255}) }
     points: int = reports.ChartPoints(chart)
     if points == 0 { return }
+    // the numbers as they are plotted (a log scale as logarithms), and the range of all of them
+    low, high: f32 = math.INF_F32, -math.INF_F32
+    plotted :: proc(chart: ^reports.Chart, series: reports.Series, i: int) -> (value: f32, ok: bool) {
+        if i >= len(series.ys) || math.is_nan(series.ys[i]) { return 0, false }
+        shown: f64 = math.log10(max(series.ys[i], 1e-9)) if chart.log_y else series.ys[i]
+        return f32(shown), true
+    }
+    for series in chart.series {
+        for i in 0 ..< points {
+            if value, ok := plotted(chart, series, i); ok {
+                low, high = min(low, value), max(high, value)
+            }
+        }
+    }
+    if high < low { return }                                              // nothing to plot
+    if chart.kind == .BARS { low = min(low, 0) }
+    pad: f32 = (high - low) * 0.06 if high > low else 1
+    low, high = low - pad if chart.kind == .LINE else low, high + pad
     for series in chart.series {
         if view.scratch_used + points > len(view.scratch) { return }
         values: []f32 = view.scratch[view.scratch_used:view.scratch_used + points]
         view.scratch_used += points
-        last: f32
+        last: f32 = low
+        first_value, last_value: f64 = math.nan_f64(), math.nan_f64()
+        series_low, series_high: f64 = math.INF_F64, -math.INF_F64
         for i in 0 ..< points {
-            value: f64 = series.ys[i] if i < len(series.ys) else math.nan_f64()
-            if math.is_nan(value) {
-                values[i] = last                                    // a gap keeps the line where it was
-                continue
+            value, ok := plotted(chart, series, i)
+            if ok {
+                last = value
+                y: f64 = series.ys[i]
+                if math.is_nan(first_value) { first_value = y }
+                last_value = y
+                series_low, series_high = min(series_low, y), max(series_high, y)
             }
-            shown: f64 = math.log10(max(value, 1e-9)) if chart.log_y else value
-            values[i] = f32(shown)
-            last = values[i]
+            values[i] = last                                              // a gap keeps the line where it was
         }
-        overlay: string = fmt.tprintf("%s: %s", series.name, reports.FormatNumber(series.ys[points - 1] if len(series.ys) >= points else 0))
+        ui.UiLabelColored(c, ui.UiFormat(c, "%s: %s   (%s to %s)", series.name, reports.FormatNumber(last_value, 0, context.temp_allocator), reports.FormatNumber(series_low, 0, context.temp_allocator), reports.FormatNumber(series_high, 0, context.temp_allocator)), {220, 224, 235, 255})
+        name: string = nextName(c, view, "")                              // "##n": nothing to show next to the plot
         if chart.kind == .BARS {
-            ui.UiPlotHistogram(c, nextName(c, view, "bars"), values, overlay, size = {ui.Grow(), ui.Fixed(64)})
+            ui.UiPlotHistogram(c, name, values, "", low, high, {ui.Fixed(VIEW_CHART_WIDTH), ui.Fixed(VIEW_CHART_HEIGHT)})
         } else {
-            ui.UiPlotLines(c, nextName(c, view, "line"), values, overlay, size = {ui.Grow(), ui.Fixed(64)})
+            ui.UiPlotLines(c, name, values, "", low, high, {ui.Fixed(VIEW_CHART_WIDTH), ui.Fixed(VIEW_CHART_HEIGHT)})
         }
     }
     if len(chart.labels) > 0 {
         ui.UiLabelColored(c, strings.join(chart.labels[:], "  ", context.temp_allocator), COLOR_DIM, .WORDS)
     } else if len(chart.xs) > 0 {
-        ui.UiLabelColored(c, fmt.tprintf("%s: %s ... %s", chart.x_label if chart.x_label != "" else "x", reports.FormatNumber(chart.xs[0]), reports.FormatNumber(chart.xs[len(chart.xs) - 1])), COLOR_DIM)
+        ui.UiLabelColored(c, ui.UiFormat(c, "%s: %s to %s%s", chart.x_label if chart.x_label != "" else "x", reports.FormatNumber(chart.xs[0], 0, context.temp_allocator), reports.FormatNumber(chart.xs[len(chart.xs) - 1], 0, context.temp_allocator), " (log scale)" if chart.log_y else ""), COLOR_DIM)
     }
 }

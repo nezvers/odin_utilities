@@ -89,6 +89,11 @@ draw :: proc(ctx: ^kit.Context) {
 
 script: []kit.Step = {
     kit.Wait(3),
+    // the history section is the fifth entry of the list: its chart is a picture that is kept (captures/), so a change of how it looks is seen
+    kit.Click({60, 207}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return view.section == 3 && report.sections[view.section].title == "history" }, "a click on history shows the history section"),
+    kit.Capture("status_history"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return reports.ReportStatus(&report) == .FAIL }, "the report fails: a check and a finding are bad, two budgets are missed"),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         table: ^reports.Table = &report.sections[2].blocks[0].table

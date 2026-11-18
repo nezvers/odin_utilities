@@ -403,7 +403,7 @@ ReportMetaValue :: proc(report: ^Report, key: string) -> string {
 // ------------------------------------------------------------------------------------------------------------------------
 // Numbers and status
 
-// A number as a person reads it. `precision` 0: about three significant digits (1.79, 12.5, 118, 25000), -1: no digits after the point, else that many.
+// A number as a person reads it. `precision` 0: about three significant digits (1.79, 12.5, 118, 25000; a whole number has no point: 12), -1: no digits after the point, else that many.
 FormatNumber :: proc(value: f64, precision: i8 = 0, allocator := context.temp_allocator) -> string {
     if math.is_nan(value) { return "nan" }
     if math.is_inf(value) { return "inf" if value > 0 else "-inf" }
@@ -416,7 +416,7 @@ FormatNumber :: proc(value: f64, precision: i8 = 0, allocator := context.temp_al
     case:
         magnitude: f64 = abs(value)
         switch {
-        case magnitude == 0, magnitude >= 100:
+        case magnitude == 0, magnitude >= 100, value == math.trunc(value) && magnitude < 1e15:          // a whole number has no point
             digits = 0
         case magnitude >= 10:
             digits = 1
