@@ -164,6 +164,9 @@ the scroll areas have a draggable scrollbar (the thumb keeps its place under the
 `Input.modifiers` (Shift, Ctrl, the command key of a Mac is Ctrl) and the actions `COPY`, `CUT`, `PASTE`, `SELECT_ALL` (Ctrl + C, X, V, A; glues map them, and drop the typed letter when Ctrl is held) drive it.
 The clipboard: `UiClipboardSet` / `UiClipboardGet`; a glue that knows the system's connects it (`ui_raylib.ClipboardInstall(&ctx)`), without it the text stays in a buffer of the context (`CLIPBOARD_LOCAL` bytes), so copy and paste work inside of the program and in the tests.
 Karl2D has no clipboard: its glue uses the local one. Pasted newlines and tabs become spaces (a field is one line).
+`UiTextArea(ctx, name, buffer, &length, size, wrap)` is the same for several lines (`textarea.odin`): Enter makes a new line, up and down keep the column, Home and End go to the start and the end of a row (with Ctrl: of the text), page up and down move by the rows in view,
+a selection runs over rows, the view follows the cursor and has a scrollbar. The rows are found each frame from the text and the width in a fixed table (`UI_TEXT_AREA_LINES`, 2048: a longer text shows its first rows) and only the rows in view become elements
+(the line of text, the rectangles of the selection and the caret are absolute children), so a long text costs the rows on screen. Style kinds `TEXT_AREA`, `TEXT_SELECTION`, `TEXT_CARET`. `UiTextCursor` tells where the cursor is.
 
 ## Zoom of one container
 `Decl.zoom` (0 or 1: none): the children of the container are laid out in logical units (the room they have is its size divided by the zoom, the origin is its top left corner) and shown `zoom` times bigger around that corner. Drawing goes through
@@ -191,5 +194,5 @@ Three levels: `odin test ui` (layout and behavior with a fake font), `odin test 
 (see `demo_kit/README.md`). `UiCommands(&ctx)` is the third way: assert on what the style would be asked to draw, without pixels.
 
 ## Known limits
-Text is measured per word each frame (no cache); a text field edits one line of UTF-8 (no several lines yet);
+Text is measured per word each frame (no cache); a text field edits one line of UTF-8 (a text area several, wrapped by words);
 an element that is declared after the floating element that names it as parent is not found (declare the parent first).

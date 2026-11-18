@@ -49,6 +49,9 @@ StyleKind :: enum u8 {
     BULLET,             // the dot of a bullet text
     SEPARATOR_TEXT,     // a line with a name in it
     BACKDROP,           // what dims the screen behind a modal dialog
+    TEXT_AREA,          // the box of a text of several lines: name (shown when it is empty and not focused), text, FOCUSED flag; its lines, selection and caret are children
+    TEXT_SELECTION,     // a rectangle of the selected text of a text area
+    TEXT_CARET,         // the cursor of a text area (the style blinks it)
     KNOB,               // a round control turned by dragging: value 0..1, actual the number, text that number formatted, ratio where its default is (0..1)
     FADER,              // a slider that stands: the same values, the maximum at the top
     METER,              // a level: value 0..1, ratio the peak mark (negative: none), cursor 1 for a meter that lies

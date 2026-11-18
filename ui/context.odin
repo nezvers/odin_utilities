@@ -76,6 +76,7 @@ Context :: struct {
     graph_minimaps: [UI_MAX_GRAPHS]GraphMinimapData,
     graph_minimap_count: int,
     clipboard: Clipboard,
+    area_lines: [UI_TEXT_AREA_LINES]AreaLine,        // the rows of the text area that is declared (textarea.odin)
     roots: [UI_MAX_ROOTS]Root,
     root_count: int,
 

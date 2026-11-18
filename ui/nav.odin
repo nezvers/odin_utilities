@@ -203,8 +203,8 @@ UiAction :: proc(ctx: ^Context, action: Action) -> bool {
     focused: ^WidgetState = stateFind(ctx, ctx.focus)
     editing: bool = focused != nil && focused.editing
     switch action {
-    case .UP: return UiNavigate(ctx, .UP)
-    case .DOWN: return UiNavigate(ctx, .DOWN)
+    case .UP: return !(editing && focused.multiline) && UiNavigate(ctx, .UP)
+    case .DOWN: return !(editing && focused.multiline) && UiNavigate(ctx, .DOWN)
     case .LEFT: return !editing && UiNavigate(ctx, .LEFT)
     case .RIGHT: return !editing && UiNavigate(ctx, .RIGHT)
     case .ACCEPT, .SELECT:

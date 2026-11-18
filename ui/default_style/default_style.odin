@@ -147,6 +147,9 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.BULLET] = DrawBullet
     style.procs[.SEPARATOR_TEXT] = DrawSeparatorText
     style.procs[.BACKDROP] = DrawBackdrop
+    style.procs[.TEXT_AREA] = DrawTextArea
+    style.procs[.TEXT_SELECTION] = DrawTextSelection
+    style.procs[.TEXT_CARET] = DrawTextCaret
     GraphStyleInstall(&style)
     AudioStyleInstall(&style)
     return style
@@ -606,4 +609,30 @@ DrawSeparatorText :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
 DrawBackdrop :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     painter.fill_rect(painter, info.rect, {0, 0, 0, 130})
+}
+
+// The box of a text area: like a text field, with the name shown while it is empty. Its lines, selection and caret are elements of their own.
+DrawTextArea :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    focused: bool = .FOCUSED in info.flags
+    FillRoundedBorder(painter, info.rect, theme.rounding * 0.6, theme.track, theme.accent if focused else theme.border, theme.border_width, theme.max_radius)
+    if info.text == "" && !focused {
+        metrics: ^ui.Metrics = &ctx.style.metrics
+        painter.draw_text(painter, info.name, {info.rect.x + metrics.padding.x, info.rect.y + metrics.padding.y}, info.font_size, theme.text_dim)
+    }
+}
+
+DrawTextSelection :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    accent: ui.Color = painter.theme.accent
+    painter.fill_rect(painter, info.rect, {accent.r, accent.g, accent.b, 130})
+}
+
+// The caret blinks twice a second
+DrawTextCaret :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    if math.mod(ctx.time, 1.0) < 0.5 {
+        painter.fill_rect(painter, info.rect, painter.theme.text)
+    }
 }

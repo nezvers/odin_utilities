@@ -2005,3 +2005,132 @@ test_dragging_in_a_text_field_selects_and_a_double_click_takes_a_word :: proc(t:
     testing.expect_value(t, state.anchor, 6)
     testing.expect_value(t, state.cursor, 10)
 }
+
+@(private = "file")
+areaFrame :: proc(harness: ^Harness, input: Input, buffer: []u8, length: ^int) -> bool {
+    frame(harness, input)
+    UiButton(&harness.ctx, "Above")
+    changed := UiTextArea(&harness.ctx, "Notes", buffer, length, {Fixed(100), Fixed(60)})
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return changed
+}
+
+@(private = "file")
+areaType :: proc(harness: ^Harness, text: string, buffer: []u8, length: ^int) {
+    input: Input = pointerAt({50, 60})
+    copy(input.text[:], text)
+    input.text_count = u8(len(text))
+    areaFrame(harness, input, buffer, length)
+}
+
+@(private = "file")
+areaKey :: proc(harness: ^Harness, buffer: []u8, length: ^int, keys: Keys = {}, actions: Actions = {}, modifiers: Modifiers = {}) {
+    input: Input = pointerAt({50, 60})
+    input.keys, input.actions, input.modifiers = keys, actions, modifiers
+    areaFrame(harness, input, buffer, length)
+}
+
+@(test)
+test_the_rows_of_a_text_break_at_words_new_lines_and_too_long_words :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    frame(harness)
+    ctx: ^Context = &harness.ctx
+    // the test font: 8 pixels a letter. 80 pixels hold ten letters
+    count: int = areaLines(ctx, "hello world foo", 80, true)
+    testing.expect_value(t, count, 2)
+    testing.expect(t, ctx.area_lines[0].start == 0 && ctx.area_lines[0].end == 6 && !ctx.area_lines[0].hard, "the space after a word stays on its row")
+    testing.expect(t, ctx.area_lines[1].start == 6 && ctx.area_lines[1].end == 15 && !ctx.area_lines[1].hard)
+    count = areaLines(ctx, "a\n\nb", 80, true)
+    testing.expect_value(t, count, 3)
+    testing.expect(t, ctx.area_lines[0].hard && ctx.area_lines[1].start == 2 && ctx.area_lines[1].end == 2 && ctx.area_lines[2].start == 3)
+    count = areaLines(ctx, "abcdefghijklmnop", 80, true)
+    testing.expect_value(t, count, 2)
+    testing.expect(t, ctx.area_lines[0].end == 10 && ctx.area_lines[1].start == 10 && ctx.area_lines[1].end == 16, "a word wider than the room is cut where it stops fitting")
+    testing.expect_value(t, areaLines(ctx, "hello world foo", 80, false), 1)
+    testing.expect_value(t, areaLines(ctx, "ends with a line\n", 400, true), 2)             // an empty last row where the cursor can be
+    testing.expect_value(t, areaLines(ctx, "", 80, true), 1)
+    // where a byte offset is: the end of a row that wrapped is the start of the next
+    count = areaLines(ctx, "hello world foo", 80, true)
+    testing.expect_value(t, areaLineOf(ctx.area_lines[:], count, 6), 1)
+    testing.expect_value(t, areaLineOf(ctx.area_lines[:], count, 5), 0)
+    testing.expect_value(t, areaLineOf(ctx.area_lines[:], count, 15), 1)
+}
+
+@(test)
+test_a_text_area_takes_new_lines_and_up_and_down_keep_the_column :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    buffer: [128]u8
+    length: int
+    for _ in 0 ..< 2 { areaFrame(harness, pointerAt({50, 60}), buffer[:], &length) }
+    areaFrame(harness, pointerAt({50, 60}, true, true), buffer[:], &length)
+    areaFrame(harness, pointerAt({50, 60}, false, false, true), buffer[:], &length)
+    areaType(harness, "one", buffer[:], &length)
+    areaKey(harness, buffer[:], &length, keys = {.ENTER})
+    areaType(harness, "two", buffer[:], &length)
+    testing.expect_value(t, string(buffer[:length]), "one\ntwo")
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("Notes"))
+    testing.expect_value(t, state.cursor, 7)
+    // up: the same column on the row above, and the focus stays in the area (the button above it does not take it)
+    areaKey(harness, buffer[:], &length, actions = {.UP})
+    testing.expect_value(t, state.cursor, 3)
+    testing.expect_value(t, harness.ctx.focus, UiIdPath("Notes"))
+    areaType(harness, "X", buffer[:], &length)
+    testing.expect_value(t, string(buffer[:length]), "oneX\ntwo")
+    areaKey(harness, buffer[:], &length, actions = {.DOWN})
+    testing.expect_value(t, state.cursor, 8)                            // the end of "two": it is shorter than the column
+    areaKey(harness, buffer[:], &length, keys = {.HOME})
+    testing.expect_value(t, state.cursor, 5)
+    areaKey(harness, buffer[:], &length, keys = {.END})
+    testing.expect_value(t, state.cursor, 8)
+    areaKey(harness, buffer[:], &length, keys = {.HOME}, modifiers = {.CTRL})
+    testing.expect_value(t, state.cursor, 0)
+    // shift + down selects over the line break: "oneX\n" is what is copied
+    areaKey(harness, buffer[:], &length, actions = {.DOWN}, modifiers = {.SHIFT})
+    testing.expect_value(t, state.anchor, 0)
+    testing.expect_value(t, state.cursor, 5)
+    areaKey(harness, buffer[:], &length, actions = {.COPY})
+    clipboard: [16]u8
+    count: int = UiClipboardGet(&harness.ctx, clipboard[:])
+    testing.expect_value(t, string(clipboard[:count]), "oneX\n")
+    // paste keeps the new line (a text field would make a space of it)
+    areaKey(harness, buffer[:], &length, keys = {.END}, modifiers = {.CTRL})
+    areaKey(harness, buffer[:], &length, actions = {.PASTE})
+    testing.expect_value(t, string(buffer[:length]), "oneX\ntwooneX\n")
+}
+
+@(test)
+test_a_text_area_scrolls_to_the_cursor_and_wraps_to_its_width :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    buffer: [256]u8
+    length: int
+    for _ in 0 ..< 2 { areaFrame(harness, pointerAt({50, 60}), buffer[:], &length) }
+    areaFrame(harness, pointerAt({50, 60}, true, true), buffer[:], &length)
+    areaFrame(harness, pointerAt({50, 60}, false, false, true), buffer[:], &length)
+    // ten rows in a box of 60 pixels: the view follows the cursor down
+    for i in 0 ..< 10 {
+        areaType(harness, "row", buffer[:], &length)
+        _ = i
+        areaKey(harness, buffer[:], &length, keys = {.ENTER})
+    }
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("Notes"))
+    testing.expect(t, state.scroll.y < -50, "the view went down with the cursor")
+    areaKey(harness, buffer[:], &length, keys = {.HOME}, modifiers = {.CTRL})
+    testing.expect_value(t, state.scroll.y, 0)                           // and back up when the cursor does
+    // a scrollbar is declared while the text is longer than the box
+    areaKey(harness, buffer[:], &length)
+    testing.expect(t, seen.kinds[.SCROLLBAR] > 0)
+    // the text is cut into rows by the width: the words of a long line wrap
+    length = 0
+    areaType(harness, "alpha beta gamma delta ", buffer[:], &length)
+    areaType(harness, "epsilon zeta", buffer[:], &length)
+    areaKey(harness, buffer[:], &length)
+    areaFrame(harness, pointerAt({50, 60}), buffer[:], &length)
+    testing.expect(t, areaLines(&harness.ctx, string(buffer[:length]), 100 - 2 * DEFAULT_METRICS.padding.x - DEFAULT_METRICS.scrollbar_width, true) > 2)
+}

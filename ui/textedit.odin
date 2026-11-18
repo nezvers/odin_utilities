@@ -129,7 +129,7 @@ textInsert :: proc(state: ^WidgetState, buffer: []u8, length: ^int, text: string
 
 // What the keyboard does to a focused field. Shift extends the selection, Ctrl moves and deletes by words, the actions copy, cut, paste and select all.
 @(private)
-textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: ^int) -> (changed: bool, submitted: bool) {
+textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: ^int, multiline: bool = false) -> (changed: bool, submitted: bool) {
     input: ^Input = &ctx.input
     shift: bool = .SHIFT in input.modifiers
     ctrl: bool = .CTRL in input.modifiers
@@ -145,10 +145,15 @@ textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: 
     if .PASTE in input.actions {
         pasted: [CLIPBOARD_LOCAL]u8
         count: int = UiClipboardGet(ctx, pasted[:])
+        kept: int
         for i in 0 ..< count {
-            if pasted[i] == '\n' || pasted[i] == '\r' || pasted[i] == '\t' { pasted[i] = ' ' }       // one line
+            character: u8 = pasted[i]
+            if character == '\r' && multiline { continue }                                // a new line is one byte
+            if character == '\t' || (!multiline && (character == '\n' || character == '\r')) { character = ' ' }       // a field is one line
+            pasted[kept] = character
+            kept += 1
         }
-        changed = textInsert(state, buffer, length, string(pasted[:count])) || changed
+        changed = textInsert(state, buffer, length, string(pasted[:kept])) || changed
     }
     // typed text goes in at the cursor, in place of the selection
     if input.text_count > 0 {
@@ -177,8 +182,8 @@ textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: 
             move(state, textWordRight(text, state.cursor) if ctrl else state.cursor + width, shift)
         }
     }
-    if .HOME in input.keys { move(state, 0, shift) }
-    if .END in input.keys { move(state, length^, shift) }
+    if .HOME in input.keys && !multiline { move(state, 0, shift) }
+    if .END in input.keys && !multiline { move(state, length^, shift) }
 
     text = string(buffer[:length^])
     if .BACKSPACE in input.keys {
@@ -205,7 +210,7 @@ textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: 
         }
         changed = changed || removed
     }
-    if .ENTER in input.keys {
+    if .ENTER in input.keys && !multiline {
         submitted = true
     }
     if ctx.cancel_pending {
@@ -213,4 +218,11 @@ textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: 
         ctx.cancel_pending = false
     }
     return
+}
+
+// Where the cursor and the other end of the selection of a text field or area are (byte offsets in its buffer), for a program that shows them or acts on them (find, line and column).
+UiTextCursor :: proc(ctx: ^Context, id: Id) -> (cursor: int, anchor: int, found: bool) {
+    state: ^WidgetState = stateFind(ctx, id)
+    if state == nil { return 0, 0, false }
+    return state.cursor, state.anchor, true
 }

@@ -22,6 +22,8 @@ State :: struct {
     first_length: int,
     second: [64]u8,
     second_length: int,
+    notes: [256]u8,
+    notes_length: int,
 }
 
 state: State
@@ -38,11 +40,12 @@ draw :: proc(ctx: ^kit.Context) {
     if ui.UiPanel(c, "text demo", {size = {ui.Fixed(260), ui.Fit()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(10), gap = 8}) {
         ui.UiTextField(c, "Type here", state.first[:], &state.first_length, {ui.Fixed(240), {}})
         ui.UiTextField(c, "Paste here", state.second[:], &state.second_length, {ui.Fixed(240), {}})
+        ui.UiTextArea(c, "Notes: several lines, wrapped", state.notes[:], &state.notes_length, {ui.Fixed(240), ui.Fixed(100)})
     }
     ui_demo_end(&state.app)
 }
 
-// the fields are at (10, 10) and (10, 46), 240 x 28
+// the fields are at (10, 10) and (10, 46), 240 x 28, the area at (10, 82), 240 x 100
 script: []kit.Step = {
     kit.Wait(4),
     kit.Click({60, 24}),
@@ -77,5 +80,32 @@ script: []kit.Step = {
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.second[:state.second_length]) == "big world" }, "the selected words were copied and pasted into the other field"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.first[:state.first_length]) == "hello big world" }, "copy leaves the text"),
+    // the text area: two lines, up and down, a selection over the line break, wrapping of a long line
+    kit.Click({60, 100}),
+    kit.Wait(2),
+    kit.Type("first line"),
+    kit.Tap(.ENTER),
+    kit.Type("second, a longer"),
+    kit.Wait(1),
+    kit.Type(" line that wraps"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.notes[:state.notes_length]) == "first line\nsecond, a longer line that wraps" }, "new lines are typed into the area"),
+    kit.Tap(.UP),
+    kit.Wait(2),
+    kit.Tap(.UP),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        cursor, _, found := ui.UiTextCursor(&state.app.ctx, ui.UiIdPath("text demo", "Notes: several lines, wrapped"))
+        return found && cursor <= 10        // on the first row now
+    }, "up went over the wrapped row to the first line"),
+    kit.KeyDownStep(.LEFT_SHIFT),
+    kit.Wait(1),
+    kit.Tap(.DOWN),
+    kit.Wait(1),
+    kit.Tap(.DOWN),
+    kit.Wait(1),
+    kit.KeyUpStep(.LEFT_SHIFT),
+    kit.Wait(2),
+    kit.Capture("text_area"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
