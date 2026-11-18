@@ -13,7 +13,7 @@ package ui
 //  - everything a segment needs is computed when the plan is made (the length's inverse, the difference of the values, the coefficient of its shape: no divisions to set up a block);
 //  - HOLD, and the stretches before the first point and after the last one, are a fill of one value;
 //  - LINEAR is a ramp: one add per sample (forward differencing), started again from an exact value every AUTOMATION_CHUNK samples so that the rounding of f32 cannot add up;
-//  - STAIRS, SMOOTH_STAIRS, PULSE, TRIANGLE and WAVE have edges and corners that a ramp would smear: exact at every sample (a few ns each);
+//  - STAIRS, SMOOTH_STAIRS and PULSE have edges that a ramp would smear: exact at every sample (a few ns each); TRIANGLE and WAVE are continuous: a ramp per run, anchored inside of a run for WAVE;
 //  - SMOOTH, CURVE and S_CURVE are evaluated exactly only every few samples (the anchors) and ramped linearly between them. The distance between anchors is a part (1 / 125) of the length of the
 //    segment, at most AUTOMATION_ANCHOR samples, so the error is the same small part of the change of the value whatever the length: at most about 5e-5 for SMOOTH, more for a strongly bent CURVE
 //    (see the test). A segment shorter than 125 samples is evaluated at every sample, exactly. `AutomationRenderExact` is the per-sample reference.
@@ -138,7 +138,37 @@ automationSegmentFill :: proc(segment: ^AutomationSegment, time: f64, step: f64,
                 value += delta
             }
         }
-    case .STAIRS, .SMOOTH_STAIRS, .PULSE, .TRIANGLE, .WAVE:
+    case .TRIANGLE, .WAVE:
+        // continuous: every run (up or down) is a ramp, between exact values at its ends; WAVE is eased inside of a run, so it is anchored like the other curves
+        x0: f64 = (time - segment.start) * segment.inverse_length
+        delta_x: f64 = step * segment.inverse_length
+        runs: f64 = 2 * abs(f64(segment.coefficient)) - 1
+        run_samples: f64 = 1 / (runs * delta_x)
+        spacing: int = 1 if segment.shape == .TRIANGLE else clamp(int(run_samples / AUTOMATION_ANCHOR_PART), 1, AUTOMATION_ANCHOR)
+        evaluate :: proc(segment: ^AutomationSegment, x: f64) -> f32 {
+            return segment.value + segment.change * CurveEvalCoefficient(segment.shape, segment.coefficient, f32(clamp(x, 0, 1)))
+        }
+        i: int
+        for i < len(out) {
+            x: f64 = x0 + f64(i) * delta_x
+            run_end: f64 = (math.floor(x * runs) + 1) / runs
+            left: int = clamp(int(math.ceil((run_end - x) / delta_x)), 1, len(out) - i)
+            if segment.shape == .TRIANGLE {
+                ramp(out[i:i + left], evaluate(segment, x), evaluate(segment, min(x + f64(left) * delta_x, run_end)))
+            } else if spacing == 1 {
+                for k in 0 ..< left { out[i + k] = evaluate(segment, x + f64(k) * delta_x) }
+            } else {
+                anchor: f32 = evaluate(segment, x)
+                for start := 0; start < left; start += spacing {
+                    count: int = min(spacing, left - start)
+                    next: f32 = evaluate(segment, min(x + f64(start + count) * delta_x, run_end))
+                    ramp(out[i + start:i + start + count], anchor, next)
+                    anchor = next
+                }
+            }
+            i += left
+        }
+    case .STAIRS, .SMOOTH_STAIRS, .PULSE:
         // the edges of these are exact to the sample (a ramp between anchors would smear a step): one evaluation per sample
         x0: f64 = (time - segment.start) * segment.inverse_length
         delta_x: f64 = step * segment.inverse_length

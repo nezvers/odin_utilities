@@ -133,6 +133,11 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if rl.IsKeyPressed(.Z) { input.actions += {.REDO} if .SHIFT in input.modifiers else {.UNDO} }
         if rl.IsKeyPressed(.Y) { input.actions += {.REDO} }
     }
+    if .ALT in input.modifiers && !ctrl {
+        if rl.IsKeyPressed(.I) { input.actions += {.INVERT} }
+        if rl.IsKeyPressed(.R) { input.actions += {.REVERSE} }
+        if rl.IsKeyPressed(.D) { input.actions += {.REPEAT} }
+    }
     return input
 }
 

@@ -22,6 +22,8 @@ TIMELINE_TRACK_ZOOM_MIN :: f32(0.4)
 TIMELINE_TRACK_ZOOM_MAX :: f32(3)
 
 @(private)
+TIMELINE_BEND_STEP :: f32(0.1)       // how much a notch of the wheel with Alt bends a lane
+
 TimelineGesture :: enum u8 {
     NONE,
     PLAYHEAD,
@@ -331,6 +333,8 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             if under > 0 { view.scroll += under * (track_after / track_before - 1) }
             view.track_zoom = track_after
             style.track_scale = track_after
+        } else if .ALT in ctx.input.modifiers {
+            // Alt: the bend macro of the automation lane under the pointer (below), nothing else
         } else if shift {
             view.origin -= f64(ctx.input.wheel.y * 60 / before)
         } else {
@@ -347,6 +351,14 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
     time: f64 = TimelineTime(view, mouse.x)
     row: int = timelineTrackAt(timeline, &style, mouse.y - lanes_top + view.scroll)
     hovering: bool = ctx.hover == id && ctx.disabled_depth == 0 && view.gesture == .NONE
+    if hovering && ctx.input.wheel.y != 0 && .ALT in ctx.input.modifiers && mouse.y >= lanes_top && row >= 0 {
+        // the wheel with Alt over an automation lane bends all its curves (up: the segments that rise, with Shift: the ones that fall)
+        lane: ^TimelineTrack = TimelineTrackGet(timeline, timeline.order[row])
+        if lane.kind == .AUTOMATION {
+            step: f32 = ctx.input.wheel.y * TIMELINE_BEND_STEP
+            TimelineTrackBend(timeline, lane.handle, lane.bend_rise + (0 if shift else step), lane.bend_fall + (step if shift else 0))
+        }
+    }
     view.hover_clip, view.hover_track = {}, -1
     zone: TimelineZone
     if hovering && mouse.y >= lanes_top {
@@ -703,6 +715,9 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             TimelineCopy(timeline)
             TimelinePaste(timeline, last_end)
         }
+        if .INVERT in actions { TimelinePointsFlip(timeline) }
+        if .REVERSE in actions { TimelinePointsMirror(timeline) }
+        if .REPEAT in actions { TimelinePointsRepeat(timeline, max(view.snap, 1)) }
         if .PASTE in actions {
             lane: int = row if mouse.y >= lanes_top && row >= 0 && ctx.hover == id else -1
             TimelinePaste(timeline, max(timelineSnapTime(timeline, view, view.playhead, false), 0), lane)

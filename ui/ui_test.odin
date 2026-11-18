@@ -3312,3 +3312,30 @@ test_undo_and_redo_of_the_widget_step_back_through_finished_edits :: proc(t: ^te
     timelineActions(harness, timeline, view, {200, 40}, {.REDO})
     testing.expect_value(t, TimelineClipCount(timeline), 2)
 }
+
+@(test)
+test_alt_keys_edit_the_selected_points_and_alt_and_the_wheel_bends_the_lane :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, lane, first, second := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    TimelinePointGet(timeline, first).selected, TimelinePointGet(timeline, second).selected = true, true
+    before: f32 = TimelinePointGet(timeline, second).value
+    timelineClick(harness, timeline, view, {100, 48}, {.SHIFT})                      // the focus, and shift toggles the first point off
+    TimelinePointGet(timeline, first).selected = true
+    timelineActions(harness, timeline, view, {200, 40}, {.INVERT})
+    testing.expect(t, TimelinePointGet(timeline, second).value != before, "the values are upside down")
+    count: int = TimelinePointCount(timeline)
+    timelineActions(harness, timeline, view, {200, 40}, {.REPEAT})
+    testing.expect_value(t, TimelinePointCount(timeline), count + 2)
+    timelineActions(harness, timeline, view, {200, 40}, {.REVERSE})
+    // the wheel with Alt over the lane
+    input: Input = pointerAt({200, 40})
+    input.modifiers = {.ALT}
+    input.wheel = {0, 1}
+    timelineFrame(harness, timeline, view, input)
+    testing.expect_value(t, TimelineTrackGet(timeline, lane).bend_rise, TIMELINE_BEND_STEP)
+    input.modifiers = {.ALT, .SHIFT}
+    timelineFrame(harness, timeline, view, input)
+    testing.expect_value(t, TimelineTrackGet(timeline, lane).bend_fall, TIMELINE_BEND_STEP)
+    testing.expect_value(t, TimelineTrackGet(timeline, lane).bend_rise, TIMELINE_BEND_STEP)
+}

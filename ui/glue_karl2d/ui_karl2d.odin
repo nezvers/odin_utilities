@@ -114,6 +114,11 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if karl2d.key_went_down(.Z) { input.actions += {.REDO} if .SHIFT in input.modifiers else {.UNDO} }
         if karl2d.key_went_down(.Y) { input.actions += {.REDO} }
     }
+    if .ALT in input.modifiers && !ctrl {
+        if karl2d.key_went_down(.I) { input.actions += {.INVERT} }
+        if karl2d.key_went_down(.R) { input.actions += {.REVERSE} }
+        if karl2d.key_went_down(.D) { input.actions += {.REPEAT} }
+    }
     return input
 }
 

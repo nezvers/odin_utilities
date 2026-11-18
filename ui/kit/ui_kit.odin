@@ -90,6 +90,11 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
         if .Z in source.keys_pressed { result.actions += {.REDO} if .SHIFT in result.modifiers else {.UNDO} }
         if .Y in source.keys_pressed { result.actions += {.REDO} }
     }
+    if .ALT in result.modifiers && !kit.CtrlDown(source) {
+        if .I in source.keys_pressed { result.actions += {.INVERT} }
+        if .R in source.keys_pressed { result.actions += {.REVERSE} }
+        if .D in source.keys_pressed { result.actions += {.REPEAT} }
+    }
     for i in 0 ..< int(result.text_count) {
         result.text[i] = source.text[i]
     }

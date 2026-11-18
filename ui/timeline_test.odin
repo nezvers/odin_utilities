@@ -648,3 +648,26 @@ test_the_bend_of_a_track_adds_to_the_curve_of_rising_and_falling_segments :: pro
     testing.expect(t, TimelineTrackBend(timeline, lane, 0.6, -0.6) && timeline.event_count == 0)
     testing.expect(t, !TimelineTrackBend(timeline, TrackHandle{}, 0, 0))
 }
+
+@(test)
+test_the_blocks_of_the_shapes_that_repeat_follow_the_exact_value :: proc(t: ^testing.T) {
+    storage: [4]AutomationSegment
+    for shape in ([5]CurveShape{.STAIRS, .SMOOTH_STAIRS, .PULSE, .TRIANGLE, .WAVE}) {
+        timeline: ^Timeline = newTimeline()
+        lane, _ := TimelineAutomationAdd(timeline, "p", 0, 1)
+        a, _ := TimelinePointAdd(timeline, lane, 1, 0.2)
+        TimelinePointAdd(timeline, lane, 2, 0.9)
+        TimelinePointShape(timeline, a, shape, 0.5)                          // 8 steps, cycles or so
+        plan, _ := AutomationCompile(timeline, lane, storage[:])
+        for block in ([3]int{512, 77, 1000}) {
+            worst, wrong := maxError(&plan, 0.5, 1.0 / 48000, 96000, block)
+            if shape == .TRIANGLE || shape == .WAVE {
+                testing.expectf(t, worst <= 5e-4, "%v blocks of %d: error %v (a sample at a corner may be on the other side: about one sample of slope)", shape, block, worst)
+            } else {
+                // edges: the sample at an edge may be on the other side (a hair of rounding), at most one per edge
+                testing.expectf(t, wrong <= 2 * 8 + 2, "%v blocks of %d: %d samples differ", shape, block, wrong)
+            }
+        }
+        free(timeline)
+    }
+}

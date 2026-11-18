@@ -322,6 +322,9 @@ Action :: enum u8 {
     DUPLICATE,      // ui_duplicate: Ctrl + D: a copy of what is selected, put right after it (the timeline)
     UNDO,           // Ctrl + Z
     REDO,           // Ctrl + Y, Ctrl + Shift + Z
+    INVERT,         // Alt + I: the selected automation points upside down (the timeline)
+    REVERSE,        // Alt + R: the selected points played backwards
+    REPEAT,         // Alt + D: a copy of the selected points after them
 }
 Actions :: bit_set[Action; u32]
 
