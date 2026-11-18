@@ -1,6 +1,6 @@
 # TODO
 
-Tick an item when it is done and verified (tests pass, committed). The ui items are in `ui/TODO.md`.
+Tick an item when it is done and verified (tests pass, committed). The ui items are in `ui/TODO.md`, the p2p items in `p2p/TODO.md`.
 
 ## Libraries
 - [x] `scratch`: two thread local scratch arenas with the conflict rule (`ScratchBegin(conflict)` / `ScratchEnd`), for non realtime tools
