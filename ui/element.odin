@@ -137,6 +137,8 @@ Clip :: struct {
     horizontal: bool,
     vertical: bool,
     offset: Vec2,                   // where the content is moved (a scroll position, 0 or negative)
+    cut: bool,                      // only hides what does not fit: the children are sized as in a container that does not clip (they grow and shrink to the room,
+                                    // a content that is bigger does not make them bigger), and what is bigger than the room is cut at the edge
 }
 
 // What the mouse cursor looks like over a widget; the glue sets the real one (`UiCursor`)
@@ -342,6 +344,9 @@ WidgetState :: struct {
     drag: Vec2,                     // where the pointer was in the last frame of a drag (a drag widget, a window title)
     press_time: f32,                // seconds the widget has been held (a button that repeats)
     anim: f32,                      // UiAnimate: a value that follows a target
+    ratio: f32,                     // UiSplit: the part of the container the first section has
+    window_position: Vec2,          // UiWindowResizable that keeps its own position and size
+    window_size: Vec2,
 }
 
 @(private)
@@ -373,5 +378,6 @@ Problem :: enum u8 {
     PARENT_NOT_FOUND,   // a floating element asked for an element that was not declared before it
     NO_MEASURE,         // text without a MeasureProc
     UNBALANCED,         // a container that was not closed (or closed twice)
+    SPLIT_MISUSE,       // a split section outside of a split, a third one, or a split nested deeper than UI_MAX_SPLITS (an extra section is not shown, one outside of a split is a plain box)
 }
 Problems :: bit_set[Problem; u16]

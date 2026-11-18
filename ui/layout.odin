@@ -392,7 +392,7 @@ sizeChildren :: proc(ctx: ^Context, parent_index: i32, x_axis: bool) {
     inner_content: f32 = 0
     padding_and_gaps: f32 = padding
     along_axis: bool = (x_axis && layout.direction == .LEFT_TO_RIGHT) || (!x_axis && layout.direction == .TOP_TO_BOTTOM)
-    clips_axis: bool = (x_axis && parent.decl.clip.horizontal) || (!x_axis && parent.decl.clip.vertical)
+    clips_axis: bool = !parent.decl.clip.cut && ((x_axis && parent.decl.clip.horizontal) || (!x_axis && parent.decl.clip.vertical))
     grow_count: int = 0
     resizable: []i32 = ctx.scratch
     resizable_count: int = 0

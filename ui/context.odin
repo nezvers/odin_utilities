@@ -66,6 +66,9 @@ Context :: struct {
     open_count: int,
     clip_count: int,
     root_stack_count: int,
+    split_stack: [UI_MAX_SPLITS]SplitFrame,   // the splits that are open (resize.odin)
+    split_count: int,
+    split_lost: int,                          // splits opened deeper than the stack: they are plain boxes
     roots: [UI_MAX_ROOTS]Root,
     root_count: int,
 
@@ -158,6 +161,8 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
     ctx.open_count = 0
     ctx.clip_count = 0
     ctx.root_stack_count = 0
+    ctx.split_count = 0
+    ctx.split_lost = 0
     ctx.root_count = 0
     ctx.problems = {}
     ctx.overflow = false
