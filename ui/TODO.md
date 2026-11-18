@@ -16,6 +16,11 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Drag and drop with a small payload (source, target, a fixed buffer for the data)
 - [x] Shrink priority ("strictness" of a size): which child of an overfull container gives way first
 - [x] Node graph: model with rules, events with user pointers, topological order and buffer plan; cable routes, bounds and distance by the style; canvas, nodes, pins, minimap, zip ties; demo with a script and screenshots
+- [x] Draggable scrollbar (a hit box of its own, wider than it is drawn)
+- [x] Knob, fader and level meter (`widgets_audio.odin`, default style in `default_style/audio.odin`), demo `audio` with a screenshot
+- [ ] Text field: selection, copy and paste, several lines
+- [ ] Text measure cache (text hash and size) so big tables and logs do not measure every frame
+- [ ] UI scale factor for high DPI screens (metrics and input)
 - [ ] Node graph: zoom of the canvas (the view only pans), box selection and moving several nodes, copy and paste of a selection
 - [ ] Node graph: reroute points on a cable, labels on cables, a node that collapses to its title
 - [x] `Decl.absolute`: a child out of the flow of its parent at an offset (no root, no limit but the storage); the graph nodes use it

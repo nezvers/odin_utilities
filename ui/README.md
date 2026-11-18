@@ -147,6 +147,11 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
 - **Minimap and view.** `GraphView` (plain data: the origin of the view, tool, selection) can be saved with the graph. `GraphMinimapTransform` gives a style the scale and the offset of the content span in its rectangle.
 - A node is an absolute child of the canvas (`Decl.absolute`: out of the flow of its parent, placed at an offset from its top left corner, drawn and hit in declaration order, not a floating root), so the number of nodes is limited only by the elements of the `Storage`. Demo: `demo_common/demo_graph.odin`.
 
+## Audio controls
+`widgets_audio.odin`: `UiKnob` (drag up and down, `KNOB_DRAG_PIXELS` for the whole range; wheel, navigation keys and a double click that sets the default also turn it), `UiFader` (stands up, the middle of the handle is at the pointer, `FaderHandleHeight`)
+and `UiMeter` (a level and a peak mark that the program holds and lets fall, standing or lying). Each is one element with a style kind (`KNOB`, `FADER`, `METER`): value 0..1, the real number, its text, where the default is. Nothing allocates;
+the scroll areas have a draggable scrollbar (the thumb keeps its place under the pointer, a press on the track centers it).
+
 ## Layout of the folder
 ```
 ui.odin files   common, id, element (types), context (Begin/End/state), layout (Clay port), widgets, style, render, rounded, graph* (node graph), ui_test.odin
@@ -162,5 +167,5 @@ Three levels: `odin test ui` (layout and behavior with a fake font), `odin test 
 (see `demo_kit/README.md`). `UiCommands(&ctx)` is the third way: assert on what the style would be asked to draw, without pixels.
 
 ## Known limits
-Text is measured per word each frame (no cache); the scrollbar is not draggable (wheel only); a text field edits one line of UTF-8 without selection;
+Text is measured per word each frame (no cache); a text field edits one line of UTF-8 without selection;
 an element that is declared after the floating element that names it as parent is not found (declare the parent first).

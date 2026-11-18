@@ -997,6 +997,12 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
                 ratio = clamp(view / content_height, 0, 1),
             }
             layoutCommand(ctx, {kind = .DRAW, info = bar})
+            // the bar takes the pointer (UiScroll drags with it): a little wider than it is drawn, so it is easy to catch
+            if ctx.hit_count < len(ctx.hits) {
+                grab: f32 = max(width, 14)
+                ctx.hits[ctx.hit_count] = {id = scrollbarId(element.id), rect = {shown.x + shown.z - grab, shown.y, grab, shown.w}, clip_rect = own_clip, kinds = {.INTERACTIVE, .NO_FOCUS}, root = root_id}
+                ctx.hit_count += 1
+            }
         }
     }
     if clips {

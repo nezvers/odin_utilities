@@ -113,6 +113,7 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.SEPARATOR_TEXT] = DrawSeparatorText
     style.procs[.BACKDROP] = DrawBackdrop
     GraphStyleInstall(&style)
+    AudioStyleInstall(&style)
     return style
 }
 

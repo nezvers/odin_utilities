@@ -213,6 +213,7 @@ UiScroll :: proc(ctx: ^Context, name: string, size: Size = {}, layout: Layout = 
     if ctx.hover_scroll == id && ctx.input.wheel.y != 0 {
         state.scroll.y += ctx.input.wheel.y * ctx.style.metrics.font_size * 2.5
     }
+    scrollbarDrag(ctx, id, state)
     // the focus moved with the keyboard: show the focused widget when it is one of this container's
     if ctx.reveal && ctx.focus != 0 {
         scrollReveal(ctx, state)
@@ -236,6 +237,34 @@ UiScroll :: proc(ctx: ^Context, name: string, size: Size = {}, layout: Layout = 
         hit = {.SCROLL, .BLOCKER},
         draw = {kind = .SCROLL_AREA, name = IdSplitName(name), font_size = ctx.style.metrics.font_size},
     })
+}
+
+// The id the scrollbar of a scrolling container has for the pointer
+@(private)
+scrollbarId :: proc(scroll_id: Id) -> Id {
+    return IdFromString("scrollbar", scroll_id)
+}
+
+// The scrollbar is dragged by its thumb (the pointer keeps its place on the thumb), a press on the track beside the thumb centers the thumb on the pointer.
+// The length of the thumb is the part of the track that the view is of the content (at least twice the width of the bar), which is what a style draws.
+@(private)
+scrollbarDrag :: proc(ctx: ^Context, id: Id, state: ^WidgetState) {
+    view: f32 = state.rect.w
+    content: f32 = state.content_size.y
+    range: f32 = content - view
+    if view <= 0 || range <= 0.5 { return }
+    bar: Interaction = widgetBehavior(ctx, scrollbarId(id))
+    if !bar.pressed || !ctx.input.mouse_down { return }
+    thumb: f32 = clamp(max(view * clamp(view / content, 0, 1), ctx.style.metrics.scrollbar_width * 2), 0, view)
+    free: f32 = view - thumb
+    if free <= 0 { return }
+    if ctx.input.mouse_pressed {
+        top: f32 = state.rect.y + free * clamp(-state.scroll.y / range, 0, 1)
+        y: f32 = ctx.input.mouse_position.y
+        state.drag.y = y - top if y >= top && y <= top + thumb else thumb * 0.5
+    }
+    value: f32 = clamp((ctx.input.mouse_position.y - state.drag.y - state.rect.y) / free, 0, 1)
+    state.scroll.y = -value * range
 }
 
 // Moves the scroll position so that the focused widget is inside of the view, when it sits in this container (its hit box was clipped by the

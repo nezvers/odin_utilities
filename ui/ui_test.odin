@@ -1649,3 +1649,98 @@ test_a_pin_that_another_node_covers_neither_drags_nor_connects :: proc(t: ^testi
     coveredGraphFrame(harness, graph, &view, pointerAt(pin.anchor, false, false, true))
     testing.expect_value(t, GraphLinkCount(graph), 0)
 }
+
+@(private = "file")
+scrollFrame :: proc(harness: ^Harness, input: Input) {
+    frame(harness, input)
+    if UiScroll(&harness.ctx, "List", {Fixed(100), Fixed(100)}) {
+        for _ in 0 ..< 20 { UiLabel(&harness.ctx, "item") }
+    }
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(test)
+test_the_scrollbar_is_dragged_by_its_thumb :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    for _ in 0 ..< 3 { scrollFrame(harness, pointerAt({95, 5})) }
+    testing.expect_value(t, UiScrollGet(&harness.ctx, UiIdPath("List")), 0)
+    scrollFrame(harness, pointerAt({95, 5}, true, true))
+    // the pointer goes down the track: the content follows, the thumb stays under the pointer
+    for y in 10 ..= 40 { scrollFrame(harness, pointerAt({95, f32(y)}, true)) }
+    middle: f32 = UiScrollGet(&harness.ctx, UiIdPath("List"))
+    testing.expect(t, middle > 50, "the content moved")
+    scrollFrame(harness, pointerAt({95, 40}, false, false, true))
+    held: f32 = UiScrollGet(&harness.ctx, UiIdPath("List"))
+    testing.expect_value(t, held, middle)                       // letting go keeps it
+    // all the way down, and past the end of the track
+    scrollFrame(harness, pointerAt({95, 40}, true, true))
+    for y in 41 ..= 140 { scrollFrame(harness, pointerAt({95, f32(y)}, true)) }
+    scrollFrame(harness, pointerAt({95, 140}, false, false, true))
+    end: f32 = UiScrollGet(&harness.ctx, UiIdPath("List"))
+    scrollFrame(harness, pointerAt({95, 40}))
+    testing.expect(t, end > middle, "the end of the track is the end of the content")
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("List"))
+    testing.expect(t, abs(end - (state.content_size.y - state.rect.w)) < 0.5)
+}
+
+@(private = "file")
+audioFrame :: proc(harness: ^Harness, input: Input, knob: ^f32, fader: ^f32) -> (knob_changed: bool, fader_changed: bool) {
+    frame(harness, input)
+    knob_changed = UiKnob(&harness.ctx, "Gain", knob, 0, 10, 5, {Fixed(40), Fixed(40)})
+    fader_changed = UiFader(&harness.ctx, "Vol", fader, 0, 1, 0.5, {Fixed(20), Fixed(100)})
+    UiMeter(&harness.ctx, "Level", 0.5, 0.8)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return
+}
+
+@(test)
+test_a_knob_turns_by_dragging_up_and_resets_on_a_double_click :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    knob: f32 = 5
+    fader: f32 = 0.5
+    for _ in 0 ..< 3 { audioFrame(harness, pointerAt({20, 20}), &knob, &fader) }
+    audioFrame(harness, pointerAt({20, 20}, true, true), &knob, &fader)
+    // 80 pixels up is half of the whole drag distance: half of the range
+    for i in 1 ..= 8 { audioFrame(harness, pointerAt({20, 20 - f32(i) * 10}, true), &knob, &fader) }
+    audioFrame(harness, pointerAt({20, -60}, false, false, true), &knob, &fader)
+    testing.expect(t, abs(knob - (5 + 10 * 80.0 / KNOB_DRAG_PIXELS)) < 0.01 || knob == 10, "dragging up turns it up")
+    // down again, below the start: it stops at the minimum
+    audioFrame(harness, pointerAt({20, 20}), &knob, &fader)
+    audioFrame(harness, pointerAt({20, 20}, true, true), &knob, &fader)
+    for i in 1 ..= 30 { audioFrame(harness, pointerAt({20, 20 + f32(i) * 10}, true), &knob, &fader) }
+    audioFrame(harness, pointerAt({20, 320}, false, false, true), &knob, &fader)
+    testing.expect_value(t, knob, 0)
+    // a second press within the double click time sets the default
+    audioFrame(harness, pointerAt({20, 20}), &knob, &fader)
+    audioFrame(harness, pointerAt({20, 20}, true, true), &knob, &fader)
+    audioFrame(harness, pointerAt({20, 20}, false, false, true), &knob, &fader)
+    audioFrame(harness, pointerAt({20, 20}, true, true), &knob, &fader)
+    audioFrame(harness, pointerAt({20, 20}, false, false, true), &knob, &fader)
+    testing.expect_value(t, knob, 5)
+    // what the style gets: the value 0..1 and where the default is
+    testing.expect(t, near(seen.last[.KNOB].value, 0.5) && near(seen.last[.KNOB].ratio, 0.5))
+}
+
+@(test)
+test_a_fader_follows_the_pointer_and_a_meter_shows_a_level_and_its_peak :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    knob: f32 = 5
+    fader: f32 = 0.5
+    // the fader is declared after the knob (40 high) in a column: it starts at y 40, 100 high
+    for _ in 0 ..< 3 { audioFrame(harness, pointerAt({10, 60}), &knob, &fader) }
+    audioFrame(harness, pointerAt({10, 60}, true, true), &knob, &fader)
+    testing.expect(t, abs(fader - (1 - (60.0 - 40 - 7) / (100 - 14))) < 0.001, "the top is the maximum, the middle of the handle is at the pointer")
+    audioFrame(harness, pointerAt({10, 400}, true), &knob, &fader)
+    testing.expect_value(t, fader, 0)                           // past the bottom: the minimum
+    audioFrame(harness, pointerAt({10, 400}, false, false, true), &knob, &fader)
+    meter: DrawInfo = seen.last[.METER]
+    testing.expect(t, near(meter.value, 0.5) && near(meter.ratio, 0.8) && meter.cursor == 0)
+}

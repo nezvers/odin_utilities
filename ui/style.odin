@@ -49,6 +49,9 @@ StyleKind :: enum u8 {
     BULLET,             // the dot of a bullet text
     SEPARATOR_TEXT,     // a line with a name in it
     BACKDROP,           // what dims the screen behind a modal dialog
+    KNOB,               // a round control turned by dragging: value 0..1, actual the number, text that number formatted, ratio where its default is (0..1)
+    FADER,              // a slider that stands: the same values, the maximum at the top
+    METER,              // a level: value 0..1, ratio the peak mark (negative: none), cursor 1 for a meter that lies
     GRAPH,              // the canvas of a node graph: draw the background, then call GraphDrawLinks(ctx, info) (cables and ties); user: the frame
     GRAPH_OVERLAY,      // above the nodes: call GraphDrawOverlay(ctx, info) (the cable that is dragged, the cut of the tie tool)
     GRAPH_NODE,         // the frame of a node: name, color, SELECTED flag
