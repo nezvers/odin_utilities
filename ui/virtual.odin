@@ -180,12 +180,27 @@ Table :: struct {
     shown: [TABLE_MAX_COLUMNS]f32,  // the widths of this frame: the widths of the columns, the last one wider when it fills
     body_id: Id,                // the id of the rows (what UiTable made it: the end of the table needs the same one)
     content_width: f32,         // all the columns together: the table scrolls sideways when this is more than its width
+    reorderable: bool,          // a header can be dragged to another place: the program declares the cells by place (TableColumnAt) and not by column
+    order: [TABLE_MAX_COLUMNS]int,  // the column that is at each place from the left: the identity until a header is moved
+    moved: int,                 // the column that was dropped at a new place in this frame, VIRTUAL_NONE for none
+    reorder: int,               // the column whose header is held, VIRTUAL_NONE for none
+    reorder_active: bool,       // the pointer moved far enough: it is a drag and not a click
+    reorder_start: Vec2,
+    reorder_target: int,        // the place it would go to
+}
+
+// The column that is at a place from the left (the places are 0 ..< column_count): declare the cells of a row in this order, `UiTableText(ctx, table, TableColumnAt(table, place), ...)`.
+TableColumnAt :: proc(table: ^Table, place: int) -> int {
+    return table.order[clamp(place, 0, TABLE_MAX_COLUMNS - 1)]
 }
 
 TableInit :: proc(table: ^Table, columns: []TableColumn) {
-    table^ = {sort_column = VIRTUAL_NONE, resizing = VIRTUAL_NONE, list = {selected = VIRTUAL_NONE}}
+    table^ = {sort_column = VIRTUAL_NONE, resizing = VIRTUAL_NONE, moved = VIRTUAL_NONE, reorder = VIRTUAL_NONE, list = {selected = VIRTUAL_NONE}}
     table.column_count = min(len(columns), TABLE_MAX_COLUMNS)
-    for i in 0 ..< table.column_count { table.columns[i] = columns[i] }
+    for i in 0 ..< table.column_count {
+        table.columns[i] = columns[i]
+        table.order[i] = i
+    }
 }
 
 // The table: a header (sorting, resizing) and the rows below it. Declare the rows first ..< last of `table.list` with UiTableRow, the cells of a row with UiTableCell.
@@ -194,6 +209,7 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
     id: Id = UiId(ctx, name)
     metrics: ^Metrics = &ctx.style.metrics
     table.sort_changed = false
+    table.moved = VIRTUAL_NONE
     table.body_id = id
     // the widths of this frame: the columns, the last one wider when it fills the room (from the last frame); the table scrolls sideways when they are more than the room
     body: ^WidgetState = stateFind(ctx, id)
@@ -216,12 +232,16 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
     })
     ElementOpen(ctx, {layout = {size = {Grow(), Fixed(metrics.control_height)}}, clip = {horizontal = true, cut = true, offset = {scroll_x, 0}}})
     ElementOpen(ctx, {layout = {size = {Fixed(table.content_width), Grow()}, direction = .LEFT_TO_RIGHT}})
-    for i in 0 ..< table.column_count {
+    for place in 0 ..< table.column_count {
+        i: int = table.order[place] if table.reorderable else place
         column: ^TableColumn = &table.columns[i]
         header_id: Id = IdFromIndex(u32(i), IdFromString("header", id))
         _ = stateGet(ctx, header_id)
         interaction: Interaction = widgetBehavior(ctx, header_id)
-        if interaction.clicked && !column.unsortable {
+        if table.reorderable && interaction.pressed && ctx.input.mouse_pressed {
+            table.reorder, table.reorder_start, table.reorder_active = i, ctx.input.mouse_position, false
+        }
+        if interaction.clicked && !column.unsortable && !table.reorder_active {
             if table.sort_column != i {
                 table.sort_column, table.sort_descending = i, false
             } else if !table.sort_descending {
@@ -237,7 +257,7 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
             id = header_id,
             layout = {size = {Fixed(table.shown[i] - TABLE_HANDLE), Grow()}},
             hit = {.INTERACTIVE},
-            draw = {kind = .SELECTABLE, name = label, hover = 1 if interaction.hovered else 0, flags = {.SELECTED} if table.sort_column == i else {}, font_size = metrics.font_size},
+            draw = {kind = .SELECTABLE, name = label, hover = 1 if interaction.hovered else 0, flags = ({.SELECTED} if table.sort_column == i else {}) + ({.PRESSED} if table.reorder_active && table.reorder_target == place else {}), font_size = metrics.font_size},
         })
         ElementClose(ctx)
         handle_id: Id = IdFromIndex(u32(i), IdFromString("edge", id))
@@ -265,8 +285,56 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
     }
     ElementClose(ctx)
     ElementClose(ctx)
+    tableReorder(ctx, table, id)
     fixed_body: f32 = size.height.min - metrics.control_height if size.height.kind == .FIXED else 0
     return virtualOpen(ctx, id, &table.list, count, row_height, {Grow(), Grow()}, fixed_body, table.content_width)
+}
+
+// Dragging a header: the column goes to the place the pointer is at when it is let go (the headers of the last frame say where the places are). Escape drops the drag.
+@(private)
+tableReorder :: proc(ctx: ^Context, table: ^Table, id: Id) {
+    if !table.reorderable || table.reorder == VIRTUAL_NONE { return }
+    mouse: Vec2 = ctx.input.mouse_position
+    if .CANCEL in ctx.input.actions {
+        table.reorder, table.reorder_active = VIRTUAL_NONE, false
+        return
+    }
+    first: ^WidgetState = stateFind(ctx, IdFromIndex(u32(table.order[0]), IdFromString("header", id)))
+    if ctx.input.mouse_down {
+        delta: Vec2 = mouse - table.reorder_start
+        if !table.reorder_active && delta.x * delta.x + delta.y * delta.y > 36 { table.reorder_active = true }
+        if table.reorder_active && first != nil {
+            left: f32 = first.rect.x
+            place: int
+            for place < table.column_count - 1 && mouse.x >= left + table.shown[table.order[place]] {
+                left += table.shown[table.order[place]]
+                place += 1
+            }
+            table.reorder_target = place
+        }
+        return
+    }
+    if table.reorder_active {
+        current: int
+        for place in 0 ..< table.column_count {
+            if table.order[place] == table.reorder { current = place }
+        }
+        target: int = clamp(table.reorder_target, 0, table.column_count - 1)
+        if target != current {
+            column: int = table.order[current]
+            for current < target {
+                table.order[current] = table.order[current + 1]
+                current += 1
+            }
+            for current > target {
+                table.order[current] = table.order[current - 1]
+                current -= 1
+            }
+            table.order[target] = column
+            table.moved = column
+        }
+    }
+    table.reorder, table.reorder_active = VIRTUAL_NONE, false
 }
 
 UiTableEnd :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_height: f32, size: Size = {}) {

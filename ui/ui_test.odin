@@ -2493,6 +2493,46 @@ tableClick :: proc(harness: ^Harness, table: ^Table, at: Vec2) {
 }
 
 @(test)
+test_a_header_dragged_to_another_place_moves_its_column_and_does_not_sort :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    table: Table
+    TableInit(&table, {{name = "Name", width = 100}, {name = "Size", width = 80}, {name = "Kind", width = 60}})
+    table.reorderable = true
+    for _ in 0 ..< 3 { tableFrame(harness, &table, pointerAt({-10, -10})) }
+    // "Kind" (x 180 .. 240) dragged to the left, over "Name"
+    tableFrame(harness, &table, pointerAt({210, 14}))
+    tableFrame(harness, &table, pointerAt({210, 14}, true, true))
+    for i in 1 ..= 5 { tableFrame(harness, &table, pointerAt({210 - f32(i) * 35, 14}, true)) }
+    testing.expect(t, table.reorder_active && table.reorder_target == 0)
+    tableFrame(harness, &table, pointerAt({35, 14}, false, false, true))
+    testing.expect_value(t, table.moved, 2)
+    testing.expect(t, TableColumnAt(&table, 0) == 2 && TableColumnAt(&table, 1) == 0 && TableColumnAt(&table, 2) == 1)
+    testing.expect(t, !table.sort_changed && table.sort_column == VIRTUAL_NONE, "a drag is not a click")
+    tableFrame(harness, &table, pointerAt({-10, -10}))
+    testing.expect_value(t, table.moved, VIRTUAL_NONE)
+    // Escape in the middle of a drag: nothing moves
+    tableFrame(harness, &table, pointerAt({100, 14}))
+    tableFrame(harness, &table, pointerAt({100, 14}, true, true))
+    for i in 1 ..= 4 { tableFrame(harness, &table, pointerAt({100 + f32(i) * 30, 14}, true)) }
+    cancel: Input = pointerAt({220, 14}, true)
+    cancel.actions = {.CANCEL}
+    tableFrame(harness, &table, cancel)
+    tableFrame(harness, &table, pointerAt({220, 14}, false, false, true))
+    testing.expect(t, TableColumnAt(&table, 0) == 2 && TableColumnAt(&table, 1) == 0 && TableColumnAt(&table, 2) == 1)
+    // a table that is not reorderable keeps its columns
+    other: Table
+    TableInit(&other, {{name = "A", width = 100}, {name = "B", width = 80}})
+    for _ in 0 ..< 3 { tableFrame(harness, &other, pointerAt({-10, -10})) }
+    tableFrame(harness, &other, pointerAt({140, 14}))
+    tableFrame(harness, &other, pointerAt({140, 14}, true, true))
+    for i in 1 ..= 5 { tableFrame(harness, &other, pointerAt({140 - f32(i) * 25, 14}, true)) }
+    tableFrame(harness, &other, pointerAt({15, 14}, false, false, true))
+    testing.expect(t, TableColumnAt(&other, 0) == 0 && other.moved == VIRTUAL_NONE)
+}
+
+@(test)
 test_a_table_sorts_by_a_click_on_a_header_and_resizes_a_column_by_its_edge :: proc(t: ^testing.T) {
     harness: ^Harness = new(Harness)
     defer free(harness)

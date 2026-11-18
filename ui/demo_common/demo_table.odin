@@ -48,6 +48,7 @@ init :: proc(ctx: ^kit.Context) {
     ui_demo_init(&state.app)
     ctx.background = {24, 26, 32, 255}
     ui.TableInit(&state.table, {{name = "Name", width = 200}, {name = "Size", width = 120}, {name = "Kind", width = 140}, {name = "Path", width = 260}})
+    state.table.reorderable = true
     for i in 0 ..< ROWS { state.order[i] = i }
 }
 
@@ -72,10 +73,15 @@ draw :: proc(ctx: ^kit.Context) {
             for row in state.table.list.first ..< state.table.list.last {
                 item: int = state.order[row]
                 if ui.UiTableRow(c, &state.table, row) {
-                    ui.UiTableText(c, &state.table, 0, ui.UiFormat(c, "file_%06d.dat", item))
-                    ui.UiTableText(c, &state.table, 1, ui.UiFormat(c, "%d", sizeOf(item)))
-                    ui.UiTableText(c, &state.table, 2, KINDS[item % len(KINDS)])
-                    ui.UiTableText(c, &state.table, 3, ui.UiFormat(c, "/data/%s/file_%06d.dat", KINDS[item % len(KINDS)], item))
+                    for place in 0 ..< state.table.column_count {
+                        column: int = ui.TableColumnAt(&state.table, place)
+                        switch column {
+                        case 0: ui.UiTableText(c, &state.table, 0, ui.UiFormat(c, "file_%06d.dat", item))
+                        case 1: ui.UiTableText(c, &state.table, 1, ui.UiFormat(c, "%d", sizeOf(item)))
+                        case 2: ui.UiTableText(c, &state.table, 2, KINDS[item % len(KINDS)])
+                        case 3: ui.UiTableText(c, &state.table, 3, ui.UiFormat(c, "/data/%s/file_%06d.dat", KINDS[item % len(KINDS)], item))
+                        }
+                    }
                 }
             }
         }
@@ -124,6 +130,15 @@ script: []kit.Step = {
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.table.list.selected == ROWS - 1 && state.table.list.last == ROWS }, "End went to the last row and the view followed"),
     kit.Capture("table"),
+    // a header dragged to another place moves its column (and does not sort): Size goes first, then back
+    kit.Drag({300, 24}, {60, 24}, 8),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        return ui.TableColumnAt(&state.table, 0) == 1 && ui.TableColumnAt(&state.table, 1) == 0 && state.table.sort_column == 0
+    }, "dragging the Size header to the left moved the column and kept the sorting"),
+    kit.Drag({60, 24}, {300, 24}, 8),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.TableColumnAt(&state.table, 0) == 0 && ui.TableColumnAt(&state.table, 1) == 1 }, "and back"),
     kit.KeyDownStep(.LEFT_SHIFT),
     kit.Wait(1),
     kit.MoveTo({300, 150}),

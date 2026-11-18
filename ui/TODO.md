@@ -36,7 +36,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Inspector: the layout details of the selected element, a filter by name, text or kind, a selection that follows its element
 - [ ] Inspector: the draw commands of a frame as a list, collapsing of the tree, a frame history (the cost of the last frames as a plot)
 - [x] Table: sideways scrolling (wheel with Shift, bar, header goes along) and a last column that fills the room
-- [ ] Table: reordering columns by dragging a header, double click on an edge to fit the column, keys inside of a row (cells that are widgets)
+- [x] Table: reordering columns by dragging a header (`table.reorderable`, `TableColumnAt`, `table.moved`)
+- [ ] Table: double click on an edge to fit the column, keys inside of a row (cells that are widgets)
 - [x] Tree (`Tree`, `UiTree`): fixed storage model, visible rows flattened, arrows, keys, lazy loading through `view.toggled`; demo with a screenshot
 - [x] Tree: drag and drop of nodes (`TreeMove`, `view.moved`, `view.can_drop`) and rename in place (F2, `TreeRename`, `view.renamed`), demo with a screenshot
 - [ ] Tree: dropping before or after a branch (now: onto a branch goes in, onto a file goes after it), icons or custom row content, several selected nodes, a filter that opens the parents of what matches
