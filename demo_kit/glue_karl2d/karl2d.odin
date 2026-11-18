@@ -29,7 +29,19 @@ Run :: proc(title: string, demos: []kit.Demo, width: int = 1280, height: int = 7
     run_options: karl2d.Init_Options = options
     // reading the screen back is a function of the 3D layer of the fork, which needs the depth buffer
     when kit.DEMO_CAPTURE { run_options.depth_test = true }
+    request: string = kit.DisplayRequest()
+    display, display_found := findDisplay(request)
+    if !display_found { exit_process(false) }
+    if display != karl2d.MONITOR_NONE { run_options.monitor = display }
+    // a picture has the size the demo asked for, whatever the scaling of the display is (Windows makes a 1280 x 720 window 1920 x 1080 at 150 %)
+    when kit.DEMO_TEST { run_options.disable_auto_scale_hint = true }
     karl2d.init(width, height, title, options = run_options)
+    when kit.DEMO_TEST {
+        if !checkDisplay(width, height) {
+            karl2d.shutdown()
+            exit_process(false)
+        }
+    }
     when kit.DEMO_CAPTURE { karl2d.r3d_init() }
     state: State
     backend: kit.Backend

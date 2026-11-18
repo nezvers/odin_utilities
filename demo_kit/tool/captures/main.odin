@@ -7,6 +7,11 @@
 //   odin run demo_kit/tool/captures -- --karl2d          also the Karl2D demos (their pictures are separate: raylib and Karl2D draw text differently)
 //   odin run demo_kit/tool/captures -- --update ui       replace the stored pictures of a library with the current frames (look at them, commit what changed)
 //   odin run demo_kit/tool/captures -- --allow-new       a picture that did not exist is written as the new stored picture: that is fine
+//   odin run demo_kit/tool/captures -- --monitor dell    the windows open on the display whose name holds "dell" (without regard to case)
+//
+// The display: --monitor, else the environment variable DEMO_MONITOR, else the first line of the file demo_kit/monitor.txt (a local file, git ignored: write the name of the
+// display your pictures are tested on once). The window is moved there and its drawing area is made exactly the size the demo asked for, whatever the scaling of that display
+// is, so the pictures always have the size of the stored ones; the report says which display and scale a run had. See demo_kit/display.odin.
 //
 // Run it from the odin_utilities folder. A window opens for every demo program. Exit codes: 0 every picture is as stored, 1 a picture changed or a program
 // failed (the current frame is saved as <name>.actual.png next to the stored one, the line says where), 2 new pictures were written (a picture that was
@@ -17,6 +22,7 @@ import "core:fmt"
 import "core:os"
 import "core:strconv"
 import "core:strings"
+import "../../../karl2d"
 
 Result :: struct {
     library: string,
@@ -26,6 +32,7 @@ Result :: struct {
     skipped: int,
     failures: [dynamic]string,          // "capture imgui_modal: 8715 of 921600 pixels differ ..."
     error: string,                      // the program did not run, or ended without a report
+    display: string,                    // where the window was: "BenQ DL2215, scale 1.00, window 1280 x 720"
 }
 
 main :: proc() {
@@ -33,8 +40,18 @@ main :: proc() {
     karl2d: bool
     update: bool
     allow_new: bool
-    for argument in os.args[1:] {
+    monitor: string
+    arguments: []string = os.args[1:]
+    for index := 0; index < len(arguments); index += 1 {
+        argument: string = arguments[index]
         switch argument {
+        case "--monitor":
+            index += 1
+            if index >= len(arguments) {
+                fmt.eprintln("captures: --monitor wants the name (or a part of the name) of a display")
+                os.exit(2)
+            }
+            monitor = arguments[index]
         case "--karl2d":
             karl2d = true
         case "--update":
@@ -42,7 +59,7 @@ main :: proc() {
         case "--allow-new":
             allow_new = true
         case "--help", "-h":
-            fmt.println("captures [--karl2d] [--update] [--allow-new] [library...]   (see the top of demo_kit/tool/captures/main.odin)")
+            fmt.println("captures [--karl2d] [--update] [--allow-new] [--monitor name] [library...]   (see the top of demo_kit/tool/captures/main.odin)")
             return
         case:
             if strings.has_prefix(argument, "--") {
@@ -52,6 +69,7 @@ main :: proc() {
             append(&libraries, argument)
         }
     }
+    choose_display(monitor)
     if update && len(libraries) == 0 {
         fmt.eprintln("captures: --update replaces stored pictures: name the libraries (captures --update ui)")
         os.exit(2)
@@ -71,7 +89,7 @@ main :: proc() {
             program: string = fmt.tprintf("%s/demo_%s", library, backend)
             if !os.is_directory(program) { continue }
             result: Result = run(library, backend, program, update)
-            fmt.printfln("%-14s %-7s %d compared, %d new, %d failed%s", library, backend, result.compared, result.new_images, len(result.failures), fmt.tprintf("  ERROR: %s", result.error) if result.error != "" else "")
+            fmt.printfln("%-14s %-7s %d compared, %d new, %d failed%s%s", library, backend, result.compared, result.new_images, len(result.failures), fmt.tprintf("  on %s", result.display) if result.display != "" else "", fmt.tprintf("  ERROR: %s", result.error) if result.error != "" else "")
             for failure in result.failures {
                 fmt.printfln("    %s", failure)
             }
@@ -128,6 +146,8 @@ run :: proc(library: string, backend: string, program: string, update: bool) -> 
         if !strings.has_prefix(text, "[DEMO TEST]") { continue }
         body: string = strings.trim_space(text[len("[DEMO TEST]"):])
         switch {
+        case strings.has_prefix(body, "display: "):
+            if result.display == "" { result.display = strings.clone(body[len("display: "):]) }
         case strings.has_prefix(body, "captures: "):
             // "captures: 2 compared (0 new golden images), 0 skipped"
             saw_report = true
@@ -158,4 +178,32 @@ number_after :: proc(text: string, marker: string) -> int {
     for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' { end += 1 }
     value, _ := strconv.parse_int(rest[:end])
     return value
+}
+
+// The display of the test windows: the option, else what the environment already says, else the local file; the demo programs read it from DEMO_MONITOR.
+choose_display :: proc(option: string) {
+    name: string = strings.trim_space(option)
+    if name == "" { name = strings.trim_space(os.get_env("DEMO_MONITOR", context.temp_allocator)) }
+    if name == "" {
+        data, err := os.read_entire_file("demo_kit/monitor.txt", context.temp_allocator)
+        if err == nil {
+            lines: []string = strings.split_lines(string(data), context.temp_allocator)
+            if len(lines) > 0 { name = strings.trim_space(lines[0]) }
+        }
+    }
+    if name == "" { return }
+    // the name is looked up here (Karl2D reads the real names of the displays): the demo programs get the name and where the display is on the desktop
+    monitors: []karl2d.Monitor_Info = karl2d.get_monitors(context.temp_allocator)
+    for monitor in monitors {
+        if !strings.contains(strings.to_lower(monitor.name, context.temp_allocator), strings.to_lower(name, context.temp_allocator)) { continue }
+        os.set_env("DEMO_MONITOR", monitor.name)
+        os.set_env("DEMO_MONITOR_RECT", fmt.tprintf("%d,%d,%d,%d", monitor.position[0], monitor.position[1], monitor.size[0], monitor.size[1]))
+        fmt.printfln("captures: windows on the display \"%s\" (%d x %d at %d, %d, scale %.2f)", monitor.name, monitor.size[0], monitor.size[1], monitor.position[0], monitor.position[1], monitor.scale)
+        return
+    }
+    listed: [dynamic]string
+    listed.allocator = context.temp_allocator
+    for monitor in monitors { append(&listed, fmt.tprintf("\"%s\"", monitor.name)) }
+    fmt.eprintfln("captures: no connected display has \"%s\" in its name. Connected: %s", name, strings.join(listed[:], ", ", context.temp_allocator))
+    os.exit(2)
 }

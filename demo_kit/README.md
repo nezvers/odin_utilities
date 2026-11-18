@@ -71,7 +71,13 @@ Keep the positions a script clicks fixed numbers (not relative to the window siz
   Karl2D demos too (their pictures are separate), `-- --update ui` replaces the stored pictures of a library. Exit code 0: every picture is as stored. 1: a picture changed or a demo failed. 2: pictures that
   did not exist were stored (a missing golden passes by itself, so it is reported until someone has looked at it: `-- --allow-new` says that is fine). Nothing runs it automatically: run it before committing a
   change to drawing, text layout or a style.
-- One folder per backend (fonts differ), and goldens depend on the window size and scale of the machine that made them.
+- One folder per backend (fonts differ). The pictures do **not** depend on the display or its scaling: a test window has exactly the size the demo asked for (1280 x 720), whatever Windows scales the display by
+  (a Karl2D window on a 150 % display used to be 1920 x 1080). Karl2D is started with `disable_auto_scale_hint` in a test run, raylib's window is set to its size after it settled on its display; a window that
+  cannot get its size stops the run with a message that says the display, its size and its scale instead of failing every picture.
+- **Which display.** The environment variable `DEMO_MONITOR` (a part of the name of the display, without regard to case) moves the test window to that display (`kit.DisplayRequest`, `glue_raylib`, `glue_karl2d`); the tool sets it from
+  `-- --monitor <name>`, else the variable, else the first line of the local file `demo_kit/monitor.txt` (git ignored: write the name of your test display there once). The tool looks the name up with Karl2D (raylib only knows
+  "Generic PnP Monitor") and tells raylib where the display is (`DEMO_MONITOR_RECT`); a name nobody has stops the tool with the list of the connected displays. Each line of its report says where the run was
+  (`on BenQ DL2215, scale 1.00, window 1280 x 720`). Without a request the window opens where the operating system puts it.
 - Karl2D reads the screen back through the 3D layer of the fork, so `DEMO_CAPTURE` makes `Run` start Karl2D with `depth_test`.
 - `CaptureFrame` (pixels of the frame), `PngWrite`/`PngRead` (the writer compresses flat areas, a ui frame is about 50 KB) and `ImageDifference` are plain procs for your own checks.
 

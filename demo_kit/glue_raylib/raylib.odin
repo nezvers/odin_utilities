@@ -29,6 +29,15 @@ State :: struct {
 Run :: proc(title: string, demos: []kit.Demo, width: i32 = 1280, height: i32 = 720) {
     rl.SetConfigFlags({.WINDOW_RESIZABLE, .VSYNC_HINT})
     rl.InitWindow(width, height, strings.clone_to_cstring(title, context.temp_allocator))
+    // DEMO_MONITOR names the display the window goes to; a test run also makes sure that the size of the picture is the wanted one
+    when kit.DEMO_TEST {
+        if !placeOnDisplay(width, height) {
+            rl.CloseWindow()
+            exit_process(false)
+        }
+    } else {
+        if kit.DisplayRequest() != "" { placeOnDisplay(width, height) }
+    }
     rl.InitAudioDevice()
     rl.SetTargetFPS(60)
     rl.SetExitKey(.KEY_NULL)        // the runner closes on escape, like with the other backends

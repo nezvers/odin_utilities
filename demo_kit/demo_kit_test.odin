@@ -219,3 +219,29 @@ test_capture_is_skipped_on_the_headless_backend :: proc(t: ^testing.T) {
     _, _, _, ok := CaptureFrame(&ctx)
     testing.expect(t, !ok)
 }
+
+@(test)
+test_a_display_is_found_by_a_part_of_its_name_without_regard_to_case :: proc(t: ^testing.T) {
+    testing.expect(t, DisplayMatches("BenQ DL2215", "dl22"))
+    testing.expect(t, DisplayMatches("BenQ DL2215", "BENQ"))
+    testing.expect(t, DisplayMatches("LU28R55", "lu28r55"))
+    testing.expect(t, !DisplayMatches("LU28R55", "benq"))
+    testing.expect(t, DisplayMatches("anything", ""), "an empty request matches")
+}
+
+@(test)
+test_the_rectangle_of_a_display_comes_from_the_environment :: proc(t: ^testing.T) {
+    os.set_env(DISPLAY_RECT_ENV, "3840,1065,1920,1080")
+    rect, ok := DisplayRect()
+    testing.expect(t, ok)
+    testing.expect_value(t, rect, [4]int{3840, 1065, 1920, 1080})
+    os.set_env(DISPLAY_RECT_ENV, "3840, 1065, 1920")
+    _, ok = DisplayRect()
+    testing.expect(t, !ok, "three numbers are not a rectangle")
+    os.set_env(DISPLAY_RECT_ENV, "a,b,c,d")
+    _, ok = DisplayRect()
+    testing.expect(t, !ok)
+    os.unset_env(DISPLAY_RECT_ENV)
+    _, ok = DisplayRect()
+    testing.expect(t, !ok)
+}
