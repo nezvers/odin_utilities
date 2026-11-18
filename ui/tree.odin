@@ -38,6 +38,8 @@ TreeNode :: struct {
     expanded: bool,
     branch: bool,               // it can have children (it shows an arrow) even while it has none: a folder that is read when it is opened
     child_count: int,
+    icon: Icon,                 // drawn before the name (a folder that is open shows FOLDER_OPEN for FOLDER)
+    icon_color: Color,          // alpha 0: the style's own
     marked: bool,               // part of a selection of several (Ctrl and a click, Shift and a click): TreeMarked
 }
 
@@ -68,10 +70,10 @@ TreeCount :: proc(tree: ^Tree) -> int {
 }
 
 // A node as the last child of `parent` (none: at the top). `branch`: it shows an arrow even without children. False when the parent is gone or the storage is full.
-TreeAdd :: proc(tree: ^Tree, parent: TreeHandle, name: string, user: rawptr = nil, branch: bool = false) -> (handle: TreeHandle, ok: bool) {
+TreeAdd :: proc(tree: ^Tree, parent: TreeHandle, name: string, user: rawptr = nil, branch: bool = false, icon: Icon = .NONE) -> (handle: TreeHandle, ok: bool) {
     owner: ^TreeNode = TreeGet(tree, parent)
     if parent != {} && owner == nil { return }
-    node: TreeNode = {parent = parent, user = user, branch = branch}
+    node: TreeNode = {parent = parent, user = user, branch = branch, icon = icon}
     count: int = min(len(name), TREE_NAME_MAX)
     copy(node.name[:count], name[:count])
     node.name_length = count
@@ -354,6 +356,8 @@ TreeView :: struct {
     rename_length: int,
     filter: [TREE_NAME_MAX]u8,  // only the nodes that match and the nodes above them are shown, all open (TreeViewFilter)
     filter_length: int,
+    row: TreeRowProc,           // nil: the icon and the name; else the program declares what is in a row after its arrow (UiTreeRowDefault does the usual and the program adds to it)
+    row_user: rawptr,
     chosen: [TREE_ROWS]bool,    // the rows in view that are marked (what UiVirtualRow draws as selected)
     anchor: TreeHandle,         // where a Shift and a click starts from: the last node clicked without Shift
     pending_single: TreeHandle, // a press on a marked node keeps the marks until the button is up: a drag moves them all, a click selects only that node
@@ -371,6 +375,9 @@ TreeViewFilter :: proc(view: ^TreeView, text: string) {
 treeRows :: proc(tree: ^Tree, view: ^TreeView) -> int {
     return TreeVisibleFiltered(tree, view.rows[:], string(view.filter[:view.filter_length]))
 }
+
+// What a row shows after its arrow, declared by the program: anything that fits in a line (a badge, a toggle for visibility, colored text). `row` says where the node is in the view.
+TreeRowProc :: proc(ctx: ^Context, tree: ^Tree, view: ^TreeView, node: ^TreeNode, row: TreeRow, user: rawptr)
 
 // Says if a node may be dropped under a parent (none: at the top) before the node `before` (none: last).
 TreeCanDropProc :: proc(tree: ^Tree, node: TreeHandle, parent: TreeHandle, before: TreeHandle) -> bool
@@ -516,24 +523,10 @@ UiTree :: proc(ctx: ^Context, name: string, tree: ^Tree, view: ^TreeView, size: 
                 ElementClose(ctx)
                 ElementOpen(ctx, {layout = {size = {Fixed(4), Grow()}}})
                 ElementClose(ctx)
-                if row.node == view.renaming {
-                    text_id: Id = UiId(ctx, "##rename")
-                    if view.rename_fresh {
-                        // the whole name is selected: typing replaces it, an arrow key edits it
-                        ctx.focus = text_id
-                        field: ^WidgetState = stateGet(ctx, text_id)
-                        field.anchor, field.cursor = 0, view.rename_length
-                        view.rename_fresh = false
-                    }
-                    _, submitted := UiTextField(ctx, "##rename", view.rename_buffer[:], &view.rename_length, {Grow(), Grow()})
-                    if submitted {
-                        if TreeRename(tree, row.node, string(view.rename_buffer[:view.rename_length])) { view.renamed = row.node }
-                        view.renaming = {}
-                    } else if .CANCEL in ctx.input.actions || ctx.focus != text_id {
-                        view.renaming = {}
-                    }
+                if view.row != nil {
+                    view.row(ctx, tree, view, node, row, view.row_user)
                 } else {
-                    UiLabel(ctx, TreeName(node))
+                    UiTreeRowDefault(ctx, tree, view, node, row)
                 }
             }
         }
@@ -623,4 +616,33 @@ treeDrag :: proc(ctx: ^Context, tree: ^Tree, view: ^TreeView) {
         }
     }
     view.drag_node, view.dragging, view.drop_row = {}, false, VIRTUAL_NONE
+}
+
+// The usual content of a row: the icon and the name, or the text field while the node is renamed. A TreeRowProc calls it and adds what it wants before or after.
+UiTreeRowDefault :: proc(ctx: ^Context, tree: ^Tree, view: ^TreeView, node: ^TreeNode, row: TreeRow) {
+    if node.icon != .NONE {
+        icon: Icon = .FOLDER_OPEN if node.icon == .FOLDER && node.expanded && row.expandable else node.icon
+        UiIcon(ctx, icon, 0, node.icon_color)
+        ElementOpen(ctx, {layout = {size = {Fixed(4), Grow()}}})
+        ElementClose(ctx)
+    }
+    if row.node == view.renaming {
+        text_id: Id = UiId(ctx, "##rename")
+        if view.rename_fresh {
+            // the whole name is selected: typing replaces it, an arrow key edits it
+            ctx.focus = text_id
+            field: ^WidgetState = stateGet(ctx, text_id)
+            field.anchor, field.cursor = 0, view.rename_length
+            view.rename_fresh = false
+        }
+        _, submitted := UiTextField(ctx, "##rename", view.rename_buffer[:], &view.rename_length, {Grow(), Grow()})
+        if submitted {
+            if TreeRename(tree, row.node, string(view.rename_buffer[:view.rename_length])) { view.renamed = row.node }
+            view.renaming = {}
+        } else if .CANCEL in ctx.input.actions || ctx.focus != text_id {
+            view.renaming = {}
+        }
+    } else {
+        UiLabel(ctx, TreeName(node))
+    }
 }

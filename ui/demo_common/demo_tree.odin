@@ -5,6 +5,7 @@ package demo_common
 // Click an arrow to open or close, click a name to select, left and right close and open (or go to the parent and to the first child), up and down move, Enter or a double click activates.
 
 import "core:fmt"
+import "core:strings"
 import ui ".."
 import kit "../../demo_kit"
 
@@ -30,14 +31,30 @@ state: State
 
 FILES: [3]string = {"notes.txt", "mix.wav", "cover.png"}
 
+// the icon of a file by its extension
+iconOf :: proc(file: string) -> ui.Icon {
+    switch {
+    case strings.has_suffix(file, ".txt"), strings.has_suffix(file, ".md"): return .TEXT
+    case strings.has_suffix(file, ".wav"): return .AUDIO
+    case strings.has_suffix(file, ".png"): return .IMAGE
+    }
+    return .FILE
+}
+
+// a row of the program: the usual row, and after it how many children a folder has
+row :: proc(ctx: ^ui.Context, tree: ^ui.Tree, view: ^ui.TreeView, node: ^ui.TreeNode, row: ui.TreeRow, user: rawptr) {
+    ui.UiTreeRowDefault(ctx, tree, view, node, row)
+    if node.child_count > 0 { ui.UiLabelColored(ctx, ui.UiFormat(ctx, "  %d", node.child_count), {140, 144, 160, 255}) }
+}
+
 load :: proc(parent: ui.TreeHandle) {
     node: ^ui.TreeNode = ui.TreeGet(&state.tree, parent)
     name: string = ui.TreeName(node)
     if name == "assets" {
-        ui.TreeAdd(&state.tree, parent, "textures", branch = true)
-        ui.TreeAdd(&state.tree, parent, "sounds", branch = true)
+        ui.TreeAdd(&state.tree, parent, "textures", branch = true, icon = .FOLDER)
+        ui.TreeAdd(&state.tree, parent, "sounds", branch = true, icon = .FOLDER)
     }
-    for file in FILES { ui.TreeAdd(&state.tree, parent, file) }
+    for file in FILES { ui.TreeAdd(&state.tree, parent, file, icon = iconOf(file)) }
     state.log_length = len(fmt.bprintf(state.log[:], "read %s: %d entries", name, node.child_count))
 }
 
@@ -47,11 +64,12 @@ init :: proc(ctx: ^kit.Context) {
     ctx.background = {24, 26, 32, 255}
     ui.TreeInit(&state.tree)
     ui.TreeViewInit(&state.view)
-    ui.TreeAdd(&state.tree, {}, "assets", branch = true)
-    src, _ := ui.TreeAdd(&state.tree, {}, "src", branch = true)
-    ui.TreeAdd(&state.tree, src, "main.odin")
-    ui.TreeAdd(&state.tree, src, "util.odin")
-    ui.TreeAdd(&state.tree, {}, "README.md")
+    ui.TreeAdd(&state.tree, {}, "assets", branch = true, icon = .FOLDER)
+    src, _ := ui.TreeAdd(&state.tree, {}, "src", branch = true, icon = .FOLDER)
+    ui.TreeAdd(&state.tree, src, "main.odin", icon = .FILE)
+    ui.TreeAdd(&state.tree, src, "util.odin", icon = .FILE)
+    ui.TreeAdd(&state.tree, {}, "README.md", icon = .TEXT)
+    state.view.row = row
 }
 
 draw :: proc(ctx: ^kit.Context) {

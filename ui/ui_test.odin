@@ -3889,3 +3889,55 @@ test_the_keys_move_the_current_cell_of_a_table_and_a_click_sets_it :: proc(t: ^t
     testing.expect_value(t, plain.cell, 0)
     testing.expect_value(t, harness.ctx.problems, Problems{})
 }
+
+@(test)
+test_a_tree_row_shows_an_icon_before_the_name_and_a_program_can_declare_the_row :: proc(t: ^testing.T) {
+    storage: ^InspectorStorage = new(InspectorStorage)
+    ctx: ^Context = new(Context)
+    tree: ^Tree = new(Tree)
+    view: ^TreeView = new(TreeView)
+    defer { free(storage); free(ctx); free(tree); free(view) }
+    style: Style = makeStyle()
+    UiInit(ctx, storage, testMeasure)
+    TreeInit(tree)
+    TreeViewInit(view)
+    folder, _ := TreeAdd(tree, {}, "folder", branch = true, icon = .FOLDER)
+    TreeAdd(tree, folder, "note", icon = .TEXT)
+    TreeAdd(tree, {}, "plain")
+    icons :: proc(ctx: ^Context) -> (count: int, last: Icon) {
+        for command in UiCommands(ctx) {
+            if command.kind == .DRAW && command.info.kind == .ICON {
+                count += 1
+                last = Icon(int(command.info.actual))
+            }
+        }
+        return
+    }
+    for _ in 0 ..< 3 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    count, last := icons(ctx)
+    testing.expect_value(t, count, 1)                                            // the folder; the other rows are not visible or have none
+    testing.expect_value(t, last, Icon.FOLDER)
+    TreeExpand(tree, folder)
+    for _ in 0 ..< 2 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    count, last = icons(ctx)
+    testing.expect_value(t, count, 2)
+    testing.expect_value(t, last, Icon.TEXT)                                     // the open folder is first, then the note
+    // a program declares its own row: the default one and a badge after it
+    Seen :: struct { rows: int, with_children: int }
+    seen: Seen
+    view.row_user = &seen
+    view.row = proc(ctx: ^Context, tree: ^Tree, view: ^TreeView, node: ^TreeNode, row: TreeRow, user: rawptr) {
+        s: ^Seen = cast(^Seen)user
+        s.rows += 1
+        if node.child_count > 0 { s.with_children += 1 }
+        UiTreeRowDefault(ctx, tree, view, node, row)
+        UiLabel(ctx, "badge")
+    }
+    for _ in 0 ..< 2 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    testing.expect(t, seen.rows >= 3 && seen.with_children >= 1, "the program declared the rows")
+    count, _ = icons(ctx)
+    testing.expect_value(t, count, 2)                                            // UiTreeRowDefault still draws them
+    testing.expect_value(t, ctx.problems, Problems{})
+    // the pictures of the library are drawn for the icons it has, and the numbers above are the program's
+    testing.expect(t, Icon.USER > Icon.AUDIO)
+}

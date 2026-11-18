@@ -45,7 +45,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Tree: a filter that opens the parents of what matches (`TreeViewFilter`, `TreeVisibleFiltered`)
 - [x] Tree: several selected nodes (Ctrl and a click, Shift and a click for a range, `TreeMarked`), dragged together (`view.moved_count`)
 - [x] Tree: a drop goes before, after or into a row by how far down in it the pointer is (`TreeDropZone`, a line shows where)
-- [ ] Tree: icons or custom row content
+- [x] Tree: icons (`Icon`, `UiIcon`, `TreeNode.icon`, drawn by the style: a few built in, `Icon.USER` and above are the program's) and custom row content (`view.row`, `UiTreeRowDefault`), demo with a screenshot
 - [ ] Text area: rows are found from the whole text every frame (measures per word): keep them between frames while the text and the width do not change
 - [x] Text measure cache (`measure.odin`): a fixed table by hash of text and size, cleared by a new font or UI scale
 - [x] UI scale factor (`Painter.scale`): layout and styles in logical units, the glue scales the drawing and divides the pointer; demo `scale`

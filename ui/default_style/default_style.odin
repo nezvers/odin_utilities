@@ -149,6 +149,7 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.BACKDROP] = DrawBackdrop
     style.procs[.TEXT_AREA] = DrawTextArea
     style.procs[.HIGHLIGHT] = DrawHighlight
+    style.procs[.ICON] = DrawIcon
     style.procs[.TEXT_SELECTION] = DrawTextSelection
     style.procs[.TEXT_CARET] = DrawTextCaret
     GraphStyleInstall(&style)
