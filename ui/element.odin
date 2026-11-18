@@ -10,7 +10,7 @@ import hm "core:container/handle_map"
 // The number of widgets that keep state from one frame to the next (scroll position, text cursor, hover fade): fixed, so no allocations
 UI_STATES :: #config(UI_STATES, 512)
 // Floating elements (popups, tooltips) and the main root: every one of them is its own layer
-UI_MAX_ROOTS :: #config(UI_MAX_ROOTS, 256)
+UI_MAX_ROOTS :: #config(UI_MAX_ROOTS, 32)
 UI_MAX_DEPTH :: 64
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -132,6 +132,15 @@ Floating :: struct {
     clip_to_parent: bool,           // clipped by what clips its parent
 }
 
+// A child that is not part of the flow of its parent: it takes no room (the parent neither grows for it nor counts it for the gap and the alignment), sits
+// at `offset` from the top left corner of the parent (the padding is not added; a scrolling parent moves it with the rest), and is drawn and hit in the order
+// it was declared among its siblings, clipped like any child. Unlike a floating element it is not a root: any number of them cost what the same number
+// of ordinary children cost. A size that grows or is a percent takes the size of the parent.
+Absolute :: struct {
+    enabled: bool,
+    offset: Vec2,
+}
+
 // A container that cuts its children at its edge and may scroll them
 Clip :: struct {
     horizontal: bool,
@@ -167,6 +176,7 @@ Decl :: struct {
     id: Id,                         // 0: anonymous (cannot be looked up, no state)
     layout: Layout,
     floating: Floating,
+    absolute: Absolute,
     clip: Clip,
     aspect_ratio: f32,              // width / height, 0 for none
     hit: HitKinds,

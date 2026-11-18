@@ -18,9 +18,9 @@ package ui
 // cable takes that cable. Cables, ties and the cable that is dragged are drawn by the style (graph_style.odin) in the order: background, cables, ties,
 // nodes, the cable that is dragged.
 //
-// A node is a floating element of the canvas, so a graph of many nodes needs UI_MAX_ROOTS roots (a node and a popup in it take one each): the default is enough for
-// 250 nodes; `-define:UI_MAX_ROOTS=1024` for more. Cables and ties are not elements: they are drawn from the model, and hit with the rectangle and the distance
-// function of the style, so a graph with thousands of cables costs the cables that are on screen.
+// A node is an absolute child of the canvas (it sits at its position, takes no room in the flow, drawn and hit in the order it is declared), not a floating root,
+// so the number of nodes is only limited by the elements of the storage. Cables and ties are not elements: they are drawn from the model, and hit with the rectangle and
+// the distance function of the style, so a graph with thousands of cables costs the cables that are on screen.
 
 import "core:math"
 import hm "core:container/handle_map"
@@ -477,7 +477,7 @@ UiGraphNode :: proc(ctx: ^Context, graph: ^Graph, handle: NodeHandle) -> bool {
     ElementOpen(ctx, {
         id = id,
         layout = {size = {Fit(style.node_width), Fit()}, direction = .TOP_TO_BOTTOM},
-        floating = {attach_to = .PARENT, parent_point = .LEFT_TOP, element_point = .LEFT_TOP, offset = node.position - view.origin, z_index = node.z, clip_to_parent = true},
+        absolute = {enabled = true, offset = node.position - view.origin},
         hit = {.BLOCKER},
         draw = {kind = .GRAPH_NODE, name = GraphNodeName(node), color = node.color, flags = {.SELECTED} if selected else {}, font_size = metrics.font_size},
     })

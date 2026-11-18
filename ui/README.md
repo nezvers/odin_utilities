@@ -145,7 +145,7 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
   ties, ties made later keep the lane order of earlier ones, and a tie without cables goes away. The idea follows the zip ties of the ComfyUI extension `comfyui-zip-ties` (MIT) and the Blender add-on
   `Zip-ties-for-Blender` (GPL-3): no code was taken from either.
 - **Minimap and view.** `GraphView` (plain data: the origin of the view, tool, selection) can be saved with the graph. `GraphMinimapTransform` gives a style the scale and the offset of the content span in its rectangle.
-- A node is a floating element of the canvas, so every node takes one root: `UI_MAX_ROOTS` is `#config` (256 by default). Demo: `demo_common/demo_graph.odin`.
+- A node is an absolute child of the canvas (`Decl.absolute`: out of the flow of its parent, placed at an offset from its top left corner, drawn and hit in declaration order, not a floating root), so the number of nodes is limited only by the elements of the `Storage`. Demo: `demo_common/demo_graph.odin`.
 
 ## Layout of the folder
 ```

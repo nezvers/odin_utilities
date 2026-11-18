@@ -18,4 +18,5 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Node graph: model with rules, events with user pointers, topological order and buffer plan; cable routes, bounds and distance by the style; canvas, nodes, pins, minimap, zip ties; demo with a script and screenshots
 - [ ] Node graph: zoom of the canvas (the view only pans), box selection and moving several nodes, copy and paste of a selection
 - [ ] Node graph: reroute points on a cable, labels on cables, a node that collapses to its title
-- [ ] Node graph: nodes are floating roots, so a graph of thousands of nodes needs a layout that culls roots outside of the view
+- [x] `Decl.absolute`: a child out of the flow of its parent at an offset (no root, no limit but the storage); the graph nodes use it
+- [ ] Node graph: the canvas still declares every node each frame: skip the nodes outside of the view when a graph has thousands

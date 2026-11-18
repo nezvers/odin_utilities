@@ -1549,3 +1549,38 @@ test_a_window_is_pulled_back_when_it_does_not_fit_the_screen :: proc(t: ^testing
     UiEnd(&harness.ctx)
     testing.expect(t, near(UiWindowSize(&harness.ctx, "huge").x, 200) && near(UiWindowSize(&harness.ctx, "huge").y, 150))
 }
+
+@(test)
+test_an_absolute_child_is_out_of_the_flow_and_at_its_offset :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    frame(harness)
+    ElementOpen(&harness.ctx, {id = 10, layout = {padding = PaddingAll(5), gap = 3}})
+    ElementOpen(&harness.ctx, {id = 11, layout = {size = {Fixed(40), Fixed(20)}}})
+    ElementClose(&harness.ctx)
+    // between two children of the flow: neither the gap nor the size of the parent knows it
+    ElementOpen(&harness.ctx, {id = 12, layout = {size = {Fixed(300), Fixed(200)}}, absolute = {enabled = true, offset = {7, 9}}})
+    ElementOpen(&harness.ctx, {id = 13, layout = {size = {Fixed(10), Fixed(10)}}})       // and it has children of its own
+    ElementClose(&harness.ctx)
+    ElementClose(&harness.ctx)
+    ElementOpen(&harness.ctx, {id = 14, layout = {size = {Fixed(60), Fixed(10)}}})
+    ElementClose(&harness.ctx)
+    // grows to the size of the parent
+    ElementOpen(&harness.ctx, {id = 15, layout = {size = {Grow(), Grow()}}, absolute = {enabled = true}})
+    ElementClose(&harness.ctx)
+    ElementClose(&harness.ctx)
+    UiEnd(&harness.ctx)
+
+    outer, _ := UiElementRect(&harness.ctx, 10)
+    testing.expect_value(t, outer, Rect{0, 0, 70, 43})                  // as without the absolute children
+    second, _ := UiElementRect(&harness.ctx, 14)
+    testing.expect_value(t, second, Rect{5, 28, 60, 10})               // placed right after the first: no gap for the absolute one
+    absolute, _ := UiElementRect(&harness.ctx, 12)
+    testing.expect_value(t, absolute, Rect{7, 9, 300, 200})            // from the corner of the parent, the padding is not added, it may be bigger
+    inner, _ := UiElementRect(&harness.ctx, 13)
+    testing.expect_value(t, inner, Rect{7, 9, 10, 10})                 // its own children follow it
+    grown, _ := UiElementRect(&harness.ctx, 15)
+    testing.expect_value(t, grown, Rect{0, 0, 70, 43})
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}

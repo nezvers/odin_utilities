@@ -145,21 +145,24 @@ ElementClose :: proc(ctx: ^Context) {
     element.children_start = i32(ctx.children_count)
     count: int = int(element.children_count)
     first: int = ctx.child_buffer_count - count
+    flow_count: int = 0                         // the children that are in the flow: an absolute one takes no room
     if layout.direction == .LEFT_TO_RIGHT {
         element.size.x = padding_x
         element.min_size.x = padding_x
         for i in 0 ..< count {
             child_index: i32 = ctx.child_buffer[first + i]
             child: ^Element = &ctx.elements[child_index]
+            ctx.children[ctx.children_count] = child_index
+            ctx.children_count += 1
+            if child.decl.absolute.enabled { continue }
+            flow_count += 1
             element.size.x += child.size.x
             element.size.y = max(element.size.y, child.size.y + padding_y)
             // a clipping container can shrink, so what its children need does not count
             if !clip_horizontal { element.min_size.x += child.min_size.x }
             if !clip_vertical { element.min_size.y = max(element.min_size.y, child.min_size.y + padding_y) }
-            ctx.children[ctx.children_count] = child_index
-            ctx.children_count += 1
         }
-        gap: f32 = f32(max(count - 1, 0)) * layout.gap
+        gap: f32 = f32(max(flow_count - 1, 0)) * layout.gap
         element.size.x += gap
         if !clip_horizontal { element.min_size.x += gap }
     } else {
@@ -168,14 +171,16 @@ ElementClose :: proc(ctx: ^Context) {
         for i in 0 ..< count {
             child_index: i32 = ctx.child_buffer[first + i]
             child: ^Element = &ctx.elements[child_index]
+            ctx.children[ctx.children_count] = child_index
+            ctx.children_count += 1
+            if child.decl.absolute.enabled { continue }
+            flow_count += 1
             element.size.y += child.size.y
             element.size.x = max(element.size.x, child.size.x + padding_x)
             if !clip_vertical { element.min_size.y += child.min_size.y }
             if !clip_horizontal { element.min_size.x = max(element.min_size.x, child.min_size.x + padding_x) }
-            ctx.children[ctx.children_count] = child_index
-            ctx.children_count += 1
         }
-        gap: f32 = f32(max(count - 1, 0)) * layout.gap
+        gap: f32 = f32(max(flow_count - 1, 0)) * layout.gap
         element.size.y += gap
         if !clip_vertical { element.min_size.y += gap }
     }
@@ -410,6 +415,16 @@ sizeChildren :: proc(ctx: ^Context, parent_index: i32, x_axis: bool) {
     for child_index in children {
         child: ^Element = &ctx.elements[child_index]
         sizing: SizingAxis = sizingOf(child, x_axis)
+        if child.decl.absolute.enabled {
+            // out of the flow: what grows or is a percent takes the size of the parent
+            size: ^f32 = sizeAxisOf(child, x_axis)
+            #partial switch sizing.kind {
+            case .GROW: size^ = max(min(parent_size, sizing.max), child.min_size.x if x_axis else child.min_size.y)
+            case .PERCENT: size^ = parent_size * sizing.percent
+            }
+            aspectUpdate(child)
+            continue
+        }
         child_size: f32 = sizeAxisOf(child, x_axis)^
         if sizing.kind != .PERCENT && sizing.kind != .FIXED && (!child.is_text || child.text.config.wrap == .WORDS || child.text.config.wrap == .TRUNCATE) {
             resizable[resizable_count] = child_index
@@ -431,6 +446,7 @@ sizeChildren :: proc(ctx: ^Context, parent_index: i32, x_axis: bool) {
     // percentages of what is inside
     for child_index in children {
         child: ^Element = &ctx.elements[child_index]
+        if child.decl.absolute.enabled { continue }
         sizing: SizingAxis = sizingOf(child, x_axis)
         if sizing.kind == .PERCENT {
             size: ^f32 = sizeAxisOf(child, x_axis)
@@ -710,15 +726,19 @@ heightsPropagate :: proc(ctx: ^Context, index: i32) {
     if layout.direction == .LEFT_TO_RIGHT {
         for child_index in children {
             child: ^Element = &ctx.elements[child_index]
+            if child.decl.absolute.enabled { continue }
             with_padding: f32 = max(child.size.y + padding_y, element.size.y)
             element.size.y = min(max(with_padding, layout.size.height.min), layout.size.height.max)
         }
     } else {
         content: f32 = padding_y
+        flow_count: int
         for child_index in children {
+            if ctx.elements[child_index].decl.absolute.enabled { continue }
             content += ctx.elements[child_index].size.y
+            flow_count += 1
         }
-        content += f32(max(count - 1, 0)) * layout.gap
+        content += f32(max(flow_count - 1, 0)) * layout.gap
         element.size.y = min(max(content, layout.size.height.min), layout.size.height.max)
     }
 }
@@ -880,11 +900,16 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
     // children: the alignment of the free room, then one after the other
     count: int = int(element.children_count)
     children: []i32 = ctx.children[element.children_start:int(element.children_start) + count]
-    gap_total: f32 = f32(max(count - 1, 0)) * layout.gap
+    flow_count: int
+    for child_index in children {
+        if !ctx.elements[child_index].decl.absolute.enabled { flow_count += 1 }
+    }
+    gap_total: f32 = f32(max(flow_count - 1, 0)) * layout.gap
     content: Vec2 = {}
     if layout.direction == .LEFT_TO_RIGHT {
         for child_index in children {
             child: ^Element = &ctx.elements[child_index]
+            if child.decl.absolute.enabled { continue }
             content.x += child.size.x
             content.y = max(content.y, child.size.y)
         }
@@ -892,6 +917,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
     } else {
         for child_index in children {
             child: ^Element = &ctx.elements[child_index]
+            if child.decl.absolute.enabled { continue }
             content.x = max(content.x, child.size.x)
             content.y += child.size.y
         }
@@ -925,6 +951,10 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
     scroll: Vec2 = element.decl.clip.offset if clips else {}
     for child_index in children {
         child: ^Element = &ctx.elements[child_index]
+        if child.decl.absolute.enabled {
+            placeElement(ctx, child_index, {rect.x + child.decl.absolute.offset.x + scroll.x, rect.y + child.decl.absolute.offset.y + scroll.y}, own_clip, root_id)
+            continue
+        }
         // across the direction of the layout: the alignment inside of the free room
         if layout.direction == .LEFT_TO_RIGHT {
             next.y = layout.padding.top
