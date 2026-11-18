@@ -242,7 +242,7 @@ a selection runs over rows, the view follows the cursor and has a scrollbar. The
 ## Zoom of one container
 `Decl.zoom` (0 or 1: none): the children of the container are laid out in logical units (the room they have is its size divided by the zoom, the origin is its top left corner) and shown `zoom` times bigger around that corner. Drawing goes through
 `Style.zoom` (the default style moves its painter: `Painter.scale` and `Painter.offset`, the glue draws a point as `p * scale + offset`), hit boxes, `UiElementRect` and the pointer stay in screen space, so widgets inside need no change
-(a slider still reads the pointer against its rectangle). Not for a floating element inside of it, a scroll area inside of it scrolls in logical units, and a zoomed container inside of a zoomed one is not zoomed again.
+(a slider still reads the pointer against its rectangle). A floating element attached to something inside of the container (a popup, a tooltip, a dropdown list) is laid out in the same logical units and shown zoomed with it (its root announces the zoom: `ZOOM_BEGIN` and `ZOOM_END` around it, the clip of an element outside of the zoom is converted); its rect is on the screen like every other. A scroll area inside of it keeps its offset in logical units, and the wheel moves it by a step of the screen (`WidgetState.zoom`), so it scrolls the same distance on the screen at every zoom. A zoomed container inside of a zoomed one is not zoomed again.
 
 ## UI scale
 `ui_default.Painter.scale` (0 is 1) makes the whole ui bigger or smaller, for a high DPI screen or a setting for people who want it bigger. The layout and every style keep working in logical units; the glue does the rest at the two borders:

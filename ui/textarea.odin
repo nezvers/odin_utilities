@@ -266,7 +266,7 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
     content: f32 = f32(count) * line_height + 2 * padding.y
     view_height: f32 = view.w
     if ctx.hover_scroll == id && ctx.input.wheel.y != 0 {
-        state.scroll.y += ctx.input.wheel.y * metrics.font_size * 2.5
+        state.scroll.y += ctx.input.wheel.y * scrollStep(ctx, state)
     }
     cursor_position, _ := cursor_on_screen(ctx, text, lines, count, state.cursor, line_height, padding)
     if state.editing && state.shown_cursor != state.cursor && view_height > 0 {

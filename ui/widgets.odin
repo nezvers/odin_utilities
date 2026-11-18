@@ -204,6 +204,14 @@ UiBoxEnd :: proc(ctx: ^Context, decl: Decl) {
     ElementClose(ctx)
 }
 
+// How far one step of the wheel scrolls a container, in the units of its scroll offset: two and a half lines of text on the screen, so in a zoomed container (where the offset is in
+// logical units) the step is the same on the screen at every zoom.
+@(private)
+scrollStep :: proc(ctx: ^Context, state: ^WidgetState) -> f32 {
+    zoom: f32 = state.zoom if state.zoom > 0 else 1
+    return ctx.style.metrics.font_size * 2.5 / zoom
+}
+
 // A container that cuts its children at its edge and scrolls them with the mouse wheel. Give it a height (Fixed, Percent or Grow inside of
 // something that has one): a Fit height grows to the content and there is nothing to scroll.
 @(deferred_in = UiScrollEnd)
@@ -211,7 +219,7 @@ UiScroll :: proc(ctx: ^Context, name: string, size: Size = {}, layout: Layout = 
     id: Id = UiId(ctx, name)
     state: ^WidgetState = stateGet(ctx, id)
     if ctx.hover_scroll == id && ctx.input.wheel.y != 0 {
-        state.scroll.y += ctx.input.wheel.y * ctx.style.metrics.font_size * 2.5
+        state.scroll.y += ctx.input.wheel.y * scrollStep(ctx, state)
     }
     scrollbarDrag(ctx, id, state)
     // the focus moved with the keyboard: show the focused widget when it is one of this container's

@@ -52,9 +52,9 @@ virtualOpen :: proc(ctx: ^Context, id: Id, list: ^VirtualList, count: int, row_h
     if ctx.hover_scroll == id {
         sideways: bool = content_width > 0 && (ctx.input.wheel.x != 0 || (.SHIFT in ctx.input.modifiers && ctx.input.wheel.y != 0))
         if sideways {
-            state.scroll.x += (ctx.input.wheel.x if ctx.input.wheel.x != 0 else ctx.input.wheel.y) * metrics.font_size * 2.5
+            state.scroll.x += (ctx.input.wheel.x if ctx.input.wheel.x != 0 else ctx.input.wheel.y) * scrollStep(ctx, state)
         } else if ctx.input.wheel.y != 0 {
-            state.scroll.y += ctx.input.wheel.y * metrics.font_size * 2.5
+            state.scroll.y += ctx.input.wheel.y * scrollStep(ctx, state)
         }
     }
     row_at :: proc(state: ^WidgetState, view: Rect, mouse: Vec2, height: f32, count: int) -> int {

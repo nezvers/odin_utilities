@@ -801,9 +801,15 @@ LayoutCalculate :: proc(ctx: ^Context) {
         element: ^Element = &ctx.elements[root.element]
         position: Vec2 = {}
         clip_rect: Rect = RECT_INFINITE
+        transform: Transform
         if element.decl.floating.attach_to != .NONE && root.parent >= 0 {
             floating: Floating = element.decl.floating
             parent: Rect = ctx.elements[root.parent].rect
+            // attached to something that is in a zoomed container (or is one): the floating element is shown zoomed too, laid out in the logical units of the container
+            if parent_transform := ctx.elements[root.parent].child_transform; parent_transform.active {
+                transform = parent_transform
+                parent = transformRectInverse(transform, parent)
+            }
             parent_factor: Vec2 = attachFactor(floating.parent_point)
             element_factor: Vec2 = attachFactor(floating.element_point)
             position = {
@@ -812,16 +818,24 @@ LayoutCalculate :: proc(ctx: ^Context) {
             }
         }
         clipped: bool = false
+        if transform.active { layoutCommand(ctx, {kind = .ZOOM_BEGIN, info = {rect = {transform.origin.x, transform.origin.y, transform.factor, 0}}}) }
         if root.clip >= 0 {
             clip_rect = ctx.elements[root.clip].clip_rect
             clipped = true
-            layoutPushClip(ctx, RectIntersect(clip_rect, screen_rect))
+            if transform.active {
+                // the clip of an element outside of the zoom is on the screen: in the logical units of the zoom it is the inverse
+                if !ctx.elements[root.clip].transform.active { clip_rect = transformRectInverse(transform, clip_rect) }
+                layoutPushClip(ctx, clip_rect)
+            } else {
+                layoutPushClip(ctx, RectIntersect(clip_rect, screen_rect))
+            }
         }
         root_id: Id = element.id if element.decl.floating.attach_to != .NONE else 0
-        placeElement(ctx, root.element, position, clip_rect, root_id, {})
+        placeElement(ctx, root.element, position, clip_rect, root_id, transform)
         if clipped {
             layoutPopClip(ctx)
         }
+        if transform.active { layoutCommand(ctx, {kind = .ZOOM_END}) }
     }
 }
 
@@ -880,6 +894,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
     screen_rect: Rect = {0, 0, ctx.screen.x, ctx.screen.y}
     element.rect = transformRect(transform, rect)
     element.clip_rect = clip_rect
+    element.transform, element.child_transform = transform, transform
 
     if element.is_text {
         textCommands(ctx, element, rect, clip_rect, transform)
@@ -902,7 +917,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
     floating: Floating = element.decl.floating
     if floating.attach_to != .NONE {
         shown = {rect.x - floating.expand.x, rect.y - floating.expand.y, rect.z + floating.expand.x * 2, rect.w + floating.expand.y * 2}
-        element.rect = shown
+        element.rect = transformRect(transform, shown)
     }
     shown_screen: Rect = transformRect(transform, shown)
     clip_screen: Rect = transformRect(transform, own_clip)
@@ -939,6 +954,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
         child_clip = transformRectInverse(child_transform, own_clip)
         layoutCommand(ctx, {kind = .ZOOM_BEGIN, info = {rect = {rect.x, rect.y, element.decl.zoom, 0}}})
     }
+    element.child_transform = child_transform
 
     // children: the alignment of the free room, then one after the other
     count: int = int(element.children_count)
@@ -989,6 +1005,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
     if state != nil {
         state.rect = shown_screen
         state.content_size = element.content_size * transform.factor if transform.active else element.content_size
+        state.zoom = child_transform.factor if child_transform.active else 1
     }
 
     scroll: Vec2 = element.decl.clip.offset if clips else {}

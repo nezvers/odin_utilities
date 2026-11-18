@@ -248,6 +248,8 @@ Element :: struct {
     rect: Rect,                     // final
     clip_rect: Rect,                // the part of the screen it may show in
     content_size: Vec2,             // a clipping container: how big its children are together
+    transform: Transform,           // the zoom it was placed in (inactive: none): its rect is on the screen, its place and size are in logical units of this
+    child_transform: Transform,     // the zoom of its children: the same, or the one of the container when this one is zoomed (a floating child is placed in it)
 }
 
 @(private)
@@ -390,6 +392,7 @@ WidgetState :: struct {
     split_pixels: f32,              // UiSplit started with a size in pixels: kept until the room of the container is known, then it becomes the ratio
     window_position: Vec2,          // UiWindowResizable that keeps its own position and size
     window_size: Vec2,
+    zoom: f32,                      // the zoom of the children of this widget in the last frame (0 or 1: none): a scroll offset is in logical units, the wheel moves it by a step of the screen divided by this
 }
 
 @(private)

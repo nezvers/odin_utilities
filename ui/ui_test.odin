@@ -4069,3 +4069,86 @@ test_the_rows_of_a_text_area_are_kept_while_nothing_they_depend_on_changes :: pr
     testing.expect(t, caches.misses > after)
     testing.expect_value(t, harness.ctx.problems, Problems{})
 }
+
+@(private = "file")
+zoomFloatFrame :: proc(harness: ^Harness, input: Input) {
+    frame(harness, input)
+    ctx: ^Context = &harness.ctx
+    ElementOpen(ctx, {id = 9, layout = {padding = {20, 0, 30, 0}}})
+    ElementOpen(ctx, {id = 10, layout = {size = {Fixed(200), Fixed(100)}, direction = .TOP_TO_BOTTOM}, zoom = 2, clip = {horizontal = true, vertical = true, cut = true}})
+    ElementOpen(ctx, {id = 13, layout = {size = {Fixed(40), Fixed(20)}}, draw = {kind = .BUTTON}})
+    // a popup under the box: attached to it, so it is laid out in the units of the container and shown zoomed with it
+    ElementOpen(ctx, {id = 14, layout = {size = {Fixed(30), Fixed(10)}}, floating = {attach_to = .PARENT, parent_point = .LEFT_BOTTOM, element_point = .LEFT_TOP, offset = {0, 4}, capture = true}, hit = {.INTERACTIVE}, draw = {kind = .PANEL}})
+    ElementClose(ctx)
+    ElementClose(ctx)
+    ElementClose(ctx)
+    ElementClose(ctx)
+    UiEnd(ctx)
+}
+
+@(test)
+test_a_floating_element_in_a_zoomed_container_is_zoomed_with_it :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    for _ in 0 ..< 2 { zoomFloatFrame(harness, pointerAt({-5, -5})) }
+    box, _ := UiElementRect(&harness.ctx, 13)
+    testing.expect_value(t, box, Rect{20, 30, 80, 40})                          // 40 x 20 logical, twice as big
+    popup, _ := UiElementRect(&harness.ctx, 14)
+    // logical: under the box (its bottom is 20 below the corner) and 4 more; shown from the corner of the container twice as far, twice as big
+    testing.expect_value(t, popup, Rect{20, 78, 60, 20})
+    // the pointer finds it where it is shown, and it keeps the pointer from what is under it
+    zoomFloatFrame(harness, pointerAt({40, 85}))
+    testing.expect_value(t, harness.ctx.hover, Id(14))
+    zoomFloatFrame(harness, pointerAt({40, 70}))                                 // between the box and the popup
+    testing.expect(t, harness.ctx.hover != Id(14))
+    // the commands: the zoom of the container and the zoom of the popup, each announced and closed
+    begin, end: int
+    draws: [2]Rect
+    draw_count: int
+    for command in UiCommands(&harness.ctx) {
+        #partial switch command.kind {
+        case .ZOOM_BEGIN:
+            begin += 1
+            testing.expect_value(t, command.info.rect, Rect{20, 30, 2, 0})
+        case .ZOOM_END: end += 1
+        case .DRAW:
+            if draw_count < 2 { draws[draw_count] = command.info.rect }
+            draw_count += 1
+        }
+    }
+    testing.expect(t, begin == 2 && end == 2 && draw_count == 2)
+    testing.expect_value(t, draws[1], Rect{20, 54, 30, 10})                      // the popup in logical units: the style draws it inside of its zoom
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}
+
+@(test)
+test_the_wheel_scrolls_a_zoomed_container_by_the_same_distance_on_the_screen :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    frame_with :: proc(harness: ^Harness, zoom: f32, input: Input) {
+        frame(harness, input)
+        ctx: ^Context = &harness.ctx
+        ElementOpen(ctx, {id = 40, layout = {size = {Fixed(200), Fixed(100)}}, zoom = zoom})
+        if UiScroll(ctx, "list", {Fixed(100), Fixed(50)}) {
+            for _ in 0 ..< 20 { UiLabel(ctx, "row") }
+        }
+        ElementClose(ctx)
+        UiEnd(ctx)
+    }
+    scrolled :: proc(harness: ^Harness, zoom: f32) -> f32 {
+        for _ in 0 ..< 3 { frame_with(harness, zoom, pointerAt({20, 20})) }
+        state: ^WidgetState = stateFind(&harness.ctx, harness.ctx.hover_scroll)
+        before: f32 = state.scroll.y if state != nil else 0
+        wheel: Input = pointerAt({20, 20})
+        wheel.wheel = {0, -1}
+        frame_with(harness, zoom, wheel)
+        state = stateFind(&harness.ctx, harness.ctx.hover_scroll)
+        return (state.scroll.y if state != nil else 0) - before
+    }
+    plain: f32 = scrolled(harness, 1)
+    zoomed: f32 = scrolled(harness, 2)
+    testing.expect(t, plain < 0 && zoomed < 0)
+    testing.expect(t, abs(zoomed * 2 - plain) < 0.01, "in a container at zoom 2 the offset moves half as far, which is the same on the screen")
+}
