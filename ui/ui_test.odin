@@ -4,8 +4,12 @@ package ui
 import "core:testing"
 
 // A font where every character is half as wide as it is high: no framework needed to test a layout
+@(private = "file", thread_local)
+measure_calls: int          // how often the ui asked the measure proc (per test thread)
+
 @(private = "file")
 testMeasure :: proc(ctx: ^Context, text: string, font_size: f32) -> Vec2 {
+    measure_calls += 1
     return {f32(len(text)) * font_size * 0.5, font_size}
 }
 
@@ -2133,4 +2137,62 @@ test_a_text_area_scrolls_to_the_cursor_and_wraps_to_its_width :: proc(t: ^testin
     areaKey(harness, buffer[:], &length)
     areaFrame(harness, pointerAt({50, 60}), buffer[:], &length)
     testing.expect(t, areaLines(&harness.ctx, string(buffer[:length]), 100 - 2 * DEFAULT_METRICS.padding.x - DEFAULT_METRICS.scrollbar_width, true) > 2)
+}
+
+@(private = "file")
+measureFrame :: proc(harness: ^Harness, label: string) {
+    frame(harness)
+    UiLabel(&harness.ctx, label)
+    UiButton(&harness.ctx, "A button")
+    UiLabel(&harness.ctx, "some words that are measured one by one")
+    UiEnd(&harness.ctx)
+}
+
+@(test)
+test_texts_are_measured_once_and_the_answer_is_kept_between_frames :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    measure_calls = 0
+    measureFrame(harness, "first")
+    first: int = measure_calls
+    testing.expect(t, first > 0, "the first frame measures")
+    hits_before, misses_before := UiMeasureCacheStats(&harness.ctx)
+    measure_calls = 0
+    measureFrame(harness, "first")
+    testing.expect_value(t, measure_calls, 0)                           // the same texts: nothing is measured again
+    hits_after, misses_after := UiMeasureCacheStats(&harness.ctx)
+    testing.expect(t, hits_after > hits_before && misses_after == misses_before)
+    // a text that changed is measured, the others are not
+    measure_calls = 0
+    measureFrame(harness, "second")
+    testing.expect(t, measure_calls > 0 && measure_calls < first, "only the new text goes to the measure proc")
+    // after the clear everything is measured again
+    UiMeasureCacheClear(&harness.ctx)
+    measure_calls = 0
+    measureFrame(harness, "second")
+    testing.expect_value(t, measure_calls, first)
+    // the same text at another size is another answer
+    big: Vec2 = measureText(&harness.ctx, "word", 32)
+    small: Vec2 = measureText(&harness.ctx, "word", 16)
+    testing.expect(t, big.x == 2 * small.x && big.y == 32 && small.y == 16)
+}
+
+@(test)
+test_a_new_ui_scale_clears_the_measure_cache :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    UiMeasureCacheScale(&harness.ctx, 1)
+    measure_calls = 0
+    measureFrame(harness, "x")
+    first: int = measure_calls
+    measure_calls = 0
+    UiMeasureCacheScale(&harness.ctx, 1)
+    measureFrame(harness, "x")
+    testing.expect_value(t, measure_calls, 0)                           // the same scale: kept
+    UiMeasureCacheScale(&harness.ctx, 2)
+    measure_calls = 0
+    measureFrame(harness, "x")
+    testing.expect_value(t, measure_calls, first)                       // another scale: measured again
 }

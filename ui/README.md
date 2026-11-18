@@ -159,6 +159,11 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
 and `UiMeter` (a level and a peak mark that the program holds and lets fall, standing or lying). Each is one element with a style kind (`KNOB`, `FADER`, `METER`): value 0..1, the real number, its text, where the default is. Nothing allocates;
 the scroll areas have a draggable scrollbar (the thumb keeps its place under the pointer, a press on the track centers it).
 
+## Measuring text
+Every size of a text goes through a cache (`measure.odin`): a table of `UI_MEASURE_CACHE` slots (2048) in the context, found by a 64 bit hash of the bytes, the length and the font size, overwritten by a text that lands on the same slot (no growing, no aging).
+A frame that shows the same texts as the last one calls the measure proc of the glue zero times. `UiMeasureCacheClear` forgets everything (a new font), `UiMeasureCacheScale(ctx, scale)` clears when the UI scale changed (`ui_kit.Begin` calls it; call it
+yourself with the raylib and Karl2D glue when the scale can change), `UiMeasureCacheStats` gives the hits and the misses.
+
 ## Editing text
 `UiTextField` has a selection (anchor and cursor in bytes: `WidgetState`, `DrawInfo.anchor` for the style): the pointer drags one, a double click takes a word, Shift with the arrows, Home and End extends it, Ctrl moves and deletes by words, typing and pasting replace it.
 `Input.modifiers` (Shift, Ctrl, the command key of a Mac is Ctrl) and the actions `COPY`, `CUT`, `PASTE`, `SELECT_ALL` (Ctrl + C, X, V, A; glues map them, and drop the typed letter when Ctrl is held) drive it.
@@ -194,5 +199,5 @@ Three levels: `odin test ui` (layout and behavior with a fake font), `odin test 
 (see `demo_kit/README.md`). `UiCommands(&ctx)` is the third way: assert on what the style would be asked to draw, without pixels.
 
 ## Known limits
-Text is measured per word each frame (no cache); a text field edits one line of UTF-8 (a text area several, wrapped by words);
+a text field edits one line of UTF-8 (a text area several, wrapped by words);
 an element that is declared after the floating element that names it as parent is not found (declare the parent first).

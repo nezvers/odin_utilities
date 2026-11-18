@@ -117,5 +117,6 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
 Begin :: proc(ui_ctx: ^ui.Context, painter: ^ui_default.Painter, style: ^ui.Style, kit_ctx: ^kit.Context) {
     painter.user = kit_ctx
     scale: f32 = ui_default.PainterScale(painter)
+    ui.UiMeasureCacheScale(ui_ctx, scale)
     ui.UiBegin(ui_ctx, InputFrom(kit_ctx, scale), kit_ctx.delta_time, kit_ctx.screen / scale, style)
 }

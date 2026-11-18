@@ -249,7 +249,7 @@ TextOpen :: proc(ctx: ^Context, text: string, config: TextConfig = {}) {
     element.size = {preferred.x, line_height}
     element.min_size = {min_width, line_height}
     if text_config.wrap == .TRUNCATE {
-        element.min_size.x = ctx.measure(ctx, "...", text_config.font_size).x         // it can shrink down to the dots
+        element.min_size.x = measureText(ctx, "...", text_config.font_size).x         // it can shrink down to the dots
     }
     parent.children_count += 1
 }
@@ -317,7 +317,7 @@ textNextWord :: proc(ctx: ^Context, text: string, position: int, font_size: f32,
     }
     measured: f32 = 0
     if end > position {
-        measured = ctx.measure(ctx, text[position:end], font_size).x
+        measured = measureText(ctx, text[position:end], font_size).x
     }
     if end >= len(text) {
         return {start = position, length = end - position, width = measured}, end, true
@@ -337,8 +337,8 @@ textNextWord :: proc(ctx: ^Context, text: string, position: int, font_size: f32,
 // edge of its container. The difference with two letters around the space is what it really adds.
 @(private)
 textSpaceWidth :: proc(ctx: ^Context, font_size: f32) -> f32 {
-    letter: f32 = ctx.measure(ctx, "A", font_size).x
-    return max(ctx.measure(ctx, "A A", font_size).x - 2 * letter, ctx.measure(ctx, " ", font_size).x)
+    letter: f32 = measureText(ctx, "A", font_size).x
+    return max(measureText(ctx, "A A", font_size).x - 2 * letter, measureText(ctx, " ", font_size).x)
 }
 
 // How a text measures as one line (the longest line when it has new lines), and the width of its longest word
@@ -351,7 +351,7 @@ textMeasure :: proc(ctx: ^Context, text: string, config: TextConfig) -> (preferr
     space_width: f32 = textSpaceWidth(ctx, config.font_size)
     line_width: f32 = 0
     widest: f32 = 0
-    height: f32 = ctx.measure(ctx, "A", config.font_size).y
+    height: f32 = measureText(ctx, "A", config.font_size).y
     position: int = 0
     for {
         word, next, ok := textNextWord(ctx, text, position, config.font_size, space_width)
@@ -679,15 +679,15 @@ textTruncate :: proc(ctx: ^Context, element: ^Element) {
     fits: bool = data.preferred.x <= element.size.x + LAYOUT_EPSILON
     line: TextLine = {start = 0, length = i32(len(data.text)), width = data.preferred.x}
     if !fits {
-        dots: f32 = ctx.measure(ctx, "...", config.font_size).x
+        dots: f32 = measureText(ctx, "...", config.font_size).x
         end: int = len(data.text)
         for end > 0 {
             // one character less (a character is one rune: a UTF-8 continuation byte is not the start of one)
             end -= 1
             for end > 0 && data.text[end] & 0xC0 == 0x80 { end -= 1 }
-            if ctx.measure(ctx, data.text[:end], config.font_size).x + dots <= element.size.x { break }
+            if measureText(ctx, data.text[:end], config.font_size).x + dots <= element.size.x { break }
         }
-        line = {start = 0, length = i32(end), width = ctx.measure(ctx, data.text[:end], config.font_size).x + dots, ellipsis = true}
+        line = {start = 0, length = i32(end), width = measureText(ctx, data.text[:end], config.font_size).x + dots, ellipsis = true}
     }
     data.line_start = i32(ctx.line_count)
     data.line_count = 0

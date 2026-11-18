@@ -50,7 +50,7 @@ areaLines :: proc(ctx: ^Context, text: string, max_width: f32, wrap: bool) -> in
                     word_end: int = position
                     for word_end < newline && text[word_end] == ' ' { word_end += 1 }
                     for word_end < newline && text[word_end] != ' ' { word_end += 1 }
-                    if ctx.measure(ctx, text[row:word_end], font).x > max_width { break }
+                    if measureText(ctx, text[row:word_end], font).x > max_width { break }
                     fit = word_end
                     position = word_end
                 }
@@ -63,7 +63,7 @@ areaLines :: proc(ctx: ^Context, text: string, max_width: f32, wrap: bool) -> in
                     next: int = row
                     for next < newline {
                         _, width := utf8.decode_rune_in_string(text[next:])
-                        if next > row && ctx.measure(ctx, text[row:next + width], font).x > max_width { break }
+                        if next > row && measureText(ctx, text[row:next + width], font).x > max_width { break }
                         next += width
                     }
                     fit = next
@@ -111,7 +111,7 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
     state.multiline = true
 
     padding: Vec2 = {metrics.padding.x, metrics.padding.y}
-    line_height: f32 = max(ctx.measure(ctx, "A", metrics.font_size).y, metrics.font_size) * 1.1
+    line_height: f32 = max(measureText(ctx, "A", metrics.font_size).y, metrics.font_size) * 1.1
     view: Rect = state.rect
     bar_width: f32 = metrics.scrollbar_width
     room: f32 = view.z - 2 * padding.x - bar_width                 // from the last frame: the first one has no wrap
@@ -122,7 +122,7 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
     cursor_on_screen :: proc(ctx: ^Context, text: string, lines: []AreaLine, count: int, offset: int, line_height: f32, padding: Vec2) -> (position: Vec2, row: int) {
         row = areaLineOf(lines, count, offset)
         start: int = int(lines[row].start)
-        position = {padding.x + ctx.measure(ctx, text[start:offset], ctx.style.metrics.font_size).x, padding.y + f32(row) * line_height}
+        position = {padding.x + measureText(ctx, text[start:offset], ctx.style.metrics.font_size).x, padding.y + f32(row) * line_height}
         return
     }
     // the cursor at a point of the screen
@@ -234,8 +234,8 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
         if focused && high > low && low <= int(line.end) && high >= int(line.start) && !(high == int(line.start) && row > 0) {
             from: int = max(low, int(line.start))
             to: int = min(high, int(line.end))
-            x0: f32 = ctx.measure(ctx, text[int(line.start):from], metrics.font_size).x
-            x1: f32 = ctx.measure(ctx, text[int(line.start):to], metrics.font_size).x
+            x0: f32 = measureText(ctx, text[int(line.start):from], metrics.font_size).x
+            x1: f32 = measureText(ctx, text[int(line.start):to], metrics.font_size).x
             if high > int(line.end) && line.hard { x1 += metrics.font_size * 0.4 }          // the new line is selected too: a little room after the text
             if x1 > x0 {
                 ElementOpen(ctx, {layout = {size = {Fixed(x1 - x0), Fixed(line_height)}}, absolute = {enabled = true, offset = {padding.x + x0, y}}, draw = {kind = .TEXT_SELECTION}})
@@ -245,7 +245,7 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
         if line.end > line.start {
             shown: string = text[int(line.start):int(line.end)]
             ElementOpen(ctx, {
-                layout = {size = {Fixed(ctx.measure(ctx, shown, metrics.font_size).x), Fixed(line_height)}},
+                layout = {size = {Fixed(measureText(ctx, shown, metrics.font_size).x), Fixed(line_height)}},
                 absolute = {enabled = true, offset = {padding.x, y}},
             })
             TextOpen(ctx, shown, {wrap = .NONE})

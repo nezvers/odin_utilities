@@ -21,7 +21,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Text field: selection (pointer, Shift, words), copy, cut, paste, select all, clipboard (system through the glue, else local)
 - [x] Text area (`UiTextArea`): several lines, word wrap, up and down with a column, selection over rows, scrolling that follows the cursor, a scrollbar
 - [ ] Text area: rows are found from the whole text every frame (measures per word): keep them between frames while the text and the width do not change
-- [ ] Text measure cache (text hash and size) so big tables and logs do not measure every frame
+- [x] Text measure cache (`measure.odin`): a fixed table by hash of text and size, cleared by a new font or UI scale
 - [x] UI scale factor (`Painter.scale`): layout and styles in logical units, the glue scales the drawing and divides the pointer; demo `scale`
 - [x] Node graph: box selection, moving several nodes together, Delete for selected nodes
 - [x] `Decl.zoom`: one container laid out in logical units and shown bigger or smaller (`Style.zoom`, `Painter.offset`); node graph zoom with the wheel around the pointer

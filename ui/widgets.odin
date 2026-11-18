@@ -112,7 +112,7 @@ widgetSize :: proc(size: Size, default_width: f32, default_height: f32) -> Size 
 
 @(private)
 textWidth :: proc(ctx: ^Context, text: string) -> f32 {
-    return ctx.measure(ctx, text, ctx.style.metrics.font_size).x
+    return measureText(ctx, text, ctx.style.metrics.font_size).x
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -528,7 +528,7 @@ textFieldCursorAt :: proc(ctx: ^Context, text: string, x: f32) -> int {
     for offset < len(text) {
         _, width := utf8.decode_rune_in_string(text[offset:])
         offset += width
-        distance: f32 = abs(x - ctx.measure(ctx, text[:offset], ctx.style.metrics.font_size).x)
+        distance: f32 = abs(x - measureText(ctx, text[:offset], ctx.style.metrics.font_size).x)
         if distance < best_distance {
             best_distance = distance
             best = offset
