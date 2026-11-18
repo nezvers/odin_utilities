@@ -1,7 +1,7 @@
 # ui
 
 An immediate mode ui for release applications and for test harness tools, with a style callback for every widget.
-The layout is a port of [Clay](https://github.com/nicbarker/clay) (MIT, Nic Barker; a copy for reference is in `references/clay`, which git ignores):
+The layout is a port of [Clay](https://github.com/nicbarker/clay) (MIT, Nic Barker):
 sizing fit / grow / fixed / percent with min and max, padding, child gap, alignment, floating elements (popups, tooltips, windows), clipping and
 scrolling containers, text wrapping, aspect ratio. Clay's element ids and its two pass sizing are kept, the macros, transitions and the debug
 view are not, and the output is not rectangles but `DrawInfo` for your style procs.
@@ -88,7 +88,7 @@ Rounded rectangles: `RoundedRadius(rect, rounding, max_radius)` takes the roundi
 clamped to half of it and to `max_radius` pixels; `RoundedPoints` writes the polygon into a buffer of yours (`RoundedBuffer`) for a triangle fan.
 
 ## The demo of Dear ImGui, remade
-`demo_common/demo_imgui.odin` is the layout of `ShowDemoWindow` (`references/imgui/imgui_demo.cpp`, a git ignored checkout of ocornut/imgui): a window with a title bar and
+`demo_common/demo_imgui.odin` is the layout of `ShowDemoWindow` (`imgui_demo.cpp` of ocornut/imgui): a window with a title bar and
 a menu bar (Menu with submenus, Examples, Tools), collapsing headers (Help, Configuration, Window options, Widgets, Layout & Scrolling, Popups & Modal windows, Tables, Inputs & Focus)
 and under Widgets the tree nodes Basic, Trees, Collapsing Headers, Bullets, Text, Combo, Selectables, Tabs, Plotting, Color, Multi-component, Querying status. What the
 library does not have (multi-line text input, sortable tables, docking, drag and drop, resizing) is left out. Its script drives it with the keyboard only.

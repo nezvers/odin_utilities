@@ -1,10 +1,8 @@
 # odin_utilities
 
-My Odin libraries (git repo nezvers/odin_utilities, branch main). Parent: `../CLAUDE.md` (master rules for everything under O:\Projects\Odin).
+A collection of Odin libraries.
 One library per directory, all with the same structure so any of them is a reference and a template (`templates/library`).
-Shared assets: `assets/` (textures, fonts, sounds, gltf). `references/` is for reference material (git ignored: `references/clay` is the
-Clay checkout the `ui` layout is ported from, `references/imgui` the Dear ImGui demo the `ui` demo follows, `references/raddebugger` the RAD Debugger: its `src/ui`
-and its thread layer `src/base/base_threads*`, `base_thread_context*`, `artifact_cache/` were studied for ui and threading ideas). `karl2d/` is a directory junction to `../odin_plug/karl2d` (see Repository map).
+Shared assets: `assets/` (textures, fonts, sounds, gltf). `references/` is git ignored space for local checkouts of projects a library was ported from or follows (Clay, Dear ImGui). `karl2d/` is the Karl2D checkout that the `glue_karl2d` packages import by relative path (a directory junction or a clone, see Repository map).
 Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git ignored.
 
 ## Library structure (every odin_utilities library, template in odin_utilities/templates/library)
@@ -29,21 +27,17 @@ Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git
 
 ## Repository map
 - `<lib>/` - one library per directory (tilemap, input, tween, timer, ui, sprite, ...).
-- karl2d - a directory junction to ../odin_plug/karl2d, so both use one copy: my fork of Karl2D (upstream + odin_plug embed commits + the 3D layer, branch render3d). Not my library otherwise. Its AGENTS.md rules (no comments, short replies) apply only to that repo, not to my libraries.
+- karl2d - a checkout of a Karl2D fork (upstream plus the embed commits and the 3D layer, branch render3d), not part of these libraries; it has its own rules.
 - Libraries import karl2d by relative path, e.g. `import "../../karl2d"` from tilemap/glue_karl2d.
 
-## Other places that use these libraries
-- `../WIP/karl2d_jam_2026` keeps its own copies of some libraries (`game/sprite`, `game/sound_effects`, `game/scene`, ...) with the old directory names, not synced with changes made here.
-- `../odin_plug` uses the Karl2D fork (submodule) and follows this style; its rules are in `../odin_plug/CLAUDE.md`.
-
-## My library style (see odin_utilities/tilemap as reference)
+## Library style (see tilemap as reference)
 - Libraries are framework agnostic. Framework specific drawing lives in sub packages (`glue_raylib/`, `glue_karl2d/`) named `<lib>_<framework>.odin`.
 - No hidden allocations: user provides buffers/slices (`TilemapInit(position, size, tile_size, buffer)`).
 - Procedures are PascalCase prefixed by the abstraction: `TilemapGetTile`, `TileAtlasInit`, `AutotileRuleUpdateCell`, `DualGridUpdateTilemap`. Constants are UPPER_CASE (`TILE_EMPTY`). Types are PascalCase.
 - Typed locals: `name:Type = value`. `assert` for preconditions. Comments describe each proc and non-obvious steps.
 - Demo code uses snake_case procs.
 - A feature that uses data + derived output takes input and output tilemaps (see `rule_tile.odin`, `dual_grid.odin`).
-- Keep comments in code I write; explain why, not what.
+- Keep comments in the code; explain why, not what.
 
 ## tilemap library layout
 - Core: `common.odin` (types), `tilemap.odin`, `tileset.odin`, `tile.odin`, `tile_atlas.odin`, `rule_tile.odin`, `dual_grid.odin`, `editing.odin` (input helpers + paint/drag/select), `rand.odin`.
@@ -87,7 +81,7 @@ Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git
 - `web_serve.odin` (`Server*` procs: static GET/HEAD file server over `core:net`, fixed buffers, polled connections, `ResolvePath` refuses traversal; tests at the bottom use real loopback sockets), `tool/` (`odin run web_serve/tool -- <dir> --open`). No raylib/karl2d demo: nothing is drawn, the tool serves the web_build demo.
 
 ## scene library layout
-- `asset.odin` (`AssetStore` over a user `AssetStorage(N)`, `LoaderUpdate`: background and blocking requests with a time budget, loaders split in `decode` (may run on a worker thread) and `finish` (main thread)), `asset_workers.odin` (worker pool, `#+build !js`, `asset_workers_js.odin` is the no-thread stub), `prefab.odin` (`PrefabDef` with base and `PatchField` overrides, resolved once), `scene.odin` (`SceneSystem`: scene table, transition, prefetch hints, listeners and scene instances in `core:container/handle_map`, per-scene arena), `glue_karl2d/` glue (loaders, placeholders, `DrawTransition`), `demo_karl2d/`. Builds for js_wasm32, so tests are in `*_test.odin` (`#+build !js`) and not at the bottom. The jam game uses a copy in `game/scene` (the library files without the tests).
+- `asset.odin` (`AssetStore` over a user `AssetStorage(N)`, `LoaderUpdate`: background and blocking requests with a time budget, loaders split in `decode` (may run on a worker thread) and `finish` (main thread)), `asset_workers.odin` (worker pool, `#+build !js`, `asset_workers_js.odin` is the no-thread stub), `prefab.odin` (`PrefabDef` with base and `PatchField` overrides, resolved once), `scene.odin` (`SceneSystem`: scene table, transition, prefetch hints, listeners and scene instances in `core:container/handle_map`, per-scene arena), `glue_karl2d/` glue (loaders, placeholders, `DrawTransition`), `demo_karl2d/`. Builds for js_wasm32, so tests are in `*_test.odin` (`#+build !js`) and not at the bottom.
 
 ## serial library layout
 - `serial.odin` (binary `Writer`/`Reader` over user buffers with a counting pass, versioned length-prefixed chunks, file frame with crc32, `RleWrite`/`RleRead`; safe on untrusted data, builds for js so tests are in `serial_test.odin`). Used by `tilemap/tilemap_serial.odin` (tilemap layers by name, atlas, tileset), `box2d_odin/physics_serial.odin` (`PhysicsDesc` of bodies, shapes, hinges: write, read with validation, `PhysicsCreate`), `scene/level.odin` (entities as prefab instances with overrides by field path, asset names, `LevelAttach`). `scene/level_integration_test.odin` is the whole level file pipeline.
@@ -96,8 +90,8 @@ Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git
 - `signal.odin` (`Signal($T,$N,$Q)`: payload, connection capacity, deferred queue size; connections in `core:container/handle_map`, order list kept apart because slots are reused; `Signal*` procs: Connect with `.ONE_SHOT`/`.DEFERRED`, Emit, Flush, Disconnect*, Block; safe to change connections while emitting; builds for js so tests are in `signal_test.odin`), `demo_common/` (framework free model of the demos), `demo_raylib/`, `demo_karl2d/game/`.
 
 ## ui library layout
-- Immediate mode ui, layout ported from Clay (`references/clay`, MIT, credited in README). Core files: `context.odin` (Storage, UiInit/Begin/End, widget state in a `Static_Handle_Map` of `UI_STATES`), `layout.odin` (Clay port: sizing, floating, clip, text wrap), `widgets.odin` (`Ui*` widgets, containers are `if UiPanel(...) {}` blocks through `@(deferred_in)`), `widgets_more.odin` (collapsing/tree, radio, selectable, tabs, drag, inputs, plots, color, menus, modal, titled window), `style.odin` (`StyleKind`, `DrawInfo` with rect + value 0..1 + name + actual, `Style` table of user procs), `render.odin` (`UiRender` only calls the style procs, so the ui shares the batch of the frame), `nav.odin` (focus by direction and the default actions of Godot: `ui.Action` ACCEPT/CANCEL/FOCUS_NEXT/UP../HOME/END/PAGE_*, set in `Input.actions` by the glue and applied in `UiBegin`; `UiNavigate`, `UiActivate`, `UiCancelled`, `UiNavLink/UiNavBlock` overrides, scroll into view, input agnostic), `rounded.odin` (radius as part of the shortest side, polygon into a caller buffer).
-- `default_style/` (package `ui_default`: `Painter` + default style), `kit/` (Painter + input over demo_kit, used by the demos), `glue_raylib/`, `glue_karl2d/` (Painter + `InputPoll`), `demo_common/` (widgets, layout, styles, navigation demos and `demo_imgui`, the layout of Dear ImGui's demo window, with scripts; `references/imgui` is the git ignored checkout it follows). Scripts click at fixed coordinates computed from the layout (window at (40,40), padding 10, controls 28 high): widths must be `Fixed` so fonts do not move them.
+- Immediate mode ui, layout ported from Clay (MIT, credited in README). Core files: `context.odin` (Storage, UiInit/Begin/End, widget state in a `Static_Handle_Map` of `UI_STATES`), `layout.odin` (Clay port: sizing, floating, clip, text wrap), `widgets.odin` (`Ui*` widgets, containers are `if UiPanel(...) {}` blocks through `@(deferred_in)`), `widgets_more.odin` (collapsing/tree, radio, selectable, tabs, drag, inputs, plots, color, menus, modal, titled window), `style.odin` (`StyleKind`, `DrawInfo` with rect + value 0..1 + name + actual, `Style` table of user procs), `render.odin` (`UiRender` only calls the style procs, so the ui shares the batch of the frame), `nav.odin` (focus by direction and the default actions of Godot: `ui.Action` ACCEPT/CANCEL/FOCUS_NEXT/UP../HOME/END/PAGE_*, set in `Input.actions` by the glue and applied in `UiBegin`; `UiNavigate`, `UiActivate`, `UiCancelled`, `UiNavLink/UiNavBlock` overrides, scroll into view, input agnostic), `rounded.odin` (radius as part of the shortest side, polygon into a caller buffer).
+- `default_style/` (package `ui_default`: `Painter` + default style), `kit/` (Painter + input over demo_kit, used by the demos), `glue_raylib/`, `glue_karl2d/` (Painter + `InputPoll`), `demo_common/` (widgets, layout, styles, navigation demos and `demo_imgui`, the layout of Dear ImGui's demo window, with scripts; ImGui is the demo it follows). Scripts click at fixed coordinates computed from the layout (window at (40,40), padding 10, controls 28 high): widths must be `Fixed` so fonts do not move them.
 - Pointer is tested against the hit boxes of the last frame; a click needs a frame of layout first (scripts `Wait(3)` at the start). Ids are hashes of the name inside the container (`"Save##2"`), `UiIdPath("Window", "Widget")` finds one from outside a frame.
 - `odin test ui`, `odin test ui/demo_common`.
 
@@ -116,7 +110,7 @@ Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git
 
 ## scratch and lanes (threads, no demos)
 - `scratch/scratch.odin`: two thread local `core:mem/virtual` arenas per thread (64 MB reserve), `ScratchBegin(conflicts..)` / `ScratchEnd` / `ScratchAllocator` / `ScratchRelease`: a function that writes its result into an arena names it as the conflict and gets the other arena for temporaries. For tools and loaders, not realtime.
-- `lanes/lanes.odin`: SPMD fan out, `Run(count, work, user)` runs the same proc on every lane, `LaneRange` / `LaneSync` / `LaneBroadcast`. Not realtime (`odin_plug/graph/pool.odin` is the realtime pool). Both are `#+build !js`, tests inside, `odin test scratch`, `odin test lanes`.
+- `lanes/lanes.odin`: SPMD fan out, `Run(count, work, user)` runs the same proc on every lane, `LaneRange` / `LaneSync` / `LaneBroadcast`. Not realtime. Both are `#+build !js`, tests inside, `odin test scratch`, `odin test lanes`.
 - `TODO.md` (this folder) is the list of improvements under way: tick items when verified and committed.
 
 ## Commands (run in odin_utilities, tilemap shown)
