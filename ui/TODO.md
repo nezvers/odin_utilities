@@ -20,6 +20,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Knob, fader and level meter (`widgets_audio.odin`, default style in `default_style/audio.odin`), demo `audio` with a screenshot
 - [x] Text field: selection (pointer, Shift, words), copy, cut, paste, select all, clipboard (system through the glue, else local)
 - [x] Text area (`UiTextArea`): several lines, word wrap, up and down with a column, selection over rows, scrolling that follows the cursor, a scrollbar
+- [x] Timeline (`UiTimeline`): tracks and clips model with rules and events, ruler, playhead, move across tracks, resize, multi selection, zoom around the pointer, lock; demo with a screenshot
+- [ ] Timeline: box selection, a loop range on the ruler, markers, automation lanes (keys on a line), a vertical zoom of the tracks, copy and paste of clips
 - [ ] Text area: rows are found from the whole text every frame (measures per word): keep them between frames while the text and the width do not change
 - [x] Text measure cache (`measure.odin`): a fixed table by hash of text and size, cleared by a new font or UI scale
 - [x] UI scale factor (`Painter.scale`): layout and styles in logical units, the glue scales the drawing and divides the pointer; demo `scale`

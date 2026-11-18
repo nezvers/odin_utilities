@@ -159,6 +159,16 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
 and `UiMeter` (a level and a peak mark that the program holds and lets fall, standing or lying). Each is one element with a style kind (`KNOB`, `FADER`, `METER`): value 0..1, the real number, its text, where the default is. Nothing allocates;
 the scroll areas have a draggable scrollbar (the thumb keeps its place under the pointer, a press on the track centers it).
 
+## Timeline
+A retained model with an immediate mode widget, like the node graph. The model (`timeline.odin`: `Timeline`, tracks, clips in fixed storage with checked handles, `TIMELINE_TRACKS`, `TIMELINE_CLIPS`, `TIMELINE_EVENTS` are `#config`, no allocation) is the
+program's: a clip has a start and a length in the unit of the program (seconds, beats, samples), a track keeps its clips and a `user` pointer. `TimelineRules.can_place` says where a clip may be (`TimelineRuleNoOverlap` is one), `min_length` the shortest.
+Every change is a `TimelineEvent` (`CLIP_ADDED`, `CLIP_REMOVED`, `CLIP_MOVED`, `CLIP_RESIZED` with what it was before, `PLAYHEAD`, `EMPTY_DOUBLE_CLICK`, `TRACK_*`) with the user pointers of the clip, its track and the timeline, through `timeline.on_event`
+and/or `TimelinePollEvent`. A program that plays the clips reads them in the order of their start (`TimelineTrackClips`, `TimelineClipAt`).
+`UiTimeline(&ctx, "Arrangement", &timeline, &view, size)` (`timeline_widgets.odin`) draws a ruler (ticks at 1, 2 or 5 times a power of ten), the lanes, the clips and the playhead, and returns true when the person changed something: a press on the ruler puts the playhead
+(and drags it), a press on a clip selects it (Shift adds or removes) and drags it with every selected clip to another start or track, the edges resize it, an empty lane pans, a double click on one is an event, the wheel zooms around the pointer
+(Shift + wheel pans), Delete removes the selected clips, a locked track (`TrackFlag.LOCKED`) keeps its clips. `TimelineView` (origin, zoom in pixels per unit, scroll, playhead, snap) is plain data a project can save.
+Lanes, clips, the ruler and the playhead are drawn by `TimelineStyle` procs (`timeline_style.odin`, default in `default_style/timeline.odin`) from the model, only what is in view, so thousands of clips cost the ones on screen. Demo: `demo_common/demo_timeline.odin`.
+
 ## Measuring text
 Every size of a text goes through a cache (`measure.odin`): a table of `UI_MEASURE_CACHE` slots (2048) in the context, found by a 64 bit hash of the bytes, the length and the font size, overwritten by a text that lands on the same slot (no growing, no aging).
 A frame that shows the same texts as the last one calls the measure proc of the glue zero times. `UiMeasureCacheClear` forgets everything (a new font), `UiMeasureCacheScale(ctx, scale)` clears when the UI scale changed (`ui_kit.Begin` calls it; call it

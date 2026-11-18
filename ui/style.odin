@@ -49,6 +49,7 @@ StyleKind :: enum u8 {
     BULLET,             // the dot of a bullet text
     SEPARATOR_TEXT,     // a line with a name in it
     BACKDROP,           // what dims the screen behind a modal dialog
+    TIMELINE,           // a timeline: draw the background, then call TimelineDraw(ctx, info) (lanes, clips, ruler, playhead); user: the frame
     TEXT_AREA,          // the box of a text of several lines: name (shown when it is empty and not focused), text, FOCUSED flag; its lines, selection and caret are children
     TEXT_SELECTION,     // a rectangle of the selected text of a text area
     TEXT_CARET,         // the cursor of a text area (the style blinks it)
@@ -137,5 +138,6 @@ Style :: struct {
     // a zoomed container starts (begin = true: everything up to its end is in its logical space, scaled by `factor` around `origin`) or ends: the style moves its painter. nil: no zoom.
     zoom: proc(ctx: ^Context, origin: Vec2, factor: f32, begin: bool),
     metrics: Metrics,
-    graph: GraphStyle,              // routing, bounds, distance and drawing of the cables and ties of a node graph (graph_style.odin)
+    graph: GraphStyle,
+    timeline: TimelineStyle,        // how the lanes, clips, ruler and playhead of a timeline are drawn (timeline_style.odin)              // routing, bounds, distance and drawing of the cables and ties of a node graph (graph_style.odin)
 }

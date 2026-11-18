@@ -2196,3 +2196,189 @@ test_a_new_ui_scale_clears_the_measure_cache :: proc(t: ^testing.T) {
     measureFrame(harness, "x")
     testing.expect_value(t, measure_calls, first)                       // another scale: measured again
 }
+
+@(private = "file")
+timelineFrame :: proc(harness: ^Harness, timeline: ^Timeline, view: ^TimelineView, input: Input) -> bool {
+    frame(harness, input)
+    changed := UiTimeline(&harness.ctx, "T", timeline, view, {Fixed(400), Fixed(200)})
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return changed
+}
+
+@(private = "file")
+timelineDrag :: proc(harness: ^Harness, timeline: ^Timeline, view: ^TimelineView, from: Vec2, to: Vec2, modifiers: Modifiers = {}) {
+    start: Input = pointerAt(from)
+    start.modifiers = modifiers
+    timelineFrame(harness, timeline, view, start)
+    press: Input = pointerAt(from, true, true)
+    press.modifiers = modifiers
+    timelineFrame(harness, timeline, view, press)
+    for i in 1 ..= 8 {
+        step: Input = pointerAt(from + (to - from) * (f32(i) / 8), true)
+        step.modifiers = modifiers
+        timelineFrame(harness, timeline, view, step)
+    }
+    timelineFrame(harness, timeline, view, pointerAt(to, false, false, true))
+}
+
+@(private = "file")
+timelineClick :: proc(harness: ^Harness, timeline: ^Timeline, view: ^TimelineView, at: Vec2, modifiers: Modifiers) {
+    move: Input = pointerAt(at)
+    move.modifiers = modifiers
+    timelineFrame(harness, timeline, view, move)
+    press: Input = pointerAt(at, true, true)
+    press.modifiers = modifiers
+    timelineFrame(harness, timeline, view, press)
+    release: Input = pointerAt(at, false, false, true)
+    release.modifiers = modifiers
+    timelineFrame(harness, timeline, view, release)
+}
+
+@(private = "file")
+timelineDrain :: proc(timeline: ^Timeline) {
+    for {
+        _, has := TimelinePollEvent(timeline)
+        if !has { break }
+    }
+}
+
+@(private = "file")
+timelineSetup :: proc(harness: ^Harness) -> (timeline: ^Timeline, view: ^TimelineView, first: TrackHandle, second: TrackHandle, clip: ClipHandle) {
+    harnessInit(harness)
+    timeline = new(Timeline)
+    TimelineInit(timeline)
+    view = new(TimelineView)
+    view.zoom = 100
+    view.snap = 0.5
+    first, _ = TimelineTrackAdd(timeline, "one")
+    second, _ = TimelineTrackAdd(timeline, "two")
+    clip, _ = TimelineClipAdd(timeline, first, 1, 2, "clip")
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrain(timeline)
+    return
+}
+
+@(test)
+test_a_clip_is_dragged_to_another_start_and_another_track_with_the_pointer :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, first, second, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    timelineDrag(harness, timeline, view, {200, 40}, {300, 88})
+    moved: ^TimelineClip = TimelineClipGet(timeline, clip)
+    testing.expect_value(t, moved.start, 2)
+    testing.expect_value(t, moved.track, second)
+    testing.expect(t, moved.selected, "a press selects it")
+    changed_track: bool
+    for {
+        event, has := TimelinePollEvent(timeline)
+        if !has { break }
+        testing.expect_value(t, event.kind, TimelineEventKind.CLIP_MOVED)
+        if event.previous_track == first && event.track == second { changed_track = true }
+    }
+    testing.expect(t, changed_track, "one of the moves went from the first track to the second")
+    timelineDrag(harness, timeline, view, {300, 88}, {-300, 88})
+    testing.expect_value(t, TimelineClipGet(timeline, clip).start, 0)
+}
+
+@(test)
+test_the_edges_of_a_clip_resize_it_and_the_playhead_follows_the_ruler :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, _, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    timelineDrag(harness, timeline, view, {297, 40}, {397, 40})
+    testing.expect_value(t, TimelineClipGet(timeline, clip).length, 3)
+    event, _ := TimelinePollEvent(timeline)
+    testing.expect_value(t, event.kind, TimelineEventKind.CLIP_RESIZED)
+    timelineDrag(harness, timeline, view, {103, 40}, {153, 40})
+    resized: ^TimelineClip = TimelineClipGet(timeline, clip)
+    testing.expect(t, resized.start == 1.5 && resized.start + resized.length == 4)
+    timelineDrain(timeline)
+    timelineDrag(harness, timeline, view, {250, 10}, {350, 10})
+    testing.expect_value(t, view.playhead, 3.5)
+    seen_playhead: bool
+    for {
+        e, has := TimelinePollEvent(timeline)
+        if !has { break }
+        if e.kind == .PLAYHEAD { seen_playhead = true }
+    }
+    testing.expect(t, seen_playhead)
+}
+
+@(test)
+test_the_wheel_zooms_around_the_pointer_and_an_empty_lane_pans :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, _, _ := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    wheel: Input = pointerAt({200, 150})
+    wheel.wheel = {0, 1}
+    timelineFrame(harness, timeline, view, pointerAt({200, 150}))
+    timelineFrame(harness, timeline, view, wheel)
+    zoom: f32 = TimelineViewZoom(view)
+    testing.expect(t, abs(zoom - 100 * TIMELINE_ZOOM_STEP) < 0.01)
+    testing.expect(t, abs(TimelineTime(view, 200) - 2) < 0.001, "the time under the pointer did not move")
+    TimelineClipSelect(timeline, TimelineClipAt(timeline, timeline.order[0], 1.5))
+    timelineDrag(harness, timeline, view, {350, 150}, {250, 150})
+    testing.expect(t, view.origin > 0.5)
+    testing.expect_value(t, TimelineSelectedCount(timeline), 0)
+}
+
+@(test)
+test_the_rules_the_lock_shift_and_delete_decide_what_the_pointer_may_do :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, first, second, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    timeline.rules.can_place = TimelineRuleNoOverlap
+    other, _ := TimelineClipAdd(timeline, first, 3, 2, "other")
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {200, 40}, {350, 40})
+    testing.expect(t, TimelineClipGet(timeline, clip).start + TimelineClipGet(timeline, clip).length <= 3, "it did not overlap")
+    TimelineTrackGet(timeline, second).flags += {.LOCKED}
+    TimelineClipPlace(timeline, other, second, 3, 2)
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    before: f64 = TimelineClipGet(timeline, other).start
+    timelineDrag(harness, timeline, view, {390, 88}, {500, 88})
+    testing.expect_value(t, TimelineClipGet(timeline, other).start, before)
+    TimelineTrackGet(timeline, second).flags -= {.LOCKED}
+    TimelineSelectClear(timeline)
+    timelineClick(harness, timeline, view, {200, 40}, {})
+    testing.expect_value(t, TimelineSelectedCount(timeline), 1)
+    timelineClick(harness, timeline, view, {390, 88}, {.SHIFT})
+    testing.expect_value(t, TimelineSelectedCount(timeline), 2)
+    timelineClick(harness, timeline, view, {390, 88}, {.SHIFT})
+    testing.expect_value(t, TimelineSelectedCount(timeline), 1)
+    deleting: Input = pointerAt({-10, -10})
+    deleting.keys = {.DELETE}
+    timelineDrain(timeline)
+    changed: bool = timelineFrame(harness, timeline, view, deleting)
+    testing.expect(t, changed, "the widget says that the person changed something")
+    testing.expect_value(t, TimelineClipCount(timeline), 1)
+    event, _ := TimelinePollEvent(timeline)
+    testing.expect_value(t, event.kind, TimelineEventKind.CLIP_REMOVED)
+}
+
+@(test)
+test_a_double_click_on_an_empty_lane_is_told_to_the_program :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, second, _ := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    at: Vec2 = {230, 100}
+    timelineFrame(harness, timeline, view, pointerAt(at))
+    timelineFrame(harness, timeline, view, pointerAt(at, true, true))
+    timelineFrame(harness, timeline, view, pointerAt(at, false, false, true))
+    timelineFrame(harness, timeline, view, pointerAt(at, true, true))
+    event, has := TimelinePollEvent(timeline)
+    testing.expect(t, has)
+    testing.expect_value(t, event.kind, TimelineEventKind.EMPTY_DOUBLE_CLICK)
+    testing.expect_value(t, event.track, second)
+    testing.expect_value(t, event.time, 2.5)
+}
+
+@(test)
+test_the_ruler_step_is_one_two_or_five_times_a_power_of_ten :: proc(t: ^testing.T) {
+    testing.expect_value(t, TimelineRulerStep(100), 1)
+    testing.expect_value(t, TimelineRulerStep(10), 10)
+    testing.expect_value(t, TimelineRulerStep(30), 5)
+    testing.expect_value(t, TimelineRulerStep(1000), 0.1)
+    testing.expect_value(t, TimelineRulerStep(0.5), 200)
+}

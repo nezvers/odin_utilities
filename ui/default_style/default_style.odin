@@ -152,6 +152,7 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.TEXT_CARET] = DrawTextCaret
     GraphStyleInstall(&style)
     AudioStyleInstall(&style)
+    TimelineStyleInstall(&style)
     return style
 }
 

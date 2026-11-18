@@ -76,6 +76,8 @@ Context :: struct {
     graph_minimaps: [UI_MAX_GRAPHS]GraphMinimapData,
     graph_minimap_count: int,
     clipboard: Clipboard,
+    timeline_frames: [UI_MAX_TIMELINES]TimelineFrame,   // the timelines of this frame (timeline_widgets.odin)
+    timeline_frame_count: int,
     measure_cache: MeasureCache,                    // sizes of texts already measured (measure.odin)
     area_lines: [UI_TEXT_AREA_LINES]AreaLine,        // the rows of the text area that is declared (textarea.odin)
     roots: [UI_MAX_ROOTS]Root,
@@ -173,6 +175,7 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
     ctx.split_count = 0
     ctx.split_lost = 0
     ctx.graph_frame_count = 0
+    ctx.timeline_frame_count = 0
     ctx.graph_stack_count = 0
     ctx.graph_minimap_count = 0
     ctx.root_count = 0
