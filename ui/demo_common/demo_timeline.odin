@@ -79,6 +79,8 @@ onEvent :: proc(timeline: ^ui.Timeline, event: ^ui.TimelineEvent) {
         s.log_length = len(fmt.bprintf(s.log[:], "playhead at %.2f", event.time))
     case .POINT_MOVED:
         s.log_length = len(fmt.bprintf(s.log[:], "%s: %.1f at %.2f", track, event.value, event.time))
+    case .POINT_SHAPED:
+        s.log_length = len(fmt.bprintf(s.log[:], "%s: curve %v %.2f", track, event.shape, event.curve))
     case .POINT_ADDED:
         s.log_length = len(fmt.bprintf(s.log[:], "%s: point added, %.1f at %.2f", track, event.value, event.time))
     case .MARKER_MOVED:
@@ -137,6 +139,27 @@ script: []kit.Step = {
     kit.Tap(.DELETE),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.TimelinePointCount(&state.timeline) == 5 }, "Delete removed the selected point"),
+    // the curve between two points: Ctrl and a click on a point makes the curve that leaves it the next shape (linear, smooth, bias, S, hold), the handle in the middle of a segment bends it
+    kit.KeyDownStep(.LEFT_CTRL),
+    kit.Wait(1),
+    kit.Click({330, 254}),
+    kit.Wait(1),
+    kit.KeyUpStep(.LEFT_CTRL),
+    kit.Wait(2),
+    kit.MoveTo({570, 250}),
+    kit.Wait(3),
+    kit.Drag({570, 250}, {570, 245}, 6),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        out: [8]ui.PointHandle
+        count: int = ui.TimelineTrackPoints(&state.timeline, state.cutoff, out[:])
+        if count != 5 { return false }
+        smooth: ^ui.TimelinePoint = ui.TimelinePointGet(&state.timeline, out[2])
+        bent: ^ui.TimelinePoint = ui.TimelinePointGet(&state.timeline, out[3])
+        return smooth.shape == .SMOOTH && bent.shape == .CURVE && bent.curve < -0.2 && bent.curve > -0.5
+    }, "Ctrl and a click made a segment smooth, the handle bent another one to start slowly"),
+    kit.Capture("timeline_curves"),
+    kit.Wait(1),
     // "Beat" (beats 0 .. 4, x 10 .. 170) two beats later and two tracks down, on the free part of "Lead"
     kit.MoveTo({60, 50}),
     kit.Wait(3),

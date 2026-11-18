@@ -304,3 +304,170 @@ test_an_automation_track_holds_points_with_events_and_a_value_between_them :: pr
     testing.expect_value(t, removed, 2)
     testing.expect_value(t, TimelinePointCount(timeline), 0)
 }
+
+@(private = "file")
+maxError :: proc(plan: ^AutomationPlan, time: f64, step: f64, count: int, block: int) -> (worst: f32, mismatches: int) {
+    cursor: AutomationCursor
+    rendered: []f32 = make([]f32, count)
+    exact: []f32 = make([]f32, count)
+    defer delete(rendered)
+    defer delete(exact)
+    for start := 0; start < count; start += block {
+        size: int = min(block, count - start)
+        AutomationRender(plan, &cursor, time + f64(start) * step, step, rendered[start:start + size])
+    }
+    AutomationRenderExact(plan, time, step, exact)
+    for i in 0 ..< count {
+        worst = max(worst, abs(rendered[i] - exact[i]))
+        if abs(rendered[i] - exact[i]) > 1e-6 { mismatches += 1 }
+    }
+    return
+}
+
+@(test)
+test_a_plan_is_the_points_of_a_track_as_flat_segments_with_what_a_block_needs :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    lane, _ := TimelineAutomationAdd(timeline, "p", 0, 10)
+    TimelinePointAdd(timeline, lane, 8, 10)
+    a, _ := TimelinePointAdd(timeline, lane, 2, 2)
+    TimelinePointAdd(timeline, lane, 4, 6)
+    TimelinePointShape(timeline, a, .CURVE, 0.5)
+    storage: [8]AutomationSegment
+    plan, ok := AutomationCompile(timeline, lane, storage[:])
+    testing.expect(t, ok && plan.valid)
+    testing.expect_value(t, len(plan.segments), 2)
+    testing.expect(t, plan.first_value == 2 && plan.last_value == 10, "before the first point and after the last one")
+    first: AutomationSegment = plan.segments[0]
+    testing.expect(t, first.start == 2 && first.end == 4 && first.inverse_length == 0.5 && first.value == 2 && first.change == 4 && first.shape == .CURVE)
+    testing.expect(t, abs(first.coefficient - CurveCoefficient(.CURVE, 0.5)) < 1e-6)
+    testing.expect(t, plan.segments[1].start == 4 && plan.segments[1].end == 8 && plan.segments[1].shape == .LINEAR)
+    small: [1]AutomationSegment
+    _, small_ok := AutomationCompile(timeline, lane, small[:])
+    testing.expect(t, !small_ok, "too small a storage")
+    clips_track, _ := TimelineTrackAdd(timeline, "clips")
+    _, clips_ok := AutomationCompile(timeline, clips_track, storage[:])
+    testing.expect(t, !clips_ok, "a track of clips")
+    empty_lane, _ := TimelineAutomationAdd(timeline, "empty", 0, 1)
+    empty, empty_ok := AutomationCompile(timeline, empty_lane, storage[:])
+    testing.expect(t, empty_ok && !empty.valid)
+    cursor: AutomationCursor
+    block: [4]f32 = {9, 9, 9, 9}
+    AutomationRender(&empty, &cursor, 0, 1, block[:])
+    testing.expect(t, block == {0, 0, 0, 0}, "no points: silence")
+}
+
+@(test)
+test_a_block_is_the_same_as_the_exact_value_of_every_sample_within_a_small_error :: proc(t: ^testing.T) {
+    shapes: [5]CurveShape = {.LINEAR, .HOLD, .SMOOTH, .CURVE, .S_CURVE}
+    storage: [4]AutomationSegment
+    for shape in shapes {
+        timeline: ^Timeline = newTimeline()
+        lane, _ := TimelineAutomationAdd(timeline, "p", 0, 1)
+        a, _ := TimelinePointAdd(timeline, lane, 1, 0.2)
+        TimelinePointAdd(timeline, lane, 2, 0.9)
+        TimelinePointShape(timeline, a, shape, 0.6)
+        plan, _ := AutomationCompile(timeline, lane, storage[:])
+        // from 0.5 to 2.5: the lead, the segment of one unit (48000 samples), the tail; in blocks of 512 and of 77 samples
+        error_512, wrong_512 := maxError(&plan, 0.5, 1.0 / 48000, 96000, 512)
+        error_77, wrong_77 := maxError(&plan, 0.5, 1.0 / 48000, 96000, 77)
+        if shape == .HOLD {
+            // a step: the time of a sample is found as the time of its block plus its place in it, the reference computes it in one go, the rounding differs by a hair: the step may
+            // be one sample off at its edge, nowhere else
+            testing.expectf(t, wrong_512 <= 1 && wrong_77 <= 1, "HOLD: %d (blocks of 512) and %d (of 77) samples are not the reference", wrong_512, wrong_77)
+        } else {
+            limit: f32 = 2e-6 if shape == .LINEAR else 2e-4
+            testing.expectf(t, error_512 <= limit && error_77 <= limit, "%v: error %v (blocks of 512) and %v (of 77), limit %v", shape, error_512, error_77, limit)
+        }
+        free(timeline)
+    }
+}
+
+@(test)
+test_a_strong_bend_costs_a_larger_but_still_small_error_and_a_short_segment_is_exact :: proc(t: ^testing.T) {
+    storage: [4]AutomationSegment
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    lane, _ := TimelineAutomationAdd(timeline, "p", 0, 1)
+    a, _ := TimelinePointAdd(timeline, lane, 0, 0)
+    TimelinePointAdd(timeline, lane, 1, 1)
+    TimelinePointShape(timeline, a, .CURVE, 0.95)
+    plan, _ := AutomationCompile(timeline, lane, storage[:])
+    strong, _ := maxError(&plan, 0, 1.0 / 48000, 48000, 256)
+    testing.expectf(t, strong < 3e-3, "a strong bend over a second: error %v", strong)
+    // 96 samples long: below 125 anchor spaces, so every sample is evaluated: exact up to f32
+    short_timeline: ^Timeline = newTimeline()
+    defer free(short_timeline)
+    short_lane, _ := TimelineAutomationAdd(short_timeline, "s", 0, 1)
+    s1, _ := TimelinePointAdd(short_timeline, short_lane, 0, 0)
+    TimelinePointAdd(short_timeline, short_lane, 0.002, 1)
+    TimelinePointShape(short_timeline, s1, .CURVE, 0.95)
+    short_plan, _ := AutomationCompile(short_timeline, short_lane, storage[:])
+    short_error, _ := maxError(&short_plan, 0, 1.0 / 48000, 200, 64)
+    testing.expect(t, short_error < 1e-6)
+}
+
+@(test)
+test_the_cursor_follows_the_blocks_and_finds_its_place_again_after_a_jump :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    lane, _ := TimelineAutomationAdd(timeline, "p", 0, 100)
+    for i in 0 ..< 10 { TimelinePointAdd(timeline, lane, f64(i), f32(i * 10)) }
+    storage: [16]AutomationSegment
+    plan, _ := AutomationCompile(timeline, lane, storage[:])
+    cursor: AutomationCursor
+    block: [8]f32
+    // a block that crosses from the first segment into the second: 0.5 .. 1.375 in 8 steps
+    AutomationRender(&plan, &cursor, 0.5, 0.125, block[:])
+    testing.expect_value(t, cursor.index, 1)
+    testing.expect(t, abs(block[0] - 5) < 1e-4 && abs(block[7] - 13.75) < 1e-3, "a ramp across the border between two segments")
+    AutomationRender(&plan, &cursor, 1.5, 0.125, block[:])
+    testing.expect_value(t, cursor.index, 2)                             // the cursor is where the next block starts (2.5)
+    testing.expect(t, abs(block[0] - 15) < 1e-4)
+    // back to the start (a loop): found again
+    AutomationRender(&plan, &cursor, 0, 0.125, block[:])
+    testing.expect_value(t, cursor.index, 1)                             // the block ended at 1.0: the next one starts in the second segment
+    testing.expect(t, block[0] == 0 && abs(block[1] - 1.25) < 1e-4)
+    // far ahead (a seek), past the end: the last value
+    AutomationRender(&plan, &cursor, 100, 0.125, block[:])
+    testing.expect(t, block == {90, 90, 90, 90, 90, 90, 90, 90})
+    AutomationRender(&plan, &cursor, -5, 0.125, block[:])
+    testing.expect(t, block == {0, 0, 0, 0, 0, 0, 0, 0}, "before the first point: its value")
+    // a block that starts before the first point and runs into it
+    AutomationRender(&plan, &cursor, -0.5, 0.25, block[:])
+    testing.expect(t, block[0] == 0 && block[1] == 0 && abs(block[3] - 2.5) < 1e-4)
+    // a step of 0: one value
+    AutomationRender(&plan, &cursor, 2.5, 0, block[:])
+    testing.expect(t, block[0] == 25 && block[7] == 25)
+    AutomationRender(&plan, &cursor, 0, 1, block[:0])
+}
+
+@(test)
+test_the_value_of_an_automation_follows_the_shape_of_the_point_before_it :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    lane, _ := TimelineAutomationAdd(timeline, "p", 0, 100)
+    a, _ := TimelinePointAdd(timeline, lane, 0, 0)
+    TimelinePointAdd(timeline, lane, 10, 100)
+    value, _ := TimelineAutomationValue(timeline, lane, 2.5)
+    testing.expect_value(t, value, 25)                                   // linear
+    drainTimeline(timeline)
+    testing.expect(t, TimelinePointShape(timeline, a, .SMOOTH))
+    event, _ := TimelinePollEvent(timeline)
+    testing.expect(t, event.kind == .POINT_SHAPED && event.shape == .SMOOTH && event.previous_shape == .LINEAR && event.track == lane)
+    value, _ = TimelineAutomationValue(timeline, lane, 2.5)
+    testing.expect(t, abs(value - 15.625) < 0.001, "smoothstep at a quarter")
+    testing.expect(t, TimelinePointShape(timeline, a, .CURVE, 0.6) && TimelinePointGet(timeline, a).curve == 0.6)
+    value, _ = TimelineAutomationValue(timeline, lane, 5)
+    testing.expect(t, abs(value - 80) < 0.01, "the curve passes through the shape number at the middle")
+    testing.expect(t, TimelinePointShape(timeline, a, .CURVE, 5) && TimelinePointGet(timeline, a).curve == CURVE_LIMIT, "the bend is limited")
+    testing.expect(t, TimelinePointShape(timeline, a, .HOLD))
+    value, _ = TimelineAutomationValue(timeline, lane, 9.9)
+    testing.expect_value(t, value, 0)
+    testing.expect(t, TimelinePointShape(timeline, a, .SMOOTH))
+    TimelineTrackGet(timeline, lane).steps = true
+    value, _ = TimelineAutomationValue(timeline, lane, 9.9)
+    testing.expect_value(t, value, 0)                                    // the track says hold: whatever the points say
+    drainTimeline(timeline)
+    testing.expect(t, TimelinePointShape(timeline, a, .SMOOTH) && timeline.event_count == 0, "the same shape is nothing")
+}

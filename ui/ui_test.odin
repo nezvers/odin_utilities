@@ -3227,3 +3227,51 @@ test_the_curve_of_a_lane_gets_the_points_in_view_and_one_on_each_side_in_order :
     testing.expect_value(t, curve_first.time, 0.1)
     _, _ = first, second
 }
+
+@(test)
+test_ctrl_and_a_click_on_a_point_cycles_the_shape_of_its_curve :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, lane, first, second := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    testing.expect_value(t, TimelinePointGet(timeline, first).shape, CurveShape.LINEAR)
+    timelineClick(harness, timeline, view, {100, 48}, {.CTRL})
+    testing.expect_value(t, TimelinePointGet(timeline, first).shape, CurveShape.SMOOTH)
+    event: TimelineEvent
+    for {
+        e, has := TimelinePollEvent(timeline)
+        if !has { break }
+        if e.kind == .POINT_SHAPED { event = e }
+    }
+    testing.expect(t, event.point == first && event.track == lane && event.shape == .SMOOTH && event.previous_shape == .LINEAR)
+    testing.expect_value(t, TimelinePointGet(timeline, first).time, 1)   // the click did not move it
+    testing.expect(t, TimelinePointGet(timeline, first).selected && !TimelinePointGet(timeline, second).selected)
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineClick(harness, timeline, view, {100, 48}, {.CTRL})
+    testing.expect_value(t, TimelinePointGet(timeline, first).shape, CurveShape.CURVE)
+}
+
+@(test)
+test_the_handle_of_a_segment_bends_it_and_a_held_segment_has_none :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, first, _ := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    // the segment from (100, 48) to (300, 29): its handle is in the middle, at (200, 38.5)
+    timelineDrag(harness, timeline, view, {200, 38}, {200, 33})
+    bent: ^TimelinePoint = TimelinePointGet(timeline, first)
+    covered: f32 = (33.0 - 48.0) / (29.0 - 48.0)
+    testing.expect_value(t, bent.shape, CurveShape.CURVE)
+    testing.expect(t, abs(bent.curve - (2 * covered - 1)) < 0.03, "the handle is where the curve is at the middle")
+    testing.expect_value(t, TimelinePointGet(timeline, first).time, 1)   // the points did not move
+    // the middle of the bent line is now at the pointer: the handle follows what it shaped
+    value, _ := TimelineAutomationValue(timeline, TimelinePointGet(timeline, first).track, 2)
+    testing.expect(t, abs(value - (50 + 50 * covered)) < 2)
+    // dragged the other way: slow start
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {200, 33}, {200, 44})
+    testing.expect(t, TimelinePointGet(timeline, first).curve < 0, "below the line: it starts slowly")
+    // a held segment has no handle: the same drag in the middle pans instead and the shape stays
+    TimelinePointShape(timeline, first, .HOLD)
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {200, 38}, {200, 33})
+    testing.expect_value(t, TimelinePointGet(timeline, first).shape, CurveShape.HOLD)
+}

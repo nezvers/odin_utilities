@@ -5,7 +5,7 @@ import "core:strings"
 import rl "vendor:raylib"
 import kit ".."
 
-DISPLAY_SETTLE_FRAMES :: 120        // how long the window gets to arrive on its display and take its size (Windows sends its scaling messages after a move)
+DISPLAY_SETTLE_FRAMES :: 300        // how long the window gets to arrive on its display and take its size (Windows sends its scaling messages after a move)
 DISPLAY_STABLE_FRAMES :: 5          // how many frames in a row it has to be right
 
 // Puts the window on the display that DEMO_MONITOR names (when it is set), then makes its drawing area `width` x `height` pixels whatever the scaling of the display is.

@@ -25,7 +25,10 @@ CurvePoint :: struct {
     point: PointHandle,
     time: f64,
     value: f32,
+    shape: CurveShape,          // the shape of the segment that leaves this point (to the next one in the list)
+    curve: f32,
     flags: Flags,               // SELECTED, HOVERED, PRESSED: it is being dragged
+    handle_flags: Flags,        // of the handle that bends the segment that leaves it: HOVERED, PRESSED
 }
 
 // The curve of an automation lane: the points in the order of their time, those in view and one before and one after them (for the lines that leave the view).

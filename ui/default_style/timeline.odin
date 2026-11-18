@@ -133,13 +133,23 @@ DrawCurve :: proc(ctx: ^ui.Context, curve: ^ui.CurveDraw) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
     color: ui.Color = curve.color if curve.color.a > 0 else GraphTypeColor(5)
+    pieces: [64]ui.Vec2
     for i in 1 ..< len(curve.points) {
         a, b: ui.CurvePoint = curve.points[i - 1], curve.points[i]
-        if curve.steps {
-            Line(painter, {a.x, a.y}, {b.x, a.y}, 2, color)
-            Line(painter, {b.x, a.y}, {b.x, b.y}, 2, color)
-        } else {
-            Line(painter, {a.x, a.y}, {b.x, b.y}, 2, color)
+        previous: ui.Vec2 = {a.x, a.y}
+        for next in ui.CurveSegmentPoints(a.shape, a.curve, {a.x, a.y}, {b.x, b.y}, pieces[:]) {
+            Line(painter, previous, next, 2, color)
+            previous = next
+        }
+        // the handle that bends the segment (a held one has none)
+        if a.shape != .HOLD && b.x >= curve.rect.x && a.x <= curve.rect.x + curve.rect.z {
+            along, covered := ui.CurveHandle(a.shape, a.curve)
+            center: ui.Vec2 = {a.x + (b.x - a.x) * along, a.y + (b.y - a.y) * covered}
+            active: bool = .HOVERED in a.handle_flags || .PRESSED in a.handle_flags
+            size: f32 = 4 if active else 3
+            outline: ui.Color = ui.ColorLerp(color, ui.Color{255, 255, 255, 255}, 0.6 if active else 0.2)
+            painter.fill_rect(painter, {center.x - size, center.y - size, size * 2, size * 2}, outline)
+            painter.fill_rect(painter, {center.x - size + 1.5, center.y - size + 1.5, size * 2 - 3, size * 2 - 3}, ui.ColorLerp(theme.track, color, 0.3 if active else 0))
         }
     }
     for point in curve.points {

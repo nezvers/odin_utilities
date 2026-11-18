@@ -159,10 +159,22 @@ run :: proc(library: string, backend: string, program: string, update: bool) -> 
         }
     }
     if state.exit_code != 0 && len(result.failures) == 0 {
-        // the program ended with an error that is not a picture: the last lines of what it printed
-        lines: []string = strings.split_lines(strings.trim_space(string(stderr)) if len(stderr) > 0 else strings.trim_space(string(stdout)), context.temp_allocator)
-        tail: []string = lines[max(len(lines) - 3, 0):]
-        result.error = fmt.aprintf("exit code %d: %s", state.exit_code, strings.join(tail, " | ", context.temp_allocator))
+        // the program ended with an error that is not a picture: what the demos say went wrong ("[DEMO TEST]" lines about the display or a script that did not end), else the last lines of the output
+        reasons: [dynamic]string
+        reasons.allocator = context.temp_allocator
+        for line in strings.split_lines(string(stdout), context.temp_allocator) {
+            text: string = strings.trim_space(line)
+            if strings.has_prefix(text, "[DEMO TEST]") && (strings.contains(text, "cannot") || strings.contains(text, "no display") || strings.contains(text, "NOT finish") || strings.contains(text, "the window on")) {
+                append(&reasons, text)
+            }
+        }
+        if len(reasons) > 0 {
+            result.error = fmt.aprintf("exit code %d: %s", state.exit_code, strings.join(reasons[:], " | ", context.temp_allocator))
+        } else {
+            lines: []string = strings.split_lines(strings.trim_space(string(stderr)) if len(stderr) > 0 else strings.trim_space(string(stdout)), context.temp_allocator)
+            tail: []string = lines[max(len(lines) - 3, 0):]
+            result.error = fmt.aprintf("exit code %d: %s", state.exit_code, strings.join(tail, " | ", context.temp_allocator))
+        }
     } else if !saw_report && result.error == "" {
         result.error = "the demos printed no capture report (is there a window? are there Capture steps in the scripts?)"
     }

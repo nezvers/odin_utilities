@@ -80,10 +80,13 @@ TimelinePoint :: struct {
     track: TrackHandle,
     time: f64,
     value: f32,
+    shape: CurveShape,          // the shape of the curve from this point to the next one (a point has none after it: the last value is held)
+    curve: f32,                 // -1 .. 1: how bent CURVE and S_CURVE are (see timeline_curve.odin)
     selected: bool,
     drag_selected: bool,
     drag_time: f64,             // where it was when a drag began (timeline_widgets.odin)
     drag_value: f32,
+    drag_curve: f32,
 }
 
 TimelineMarker :: struct {
@@ -114,6 +117,7 @@ TimelineEventKind :: enum u8 {
     POINT_ADDED,        // an automation point: `point`, `track`, `time`, `value`
     POINT_MOVED,        // the new `time` and `value`, and `previous_start` and `previous_value`
     POINT_REMOVED,
+    POINT_SHAPED,       // the curve after a point changed: `shape` and `curve` (and what they were)
 }
 
 // What happened, with the user pointers of the clip, its track and the timeline, and what it was before (for an undo).
@@ -132,6 +136,10 @@ TimelineEvent :: struct {
     point: PointHandle,
     value: f32,
     previous_value: f32,
+    shape: CurveShape,
+    previous_shape: CurveShape,
+    curve: f32,
+    previous_curve: f32,
     copied_from: ClipHandle,    // CLIP_ADDED by a paste: the clip it is a copy of (the handle may be gone when it was cut): a program that keeps data for a clip makes its own copy of it now
     clip_user: rawptr,
     track_user: rawptr,
@@ -576,6 +584,18 @@ TimelinePointMove :: proc(timeline: ^Timeline, handle: PointHandle, time: f64, v
     return true
 }
 
+// Sets the shape of the curve that leaves a point. One event with what it was. False when the point is gone.
+TimelinePointShape :: proc(timeline: ^Timeline, handle: PointHandle, shape: CurveShape, curve: f32 = 0) -> bool {
+    point: ^TimelinePoint = TimelinePointGet(timeline, handle)
+    if point == nil { return false }
+    clamped: f32 = clamp(curve, -CURVE_LIMIT, CURVE_LIMIT)
+    if point.shape == shape && point.curve == clamped { return true }
+    event: TimelineEvent = {kind = .POINT_SHAPED, point = handle, track = point.track, time = point.time, value = point.value, shape = shape, previous_shape = point.shape, curve = clamped, previous_curve = point.curve}
+    point.shape, point.curve = shape, clamped
+    timelineEmit(timeline, event)
+    return true
+}
+
 TimelinePointRemove :: proc(timeline: ^Timeline, handle: PointHandle) -> bool {
     point: ^TimelinePoint = TimelinePointGet(timeline, handle)
     if point == nil { return false }
@@ -626,8 +646,8 @@ TimelineAutomationValue :: proc(timeline: ^Timeline, track: TrackHandle, time: f
     case before == nil && after == nil: return 0, false
     case before == nil: return after.value, true
     case after == nil: return before.value, true
-    case owner.steps: return before.value, true
     }
+    shape: CurveShape = .HOLD if owner.steps else before.shape
     fraction: f32 = f32((time - before.time) / (after.time - before.time))
-    return before.value + (after.value - before.value) * fraction, true
+    return before.value + (after.value - before.value) * CurveEval(shape, before.curve, fraction), true
 }
