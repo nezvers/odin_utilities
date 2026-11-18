@@ -97,6 +97,13 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             rl.UnloadFont(state.fonts[font])
             state.fonts[font] = {}
         },
+        measure_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, size: f32) -> kit.Vec2 {
+            state: ^State = cast(^State)backend.state
+            face: rl.Font = rl.GetFontDefault()
+            if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
+            buffer: [TEXT_BUFFER_SIZE]u8
+            return rl.MeasureTextEx(face, cstringInto(&buffer, text), size, 0)
+        },
         draw_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
             state: ^State = cast(^State)backend.state
             face: rl.Font = rl.GetFontDefault()

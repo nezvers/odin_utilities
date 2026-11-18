@@ -41,6 +41,7 @@ HeadlessInit :: proc(backend: ^Backend, state: ^HeadlessState, screen: Vec2 = HE
             return Font(state.fonts_loaded)
         },
         font_unload = proc(backend: ^Backend, font: Font) {},
+        measure_text_font = proc(backend: ^Backend, font: Font, text: string, size: f32) -> Vec2 { return {f32(len(text)) * size * 0.5, size} },
         draw_text_font = proc(backend: ^Backend, font: Font, text: string, position: Vec2, size: f32, color: Color) {},
         texture_load = headlessTextureLoad,
         texture_from_pixels = proc(backend: ^Backend, width: int, height: int, rgba: []u8) -> Texture {

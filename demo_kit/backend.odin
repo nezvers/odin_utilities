@@ -57,6 +57,7 @@ Backend :: struct {
     // a font from the bytes of a ttf file with the glyphs of the unicode range 0 .. glyph_count (a language other than english needs them)
     font_load: proc(backend: ^Backend, bytes: []u8, size: f32, glyph_count: int) -> Font,
     font_unload: proc(backend: ^Backend, font: Font),
+    measure_text_font: proc(backend: ^Backend, font: Font, text: string, size: f32) -> Vec2,
     draw_text_font: proc(backend: ^Backend, font: Font, text: string, position: Vec2, size: f32, color: Color),
 
     // images: loaded from the bytes of a file (`#load` embeds them, so no working directory matters)
@@ -153,6 +154,12 @@ FontLoad :: proc(ctx: ^Context, bytes: []u8, size: f32 = 32, glyph_count: int = 
 FontUnload :: proc(ctx: ^Context, font: Font) {
     if font == FONT_DEFAULT { return }
     ctx.backend.font_unload(ctx.backend, font)
+}
+
+// The size of a text in a loaded font (FONT_DEFAULT: the font of the framework, the same as MeasureText).
+MeasureTextFont :: proc(ctx: ^Context, font: Font, text: string, size: f32) -> Vec2 {
+    if font == FONT_DEFAULT { return MeasureText(ctx, text, size) }
+    return ctx.backend.measure_text_font(ctx.backend, font, text, size)
 }
 
 DrawTextFont :: proc(ctx: ^Context, font: Font, text: string, position: Vec2, size: f32, color: Color) {

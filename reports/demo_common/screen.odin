@@ -8,6 +8,13 @@ import ui_default "../../ui/default_style"
 import ui_kit "../../ui/kit"
 import kit "../../demo_kit"
 
+// the same font as the demos of the ui (optional file, see assets/fonts)
+when #exists("../../assets/fonts/JetBrainsSans-Regular.ttf") {
+    SCREEN_FONT: []byte = #load("../../assets/fonts/JetBrainsSans-Regular.ttf")
+} else {
+    SCREEN_FONT: []byte
+}
+
 Screen :: struct {
     storage: ui.Storage(6144, 12288, 1024, 65536),
     ctx: ui.Context,
@@ -22,6 +29,7 @@ screen_init :: proc(screen: ^Screen) {
 }
 
 screen_begin :: proc(screen: ^Screen, kit_ctx: ^kit.Context) {
+    ui_kit.PainterFont(&screen.painter, kit_ctx, SCREEN_FONT)
     ui_kit.Begin(&screen.ctx, &screen.painter, &screen.style, kit_ctx)
 }
 

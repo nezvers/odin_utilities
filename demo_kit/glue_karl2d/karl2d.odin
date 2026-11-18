@@ -107,6 +107,12 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             karl2d.destroy_font(state.fonts[font])
             state.fonts[font] = {}
         },
+        measure_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, size: f32) -> kit.Vec2 {
+            state: ^State = cast(^State)backend.state
+            face: karl2d.Font = karl2d.FONT_DEFAULT
+            if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
+            return karl2d.measure_text(text, size, face)
+        },
         draw_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
             state: ^State = cast(^State)backend.state
             face: karl2d.Font = karl2d.FONT_DEFAULT

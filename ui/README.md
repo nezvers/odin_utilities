@@ -261,6 +261,7 @@ Run: `odin test ui`, `odin test ui/demo_common` (the scripts click real widgets)
 
 ## Testing the look
 Three levels: `odin test ui` (layout and behavior with a fake font), `odin test ui/demo_common` (scripted clicks on real widgets, headless) and screen captures:
+The demos draw with JetBrains Sans Regular when `assets/fonts/JetBrainsSans-Regular.ttf` exists (see `assets/fonts/README.md`: the file is not in the repository), through `ui_kit.PainterFont` (`Painter.font`, `kit.MeasureTextFont`); without it they use the font of the framework and the stored screenshots do not match.
 `odin run ui/demo_raylib -define:DEMO_TEST=true -define:DEMO_CAPTURE=true` compares frames with `demo_common/captures/<backend>/*.png`
 (see `demo_kit/README.md`). `UiCommands(&ctx)` is the third way: assert on what the style would be asked to draw, without pixels.
 
