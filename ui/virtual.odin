@@ -27,6 +27,7 @@ VirtualList :: struct {
     changed: bool,              // the selection changed in this frame by the person
     activated: bool,            // a double click or Enter on the selected row in this frame
     hover: int,                 // the row under the pointer, VIRTUAL_NONE for none
+    hover_fraction: f32,        // how far down in that row the pointer is: 0 at its top edge, 1 at its bottom edge
     row_height: f32,
     count: int,
     chosen: []bool,             // the program says which rows are part of a selection of several (drawn like the selected one): by row, only the rows in view are asked
@@ -60,7 +61,10 @@ virtualOpen :: proc(ctx: ^Context, id: Id, list: ^VirtualList, count: int, row_h
         row: int = int(math.floor((mouse.y - view.y - state.scroll.y) / height))
         return row if row >= 0 && row < count else VIRTUAL_NONE
     }
-    if ctx.hover == id && ctx.disabled_depth == 0 { list.hover = row_at(state, view, mouse, height, count) }
+    if ctx.hover == id && ctx.disabled_depth == 0 {
+        list.hover = row_at(state, view, mouse, height, count)
+        if list.hover != VIRTUAL_NONE { list.hover_fraction = clamp((mouse.y - view.y - state.scroll.y) / height - f32(list.hover), 0, 1) }
+    }
     if interaction.hovered && ctx.input.mouse_pressed {
         row: int = row_at(state, view, mouse, height, count)
         if row != VIRTUAL_NONE {

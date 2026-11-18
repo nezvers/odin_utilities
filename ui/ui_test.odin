@@ -3680,3 +3680,56 @@ test_a_tree_selects_several_nodes_and_moves_them_together :: proc(t: ^testing.T)
     treeFrame(ctx, &style, tree, view, pointerAt({-10, -10}))
     testing.expect_value(t, ctx.problems, Problems{})
 }
+
+@(test)
+test_a_tree_drop_goes_before_or_after_the_row_by_how_far_down_the_pointer_is :: proc(t: ^testing.T) {
+    storage: ^InspectorStorage = new(InspectorStorage)
+    ctx: ^Context = new(Context)
+    tree: ^Tree = new(Tree)
+    view: ^TreeView = new(TreeView)
+    defer { free(storage); free(ctx); free(tree); free(view) }
+    style: Style = makeStyle()
+    UiInit(ctx, storage, testMeasure)
+    TreeInit(tree)
+    TreeViewInit(view)
+    a, _ := TreeAdd(tree, {}, "a")
+    b, _ := TreeAdd(tree, {}, "b")
+    c, _ := TreeAdd(tree, {}, "c")
+    folder, _ := TreeAdd(tree, {}, "folder", branch = true)
+    for _ in 0 ..< 3 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    // rows are 20 high from y 0; drag from the middle of a row to a height in another row
+    drag :: proc(ctx: ^Context, style: ^Style, tree: ^Tree, view: ^TreeView, from: f32, to: f32) {
+        treeFrame(ctx, style, tree, view, pointerAt({120, from}))
+        treeFrame(ctx, style, tree, view, pointerAt({120, from}, true, true))
+        treeFrame(ctx, style, tree, view, pointerAt({120, (from + to) / 2}, true))
+        treeFrame(ctx, style, tree, view, pointerAt({120, to}, true))
+        treeFrame(ctx, style, tree, view, pointerAt({120, to}, false, false, true))
+        treeFrame(ctx, style, tree, view, pointerAt({-10, -10}))
+    }
+    order :: proc(tree: ^Tree) -> [8]TreeHandle {
+        result: [8]TreeHandle
+        i: int
+        for current := tree.first; current != {} && i < 8; current = TreeGet(tree, current).next {
+            result[i] = current
+            i += 1
+        }
+        return result
+    }
+    drag(ctx, &style, tree, view, 50, 2)                                         // c onto the top edge of a: before it
+    first := order(tree)
+    testing.expect(t, first[0] == c && first[1] == a && first[2] == b && first[3] == folder)
+    drag(ctx, &style, tree, view, 10, 58)                                        // c (row 0 now) onto the bottom of b (row 2): after it
+    second := order(tree)
+    testing.expect(t, second[0] == a && second[1] == b && second[2] == c && second[3] == folder)
+    // a branch: the top quarter is before it, the bottom quarter after it (a sibling, not inside), the middle is inside
+    drag(ctx, &style, tree, view, 10, 62)                                        // a onto the top of folder (row 3)
+    third := order(tree)
+    testing.expect(t, third[0] == b && third[1] == c && third[2] == a && third[3] == folder)
+    drag(ctx, &style, tree, view, 10, 78)                                        // b onto the bottom of folder: after it
+    fourth := order(tree)
+    testing.expect(t, fourth[0] == c && fourth[1] == a && fourth[2] == folder && fourth[3] == b)
+    testing.expect_value(t, TreeGet(tree, folder).child_count, 0)
+    drag(ctx, &style, tree, view, 10, 50)                                        // c onto the middle of folder (row 2: y 40 .. 60): inside
+    testing.expect_value(t, TreeGet(tree, c).parent, folder)
+    testing.expect_value(t, ctx.problems, Problems{})
+}

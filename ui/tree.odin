@@ -324,6 +324,14 @@ TreeVisibleFiltered :: proc(tree: ^Tree, rows: []TreeRow, filter: string) -> int
     return count
 }
 
+// Where a dropped node goes relative to the row it is dropped on: into it (a branch: the middle half of the row), before it, or after it (the top and the bottom quarter of a branch, the
+// top and the bottom half of a node that is not one).
+TreeDropZone :: enum u8 {
+    INTO,
+    BEFORE,
+    AFTER,
+}
+
 // What the widget keeps and tells: the visible rows, the selection, and what happened in this frame.
 TreeView :: struct {
     list: VirtualList,
@@ -349,6 +357,7 @@ TreeView :: struct {
     chosen: [TREE_ROWS]bool,    // the rows in view that are marked (what UiVirtualRow draws as selected)
     anchor: TreeHandle,         // where a Shift and a click starts from: the last node clicked without Shift
     pending_single: TreeHandle, // a press on a marked node keeps the marks until the button is up: a drag moves them all, a click selects only that node
+    drop_zone: TreeDropZone,    // where a drop on the row under the pointer would put the node: decided by how far down in the row the pointer is
     moved_count: int,           // how many nodes the last drop moved (view.moved is the first of them)
 }
 
@@ -427,7 +436,7 @@ UiTree :: proc(ctx: ^Context, name: string, tree: ^Tree, view: ^TreeView, size: 
         view.list.selected = treeRowOf(view, view.selected)
     }
 
-    view.list.marked = view.drop_row + 1 if view.dragging && view.drop_row != VIRTUAL_NONE else 0
+    view.list.marked = view.drop_row + 1 if view.dragging && view.drop_row != VIRTUAL_NONE && view.drop_zone == .INTO else 0
     view.list.chosen = view.chosen[:]
     if UiVirtual(ctx, name, &view.list, view.row_count, height, size) {
         if view.list.changed && view.list.selected != VIRTUAL_NONE {
@@ -480,6 +489,15 @@ UiTree :: proc(ctx: ^Context, name: string, tree: ^Tree, view: ^TreeView, size: 
             node: ^TreeNode = TreeGet(tree, row.node)
             if node == nil { continue }
             if UiVirtualRow(ctx, &view.list, row_index) {
+                if view.dragging && view.drop_row == row_index && view.drop_zone != .INTO {
+                    // the line where the node would go
+                    ElementOpen(ctx, {
+                        layout = {size = {Grow(), Fixed(2)}},
+                        absolute = {enabled = true, offset = {0, 0 if view.drop_zone == .BEFORE else height - 2}},
+                        draw = {kind = .HIGHLIGHT, color = {90, 190, 255, 255}},
+                    })
+                    ElementClose(ctx)
+                }
                 ElementOpen(ctx, {layout = {size = {Fixed(f32(row.depth) * TREE_INDENT + 4), Grow()}}})
                 ElementClose(ctx)
                 arrow_id: Id = IdFromIndex(u32(row.node.idx) | u32(row.node.gen) << 16, id)
@@ -536,6 +554,16 @@ treeDrag :: proc(ctx: ^Context, tree: ^Tree, view: ^TreeView) {
         delta: Vec2 = mouse - view.drag_start
         if !view.dragging && delta.x * delta.x + delta.y * delta.y > 36 { view.dragging = true }
         view.drop_row = view.list.hover if view.dragging else VIRTUAL_NONE
+        if view.drop_row != VIRTUAL_NONE {
+            node: ^TreeNode = TreeGet(tree, view.rows[view.drop_row].node)
+            expandable: bool = node != nil && (node.branch || node.first_child != {})
+            fraction: f32 = view.list.hover_fraction
+            switch {
+            case expandable && fraction < 0.25, !expandable && fraction < 0.5: view.drop_zone = .BEFORE
+            case expandable && fraction > 0.75, !expandable: view.drop_zone = .AFTER
+            case: view.drop_zone = .INTO
+            }
+        }
         return
     }
     // released: the marked nodes go together when the one that was grabbed is one of them
@@ -565,8 +593,12 @@ treeDrag :: proc(ctx: ^Context, tree: ^Tree, view: ^TreeView) {
         count = top
         if target != nil && !blocked && count > 0 {
             parent, before: TreeHandle = target.parent, target.next
-            into: bool = target.branch || target.first_child != {}
-            if into { parent, before = target.handle, {} }
+            into: bool = view.drop_zone == .INTO
+            switch view.drop_zone {
+            case .INTO: parent, before = target.handle, {}
+            case .BEFORE: before = target.handle
+            case .AFTER:
+            }
             // not before a node that moves too
             for before != {} {
                 skipped: bool

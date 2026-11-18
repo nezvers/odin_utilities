@@ -43,7 +43,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Tree: drag and drop of nodes (`TreeMove`, `view.moved`, `view.can_drop`) and rename in place (F2, `TreeRename`, `view.renamed`), demo with a screenshot
 - [x] Tree: a filter that opens the parents of what matches (`TreeViewFilter`, `TreeVisibleFiltered`)
 - [x] Tree: several selected nodes (Ctrl and a click, Shift and a click for a range, `TreeMarked`), dragged together (`view.moved_count`)
-- [ ] Tree: dropping before or after a branch (now: onto a branch goes in, onto a file goes after it), icons or custom row content
+- [x] Tree: a drop goes before, after or into a row by how far down in it the pointer is (`TreeDropZone`, a line shows where)
+- [ ] Tree: icons or custom row content
 - [ ] Text area: rows are found from the whole text every frame (measures per word): keep them between frames while the text and the width do not change
 - [x] Text measure cache (`measure.odin`): a fixed table by hash of text and size, cleared by a new font or UI scale
 - [x] UI scale factor (`Painter.scale`): layout and styles in logical units, the glue scales the drawing and divides the pointer; demo `scale`

@@ -117,5 +117,24 @@ script: []kit.Step = {
         return readme != nil && ui.TreeName(readme) == "README.md" && nameOf(readme.parent) == "data" && state.view.row_count == 8
     }, "dragging README.md onto the folder moved it in"),
     kit.Capture("tree_moved"),
+    kit.Wait(1),
+    // while a row is dragged a line shows where it would go: the top of the row "notes.txt" is before it
+    kit.MoveTo({150, 10 + 24 * 7 + 12}),
+    kit.Wait(2),
+    kit.MouseDownStep(),
+    kit.Wait(1),
+    kit.MoveTo({150, 10 + 24 * 5}),
+    kit.Wait(1),
+    kit.MoveTo({150, 10 + 24 * 3 + 3}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.view.dragging && state.view.drop_zone == .BEFORE }, "the pointer is at the top of a file: the drop goes before it"),
+    kit.Capture("tree_dropline"),
+    kit.Wait(1),
+    kit.MouseUpStep(),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        moved: ^ui.TreeNode = ui.TreeGet(&state.tree, state.moved)
+        return moved != nil && ui.TreeName(moved) == "src" && nameOf(moved.parent) == "data" && nameOf(moved.next) == "notes.txt"
+    }, "src went in before notes.txt"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
