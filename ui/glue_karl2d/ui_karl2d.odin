@@ -30,23 +30,26 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^karl2d.Font = nil) {
         user = font,
         theme = ui_default.THEME_DARK,
         fill_rect = proc(painter: ^ui_default.Painter, rect: ui.Rect, color: ui.Color) {
-            karl2d.draw_rect(transmute(karl2d.Rect)rect, color)
+            karl2d.draw_rect(transmute(karl2d.Rect)(rect * ui_default.PainterScale(painter)), color)
         },
         fill_polygon = proc(painter: ^ui_default.Painter, points: []ui.Vec2, color: ui.Color) {
             // the polygon is convex: a fan from its first point
+            scale: f32 = ui_default.PainterScale(painter)
             for i in 1 ..< len(points) - 1 {
-                karl2d.draw_triangle({points[0], points[i], points[i + 1]}, color)
+                karl2d.draw_triangle({points[0] * scale, points[i] * scale, points[i + 1] * scale}, color)
             }
         },
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
-            karl2d.draw_text(text, position, size, color, fontOf(painter))
+            scale: f32 = ui_default.PainterScale(painter)
+            karl2d.draw_text(text, position * scale, size * scale, color, fontOf(painter))
         },
         measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
-            return karl2d.measure_text(text, size, fontOf(painter))
+            scale: f32 = ui_default.PainterScale(painter)
+            return karl2d.measure_text(text, size * scale, fontOf(painter)) / scale
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             if begin {
-                karl2d.set_scissor_rect(transmute(karl2d.Rect)rect)
+                karl2d.set_scissor_rect(transmute(karl2d.Rect)(rect * ui_default.PainterScale(painter)))
             } else {
                 karl2d.set_scissor_rect(nil)
             }
@@ -60,14 +63,15 @@ fontOf :: proc(painter: ^ui_default.Painter) -> karl2d.Font {
     return (cast(^karl2d.Font)painter.user)^
 }
 
-ScreenSize :: proc() -> ui.Vec2 {
-    return {f32(karl2d.get_screen_width()), f32(karl2d.get_screen_height())}
+// The size of the window in logical units: pass the UI scale of the painter (`ui_default.PainterScale(&painter)`)
+ScreenSize :: proc(scale: f32 = 1) -> ui.Vec2 {
+    return {f32(karl2d.get_screen_width()), f32(karl2d.get_screen_height())} / scale
 }
 
-// What Karl2D knows of this frame (call it after karl2d.update), for ui.UiBegin
-InputPoll :: proc() -> ui.Input {
+// What Karl2D knows of this frame (call it after karl2d.update), for ui.UiBegin. The pointer is given in logical units: pass the UI scale of the painter.
+InputPoll :: proc(scale: f32 = 1) -> ui.Input {
     input: ui.Input = {
-        mouse_position = karl2d.get_mouse_position(),
+        mouse_position = karl2d.get_mouse_position() / scale,
         mouse_down = karl2d.mouse_button_is_held(.Left),
         mouse_pressed = karl2d.mouse_button_went_down(.Left),
         mouse_released = karl2d.mouse_button_went_up(.Left),

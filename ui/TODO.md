@@ -20,9 +20,9 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Knob, fader and level meter (`widgets_audio.odin`, default style in `default_style/audio.odin`), demo `audio` with a screenshot
 - [ ] Text field: selection, copy and paste, several lines
 - [ ] Text measure cache (text hash and size) so big tables and logs do not measure every frame
-- [ ] UI scale factor for high DPI screens (metrics and input)
+- [x] UI scale factor (`Painter.scale`): layout and styles in logical units, the glue scales the drawing and divides the pointer; demo `scale`
 - [x] Node graph: box selection, moving several nodes together, Delete for selected nodes
-- [ ] Node graph: zoom of the canvas (the view only pans). Nodes are real widgets with pixel metrics, so a true zoom needs the UI scale factor below first (scale metrics, text and input together)
+- [ ] Node graph: zoom of the canvas (the view only pans). The UI scale factor exists now, but it is for the whole ui: a zoom of one canvas needs a scale that applies to the nodes only (a scale per subtree in the painter)
 - [ ] Node graph: copy and paste of a selection
 - [ ] Node graph: reroute points on a cable, labels on cables, a node that collapses to its title
 - [x] `Decl.absolute`: a child out of the flow of its parent at an offset (no root, no limit but the storage); the graph nodes use it

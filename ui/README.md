@@ -157,6 +157,12 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
 and `UiMeter` (a level and a peak mark that the program holds and lets fall, standing or lying). Each is one element with a style kind (`KNOB`, `FADER`, `METER`): value 0..1, the real number, its text, where the default is. Nothing allocates;
 the scroll areas have a draggable scrollbar (the thumb keeps its place under the pointer, a press on the track centers it).
 
+## UI scale
+`ui_default.Painter.scale` (0 is 1) makes the whole ui bigger or smaller, for a high DPI screen or a setting for people who want it bigger. The layout and every style keep working in logical units; the glue does the rest at the two borders:
+the painter multiplies every coordinate and size it draws (text is measured at the drawn size and the answer is divided, so the layout gets logical sizes) and the pointer and the screen size are divided
+(`InputPoll(scale)`, `ScreenSize(scale)` of the raylib and Karl2D glue, `ui_kit.Begin` reads the painter). A style that draws through the painter needs no change (borders, radii and lines scale with it).
+Pass `ui_default.PainterScale(&painter)` to the glue; the scale can change from one frame to the next. Demo: `demo_common/demo_scale.odin`.
+
 ## Layout of the folder
 ```
 ui.odin files   common, id, element (types), context (Begin/End/state), layout (Clay port), widgets, style, render, rounded, graph* (node graph), ui_test.odin

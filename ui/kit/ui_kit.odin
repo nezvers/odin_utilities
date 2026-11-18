@@ -11,24 +11,30 @@ PainterInit :: proc(painter: ^ui_default.Painter) {
     painter^ = {
         theme = ui_default.THEME_DARK,
         fill_rect = proc(painter: ^ui_default.Painter, rect: ui.Rect, color: ui.Color) {
-            kit.DrawRect(contextOf(painter), kit.Rect(rect), kit.Color(color))
+            kit.DrawRect(contextOf(painter), kit.Rect(rect * ui_default.PainterScale(painter)), kit.Color(color))
         },
         fill_polygon = proc(painter: ^ui_default.Painter, points: []ui.Vec2, color: ui.Color) {
             // the polygon is convex: a fan from its first point
+            scale: f32 = ui_default.PainterScale(painter)
             for i in 1 ..< len(points) - 1 {
-                kit.DrawTriangle(contextOf(painter), points[0], points[i], points[i + 1], kit.Color(color))
+                kit.DrawTriangle(contextOf(painter), points[0] * scale, points[i] * scale, points[i + 1] * scale, kit.Color(color))
             }
         },
-        fill_rounded = fillRounded,
+        fill_rounded = proc(painter: ^ui_default.Painter, rect: ui.Rect, radius: f32, color: ui.Color) {
+            scale: f32 = ui_default.PainterScale(painter)
+            fillRounded(painter, rect * scale, radius * scale, color)
+        },
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
-            kit.DrawText(contextOf(painter), text, position, size, kit.Color(color))
+            scale: f32 = ui_default.PainterScale(painter)
+            kit.DrawText(contextOf(painter), text, position * scale, size * scale, kit.Color(color))
         },
         measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
-            return kit.MeasureText(contextOf(painter), text, size)
+            scale: f32 = ui_default.PainterScale(painter)
+            return kit.MeasureText(contextOf(painter), text, size * scale) / scale
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             if begin {
-                kit.ClipBegin(contextOf(painter), kit.Rect(rect))
+                kit.ClipBegin(contextOf(painter), kit.Rect(rect * ui_default.PainterScale(painter)))
             } else {
                 kit.ClipEnd(contextOf(painter))
             }
@@ -56,11 +62,11 @@ fillRounded :: proc(painter: ^ui_default.Painter, rect: ui.Rect, radius: f32, co
     kit.DrawCircle(ctx, {rect.x + rect.z - r, rect.y + rect.w - r}, r, color_kit)
 }
 
-// The input of a kit frame for the ui. A pointer over the menu of the kit (ctx.ui_hover) is not for the ui.
-InputFrom :: proc(ctx: ^kit.Context) -> ui.Input {
+// The input of a kit frame for the ui. A pointer over the menu of the kit (ctx.ui_hover) is not for the ui. `scale` is the UI scale: the pointer is given in logical units.
+InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
     source: ^kit.Input = &ctx.input
     result: ui.Input = {
-        mouse_position = source.mouse_position,
+        mouse_position = source.mouse_position / scale,
         mouse_down = .LEFT in source.mouse_down,
         mouse_pressed = .LEFT in source.mouse_pressed,
         mouse_released = .LEFT in source.mouse_released,
@@ -101,5 +107,6 @@ InputFrom :: proc(ctx: ^kit.Context) -> ui.Input {
 // Starts a ui frame inside of a demo's draw: the painter draws into `kit_ctx`, the input is the one of the frame.
 Begin :: proc(ui_ctx: ^ui.Context, painter: ^ui_default.Painter, style: ^ui.Style, kit_ctx: ^kit.Context) {
     painter.user = kit_ctx
-    ui.UiBegin(ui_ctx, InputFrom(kit_ctx), kit_ctx.delta_time, kit_ctx.screen, style)
+    scale: f32 = ui_default.PainterScale(painter)
+    ui.UiBegin(ui_ctx, InputFrom(kit_ctx, scale), kit_ctx.delta_time, kit_ctx.screen / scale, style)
 }

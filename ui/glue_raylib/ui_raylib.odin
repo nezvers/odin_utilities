@@ -26,25 +26,29 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
         user = font,
         theme = ui_default.THEME_DARK,
         fill_rect = proc(painter: ^ui_default.Painter, rect: ui.Rect, color: ui.Color) {
-            rl.DrawRectangleRec(transmute(rl.Rectangle)rect, rl.Color(color))
+            rl.DrawRectangleRec(transmute(rl.Rectangle)(rect * ui_default.PainterScale(painter)), rl.Color(color))
         },
         fill_polygon = fillPolygon,
         fill_rounded = proc(painter: ^ui_default.Painter, rect: ui.Rect, radius: f32, color: ui.Color) {
             // raylib's roundness is the radius as a part of half of the shortest side: the same as the rounding of the ui
+            scale: f32 = ui_default.PainterScale(painter)
             roundness: f32 = radius / (min(rect.z, rect.w) * 0.5)
-            rl.DrawRectangleRounded(transmute(rl.Rectangle)rect, roundness, i32(ui.RoundedSegments(radius) * 4), rl.Color(color))
+            rl.DrawRectangleRounded(transmute(rl.Rectangle)(rect * scale), roundness, i32(ui.RoundedSegments(radius * scale) * 4), rl.Color(color))
         },
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
             buffer: [TEXT_BUFFER_SIZE]u8
-            rl.DrawTextEx(fontOf(painter), cstringInto(&buffer, text), position, size, size / 10, rl.Color(color))
+            scale: f32 = ui_default.PainterScale(painter)
+            rl.DrawTextEx(fontOf(painter), cstringInto(&buffer, text), position * scale, size * scale, size * scale / 10, rl.Color(color))
         },
         measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
             buffer: [TEXT_BUFFER_SIZE]u8
-            return rl.MeasureTextEx(fontOf(painter), cstringInto(&buffer, text), size, size / 10)
+            scale: f32 = ui_default.PainterScale(painter)
+            return rl.MeasureTextEx(fontOf(painter), cstringInto(&buffer, text), size * scale, size * scale / 10) / scale
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             if begin {
-                rl.BeginScissorMode(i32(rect.x), i32(rect.y), i32(rect.z), i32(rect.w))
+                physical: ui.Rect = rect * ui_default.PainterScale(painter)
+                rl.BeginScissorMode(i32(physical.x), i32(physical.y), i32(physical.z), i32(physical.w))
             } else {
                 rl.EndScissorMode()
             }
@@ -76,20 +80,22 @@ fontOf :: proc(painter: ^ui_default.Painter) -> rl.Font {
 fillPolygon :: proc(painter: ^ui_default.Painter, points: []ui.Vec2, color: ui.Color) {
     buffer: ui.RoundedBuffer
     count: int = min(len(points), len(buffer))
+    scale: f32 = ui_default.PainterScale(painter)
     for i in 0 ..< count {
-        buffer[i] = points[count - 1 - i]
+        buffer[i] = points[count - 1 - i] * scale
     }
     rl.DrawTriangleFan(raw_data(buffer[:]), i32(count), rl.Color(color))
 }
 
-ScreenSize :: proc() -> ui.Vec2 {
-    return {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
+// The size of the window in logical units: pass the UI scale of the painter (`ui_default.PainterScale(&painter)`)
+ScreenSize :: proc(scale: f32 = 1) -> ui.Vec2 {
+    return {f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())} / scale
 }
 
-// What raylib knows of this frame, for ui.UiBegin. Call it once per frame (it drains the typed characters).
-InputPoll :: proc() -> ui.Input {
+// What raylib knows of this frame, for ui.UiBegin. Call it once per frame (it drains the typed characters). The pointer is given in logical units: pass the UI scale of the painter.
+InputPoll :: proc(scale: f32 = 1) -> ui.Input {
     input: ui.Input = {
-        mouse_position = rl.GetMousePosition(),
+        mouse_position = rl.GetMousePosition() / scale,
         mouse_down = rl.IsMouseButtonDown(.LEFT),
         mouse_pressed = rl.IsMouseButtonPressed(.LEFT),
         mouse_released = rl.IsMouseButtonReleased(.LEFT),

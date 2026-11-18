@@ -56,12 +56,19 @@ THEME_DARK :: Theme{
 Painter :: struct {
     user: rawptr,                   // the glue's own data (the kit.Context of the frame, a font...)
     theme: Theme,
+    scale: f32,                     // UI scale (0 is 1): the layout and the styles work in logical units, the glue multiplies what it draws by this and divides the pointer by it
     fill_rect: proc(painter: ^Painter, rect: ui.Rect, color: ui.Color),
     fill_polygon: proc(painter: ^Painter, points: []ui.Vec2, color: ui.Color),                  // convex, nil: no polygons (arrows and rounded corners fall back)
     fill_rounded: proc(painter: ^Painter, rect: ui.Rect, radius: f32, color: ui.Color),         // nil: made from fill_polygon
     draw_text: proc(painter: ^Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color),
     measure_text: proc(painter: ^Painter, text: string, size: f32) -> ui.Vec2,
     clip: proc(painter: ^Painter, rect: ui.Rect, begin: bool),
+}
+
+// The scale of a painter, 1 when it was left at 0. For the glue: every coordinate and size that goes to the framework is multiplied by it, the size of a measured
+// text is divided (text is measured at the size it is drawn at, so the layout gets the logical size of the pixels that are drawn).
+PainterScale :: proc(painter: ^Painter) -> f32 {
+    return painter.scale if painter.scale > 0 else 1
 }
 
 @(private)
