@@ -114,6 +114,7 @@ Event :: struct {
     action: AgentAction,                 // AGENT_REQUEST
     moderation: ModerationAction,        // MODERATION
     more: bool,                          // AGENT_REPORT, REMOTE_OUT
+    ref: u64,                            // TEXT: the number the sender gave the message (its instance and a counter, 0 = it keeps no log): what lets logs be joined
     job: u32,                            // REMOTE_RUN, REMOTE_OUT
     exit_code: i32,                      // REMOTE_OUT (the last piece)
     text: [MAX_TEXT]byte,
@@ -248,6 +249,7 @@ Messenger :: struct {
     banned: [MAX_BANS][NAME_MAX]byte,    // host: names that may not join again while this host runs
     banned_length: [MAX_BANS]int,
     ban_count: int,
+    log: ^Log,                           // the log of this instance (log.odin), nil = none; kept when the channel is opened again
     drop_at: [p2p.MAX_PEERS]i64,         // host: when the link of a banned member is cut (0 = not scheduled)
     events: [EVENTS]Event,
     event_head: int,
@@ -265,7 +267,9 @@ Messenger :: struct {
 // Opens the sockets and starts finding addresses. Blocking only for the STUN name lookup when `use_stun` is set.
 MessengerOpen :: proc(m: ^Messenger, config: MessengerConfig, now_ms: i64) -> bool {
     assert(config.channel != "" && config.name != "")
+    saved_log: ^Log = m.log
     m^ = {}
+    m.log = saved_log
     m.config = config
     m.config.channel = StringKeep(m.channel_buffer[:], config.channel)
     m.config.name = StringKeep(m.name_buffer[:], config.name)
@@ -794,8 +798,23 @@ MessengerSendText :: proc(m: ^Messenger, to: u8, text: string, now_ms: i64, agen
     }
     writer: serial.Writer
     FrameBegin(&writer, m.scratch[:], .AGENT_TEXT if agent else .TEXT, m.self_id, to)
+    ref: u64 = LogNewRef(m.log)
+    serial.WriteU64(&writer, ref)
     serial.WriteBytes(&writer, transmute([]byte)text)
-    return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
+    sent: bool = FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
+    if sent && m.log != nil && m.log.enabled {
+        peer: string = "*" if to == ALL else fmt.tprintf("%d", to)
+        kind: string
+        if agent {
+            kind = "GA" if to == ALL else "PA"
+            peer = fmt.tprintf("%s@%s", peer, string(m.log.turn[:m.log.turn_length]))
+        } else {
+            kind = "G" if to == ALL else "P"
+        }
+        LogMember(m.log, now_ms, m.self_id, MessengerName(m, m.self_id))
+        LogRecord(m.log, now_ms, kind, peer, LogRefText(m.self_id, ref), text)
+    }
+    return sent
 }
 
 // The host orders a member (or ALL) to dismiss its agent or to close its program (the program obeys: it is an order to a program that
@@ -1087,8 +1106,10 @@ Deliver :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
             RosterReceive(m, frame)
         }
     case .TEXT, .AGENT_TEXT:
-        if text := serial.ReaderRemaining(&frame.body); text > 0 && text <= MAX_TEXT {
+        ref: u64 = serial.ReadU64(&frame.body)
+        if text := serial.ReaderRemaining(&frame.body); serial.ReaderOk(&frame.body) && text > 0 && text <= MAX_TEXT {
             event: ^Event = EventPush(m, .TEXT, frame.from, string(serial.ReadBytes(&frame.body, text)))
+            event.ref = ref
             event.to = frame.to
             event.agent = frame.kind == .AGENT_TEXT
         }

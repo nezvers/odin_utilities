@@ -156,7 +156,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (31 tests, about 9 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (33 tests, about 9 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -224,6 +224,23 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
     would not give a shell. The agent of the controller can use the `run` tool: its trust setting (`--trust`) decides whether it does that for what other members ask it; the default asks its person first.
     Windows runs the command through a `.cmd` file in the private folder, other systems through `sh -c`; both were run in the tests (Windows) and the Windows run was also tried live with two
     real programs (headless device, a member typing `--run`). Not tried on Linux or macOS.
+- **Log of an instance** (`--log DIR`, also with `--headless`; `log.odin`, `log_read.odin`, `tool/logview`): every message heard and sent, the commands typed at the terminal, the lines typed to the
+  private agent, and what the agent does (its replies, tool calls, errors, the end of each turn with cost and seconds), joins and leaves, file transfers, remote commands. Off by default; the
+  file is for its owner only (it holds private messages and typed lines: do not type secrets to an agent with the log on). Each instance writes its own file
+  (`<channel>.<name>.<pid>.<instance>.<part>.amsglog.gz`), so several on one device never share anything.
+  - Format: a header line (`#amsglog`, version, instance, pid, start time, channel, name, part), then one record per line, fields separated by a TAB:
+    `<ms after the previous record> TAB <kind> TAB <who> TAB <ref> TAB <text>`. The text escapes only `\`, newline, carriage return and TAB (`\n`, `\r`, `\t`), so `split on TAB, 5 parts`
+    parses any line. Kinds are one or two letters (`g`/`p` heard, `G`/`P` sent, `GA`/`PA` sent by the agent, `u` typed to the agent, `c` command, `i` handed to the agent, `a` `t` `e` `d` the
+    agent's reply / tool call / tool error / end of turn, `j` `l` `x` `r` `R` `n` ...; all of them are listed at the top of `log.odin`). Names are written once (`@` records), not on every line.
+  - Size: delta times, member numbers instead of names, short kinds, nothing logged twice (a message handed to the agent is named by its id, not written again), text over 4000 bytes cut
+    (`...(+N bytes)`). The file is a series of gzip members of up to 48 KB of text (BGZF layout: plain `zcat file` reads all of it, a reader can skip members), written when a block is full, every
+    10 s and when the program ends; a program that is killed loses at most the last 10 s. After 8 MB of text the next part starts. Chat and agent prose compress to about a fifth or less.
+  - Traceable between logs: every text frame carries a number from its sender (the sender's instance and a counter). The sender logs it with its message (`G`, `P`, `GA`, `PA`, `u`), every receiver logs
+    the same number (`g`, `p`) and the sender's instance (`I` record), so the global id `<instance>:<seq>` is the same in all the files. The agent's turns are `<run>.<turn>`: `i` (what started the
+    turn, naming the message that caused it), `a` `t` `e` `d` (what came of it), and the messages the agent sent during it (`GA`/`PA` carry the turn), so a trace can go from a typed line through
+    the agent to the message it sent and to the members that heard it, and on through their agents.
+  - `logview FILE... [--trace ID] [--kind g,p] [--ids] [--raw]` merges files of any number of instances into one timeline (sorted by each writer's clock: computers whose clocks differ show it),
+    `--trace ID` shows only what belongs with that message or turn id (the id column of `--ids`), `--raw` prints the text as written. Empty or damaged files are skipped with a warning.
 - **Orders of the host** (only the member that opened the channel; a guest who types them is told who the host is):
   - `--kick bob` (also `bob-agent`): bob's agent is dismissed now, without asking. Bob stays in the channel and can start another one.
   - `--ban bob`: bob's program is told to close (its agent ends with it), a moment later (1.5 s) the host cuts the link whatever bob's program did, bob leaves the roster, and the name

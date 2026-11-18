@@ -66,6 +66,7 @@ SessionConfig :: struct {
     remote_names: string,                // members that get remote control of this device whenever they join ("bob,carol"): for a device without a keyboard (remote.odin)
     remote_dir: string,                  // working folder of the commands run for remote members ("" = the current one)
     remote_timeout_ms: i64,              // a remote command is stopped after this long (0 = REMOTE_TIMEOUT_MS)
+    log_dir: string,                     // the log of this instance goes in this folder ("" = no log, log.odin)
 }
 
 SessionOutKind :: enum {
@@ -105,7 +106,11 @@ Session :: struct {
     config: SessionConfig,
     agent: Agent,
     control: ControlServer,
-    strings: [7][SESSION_STRING_MAX]byte,      // copies of the strings of the config
+    strings: [8][SESSION_STRING_MAX]byte,      // copies of the strings of the config
+    log: Log,                            // log.odin
+    cause: [32]byte,                     // the message that is being passed to the agent ("<member>.<seq>"), "" when it has no number of its own
+    cause_length: int,
+    runs: int,                           // agents started by this session (turn numbers are per run)
     remote: Remote,                      // remote control: who may control this device, whose device I may control (remote.odin)
     trusted_text: [SESSION_TRUSTED_MAX]byte,   // the names of a LISTED trust set at run time (config.trusted points here then)
     trusted_text_length: int,
@@ -159,6 +164,12 @@ SessionInit :: proc(s: ^Session, m: ^Messenger, config: SessionConfig) -> bool {
     s.config.program = Keep(s.strings[4][:], config.program)
     s.config.remote_names = Keep(s.strings[5][:], config.remote_names)
     s.config.remote_dir = Keep(s.strings[6][:], config.remote_dir)
+    s.config.log_dir = Keep(s.strings[7][:], config.log_dir)
+    if s.config.log_dir != "" {
+        if _, logging := LogOpen(&s.log, s.config.log_dir, m.config.channel, m.config.name, p2p.LinkNow()); logging {
+            m.log = &s.log
+        }
+    }
     RemoteSetNames(s, s.config.remote_names)
     s.trusted_text_length = copy(s.trusted_text[:], config.trusted)
     s.config.trusted = string(s.trusted_text[:s.trusted_text_length])
@@ -167,6 +178,10 @@ SessionInit :: proc(s: ^Session, m: ^Messenger, config: SessionConfig) -> bool {
 
 SessionClose :: proc(s: ^Session, now_ms: i64) {
     RemoteShutdown(s, now_ms)
+    defer {
+        s.m.log = nil
+        LogClose(&s.log)
+    }
     if AgentRunning(&s.agent) || s.agent.state == .ENDED {
         SessionDismiss(s, now_ms)
     }
@@ -177,6 +192,9 @@ SessionClose :: proc(s: ^Session, now_ms: i64) {
 
 @(private)
 SessionNote :: proc(s: ^Session, kind: SessionOutKind, text: string) {
+    if kind == .INFO {
+        LogRecord(&s.log, p2p.LinkNow(), "n", "", "", text)
+    }
     if s.out_count >= SESSION_OUT {
         s.out_head = (s.out_head + 1) % SESSION_OUT
         s.out_count -= 1
@@ -399,6 +417,7 @@ SessionSpawn :: proc(s: ^Session, model: string, now_ms: i64) -> (message: strin
     }
     s.folder = folder
     s.ready = false
+    s.runs += 1
     s.running_model_length = 0
     // the first message: the membership, who is there
     name: string = MessengerName(s.m, MessengerSelf(s.m))
@@ -452,6 +471,11 @@ SessionToAgent :: proc(s: ^Session, text: string) -> bool {
     if !AgentSend(&s.agent, text) {
         return false
     }
+    if s.log.enabled {
+        // a message that is in the log already is named, anything else (an idle report, a result) is written out
+        cause: string = string(s.cause[:s.cause_length])
+        LogRecord(&s.log, p2p.LinkNow(), "i", fmt.tprintf("%d", MessengerSelf(s.m)), fmt.tprintf("%d.%d", s.runs, s.agent.sent), fmt.tprintf("@%s", cause) if cause != "" else text)
+    }
     s.idle_pending = false
     if !busy {
         s.turn_start_ms = p2p.LinkNow()
@@ -470,15 +494,67 @@ SessionLine :: proc(s: ^Session, text: string, now_ms: i64) -> bool {
     // a slash command of Claude Code (/context, /compact, /clear, ...) only works as the whole line: it goes in untouched. Only the person at
     // this keyboard gets that: what other members write always arrives wrapped, as "[group bob] ...", and is never a command.
     line: string = text if strings.has_prefix(text, "/") else fmt.tprintf("[%s] %s", name, text)
+    if s.log.enabled {
+        ref: u64 = LogNewRef(&s.log)
+        LogMember(&s.log, now_ms, MessengerSelf(s.m), name)
+        LogRecord(&s.log, now_ms, "u", fmt.tprintf("%d", MessengerSelf(s.m)), LogRefText(MessengerSelf(s.m), ref), text)
+        s.cause_length = copy(s.cause[:], LogRefText(MessengerSelf(s.m), ref))
+    }
+    defer s.cause_length = 0
     if !SessionToAgent(s, line) {
         SessionNote(s, .INFO, "the agent does not take messages any more (it ended?)")
     }
     return true
 }
 
+// ---------------------------------------------------------------------------------------------------------------- the log
+
+// What happened in the channel, as records (log.odin). The agent's side and the typed lines are logged where they happen.
+@(private)
+SessionLogEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
+    if !s.log.enabled {
+        return
+    }
+    id: string = fmt.tprintf("%d", event.member)
+    text: string = EventText(event)
+    #partial switch event.kind {
+    case .CONNECTED:
+        LogMember(&s.log, now_ms, event.member, text)
+        LogRecord(&s.log, now_ms, "n", "", "", fmt.tprintf("connected as %s (member %d)%s", text, event.member, ", hosting" if s.m.is_host else ""))
+    case .MEMBER_JOINED:
+        LogMember(&s.log, now_ms, event.member, text)
+        LogRecord(&s.log, now_ms, "j", id, "", "")
+    case .MEMBER_LEFT:
+        LogRecord(&s.log, now_ms, "l", id, "", "")
+        if int(event.member) < MAX_MEMBERS {
+            s.log.known_instance[event.member] = 0
+        }
+    case .TEXT:
+        LogMember(&s.log, now_ms, event.member, MessengerName(s.m, event.member))
+        LogInstance(&s.log, now_ms, event.member, event.ref)
+        LogRecord(&s.log, now_ms, "g" if event.to == ALL else "p", fmt.tprintf("%s%s", id, "a" if event.agent else ""), LogRefText(event.member, event.ref), text)
+    case .FILE_OFFERED:
+        LogRecord(&s.log, now_ms, "x", id, "", fmt.tprintf("offered %s %s (%d bytes)", "folder" if event.folder else "file", text, event.size))
+    case .FILE_DONE:
+        LogRecord(&s.log, now_ms, "x", id, "", fmt.tprintf("%s %s %s", "done" if event.ok else "failed", "incoming" if event.incoming else "outgoing", text))
+    case .ERROR:
+        LogRecord(&s.log, now_ms, "n", "", "", fmt.tprintf("error: %s", text))
+    }
+}
+
+// A command typed at this terminal. Messages to a member or the group are logged as messages when they are sent.
+SessionLogCommand :: proc(s: ^Session, line: string, now_ms: i64) {
+    LogRecord(&s.log, now_ms, "c", "", "", line)
+}
+
 // ---------------------------------------------------------------------------------------------------------------- events of the channel
 
 SessionOnEvent :: proc(s: ^Session, event: ^Event, now_ms: i64) {
+    SessionLogEvent(s, event, now_ms)
+    if event.kind == .TEXT {
+        s.cause_length = copy(s.cause[:], LogRefText(event.member, event.ref))          // what the agent is told because of this message is caused by it
+    }
+    defer s.cause_length = 0
     name: string = MessengerName(s.m, event.member)
     text: string = EventText(event)
     self: bool = event.member == MessengerSelf(s.m)
@@ -926,6 +1002,7 @@ SessionAsk :: proc(s: ^Session, member: u8, action: AgentAction, model: string, 
 
 SessionUpdate :: proc(s: ^Session, now_ms: i64) {
     RemoteUpdate(s, now_ms)
+    LogTick(&s.log, now_ms)
     // what the agent's tools ask for
     request: ControlRequest
     for ControlPoll(&s.control, &request) {
@@ -939,6 +1016,21 @@ SessionUpdate :: proc(s: ^Session, now_ms: i64) {
             break
         }
         text: string = AgentEventText(&event)
+        if s.log.enabled {
+            self_id: string = fmt.tprintf("%d", MessengerSelf(s.m))
+            switch event.kind {
+            case .TEXT:
+                LogRecord(&s.log, now_ms, "a", self_id, fmt.tprintf("%d.%d", s.runs, s.agent.done + 1), text)
+            case .TOOL:
+                LogRecord(&s.log, now_ms, "t", self_id, fmt.tprintf("%d.%d", s.runs, s.agent.done + 1), text)
+            case .TOOL_ERROR:
+                LogRecord(&s.log, now_ms, "e", self_id, fmt.tprintf("%d.%d", s.runs, s.agent.done + 1), text)
+            case .DONE:
+                // AgentPoll counted the turn already
+                LogRecord(&s.log, now_ms, "d", self_id, fmt.tprintf("%d.%d", s.runs, s.agent.done), fmt.tprintf("%.4f %d %s%s%s", event.cost, (now_ms - s.turn_start_ms) / 1000, "error" if event.is_error else "ok", " " if text != "" else "", text))
+            case .NONE, .READY, .ENDED:
+            }
+        }
         switch event.kind {
         case .NONE:
         case .READY:
@@ -1019,6 +1111,7 @@ SessionControl :: proc(s: ^Session, command: string, args: string, now_ms: i64) 
     if !AgentRunning(&s.agent) {
         return "error: this agent was dismissed"
     }
+    LogSetTurn(&s.log, fmt.tprintf("%d.%d", s.runs, s.agent.done + 1))                  // what it sends now belongs to this turn
     switch command {
     case "say":
         if len(args) > MAX_TEXT {

@@ -19,6 +19,7 @@
 //   --kick bob  --ban bob  --close_group   only the host: dismiss bob's agent / remove bob / close every program of the group
 //   --remote bob  --remote_disable [bob]  --run bob <cmd>   bob may run commands on THIS device and give orders to its agent / take it back / run a command on bob's device
 //                                (a device without a keyboard: --headless --password P --remote bob, see remote.odin)
+//   --log DIR                    (a start flag) write the log of this instance in DIR: messages, typed lines, what the agent does; read it with tool/logview (log.odin)
 //   --agents                     who has an agent         --listen all|mentions|none   what the channel passes to your agent
 //   --trust ask|members|bob,carol   how far your agent believes other members: ask (default) = it asks you first, members = it does what
 //                                any member asks with its tools, a list = only those members
@@ -185,6 +186,13 @@ main :: proc() {
         case "--agent-dir":
             i += 1
             session_config.agent_dir = os.args[i] if i < len(os.args) else "agent_files"
+        case "--log":
+            i += 1
+            if i >= len(os.args) || strings.has_prefix(os.args[i], "--") {
+                fmt.eprintln("--log needs a folder for the log of this instance")
+                os.exit(2)
+            }
+            session_config.log_dir = os.args[i]
         case "--headless":
             headless = true                                  // no keyboard: do not read the standard input, run until closed (remote.odin)
         case "--remote":
@@ -298,6 +306,13 @@ main :: proc() {
     session = new(ai.Session)
     if !ai.SessionInit(session, m, session_config) {
         Info("cannot open the local door for the agent: --agent will not work")
+    }
+    if session_config.log_dir != "" {
+        if session.log.enabled {
+            Info(fmt.tprintf("logging to %s", ai.LogPath(&session.log)))
+        } else {
+            Info(fmt.tprintf("cannot write a log in %s: going on without one", session_config.log_dir))
+        }
     }
     if !headless {
         thread.create_and_start(ReadLines, context)
@@ -520,6 +535,9 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
     if line != "" && !IsToolCommand(line) && !LooksLikeCode(line) {
         Plain(m, line, now)
         return
+    }
+    if IsToolCommand(line) && !strings.has_prefix(line, "--group") && !strings.has_prefix(line, "--to ") {
+        ai.SessionLogCommand(session, line, now)         // (a message to a member or the group is logged as a message, when it is sent)
     }
     switch {
     case line == "":
@@ -902,6 +920,7 @@ PopLine :: proc(out: []byte) -> (length: int, ok: bool) {
     sync.mutex_guard(&lines.mutex)
     if lines.count == 0 {
         if lines.closed {
+            ai.LogClose(&session.log)
             os.exit(0)                   // a pipe that ended: nothing left to wait for
         }
         return

@@ -305,6 +305,7 @@ RemoteStart :: proc(s: ^Session, member: u8, job: u32, command: string, now_ms: 
         arguments = {"sh", "-c", command}
     }
     SessionNote(s, .INFO, fmt.tprintf("remote: %s runs: %s", MessengerName(s.m, member), command))
+    LogRecord(&s.log, now_ms, "r", fmt.tprintf("%d", member), fmt.tprintf("%d", job), command)
     // like the agent: nobody else may start a process while this one inherits its handles (agent_spawn_mutex). The file must be inheritable
     // (on Windows a handle that is not is invalid in the child: its output would be lost)
     sync.mutex_lock(&agent_spawn_mutex)
@@ -403,6 +404,7 @@ RemoteUpdate :: proc(s: ^Session, now_ms: i64) {
         text = fmt.tprintf("%s\n%s", strings.trim_right_space(text), stopped)
     }
     SessionNote(s, .INFO, fmt.tprintf("remote: the command of %s ended (exit %d)", MessengerName(s.m, job.member), exit_code))
+    LogRecord(&s.log, now_ms, "R", fmt.tprintf("%d", job.member), fmt.tprintf("%d", job.id), fmt.tprintf("exit %d%s", exit_code, fmt.tprintf(" %s", stopped) if stopped != "" else ""))
     MessengerSendRemoteOut(s.m, job.member, job.id, text, exit_code, now_ms)
 }
 
