@@ -49,6 +49,11 @@ StyleKind :: enum u8 {
     BULLET,             // the dot of a bullet text
     SEPARATOR_TEXT,     // a line with a name in it
     BACKDROP,           // what dims the screen behind a modal dialog
+    GRAPH,              // the canvas of a node graph: draw the background, then call GraphDrawLinks(ctx, info) (cables and ties); user: the frame
+    GRAPH_OVERLAY,      // above the nodes: call GraphDrawOverlay(ctx, info) (the cable that is dragged, the cut of the tie tool)
+    GRAPH_NODE,         // the frame of a node: name, color, SELECTED flag
+    GRAPH_PIN,          // a connection point: color, actual: the data type, cursor: 1 for an output, flags: ON connected, PRESSED dragged from, SELECTED a cable that is dragged fits, DISABLED does not fit
+    GRAPH_MINIMAP,      // user: ^GraphMinimapData, the style draws the nodes with GraphMinimapTransform and the view rectangle
     CUSTOM,             // DrawInfo.custom is called instead of a table entry
 }
 
@@ -123,4 +128,5 @@ Style :: struct {
     // switches it off (begin = false): nothing outside of the scissor is drawn. nil: no clipping.
     clip: proc(ctx: ^Context, rect: Rect, begin: bool),
     metrics: Metrics,
+    graph: GraphStyle,              // routing, bounds, distance and drawing of the cables and ties of a node graph (graph_style.odin)
 }

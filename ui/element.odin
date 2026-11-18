@@ -10,7 +10,7 @@ import hm "core:container/handle_map"
 // The number of widgets that keep state from one frame to the next (scroll position, text cursor, hover fade): fixed, so no allocations
 UI_STATES :: #config(UI_STATES, 512)
 // Floating elements (popups, tooltips) and the main root: every one of them is its own layer
-UI_MAX_ROOTS :: #config(UI_MAX_ROOTS, 32)
+UI_MAX_ROOTS :: #config(UI_MAX_ROOTS, 256)
 UI_MAX_DEPTH :: 64
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -379,6 +379,7 @@ Problem :: enum u8 {
     PARENT_NOT_FOUND,   // a floating element asked for an element that was not declared before it
     NO_MEASURE,         // text without a MeasureProc
     UNBALANCED,         // a container that was not closed (or closed twice)
+    GRAPH_MISUSE,       // a graph node or pin outside of a UiGraph canvas, or more canvases than UI_MAX_GRAPHS
     SPLIT_MISUSE,       // a split section outside of a split, a third one, or a split nested deeper than UI_MAX_SPLITS (an extra section is not shown, one outside of a split is a plain box)
 }
 Problems :: bit_set[Problem; u16]

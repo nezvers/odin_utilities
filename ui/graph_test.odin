@@ -473,3 +473,49 @@ test_raising_a_node_puts_it_in_front_and_the_numbers_do_not_run_out :: proc(t: ^
     testing.expect(t, GraphNode(graph, second).z > GraphNode(graph, first).z)
     testing.expect(t, graph.z_counter < 100)
 }
+
+@(test)
+test_a_cable_has_bounds_a_distance_and_crossings :: proc(t: ^testing.T) {
+    input: CableRouteInput = {from = {0, 0}, to = {200, 100}}
+    route: CableRoute
+    CableRouteDefault(&input, &route)
+    testing.expect_value(t, route.count, 1)
+    bounds: Rect = CableBoundsDefault(&route, 4)
+    // the rectangle holds the whole cable, so a point outside of it is never on the cable (the broad phase may skip it)
+    for i in 0 ..= 20 {
+        point: Vec2 = CableSegmentPoint(&route.segments[0], f32(i) / 20)
+        testing.expect(t, RectContains(bounds, point))
+        testing.expect(t, CableDistanceDefault(&route, point) < 0.5, "a point of the cable is on it")
+    }
+    testing.expect(t, CableDistanceDefault(&route, {100, 400}) > 100)
+    // a cable through a zip tie is a segment more, and passes the tie going the way of the tie
+    input.waypoints[0] = {{100, 80}, {1, 0}}
+    input.waypoint_count = 1
+    CableRouteDefault(&input, &route)
+    testing.expect_value(t, route.count, 2)
+    testing.expect(t, CableDistanceDefault(&route, {100, 80}) < 0.5, "it passes through the tie")
+    // a cut across it
+    t_cut, point, direction, crossed := CableCrossing(&route, {100, 0}, {100, 200})
+    testing.expect(t, crossed)
+    testing.expect(t, abs(point.x - 100) < 0.01 && t_cut > 0 && t_cut < 1)
+    testing.expect(t, direction.x > 0.9, "the cable goes right where it passes the tie")
+    _, _, _, missed := CableCrossing(&route, {-50, -50}, {-50, 500})
+    testing.expect(t, !missed)
+    // a flat copy for a style that draws lines
+    points: [CABLE_MAX_SEGMENTS * CABLE_PIECES + 1]Vec2
+    flat: []Vec2 = CableFlatten(&route, points[:])
+    testing.expect_value(t, len(flat), 2 * CABLE_PIECES + 1)
+    testing.expect(t, flat[0] == Vec2{0, 0} && flat[len(flat) - 1] == Vec2{200, 100})
+}
+
+@(test)
+test_a_zip_tie_is_a_strap_across_the_cables :: proc(t: ^testing.T) {
+    tie: Tie = {position = {100, 100}, angle = 0, scale = 1, member_count = 3}
+    // angle 0: the cables go along x, the lanes are side by side along y
+    testing.expect_value(t, TieLanePoint(&tie, 0, 10), Vec2{100, 90})
+    testing.expect_value(t, TieLanePoint(&tie, 2, 10), Vec2{100, 110})
+    testing.expect(t, TieContains(&tie, 10, 8, {100, 100}, 0))
+    testing.expect(t, !TieContains(&tie, 10, 8, {140, 100}, 0))
+    testing.expect(t, TieCrossedBy(&tie, 10, 8, {60, 100}, {140, 100}), "a stroke across it")
+    testing.expect(t, !TieCrossedBy(&tie, 10, 8, {60, 160}, {140, 160}), "a stroke beside it")
+}

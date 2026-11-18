@@ -69,6 +69,12 @@ Context :: struct {
     split_stack: [UI_MAX_SPLITS]SplitFrame,   // the splits that are open (resize.odin)
     split_count: int,
     split_lost: int,                          // splits opened deeper than the stack: they are plain boxes
+    graph_frames: [UI_MAX_GRAPHS]GraphFrame,  // the canvases of this frame (graph_widgets.odin)
+    graph_frame_count: int,
+    graph_stack: [UI_MAX_GRAPHS]int,
+    graph_stack_count: int,
+    graph_minimaps: [UI_MAX_GRAPHS]GraphMinimapData,
+    graph_minimap_count: int,
     roots: [UI_MAX_ROOTS]Root,
     root_count: int,
 
@@ -163,6 +169,9 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
     ctx.root_stack_count = 0
     ctx.split_count = 0
     ctx.split_lost = 0
+    ctx.graph_frame_count = 0
+    ctx.graph_stack_count = 0
+    ctx.graph_minimap_count = 0
     ctx.root_count = 0
     ctx.problems = {}
     ctx.overflow = false
@@ -218,6 +227,7 @@ UiEnd :: proc(ctx: ^Context) {
     } else {
         ctx.command_count = 0
     }
+    graphAfterLayout(ctx)
     stateCollect(ctx)
     focusMemoryRecord(ctx)
     dragEnd(ctx)

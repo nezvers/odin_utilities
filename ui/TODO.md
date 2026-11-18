@@ -15,3 +15,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Text truncation with "..." and the full text as a tooltip on hover
 - [x] Drag and drop with a small payload (source, target, a fixed buffer for the data)
 - [x] Shrink priority ("strictness" of a size): which child of an overfull container gives way first
+- [x] Node graph: model with rules, events with user pointers, topological order and buffer plan; cable routes, bounds and distance by the style; canvas, nodes, pins, minimap, zip ties; demo with a script and screenshots
+- [ ] Node graph: zoom of the canvas (the view only pans), box selection and moving several nodes, copy and paste of a selection
+- [ ] Node graph: reroute points on a cable, labels on cables, a node that collapses to its title
+- [ ] Node graph: nodes are floating roots, so a graph of thousands of nodes needs a layout that culls roots outside of the view

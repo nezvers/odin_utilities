@@ -114,9 +114,42 @@ a menu bar (Menu with submenus, Examples, Tools), collapsing headers (Help, Conf
 and under Widgets the tree nodes Basic, Trees, Collapsing Headers, Bullets, Text, Combo, Selectables, Tabs, Plotting, Color, Multi-component, Querying status. What the
 library does not have (multi-line text input, sortable tables, docking, drag and drop, resizing) is left out. Its script drives it with the keyboard only.
 
+## Node graph
+A retained model with immediate mode widgets. The graph is the program's data (`graph.odin`: `Graph`, nodes, ports, links, zip ties in fixed storage with checked handles,
+no allocation; `GRAPH_NODES`, `GRAPH_PORTS`, `GRAPH_LINKS`, `GRAPH_TIES`, `GRAPH_EVENTS` are `#config`), the widgets (`graph_widgets.odin`) draw it and change it with the pointer.
+```
+if ui.UiGraph(&ctx, "Audio", &graph, &view) {                  // the canvas: it pans, selects cables and ties, takes Delete
+    for node in order[:ui.GraphNodesByDepth(&graph, order[:])] {   // the front node last
+        if ui.UiGraphNode(&ctx, &graph, node) {                    // the title bar drags it; any widget fits in the body
+            for each port: ui.UiGraphPin(&ctx, &graph, port)       // dragging a pin draws a cable, letting go over a pin it fits connects
+        }
+    }
+}
+ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the content span (nodes and view together) and the view in it; press or drag to move the view
+```
+- **Rules.** `GraphCanConnect` / `GraphConnect` answer with a `ConnectResult` (`OK`, `REPLACES`, `SAME_NODE`, `SAME_KIND`, `TYPE`, `DUPLICATE`, `FULL`, `CYCLE`). Defaults: an output goes to any
+  number of inputs, an input takes one cable (a second replaces it, or is refused with `refuse_when_full`; `PortFlag.MERGE` takes any number, `.SINGLE` on an output limits it),
+  data types must be equal (0 fits all), loops are refused (`allow_cycles` for feedback). The program replaces or extends them with `GraphRules` (`can_connect`, `types_fit`).
+- **Tell the program.** Every change is a `GraphEvent` (`CONNECTED`, `DISCONNECTED` with a `DisconnectReason`, `NODE_ADDED/REMOVED/MOVED`, `TIE_*`, `DROPPED_ON_EMPTY`) that carries the handles and
+  the `user` pointers of both ports, both nodes and the graph, so a handler needs no lookup: through `graph.on_event` right when it happens and/or `GraphPollEvent` (a ring, `events_lost` counts what was never read).
+- **Data transition (audio, buffers).** A port keeps a doubly linked list of its links, so splitting (an output to many) and merging (an input with `MERGE`) are walked in link order without searching.
+  `GraphOrder` gives an order in which every node follows what feeds it (stable, iterative, `OrderResult.CYCLE` names a loop). `GraphCompile` writes a flat plan into your arrays: steps in order, one binding per
+  (port, buffer) with a merging input as several bindings in a row, and the number of buffers needed: a buffer is reused as soon as its last reader has run (never in place). The audio thread runs the plan, the
+  UI thread edits the graph: compile again after an edit.
+- **Cables.** The style decides how a cable runs (`GraphStyle`, `graph_style.odin`): `route_connected` and `route_dragged` make the route (a few cubic Bezier segments, one more than the ties it passes) and can differ
+  (a straight line while dragging, right angles when connected), `pickup` (take the cable of a connected input, or start a new one), `draw_cable` / `draw_tie` draw. Each cable has a **rectangle** (`bounds`, default: the control
+  points) that the draw loop and the hit test use as a broad phase, and a **distance function** (`distance`, default: the nearest of 16 pieces per segment, 0 on the cable) for the exact hit test; the same arithmetic in
+  a shader draws a cable with a width or a glow (`CableSegmentPoint`, `CableSegmentDistance`, `CableFlatten`). Only cables whose rectangle meets the view are drawn.
+- **Zip ties.** With the tie tool (`view.tool = .TIES`) a stroke across cables gathers them into a tie: a strap that every cable passes in its own lane (side by side, in the order the stroke met them) so a bundle
+  of cables runs as a ribbon and comes apart after it. A tie is moved by its middle, turned by its head (steps of `rotate_snap` degrees), removed by a stroke across it or by Delete; a cable passes up to `GRAPH_LINK_TIES`
+  ties, ties made later keep the lane order of earlier ones, and a tie without cables goes away. The idea follows the zip ties of the ComfyUI extension `comfyui-zip-ties` (MIT) and the Blender add-on
+  `Zip-ties-for-Blender` (GPL-3): no code was taken from either.
+- **Minimap and view.** `GraphView` (plain data: the origin of the view, tool, selection) can be saved with the graph. `GraphMinimapTransform` gives a style the scale and the offset of the content span in its rectangle.
+- A node is a floating element of the canvas, so every node takes one root: `UI_MAX_ROOTS` is `#config` (256 by default). Demo: `demo_common/demo_graph.odin`.
+
 ## Layout of the folder
 ```
-ui.odin files   common, id, element (types), context (Begin/End/state), layout (Clay port), widgets, style, render, rounded, ui_test.odin
+ui.odin files   common, id, element (types), context (Begin/End/state), layout (Clay port), widgets, style, render, rounded, graph* (node graph), ui_test.odin
 default_style/  the default style + Painter
 kit/            Painter and input over demo_kit (the demos use it)         glue_raylib/, glue_karl2d/   Painter + InputPoll for a plain program
 demo_common/    widgets, layout, styles demos with scripted input          demo_raylib/, demo_karl2d/   thin mains

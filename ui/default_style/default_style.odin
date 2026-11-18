@@ -112,6 +112,7 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.BULLET] = DrawBullet
     style.procs[.SEPARATOR_TEXT] = DrawSeparatorText
     style.procs[.BACKDROP] = DrawBackdrop
+    GraphStyleInstall(&style)
     return style
 }
 
