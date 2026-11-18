@@ -678,6 +678,10 @@ SpawnedWatchTest :: proc(t: ^testing.T) {
     testing.expect(t, PumpUntil(both, proc(nodes: []^Node) -> bool {
         return nodes[0].joined == 1 && nodes[1].connected
     }))
+    // two programs on one machine talk over a private address: the path report says LAN, on both sides
+    testing.expect_value(t, MessengerPath(manager.m, 1), p2p.PeerPath.LAN)
+    testing.expect_value(t, MessengerPath(worker.m, HOST_ID), p2p.PeerPath.LAN)
+    testing.expect_value(t, MessengerPath(worker.m, 5), p2p.PeerPath.NONE)
     message, started := SessionSpawn(manager.session, "", p2p.LinkNow())
     testing.expect(t, started, message)
     testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {

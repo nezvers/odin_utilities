@@ -339,6 +339,15 @@ MessengerClose :: proc(m: ^Messenger) {
 
 // ============================================================================================ queries
 
+// How my link to that member travels: LAN, DIRECT (internet) or RELAY. The host has a link to everybody; a guest only to the host, so for the
+// other guests it is NONE (unknown): nobody measures the path between two guests.
+MessengerPath :: proc(m: ^Messenger, member: u8) -> p2p.PeerPath {
+    if m.is_host {
+        return p2p.LinkPeerPath(&m.link, int(member) - 1) if member >= 1 else .NONE
+    }
+    return p2p.LinkPeerPath(&m.link, 0) if member == HOST_ID else .NONE
+}
+
 MessengerName :: proc(m: ^Messenger, member: u8) -> string {
     if int(member) >= MAX_MEMBERS || !m.members[member].used {
         return ""

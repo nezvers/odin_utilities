@@ -35,7 +35,10 @@ tested, see section 11.
 - A line is a tool command only when it starts with `--` and a letter. Everything else is a message, including lines that start with `/`: to your agent when you have one (section 11),
   else to everybody.
 - Commands:
-  - `--who`: list the members (`member 0: alice (host) (you) (with an agent)`).
+  - `--who`: list the members (`member 1: bob (with an agent) [same network (LAN)]`). The bracket is how your link to that member travels right now: `same network (LAN)`
+    (direct, to a private address: the one that actually answered, not a guess from subnets), `direct over the internet`, or `through a relay` (it keeps trying for a direct path; `"path"`
+    in `--json`: lan / direct / relay / unknown). The host sees every member's path; a guest only the one to the host, because nobody measures the path between two guests (they show
+    nothing). A VPN with private addresses also reads as LAN. In code: `p2p.LinkPeerPath`, `ai.MessengerPath`.
   - `--group_msg text`: a message to everybody (what a plain line is when you have no agent).
   - `--trust ask|members|bob,carol`: how far your agent believes what other members write (section 11).
   - `--spawn [model]` / `--dismiss`: start or end your agent; `--spawn bob [model]` / `--dismiss bob` ask bob to do it for their agent; `--agents`, `--listen all|mentions|none`; `--yes agent` / `--no agent`.

@@ -881,6 +881,40 @@ PeerStart :: proc(link: ^Link, slot: int, invite: Invite, now_ms: i64) {
     }
 }
 
+// How the packets of a connected peer travel right now.
+PeerPath :: enum {
+    NONE,                           // not connected
+    LAN,                            // direct, to a private / link local / loopback address: the same network (or a VPN that looks like one)
+    DIRECT,                         // direct, to a public address: over the internet, through the NAT holes
+    RELAY,                          // through a relay (DERP or TURN): no direct path (yet, it keeps trying)
+}
+
+// An address that only a neighbour can reach: RFC 1918, link local, loopback, IPv6 unique local and link local. The carrier grade NAT range
+// (100.64/10, Tailscale and the like) is not one: it can be anywhere.
+IsLanAddress :: proc(address: net.Address) -> bool {
+    if address6, is_v6 := address.(net.IP6_Address); is_v6 {
+        first: u16 = u16(address6[0])
+        return first & 0xFE00 == 0xFC00 || first & 0xFFC0 == 0xFE80 || address6 == net.IP6_Loopback
+    }
+    ip, is_ip4 := address.(net.IP4_Address)
+    if !is_ip4 {
+        return false
+    }
+    return ip[0] == 10 || ip[0] == 127 || ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31 || ip[0] == 192 && ip[1] == 168 || ip[0] == 169 && ip[1] == 254
+}
+
+// The path is the address that really answered (`endpoint`), so it is a measured fact, not a guess from the subnets in the invites: two homes
+// that both use 192.168.1.x are only called LAN when a packet from that address got through.
+LinkPeerPath :: proc(link: ^Link, peer: int) -> PeerPath {
+    if peer < 0 || peer >= MAX_PEERS || link.peers[peer].state != .CONNECTED {
+        return .NONE
+    }
+    if link.peers[peer].via_relay {
+        return .RELAY
+    }
+    return .LAN if IsLanAddress(link.peers[peer].endpoint.address) else .DIRECT
+}
+
 LinkPeerName :: proc(link: ^Link, peer: int) -> string {
     return string(link.peers[peer].name[:link.peers[peer].name_len])
 }
@@ -1751,4 +1785,30 @@ LinkPunchFailsWithoutAnswerTest :: proc(t: ^testing.T) {
         found ||= event.kind == .PEER_FAILED
     }
     testing.expect(t, found)
+}
+
+@(test)
+LanAddressTest :: proc(t: ^testing.T) {
+    testing.expect(t, IsLanAddress(net.IP4_Address{192, 168, 1, 5}))
+    testing.expect(t, IsLanAddress(net.IP4_Address{10, 0, 0, 1}))
+    testing.expect(t, IsLanAddress(net.IP4_Address{172, 20, 0, 1}))
+    testing.expect(t, IsLanAddress(net.IP4_Address{169, 254, 1, 1}))
+    testing.expect(t, IsLanAddress(net.IP4_Address{127, 0, 0, 1}))
+    testing.expect(t, !IsLanAddress(net.IP4_Address{172, 32, 0, 1}))
+    testing.expect(t, !IsLanAddress(net.IP4_Address{100, 100, 1, 1}))      // carrier grade NAT / Tailscale: not known to be a neighbour
+    testing.expect(t, !IsLanAddress(net.IP4_Address{8, 8, 8, 8}))
+    testing.expect(t, IsLanAddress(net.IP6_Address{0xfd00, 0, 0, 0, 0, 0, 0, 1}))
+    testing.expect(t, IsLanAddress(net.IP6_Address{0xfe80, 0, 0, 0, 0, 0, 0, 1}))
+    testing.expect(t, !IsLanAddress(net.IP6_Address{0x2001, 0xdb8, 0, 0, 0, 0, 0, 1}))
+
+    link: ^Link = new(Link)
+    defer free(link)
+    testing.expect_value(t, LinkPeerPath(link, 0), PeerPath.NONE)
+    link.peers[0].state = .CONNECTED
+    link.peers[0].endpoint = {address = net.IP4_Address{192, 168, 0, 7}, port = 1}
+    testing.expect_value(t, LinkPeerPath(link, 0), PeerPath.LAN)
+    link.peers[0].endpoint.address = net.IP4_Address{203, 0, 113, 9}
+    testing.expect_value(t, LinkPeerPath(link, 0), PeerPath.DIRECT)
+    link.peers[0].via_relay = true
+    testing.expect_value(t, LinkPeerPath(link, 0), PeerPath.RELAY)
 }

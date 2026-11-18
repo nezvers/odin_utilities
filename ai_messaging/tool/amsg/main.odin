@@ -564,9 +564,10 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
             }
             has_agent: bool = ai.AgentRunning(&session.agent) if u8(id) == ai.MessengerSelf(m) else session.members[id].running
             if json_mode {
-                fmt.printfln(`{{"event":"member","id":%d,"name":%s,"host":%v,"you":%v,"agent":%v}}`, id, Json(name), id == 0, u8(id) == ai.MessengerSelf(m), has_agent)
+                fmt.printfln(`{{"event":"member","id":%d,"name":%s,"host":%v,"you":%v,"agent":%v,"path":"%s"}}`, id, Json(name), id == 0, u8(id) == ai.MessengerSelf(m), has_agent, PathWord(ai.MessengerPath(m, u8(id))))
             } else {
-                fmt.printfln("* member %d: %s%s%s%s", id, name, " (host)" if id == 0 else "", " (you)" if u8(id) == ai.MessengerSelf(m) else "", " (with an agent)" if has_agent else "")
+                path: string = PathText(ai.MessengerPath(m, u8(id)))
+                fmt.printfln("* member %d: %s%s%s%s%s", id, name, " (host)" if id == 0 else "", " (you)" if u8(id) == ai.MessengerSelf(m) else "", " (with an agent)" if has_agent else "", fmt.tprintf(" [%s]", path) if path != "" else "")
             }
         }
     case strings.has_prefix(line, "--to "):
@@ -683,6 +684,35 @@ Send :: proc(m: ^ai.Messenger, target: string, path: string, now: i64) {
     if sent == 0 {
         Info("nobody to send it to (see --who)")
     }
+}
+
+// The path of a link for --who: the word for programs (json), and the sentence for people. Unknown paths (other guests) say nothing.
+PathWord :: proc(path: p2p.PeerPath) -> string {
+    switch path {
+    case .NONE:
+        return "unknown"
+    case .LAN:
+        return "lan"
+    case .DIRECT:
+        return "direct"
+    case .RELAY:
+        return "relay"
+    }
+    return "unknown"
+}
+
+PathText :: proc(path: p2p.PeerPath) -> string {
+    switch path {
+    case .NONE:
+        return ""
+    case .LAN:
+        return "same network (LAN)"
+    case .DIRECT:
+        return "direct over the internet"
+    case .RELAY:
+        return "through a relay"
+    }
+    return ""
 }
 
 ListenFromText :: proc(text: string) -> (mode: ai.ListenMode, ok: bool) {
