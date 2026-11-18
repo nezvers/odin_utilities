@@ -31,7 +31,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Timeline: tangents (`HERMITE`: a cubic with a slope at each point and two handles that are the control points of a Bezier curve)
 - [x] Timeline: Alt + Left / Right rotate the selected points, a control in the corner of an automation lane sets its bend macro
 - [x] Timeline: Alt and a drag stretches several selected clips and markers (`TimelineClipsStretch`); undo and redo cover clips and markers (the history snapshots everything)
-- [ ] Timeline: SIMD for the block renderer (ramps and fills with 8 or 16 lanes; the compiler may vectorize the loops already: check the assembly), a plan that several tracks share the cursor search of
+- [ ] (later) Timeline: SIMD for the block renderer (ramps and fills with 8 or 16 lanes; the compiler may vectorize the loops already: check the assembly), a plan that several tracks share the cursor search of
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot
 - [x] Inspector panel (`UiInspector`): element tree of the last frame, buffer usage, measure cache, picking by the pointer; demo with a screenshot
 - [x] Inspector: the layout details of the selected element, a filter by name, text or kind, a selection that follows its element
