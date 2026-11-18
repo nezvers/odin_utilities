@@ -9,9 +9,21 @@ package ui
 // nothing in a frame that does not declare it. The inspector's own elements are left out.
 
 import "core:reflect"
+import "core:time"
 
 INSPECTOR_ROWS :: #config(INSPECTOR_ROWS, 1024)
 INSPECTOR_LABEL :: 28
+INSPECTOR_COMMANDS :: #config(INSPECTOR_COMMANDS, 2048)   // the draw commands of a frame the inspector can list
+INSPECTOR_HISTORY :: 120                                  // the frames of the plots
+
+// One draw command of the last frame (what a style gets, in the order it gets it).
+InspectorCommand :: struct {
+    kind: CommandKind,
+    style: StyleKind,
+    rect: Rect,
+    label: [INSPECTOR_LABEL]u8,
+    label_length: u8,
+}
 
 // One element of the last frame.
 InspectorRow :: struct {
@@ -61,6 +73,17 @@ Inspector :: struct {
     detail: InspectorDetail,
     filter: [INSPECTOR_LABEL]u8,
     filter_length: int,
+    collapsed: [INSPECTOR_ROWS]bool,    // by the place of an element in the frame: its children are left out of the tree
+    show_commands: bool,        // the list shows the draw commands of the frame and not the elements
+    show_history: bool,         // the plots of the last frames
+    commands: [INSPECTOR_COMMANDS]InspectorCommand,
+    command_count: int,
+    commands_cut_off: bool,
+    command_list: VirtualList,
+    begin: time.Tick,           // UiBegin: the time of the frame (declaring and layout) is the time to UiEnd
+    build_ms: [INSPECTOR_HISTORY]f32,       // the last frames, the newest at the end
+    element_history: [INSPECTOR_HISTORY]f32,
+    command_history: [INSPECTOR_HISTORY]f32,
     cut_off: bool,              // the frame had more elements than the table has rows
     usage: Usage,               // the buffers at the end of that frame
 }
@@ -77,6 +100,16 @@ InspectorRows :: proc(ctx: ^Context) -> []InspectorRow {
 // Starts (or ends) the picking from the program, a key for example: the next press outside of the panel selects the element under the pointer.
 UiInspectorPick :: proc(ctx: ^Context, on: bool = true) {
     ctx.inspector.pick = on
+}
+
+// Chooses what the inspector shows: the draw commands of the frame instead of the tree of the elements, the plots of the last frames above.
+UiInspectorView :: proc(ctx: ^Context, commands: bool, history: bool) {
+    ctx.inspector.show_commands, ctx.inspector.show_history = commands, history
+}
+
+// The draw commands of the last snapshot (valid until the next UiEnd).
+InspectorCommands :: proc(ctx: ^Context) -> []InspectorCommand {
+    return ctx.inspector.commands[:ctx.inspector.command_count]
 }
 
 // The element that is selected in the tree.
@@ -112,13 +145,43 @@ inspectorCapture :: proc(ctx: ^Context) {
     inspector.cut_off = false
     filter: string = string(inspector.filter[:inspector.filter_length])
     inspector.usage, _ = UiUsage(ctx)
+    // the history: the plots move one frame to the left
+    copy(inspector.build_ms[:INSPECTOR_HISTORY - 1], inspector.build_ms[1:])
+    copy(inspector.element_history[:INSPECTOR_HISTORY - 1], inspector.element_history[1:])
+    copy(inspector.command_history[:INSPECTOR_HISTORY - 1], inspector.command_history[1:])
+    inspector.build_ms[INSPECTOR_HISTORY - 1] = f32(time.duration_microseconds(time.tick_since(inspector.begin))) / 1000
+    inspector.element_history[INSPECTOR_HISTORY - 1] = f32(ctx.element_count)
+    inspector.command_history[INSPECTOR_HISTORY - 1] = f32(ctx.command_count)
+    // the commands
+    inspector.command_count, inspector.commands_cut_off = 0, false
+    for i in 0 ..< ctx.command_count {
+        if inspector.command_count >= len(inspector.commands) {
+            inspector.commands_cut_off = true
+            break
+        }
+        command: ^Command = &ctx.commands[i]
+        entry: ^InspectorCommand = &inspector.commands[inspector.command_count]
+        inspector.command_count += 1
+        entry^ = {kind = command.kind, style = command.info.kind, rect = command.info.rect}
+        label: string = command.info.name if command.info.name != "" else command.info.text
+        count: int = min(len(label), INSPECTOR_LABEL)
+        copy(entry.label[:count], label[:count])
+        entry.label_length = u8(count)
+    }
     depths: [UI_INSPECTOR_DEPTH]u16
+    skip_below: int = -1                 // the elements deeper than this are under a collapsed one
     for i in 0 ..< ctx.element_count {
         element: ^Element = &ctx.elements[i]
         depth: u16
         if element.parent >= 0 && int(element.parent) < len(depths) && int(element.parent) < i { depth = depths[element.parent] + 1 }
         if i < len(depths) { depths[i] = depth }
         if i >= inspector.first && i < inspector.end { continue }
+        if skip_below >= 0 {
+            if int(depth) > skip_below { continue }
+            skip_below = -1
+        }
+        place: int = stable(i, inspector.first, inspector.end)
+        if place < len(inspector.collapsed) && inspector.collapsed[place] && element.children_count > 0 { skip_below = int(depth) }
         if element.is_text && !inspector.show_text { continue }
         if filter != "" && !inspectorMatches(element, filter) && i32(stable(i, inspector.first, inspector.end)) + 1 != inspector.selected_element { continue }
         if inspector.row_count >= len(inspector.rows) {
@@ -238,17 +301,37 @@ UiInspector :: proc(ctx: ^Context, name: string, size: Size = {}) {
         if ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, gap = metrics.gap, align = {y = .CENTER}}}) {
             UiToggle(ctx, "Pick", &inspector.pick)
             UiToggle(ctx, "Text", &inspector.show_text)
+            UiToggle(ctx, "Commands", &inspector.show_commands)
+            UiToggle(ctx, "History", &inspector.show_history)
             ElementClose(ctx)
+        }
+        if inspector.show_history {
+            UiPlotLines(ctx, "build time##inspector history", inspector.build_ms[:], UiFormat(ctx, "%.2f ms", inspector.build_ms[INSPECTOR_HISTORY - 1]), 0, 0, {Fixed(300), Fixed(36)})
+            UiPlotLines(ctx, "elements##inspector history", inspector.element_history[:], UiFormat(ctx, "%d elements", int(inspector.element_history[INSPECTOR_HISTORY - 1])), 0, 0, {Fixed(300), Fixed(36)})
+            UiPlotLines(ctx, "commands##inspector history", inspector.command_history[:], UiFormat(ctx, "%d commands", int(inspector.command_history[INSPECTOR_HISTORY - 1])), 0, 0, {Fixed(300), Fixed(36)})
+        }
+        if inspector.show_commands {
+            inspectorCommandList(ctx, inspector, metrics.control_height * 0.8)
+            ElementClose(ctx)
+            inspector.end = ctx.element_count
+            return
         }
         list: ^VirtualList = &inspector.list
         UiTextField(ctx, "Filter##inspector filter", inspector.filter[:], &inspector.filter_length, {Grow(), {}})
         if UiVirtual(ctx, "tree", list, inspector.row_count, metrics.control_height * 0.8, {Grow(), Grow()}) {
             if list.changed && list.selected != VIRTUAL_NONE && list.selected < inspector.row_count { inspector.selected_element = inspector.rows[list.selected].index + 1 }
+            // a double click or Enter opens and closes the element: its children are left out of the tree (the table of the next frame)
+            if list.activated && list.selected != VIRTUAL_NONE && list.selected < inspector.row_count {
+                place: int = int(inspector.rows[list.selected].index)
+                if place < len(inspector.collapsed) && inspector.rows[list.selected].children > 0 { inspector.collapsed[place] = !inspector.collapsed[place] }
+            }
             for row_index in list.first ..< list.last {
                 row: ^InspectorRow = &inspector.rows[row_index]
                 if UiVirtualRow(ctx, list, row_index) {
                     kind: string = reflect.enum_string(row.kind) if row.kind != .NONE else "layout"
-                    UiLabel(ctx, UiFormat(ctx, "%*s%s %s%s", int(row.depth) * 2, "", kind, InspectorRowLabel(row), "  (text)" if row.is_text else ""))
+                    mark: string = ""
+                    if row.children > 0 { mark = "[+] " if int(row.index) < len(inspector.collapsed) && inspector.collapsed[row.index] else "[-] " }
+                    UiLabel(ctx, UiFormat(ctx, "%*s%s%s %s%s", int(row.depth) * 2, "", mark, kind, InspectorRowLabel(row), "  (text)" if row.is_text else ""))
                 }
             }
         }
@@ -286,6 +369,22 @@ UiInspector :: proc(ctx: ^Context, name: string, size: Size = {}) {
         mark(ctx, &inspector.rows[inspector.list.selected], {90, 190, 255, 255})
     }
     inspector.end = ctx.element_count
+}
+
+// The draw commands of the last frame as a list: what the style is asked to draw, in order (clips and zooms too).
+@(private)
+inspectorCommandList :: proc(ctx: ^Context, inspector: ^Inspector, row_height: f32) {
+    list: ^VirtualList = &inspector.command_list
+    UiLabel(ctx, UiFormat(ctx, "%d draw commands%s", inspector.command_count, " (TABLE FULL)" if inspector.commands_cut_off else ""))
+    if UiVirtual(ctx, "commands", list, inspector.command_count, row_height, {Grow(), Grow()}) {
+        for row_index in list.first ..< list.last {
+            command: ^InspectorCommand = &inspector.commands[row_index]
+            if UiVirtualRow(ctx, list, row_index) {
+                what: string = reflect.enum_string(command.style) if command.kind == .DRAW else reflect.enum_string(command.kind)
+                UiLabel(ctx, UiFormat(ctx, "%4d  %s  %.0f, %.0f  %.0f x %.0f  %s", row_index, what, command.rect.x, command.rect.y, command.rect.z, command.rect.w, string(command.label[:command.label_length])))
+            }
+        }
+    }
 }
 
 @(private)

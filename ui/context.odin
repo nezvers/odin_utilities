@@ -19,6 +19,7 @@ package ui
 import hm "core:container/handle_map"
 import "core:fmt"
 import "core:math"
+import "core:time"
 
 // The memory of a context, sized by the user. `ELEMENTS` is the most elements (a widget is one or two, a text line is one) in a frame,
 // `COMMANDS` the most things to draw, `LINES` the most wrapped text lines, `TEXT` the bytes UiFormat may use in a frame.
@@ -140,6 +141,7 @@ Context :: struct {
 UiInit :: proc(ctx: ^Context, storage: ^Storage($E, $C, $L, $T), measure: MeasureProc, user: rawptr = nil) {
     assert(measure != nil, "ui needs a text measuring proc")
     ctx^ = {}
+    ctx.inspector.command_list.selected = VIRTUAL_NONE
     ctx.elements = storage.elements[:]
     ctx.children = storage.children[:]
     ctx.child_buffer = storage.child_buffer[:]
@@ -158,6 +160,7 @@ UiInit :: proc(ctx: ^Context, storage: ^Storage($E, $C, $L, $T), measure: Measur
 // by UiRender for the drawing, and has to stay alive until the frame is rendered.
 UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, style: ^Style) {
     assert(style != nil)
+    ctx.inspector.begin = time.tick_now()
     ctx.frame += 1
     ctx.time += f64(delta_time)
     ctx.delta_time = delta_time

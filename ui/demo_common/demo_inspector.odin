@@ -2,7 +2,8 @@
 package demo_common
 
 // The inspector next to a small ui: the tree of the elements of the last frame, what the buffers cost, and picking. Press Pick, then press an element of the ui on the left: it is marked
-// and selected in the tree, with its place and its kind. The script picks the slider.
+// and selected in the tree, with its place and its kind; a double click on an element with children closes it. Commands shows the draw commands of the frame, History the cost of the last frames.
+// The script picks the slider.
 
 import ui ".."
 import kit "../../demo_kit"
@@ -64,5 +65,20 @@ script: []kit.Step = {
     }, "the press picked the slider: its kind and place are in the tree"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.volume == 0.6 }, "the press did not reach the slider: it was a pick"),
     kit.Capture("inspector"),
+    kit.Wait(1),
+    // the draw commands of the frame as a list, and the plots of the last frames
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        ui.UiInspectorView(&state.app.ctx, true, true)
+        return true
+    }, "show the commands and the history"),
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return len(ui.InspectorCommands(&state.app.ctx)) > 10 }, "the draw commands of the frame are listed"),
+    kit.Capture("inspector_commands"),
+    kit.Wait(1),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        ui.UiInspectorView(&state.app.ctx, false, false)
+        return true
+    }, "back to the tree"),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

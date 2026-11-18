@@ -34,7 +34,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot
 - [x] Inspector panel (`UiInspector`): element tree of the last frame, buffer usage, measure cache, picking by the pointer; demo with a screenshot
 - [x] Inspector: the layout details of the selected element, a filter by name, text or kind, a selection that follows its element
-- [ ] Inspector: the draw commands of a frame as a list, collapsing of the tree, a frame history (the cost of the last frames as a plot)
+- [x] Inspector: the draw commands of a frame as a list (Commands), collapsing of the tree (double click), a frame history (History: build time, elements and commands of the last 120 frames as plots)
 - [x] Table: sideways scrolling (wheel with Shift, bar, header goes along) and a last column that fills the room
 - [x] Table: reordering columns by dragging a header (`table.reorderable`, `TableColumnAt`, `table.moved`)
 - [ ] Table: double click on an edge to fit the column, keys inside of a row (cells that are widgets)

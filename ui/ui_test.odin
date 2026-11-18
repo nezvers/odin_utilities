@@ -3502,3 +3502,42 @@ test_a_tree_widget_drops_a_node_into_a_folder_and_renames_in_place :: proc(t: ^t
     testing.expect_value(t, view.renaming, TreeHandle{})
     testing.expect(t, TreeName(TreeGet(tree, main)) == "!?")
 }
+
+@(test)
+test_the_inspector_lists_commands_keeps_a_history_and_collapses_elements :: proc(t: ^testing.T) {
+    storage: ^InspectorStorage = new(InspectorStorage)
+    defer free(storage)
+    ctx: ^Context = new(Context)
+    defer free(ctx)
+    style: Style = makeStyle()
+    UiInit(ctx, storage, testMeasure)
+    for _ in 0 ..< 4 { inspectorFrame(ctx, &style, pointerAt({-10, -10})) }
+    commands: []InspectorCommand = InspectorCommands(ctx)
+    testing.expect(t, len(commands) > 5, "the commands of the frame are listed")
+    button_found: bool
+    for &command in commands {
+        if command.kind == .DRAW && command.style == .BUTTON && string(command.label[:command.label_length]) == "Target" { button_found = true }
+    }
+    testing.expect(t, button_found, "the button is one of them, with its name")
+    // the history: three plots of the frames, the newest at the end
+    testing.expect(t, ctx.inspector.element_history[INSPECTOR_HISTORY - 1] > 5 && ctx.inspector.command_history[INSPECTOR_HISTORY - 1] > 5)
+    testing.expect(t, ctx.inspector.build_ms[INSPECTOR_HISTORY - 1] >= 0)
+    // the view of the commands and the plots is declared without problems
+    UiInspectorView(ctx, true, true)
+    for _ in 0 ..< 3 { inspectorFrame(ctx, &style, pointerAt({-10, -10})) }
+    testing.expect_value(t, ctx.problems, Problems{})
+    UiInspectorView(ctx, false, false)
+    // collapsing: the element that has children, closed, hides what is under it
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    before: int = ctx.inspector.row_count
+    parent: int = -1
+    for row, i in InspectorRows(ctx) {
+        if row.children > 0 && row.depth > 0 { parent = i }
+    }
+    testing.expect(t, parent >= 0)
+    ctx.inspector.collapsed[InspectorRows(ctx)[parent].index] = true
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    testing.expect(t, ctx.inspector.row_count < before, "the children of a collapsed element are left out")
+    testing.expect_value(t, ctx.problems, Problems{})
+}
