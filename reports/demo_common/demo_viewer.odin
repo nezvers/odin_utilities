@@ -50,13 +50,16 @@ script: []kit.Step = {
     kit.Click({60, 125}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return view.section == 1 && report.sections[view.section].title == "oscillator" }, "a click on a section shows that section"),
-    // the heading of the ratio column (x 821 to 965): a click sorts by it, a second click turns the order round
+    // the heading of the ratio column (x 821 to 965): a click sorts by it, a second click turns the order round, a third one restores the order of the report
     kit.Click({893, 50}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return view.sort_column == 3 && !view.sort_descending }, "a heading sorts the table by its column"),
     kit.Click({893, 50}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return view.sort_column == 3 && view.sort_descending }, "a second click on it reverses the order"),
+    kit.Click({893, 50}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return view.sort_block == -1 && !view.sort_descending }, "a third click puts the table back in the order of the report"),
     // the filter field of the left side
     kit.Click({156, 692}),
     kit.Wait(2),

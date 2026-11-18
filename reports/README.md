@@ -108,13 +108,13 @@ prints `RESULT<TAB>case<TAB>value` lines (any program) is `reports results --odi
 
 ## The viewer and the demos
 `reports/view` (`reports_view.ViewDraw(&ctx, &view, &report)`) draws a report with `odin_utilities/ui`: a split with the sections on the left (coloured by their status) and the blocks of the chosen section on the right. Tables
-are columns sized to their text whose headings sort them (a second click reverses), ratio columns carry a bar from 0 to 2 and the colour of their verdict, budgets and checks are coloured by status, findings by severity,
+are columns sized to their text whose headings sort them (first click ascending, second descending, third back to the order of the report), ratio columns carry a bar from 0 to 2 and the colour of their verdict, budgets and checks are coloured by status, findings by severity,
 charts are plotted (a log scale is plotted as logarithms), a filter field keeps the rows whose first cell contains a text. The view keeps only what the person chose; the report is the program's, and a report that changes
 between frames is fine. The ui storage needs room for the tables (a cell is two to four elements): the demos use `ui.Storage(6144, 12288, 1024, 65536)`.
 
 Demos (`odin run reports/demo_raylib` or `reports/demo_karl2d`, written once against `demo_kit`): `viewer` shows `demo_common/bench_results.report.json`, the results of an audio DSP library against C references (made
 from its notes with `reports import`: 14 sections, 16 tables), `compare` shows a comparison of two runs of it (the second is the first with its numbers moved by a pattern, plus checks and findings), `status` shows a
-report built with the API: facts, checks, budgets, a history chart, findings, a log. Each has a script (a click on a section, a click on a heading to sort and again to reverse, typing in the filter, and checks of the numbers
+report built with the API: facts, checks, budgets, a history chart, findings, a log. Each has a script (a click on a section, three clicks on a heading: ascending, descending, the order of the report, typing in the filter, and checks of the numbers
 and of the statuses) that runs headless: `odin test reports/demo_common`.
 
 ## Commands (from odin_utilities)

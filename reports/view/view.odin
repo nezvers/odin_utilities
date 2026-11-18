@@ -2,7 +2,8 @@ package reports_view
 
 // A report on screen, drawn with odin_utilities/ui: a split with the sections on the left and the blocks of the chosen section on the right.
 // Tables are real columns (sized to their text) whose headings sort them, ratio columns carry a bar and a colour (green better, red worse), budgets and
-// checks are coloured by status, findings by severity, charts are plotted, and a filter field keeps the rows that contain a text. It draws what the
+// checks are coloured by status, findings by severity, charts are plotted, and a filter field keeps the rows that contain a text. A heading sorts: the
+// first click ascending, the second descending, the third back to the order of the report. It draws what the
 // report holds and nothing else, so any report works: a benchmark run, a test run, the comparison of two runs, the findings of a review.
 //
 //   view: reports_view.View
@@ -222,8 +223,13 @@ drawTable :: proc(c: ^ui.Context, view: ^View, table: ^reports.Table, key: int) 
             arrow: string
             if view.sort_block == key && view.sort_column == i { arrow = " v" if view.sort_descending else " ^" }
             if ui.UiButton(c, nextName(c, view, fmt.tprintf("%s%s", reports.ColumnHeading(&column), arrow)), {ui.Fixed(widths[i]), {}}) {
+                // the same heading again: ascending, then descending, then back to the order of the report
                 if view.sort_block == key && view.sort_column == i {
-                    view.sort_descending = !view.sort_descending
+                    if view.sort_descending {
+                        view.sort_block, view.sort_column, view.sort_descending = -1, 0, false
+                    } else {
+                        view.sort_descending = true
+                    }
                 } else {
                     view.sort_block, view.sort_column, view.sort_descending = key, i, false
                 }
