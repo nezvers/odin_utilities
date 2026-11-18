@@ -359,7 +359,7 @@ test_a_plan_is_the_points_of_a_track_as_flat_segments_with_what_a_block_needs ::
 
 @(test)
 test_a_block_is_the_same_as_the_exact_value_of_every_sample_within_a_small_error :: proc(t: ^testing.T) {
-    shapes: [5]CurveShape = {.LINEAR, .HOLD, .SMOOTH, .CURVE, .S_CURVE}
+    shapes: [6]CurveShape = {.LINEAR, .HOLD, .SMOOTH, .CURVE, .S_CURVE, .EXP}
     storage: [4]AutomationSegment
     for shape in shapes {
         timeline: ^Timeline = newTimeline()

@@ -1,11 +1,12 @@
 #+build !js
 package ui
 
+import "core:math"
 import "core:testing"
 
 @(test)
 test_every_shape_starts_at_0_ends_at_1_and_never_goes_backwards :: proc(t: ^testing.T) {
-    shapes: [5]CurveShape = {.LINEAR, .HOLD, .SMOOTH, .CURVE, .S_CURVE}  // the counted shapes have their own test
+    shapes: [6]CurveShape = {.LINEAR, .HOLD, .SMOOTH, .CURVE, .S_CURVE, .EXP}  // the counted shapes have their own test
     curves: [7]f32 = {-1, -0.7, -0.2, 0, 0.2, 0.7, 1}
     for shape in shapes {
         for curve in curves {
@@ -44,7 +45,7 @@ test_the_shapes_have_the_form_they_are_named_for :: proc(t: ^testing.T) {
     testing.expect(t, CurveEval(.CURVE, 1, 0.01) <= 1 && CurveEval(.CURVE, -1, 0.99) >= 0)
     testing.expect_value(t, CurveShapeNext(.LINEAR), CurveShape.SMOOTH)
     s: CurveShape = .LINEAR
-    for _ in 0 ..< 10 { s = CurveShapeNext(s) }
+    for _ in 0 ..< 11 { s = CurveShapeNext(s) }
     testing.expect_value(t, s, CurveShape.LINEAR)                       // a full turn
 }
 
@@ -126,4 +127,22 @@ test_the_shapes_that_repeat_count_and_keep_their_ends :: proc(t: ^testing.T) {
     _, covered := CurveHandle(.STAIRS, 0.6)
     testing.expect(t, near(CurveFromHandle(.STAIRS, covered), 0.6))
     testing.expect(t, !CurveHasHandle(.HOLD) && CurveHasHandle(.PULSE))
+}
+
+@(test)
+test_the_exponential_grows_by_a_constant_ratio_and_is_a_line_at_zero :: proc(t: ^testing.T) {
+    near :: proc(a, b: f32) -> bool { return abs(a - b) < 1e-4 }
+    testing.expect(t, near(CurveEval(.EXP, 0, 0.3), 0.3), "0 is a line")
+    testing.expect(t, near(CurveEval(.EXP, 0.00001, 0.3), 0.3), "a hair above 0 is a line")
+    testing.expect(t, CurveEval(.EXP, 0.6, 0.5) < 0.5 && CurveEval(.EXP, -0.6, 0.5) > 0.5, "above 0 grows late, below 0 early")
+    // the shape is e^(c x) with the offset and scale that put the ends at 0 and 1: the ratio of the growth of two equal steps is the same everywhere
+    c: f32 = CURVE_EXP_RANGE * 0.5
+    offset: f32 = 1 / (math.exp(c) - 1)
+    a, b, d, e: f32 = CurveEval(.EXP, 0.5, 0.2) + offset, CurveEval(.EXP, 0.5, 0.3) + offset, CurveEval(.EXP, 0.5, 0.6) + offset, CurveEval(.EXP, 0.5, 0.7) + offset
+    testing.expect(t, abs(b / a - e / d) < 1e-3, "equal steps in x multiply by the same ratio")
+    // the handle at the middle gives the curve back
+    for curve in ([5]f32{-0.9, -0.3, 0.1, 0.5, 0.95}) {
+        _, covered := CurveHandle(.EXP, curve)
+        testing.expectf(t, abs(CurveFromHandle(.EXP, covered) - curve) < 2e-3, "the handle of %v gives %v back", curve, CurveFromHandle(.EXP, covered))
+    }
 }

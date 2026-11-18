@@ -14,6 +14,7 @@ package ui
 //  - HOLD, and the stretches before the first point and after the last one, are a fill of one value;
 //  - LINEAR is a ramp: one add per sample (forward differencing), started again from an exact value every AUTOMATION_CHUNK samples so that the rounding of f32 cannot add up;
 //  - STAIRS, SMOOTH_STAIRS and PULSE have edges that a ramp would smear: exact at every sample (a few ns each); TRIANGLE and WAVE are continuous: a ramp per run, anchored inside of a run for WAVE;
+//  - EXP is one multiply a sample (the ratio of neighbours is constant), started again from an exact e^(c x) every AUTOMATION_CHUNK samples, like the linear ramp;
 //  - SMOOTH, CURVE and S_CURVE are evaluated exactly only every few samples (the anchors) and ramped linearly between them. The distance between anchors is a part (1 / 125) of the length of the
 //    segment, at most AUTOMATION_ANCHOR samples, so the error is the same small part of the change of the value whatever the length: at most about 5e-5 for SMOOTH, more for a strongly bent CURVE
 //    (see the test). A segment shorter than 125 samples is evaluated at every sample, exactly. `AutomationRenderExact` is the per-sample reference.
@@ -122,9 +123,26 @@ ramp :: proc(out: []f32, from: f32, to: f32) {
 // One segment's samples: `out[0]` is at `time` (inside of the segment), `step` is the time of a sample.
 @(private)
 automationSegmentFill :: proc(segment: ^AutomationSegment, time: f64, step: f64, out: []f32) {
-    switch segment.shape {
+    shape: CurveShape = segment.shape
+    if shape == .EXP && abs(segment.coefficient) < CURVE_EXP_LINEAR { shape = .LINEAR }
+    switch shape {
     case .HOLD:
         fill(out, segment.value)
+    case .EXP:
+        // e^(c x) by one multiply a sample (the ratio of two neighbours is constant), started again from an exact exponential every AUTOMATION_CHUNK samples: the rounding of f32 cannot add up
+        c: f32 = segment.coefficient
+        scale: f32 = segment.change / (math.exp(c) - 1)
+        delta_x: f64 = step * segment.inverse_length
+        ratio: f32 = math.exp(c * f32(delta_x))
+        for start := 0; start < len(out); start += AUTOMATION_CHUNK {
+            count: int = min(AUTOMATION_CHUNK, len(out) - start)
+            x: f64 = (time - segment.start) * segment.inverse_length + f64(start) * delta_x
+            growth: f32 = math.exp(c * f32(clamp(x, 0, 1)))
+            for i in 0 ..< count {
+                out[start + i] = segment.value + (growth - 1) * scale
+                growth *= ratio
+            }
+        }
     case .LINEAR:
         // forward differencing: one add a sample, from an exact value at the start of every chunk
         delta_x: f64 = step * segment.inverse_length

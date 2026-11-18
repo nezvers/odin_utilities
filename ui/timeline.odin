@@ -47,7 +47,7 @@ TimelineTrack :: struct {
     value_min: f32,             // an automation track: the lowest and the highest value of its points, the bottom and the top of its lane
     value_max: f32,
     steps: bool,                // an automation track: the value is held until the next point (else it goes straight to it)
-    bend_rise: f32,             // an automation track: added to the `curve` of every CURVE and S_CURVE segment that goes up (-1 .. 1), a macro for the feel of all the curves of the lane
+    bend_rise: f32,             // an automation track: added to the `curve` of every CURVE, S_CURVE and EXP segment that goes up (-1 .. 1), a macro for the feel of all the curves of the lane
     bend_fall: f32,             // and the same for the segments that go down: a snappy attack with a long release is bend_rise above 0 and bend_fall below
     point_count: int,
     name: [TIMELINE_NAME_MAX]u8,
@@ -602,7 +602,7 @@ TimelinePointShape :: proc(timeline: ^Timeline, handle: PointHandle, shape: Curv
 
 // The `curve` a segment really has: the one of its point and the bend macro of its track, for the shapes that have a bend (`change` is the value of the next point minus this one).
 TimelineSegmentCurve :: proc(track: ^TimelineTrack, shape: CurveShape, curve: f32, change: f32) -> f32 {
-    if shape != .CURVE && shape != .S_CURVE { return curve }
+    if shape != .CURVE && shape != .S_CURVE && shape != .EXP { return curve }
     return clamp(curve + (track.bend_rise if change >= 0 else track.bend_fall), -CURVE_LIMIT, CURVE_LIMIT)
 }
 

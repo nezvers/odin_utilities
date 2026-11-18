@@ -15,6 +15,7 @@ CurveShape :: enum u8 {
     SMOOTH,             // 3x^2 - 2x^3: slow at both ends, no bend to set
     CURVE,              // Schlick's bias: `curve` above 0 goes fast first and slows down (ease out), below 0 starts slowly and speeds up (ease in), 0 is a line
     S_CURVE,            // Schlick's gain: `curve` above 0 is steeper in the middle and flat at both ends, below 0 is flat in the middle, 0 is a line
+    EXP,                // an exponential: `curve` above 0 grows slowly first and fast at the end (the way pitch and decibels are heard), below 0 the other way, 0 is a line (see CURVE_EXP_RANGE)
     // The shapes that repeat: `curve` is not a bend but how many times (CurveCount: 1 to 30, growing with the square of `curve` so the small counts are easy to set).
     STAIRS,             // that many steps (at least 2) from the first value to the second
     SMOOTH_STAIRS,      // the same steps, each one eased
@@ -22,6 +23,9 @@ CurveShape :: enum u8 {
     TRIANGLE,           // a line that goes there and back (an odd number of runs, so it ends at the second value)
     WAVE,               // the same with a cosine ease: a sine like wave
 }
+
+// The exponent of EXP at the limit of `curve`: the steepness e^8 is a factor of about 3000 between the end and the start of the curve (70 dB).
+CURVE_EXP_RANGE :: f32(8)
 
 CURVE_LIMIT :: f32(0.98)            // `curve` is kept within -CURVE_LIMIT .. CURVE_LIMIT: at 1 the bias is a jump
 
@@ -33,6 +37,7 @@ CurveCoefficient :: proc(shape: CurveShape, curve: f32) -> f32 {
     #partial switch shape {
     case .CURVE: return 1 / a - 2
     case .S_CURVE: return 1 / (1 - a) - 2
+    case .EXP: return CURVE_EXP_RANGE * clamp(curve, -CURVE_LIMIT, CURVE_LIMIT)       // the exponent: (e^(c x) - 1) / (e^c - 1)
     case .STAIRS, .SMOOTH_STAIRS, .PULSE, .TRIANGLE, .WAVE:
         // the count, negative when `curve` is (the variant of a pulse)
         return f32(CurveCount(curve)) * (-1 if curve < 0 else 1)
@@ -56,6 +61,8 @@ CurveHasHandle :: proc(shape: CurveShape) -> bool {
     return shape != .HOLD
 }
 
+CURVE_EXP_LINEAR :: f32(1e-4)       // an exponent this small is a line (the division by e^c - 1 would lose everything)
+
 @(private)
 bias :: proc(x: f32, coefficient: f32) -> f32 {
     return x / (coefficient * (1 - x) + 1)
@@ -71,6 +78,9 @@ CurveEvalCoefficient :: proc(shape: CurveShape, coefficient: f32, x: f32) -> f32
     case .S_CURVE:
         if x < 0.5 { return 0.5 * bias(2 * x, coefficient) }
         return 1 - 0.5 * bias(2 - 2 * x, coefficient)
+    case .EXP:
+        if abs(coefficient) < CURVE_EXP_LINEAR { return x }
+        return (math.exp(coefficient * x) - 1) / (math.exp(coefficient) - 1)
     case .STAIRS:
         n: f32 = max(abs(coefficient), 2)
         return min(math.floor(x * n) / (n - 1), 1)
@@ -106,7 +116,8 @@ CurveShapeNext :: proc(shape: CurveShape) -> CurveShape {
     case .LINEAR: return .SMOOTH
     case .SMOOTH: return .CURVE
     case .CURVE: return .S_CURVE
-    case .S_CURVE: return .STAIRS
+    case .S_CURVE: return .EXP
+    case .EXP: return .STAIRS
     case .STAIRS: return .SMOOTH_STAIRS
     case .SMOOTH_STAIRS: return .PULSE
     case .PULSE: return .TRIANGLE
@@ -129,7 +140,7 @@ CurveSegmentPoints :: proc(shape: CurveShape, curve: f32, a: Vec2, b: Vec2, out:
         if len(out) < 1 { return out[:0] }
         out[0] = b
         return out[:1]
-    case .SMOOTH, .CURVE, .S_CURVE, .STAIRS, .SMOOTH_STAIRS, .PULSE, .TRIANGLE, .WAVE:
+    case .SMOOTH, .CURVE, .S_CURVE, .EXP, .STAIRS, .SMOOTH_STAIRS, .PULSE, .TRIANGLE, .WAVE:
         // a counted shape needs a piece for every edge: at least 8 per cycle (a step or a pulse is cut at its edges by the sampling, which is fine for a line on a screen)
         pieces: int = clamp(int(abs(b.x - a.x) / 4), 4, 64)
         if CurveIsCounted(shape) { pieces = clamp(CurveCount(curve) * 8, pieces, len(out)) }
@@ -157,6 +168,8 @@ CurveHandle :: proc(shape: CurveShape, curve: f32) -> (along: f32, covered: f32)
 // at a quarter the gain is half of the opposite number).
 CurveFromHandle :: proc(shape: CurveShape, covered: f32) -> f32 {
     if CurveIsCounted(shape) { return clamp(covered, 0, CURVE_LIMIT) }
+    // at the middle the exponential is 1 / (e^(c / 2) + 1)
+    if shape == .EXP { return clamp(2 * math.ln(1 / clamp(covered, 0.001, 0.999) - 1) / CURVE_EXP_RANGE, -CURVE_LIMIT, CURVE_LIMIT) }
     if shape == .S_CURVE { return clamp(1 - 4 * covered, -CURVE_LIMIT, CURVE_LIMIT) }
     return clamp(2 * covered - 1, -CURVE_LIMIT, CURVE_LIMIT)
 }
