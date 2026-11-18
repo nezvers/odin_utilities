@@ -325,6 +325,7 @@ Action :: enum u8 {
     INVERT,         // Alt + I: the selected automation points upside down (the timeline)
     REVERSE,        // Alt + R: the selected points played backwards
     REPEAT,         // Alt + D: a copy of the selected points after them
+    RENAME,         // F2: the tree edits the name of the selected node
 }
 Actions :: bit_set[Action; u32]
 

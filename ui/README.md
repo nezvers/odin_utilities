@@ -164,6 +164,7 @@ the scroll areas have a draggable scrollbar (the thumb keeps its place under the
 `TreeExpand`, `TreeReveal`, a node with `branch = true` shows an arrow before it has children). `UiTree(&ctx, "Files", &tree, &view, size, row_height)` shows the visible nodes (the children of open nodes) as a virtual list (only the rows in view are
 declared): the arrow opens and closes, a click on a name selects, a double click or Enter activates (a branch opens too), right opens a closed branch or goes to its first child, left closes an open branch or goes to the parent, up, down, page up, page down, Home and End move.
 `TreeView` tells what happened in the frame: `changed`, `activated`, `toggled` (the node that was opened or closed: a program that reads a folder when it is opened adds the children then, see the demo), and holds the selection (`selected`).
+Drag a row onto a branch to move it in (as the last child, the branch opens), onto a file to put it after that file; Escape cancels; `view.moved` says which node moved (it is moved already: `TreeMove` is the model proc, it refuses to put a node under itself) and `view.can_drop` is the program's veto. F2 (the action `RENAME`) edits the name of the selected node in place with the whole name selected: Enter keeps it (`view.renamed`, `TreeRename`), Escape drops it.
 `TreeVisible` flattens the tree into rows for a program that wants its own row look (with `UiVirtual`). Demo: `demo_common/demo_tree.odin`.
 
 ## Inspector

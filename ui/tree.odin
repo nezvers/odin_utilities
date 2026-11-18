@@ -90,21 +90,79 @@ TreeAdd :: proc(tree: ^Tree, parent: TreeHandle, name: string, user: rawptr = ni
     return
 }
 
+// Takes a node out of the list of its parent (the node keeps its own children and is not freed).
+@(private)
+treeUnlink :: proc(tree: ^Tree, node: ^TreeNode) {
+    if previous := TreeGet(tree, node.previous); previous != nil { previous.next = node.next }
+    if next := TreeGet(tree, node.next); next != nil { next.previous = node.previous }
+    if owner := TreeGet(tree, node.parent); owner != nil {
+        if owner.first_child == node.handle { owner.first_child = node.next }
+        if owner.last_child == node.handle { owner.last_child = node.previous }
+        owner.child_count -= 1
+    } else {
+        if tree.first == node.handle { tree.first = node.next }
+        if tree.last == node.handle { tree.last = node.previous }
+    }
+    node.next, node.previous = {}, {}
+}
+
+// Whether `ancestor` is the node or one of the nodes above it.
+TreeIsAbove :: proc(tree: ^Tree, ancestor: TreeHandle, handle: TreeHandle) -> bool {
+    for current := handle; current != {}; {
+        if current == ancestor { return true }
+        node: ^TreeNode = TreeGet(tree, current)
+        if node == nil { return false }
+        current = node.parent
+    }
+    return false
+}
+
+// Moves a node with everything under it: under `parent` (none: to the top), before the node `before` of that parent (none: as the last child). False when a handle is gone, when `before`
+// is not a child of `parent`, or when the node would go into itself or under its own children.
+TreeMove :: proc(tree: ^Tree, handle: TreeHandle, parent: TreeHandle, before: TreeHandle = {}) -> bool {
+    node: ^TreeNode = TreeGet(tree, handle)
+    if node == nil || before == handle { return false }
+    if parent != {} && (TreeGet(tree, parent) == nil || TreeIsAbove(tree, handle, parent)) { return false }
+    if before != {} {
+        marker: ^TreeNode = TreeGet(tree, before)
+        if marker == nil || marker.parent != parent { return false }
+    }
+    treeUnlink(tree, node)
+    node.parent = parent
+    owner: ^TreeNode = TreeGet(tree, parent)
+    next: TreeHandle = before
+    previous: TreeHandle = tree.last if owner == nil else owner.last_child
+    if before != {} { previous = TreeGet(tree, before).previous }
+    node.previous, node.next = previous, next
+    if p := TreeGet(tree, previous); p != nil { p.next = handle }
+    if n := TreeGet(tree, next); n != nil { n.previous = handle }
+    if owner == nil {
+        if tree.first == {} || tree.first == before { tree.first = handle }
+        if before == {} { tree.last = handle }
+    } else {
+        if owner.first_child == {} || owner.first_child == before { owner.first_child = handle }
+        if before == {} { owner.last_child = handle }
+        owner.child_count += 1
+    }
+    return true
+}
+
+// A new name for a node (cut to TREE_NAME_MAX bytes). False when the node is gone or the name is empty.
+TreeRename :: proc(tree: ^Tree, handle: TreeHandle, name: string) -> bool {
+    node: ^TreeNode = TreeGet(tree, handle)
+    if node == nil || len(name) == 0 { return false }
+    count: int = min(len(name), TREE_NAME_MAX)
+    copy(node.name[:count], name[:count])
+    node.name_length = count
+    return true
+}
+
 // Removes a node with everything under it.
 TreeRemove :: proc(tree: ^Tree, handle: TreeHandle) -> bool {
     node: ^TreeNode = TreeGet(tree, handle)
     if node == nil { return false }
     // unlink first, then free the subtree (every node of it, down and across, without recursion)
-    if previous := TreeGet(tree, node.previous); previous != nil { previous.next = node.next }
-    if next := TreeGet(tree, node.next); next != nil { next.previous = node.previous }
-    if owner := TreeGet(tree, node.parent); owner != nil {
-        if owner.first_child == handle { owner.first_child = node.next }
-        if owner.last_child == handle { owner.last_child = node.previous }
-        owner.child_count -= 1
-    } else {
-        if tree.first == handle { tree.first = node.next }
-        if tree.last == handle { tree.last = node.previous }
-    }
+    treeUnlink(tree, node)
     current: TreeHandle = handle
     for current != {} {
         item: ^TreeNode = TreeGet(tree, current)
@@ -188,11 +246,26 @@ TreeView :: struct {
     changed: bool,              // the selection changed in this frame
     activated: bool,            // a double click or Enter on a node in this frame
     toggled: TreeHandle,        // the node that was opened or closed in this frame (by the pointer or the keys): look at TreeGet(...).expanded
+    moved: TreeHandle,          // the node that was dropped somewhere else in this frame (it is moved already: its `parent` says where)
+    renamed: TreeHandle,        // the node whose name was changed in this frame (F2, Enter)
+    can_drop: TreeCanDropProc,  // nil: a node may go anywhere that is not under itself
+    dragging: bool,
+    drag_node: TreeHandle,
+    drag_start: Vec2,
+    drop_row: int,              // the row under the pointer while dragging, VIRTUAL_NONE for none
+    renaming: TreeHandle,       // the node that is being edited
+    rename_fresh: bool,         // the text field gets the focus in the next frame
+    rename_buffer: [TREE_NAME_MAX]u8,
+    rename_length: int,
 }
+
+// Says if a node may be dropped under a parent (none: at the top) before the node `before` (none: last).
+TreeCanDropProc :: proc(tree: ^Tree, node: TreeHandle, parent: TreeHandle, before: TreeHandle) -> bool
 
 TreeViewInit :: proc(view: ^TreeView) {
     view^ = {}
     view.list.selected = VIRTUAL_NONE
+    view.drop_row = VIRTUAL_NONE
 }
 
 @(private)
@@ -209,7 +282,9 @@ UiTree :: proc(ctx: ^Context, name: string, tree: ^Tree, view: ^TreeView, size: 
     metrics: ^Metrics = &ctx.style.metrics
     height: f32 = row_height if row_height > 0 else metrics.control_height
     id: Id = UiId(ctx, name)
-    view.changed, view.activated, view.toggled = false, false, {}
+    view.changed, view.activated, view.toggled, view.moved, view.renamed = false, false, {}, {}, {}
+    if TreeGet(tree, view.renaming) == nil { view.renaming = {} }
+    editing: bool = view.renaming != {}               // the Enter that ends an edit does not also activate the row
     view.row_count = TreeVisible(tree, view.rows[:])
     if TreeGet(tree, view.selected) == nil { view.selected = {} }
     // a selected node that is hidden (a parent was closed) is replaced by its nearest visible parent
@@ -238,22 +313,29 @@ UiTree :: proc(ctx: ^Context, name: string, tree: ^Tree, view: ^TreeView, size: 
                 view.selected, view.changed = node.parent, true
             }
         }
+        if .RENAME in ctx.input.actions && view.renaming == {} {
+            view.renaming, view.rename_fresh = view.selected, true
+            view.rename_length = node.name_length
+            copy(view.rename_buffer[:node.name_length], node.name[:node.name_length])
+        }
         view.row_count = TreeVisible(tree, view.rows[:])
         view.list.selected = treeRowOf(view, view.selected)
     }
 
+    view.list.marked = view.drop_row + 1 if view.dragging && view.drop_row != VIRTUAL_NONE else 0
     if UiVirtual(ctx, name, &view.list, view.row_count, height, size) {
         if view.list.changed && view.list.selected != VIRTUAL_NONE {
             view.selected = view.rows[view.list.selected].node
             view.changed = true
         }
-        if view.list.activated && view.selected != {} {
+        if view.list.activated && view.selected != {} && !editing {
             view.activated = true
             if node := TreeGet(tree, view.selected); node != nil && (node.branch || node.first_child != {}) {
                 node.expanded = !node.expanded
                 view.toggled = view.selected
             }
         }
+        treeDrag(ctx, tree, view)
         for row_index in view.list.first ..< view.list.last {
             row: TreeRow = view.rows[row_index]
             node: ^TreeNode = TreeGet(tree, row.node)
@@ -277,8 +359,59 @@ UiTree :: proc(ctx: ^Context, name: string, tree: ^Tree, view: ^TreeView, size: 
                 ElementClose(ctx)
                 ElementOpen(ctx, {layout = {size = {Fixed(4), Grow()}}})
                 ElementClose(ctx)
-                UiLabel(ctx, TreeName(node))
+                if row.node == view.renaming {
+                    text_id: Id = UiId(ctx, "##rename")
+                    if view.rename_fresh {
+                        // the whole name is selected: typing replaces it, an arrow key edits it
+                        ctx.focus = text_id
+                        field: ^WidgetState = stateGet(ctx, text_id)
+                        field.anchor, field.cursor = 0, view.rename_length
+                        view.rename_fresh = false
+                    }
+                    _, submitted := UiTextField(ctx, "##rename", view.rename_buffer[:], &view.rename_length, {Grow(), Grow()})
+                    if submitted {
+                        if TreeRename(tree, row.node, string(view.rename_buffer[:view.rename_length])) { view.renamed = row.node }
+                        view.renaming = {}
+                    } else if .CANCEL in ctx.input.actions || ctx.focus != text_id {
+                        view.renaming = {}
+                    }
+                } else {
+                    UiLabel(ctx, TreeName(node))
+                }
             }
         }
     }
+}
+
+// Dragging a row onto another: onto a branch it goes in (as its last child and the branch opens), onto a file it goes after it, as a sibling. Released outside of a row, or Escape: nothing.
+@(private)
+treeDrag :: proc(ctx: ^Context, tree: ^Tree, view: ^TreeView) {
+    mouse: Vec2 = ctx.input.mouse_position
+    if view.renaming != {} { view.dragging, view.drag_node = false, {} }
+    if ctx.input.mouse_pressed && view.list.hover != VIRTUAL_NONE && view.renaming == {} {
+        view.drag_node, view.drag_start, view.dragging = view.rows[view.list.hover].node, mouse, false
+    }
+    if view.drag_node == {} { return }
+    if TreeGet(tree, view.drag_node) == nil || .CANCEL in ctx.input.actions { view.drag_node, view.dragging, view.drop_row = {}, false, VIRTUAL_NONE; return }
+    if ctx.input.mouse_down {
+        delta: Vec2 = mouse - view.drag_start
+        if !view.dragging && delta.x * delta.x + delta.y * delta.y > 36 { view.dragging = true }
+        view.drop_row = view.list.hover if view.dragging else VIRTUAL_NONE
+        return
+    }
+    // released
+    if view.dragging && view.list.hover != VIRTUAL_NONE {
+        target: ^TreeNode = TreeGet(tree, view.rows[view.list.hover].node)
+        if target != nil && target.handle != view.drag_node {
+            parent, before: TreeHandle = target.parent, target.next
+            into: bool = target.branch || target.first_child != {}
+            if into { parent, before = target.handle, {} }
+            if (view.can_drop == nil || view.can_drop(tree, view.drag_node, parent, before)) && TreeMove(tree, view.drag_node, parent, before) {
+                view.moved = view.drag_node
+                if into { target.expanded = true }
+                view.selected, view.changed = view.drag_node, true
+            }
+        }
+    }
+    view.drag_node, view.dragging, view.drop_row = {}, false, VIRTUAL_NONE
 }

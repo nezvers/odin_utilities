@@ -22,6 +22,8 @@ State :: struct {
     view: ui.TreeView,
     log: [120]u8,
     log_length: int,
+    renamed_to: string,                     // the name after the last rename (a constant string in the demo)
+    moved: ui.TreeHandle,
 }
 
 state: State
@@ -60,6 +62,9 @@ draw :: proc(ctx: ^kit.Context) {
         if toggled := ui.TreeGet(&state.tree, state.view.toggled); toggled != nil && toggled.expanded && toggled.branch && toggled.child_count == 0 {
             load(state.view.toggled)
         }
+        if node := ui.TreeGet(&state.tree, state.view.renamed); node != nil { state.log_length = len(fmt.bprintf(state.log[:], "renamed: %s", ui.TreeName(node))) }
+        if node := ui.TreeGet(&state.tree, state.view.renamed); node != nil && ui.TreeName(node) == "data" { state.renamed_to = "data" }
+        if state.view.moved != {} { state.moved = state.view.moved }
         ui.UiLabel(c, string(state.log[:state.log_length]))
     }
     ui_demo_end(&state.app)
@@ -92,5 +97,25 @@ script: []kit.Step = {
     kit.Tap(.DOWN),
     kit.Wait(3),
     kit.Capture("tree"),
+    // F2 edits the name of the selected node (the whole name is selected: typing replaces it), Enter keeps it
+    kit.Wait(40),                           // long enough after the last click not to be a double click
+    kit.Click({150, 22}),
+    kit.Wait(3),
+    kit.Tap(.F2),
+    kit.Wait(3),
+    kit.Type("data"),
+    kit.Wait(2),
+    kit.Tap(.ENTER),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.view.row_count == 8 }, "the Enter that ended the edit did not close the folder"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.renamed_to == "data" && nameOf(ui.TreeHandle(state.view.selected)) == "data" }, "F2, typing and Enter renamed the folder"),
+    // a row is dragged onto a folder: README.md goes into it
+    kit.Drag({150, 10 + 24 * 7 + 12}, {150, 22}, 8),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        readme: ^ui.TreeNode = ui.TreeGet(&state.tree, state.moved)
+        return readme != nil && ui.TreeName(readme) == "README.md" && nameOf(readme.parent) == "data" && state.view.row_count == 8
+    }, "dragging README.md onto the folder moved it in"),
+    kit.Capture("tree_moved"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

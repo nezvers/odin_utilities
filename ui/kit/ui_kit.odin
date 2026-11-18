@@ -78,6 +78,7 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
         result.mouse_pressed = false
     }
     if kit.ShiftDown(source) { result.modifiers += {.SHIFT} }
+    if .F2 in source.keys_pressed { result.actions += {.RENAME} }
     if .LEFT_ALT in source.keys_down || .RIGHT_ALT in source.keys_down { result.modifiers += {.ALT} }
     if kit.CtrlDown(source) {
         result.modifiers += {.CTRL}

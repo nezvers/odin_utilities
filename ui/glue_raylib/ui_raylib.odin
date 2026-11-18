@@ -124,6 +124,7 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if rl.IsKeyPressed(keys[key]) || rl.IsKeyPressedRepeat(keys[key]) { input.keys += {key} }
     }
     input.actions = actionsPoll()
+    if rl.IsKeyPressed(.F2) { input.actions += {.RENAME} }
     if ctrl {
         if rl.IsKeyPressed(.C) { input.actions += {.COPY} }
         if rl.IsKeyPressed(.X) { input.actions += {.CUT} }

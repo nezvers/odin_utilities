@@ -29,6 +29,7 @@ VirtualList :: struct {
     hover: int,                 // the row under the pointer, VIRTUAL_NONE for none
     row_height: f32,
     count: int,
+    marked: int,                // the program marks a row (the target of a drop) by its number plus one: 0 is none
     row_width: f32,             // 0: a row is as wide as the list; else it is this wide and the list scrolls sideways when it is wider than the view (tables)
 }
 
@@ -143,7 +144,7 @@ UiVirtualRow :: proc(ctx: ^Context, list: ^VirtualList, row: int) -> bool {
     metrics: ^Metrics = &ctx.style.metrics
     return ElementOpen(ctx, {
         layout = {size = {Fixed(list.row_width) if list.row_width > 0 else Grow(), Fixed(list.row_height)}, direction = .LEFT_TO_RIGHT, align = {y = .CENTER}},
-        draw = {kind = .SELECTABLE, hover = 1 if list.hover == row else 0, flags = {.SELECTED} if list.selected == row else {}, font_size = metrics.font_size},
+        draw = {kind = .SELECTABLE, hover = 1 if list.hover == row else 0, flags = (({.SELECTED} if list.selected == row else {}) + ({.PRESSED} if list.marked == row + 1 else {})), font_size = metrics.font_size},
     })
 }
 

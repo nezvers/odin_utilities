@@ -3366,3 +3366,99 @@ test_the_widget_copies_and_pastes_selected_points_and_snaps_their_values :: proc
     testing.expect(t, abs(value - 25 * f32(int(value / 25 + 0.5))) < 0.001, "the value is on the grid")
     _ = lane
 }
+
+@(test)
+test_a_node_moves_with_its_children_and_never_into_itself :: proc(t: ^testing.T) {
+    tree: ^Tree = new(Tree)
+    defer free(tree)
+    TreeInit(tree)
+    a, _ := TreeAdd(tree, {}, "a", branch = true)
+    b, _ := TreeAdd(tree, {}, "b", branch = true)
+    c, _ := TreeAdd(tree, {}, "c")
+    a1, _ := TreeAdd(tree, a, "a1")
+    a2, _ := TreeAdd(tree, a, "a2")
+    testing.expect(t, TreeMove(tree, a2, b), "into another folder as the last child")
+    testing.expect_value(t, TreeGet(tree, a).child_count, 1)
+    testing.expect_value(t, TreeGet(tree, b).child_count, 1)
+    testing.expect_value(t, TreeGet(tree, a2).parent, b)
+    testing.expect(t, TreeMove(tree, c, {}, a), "before a sibling at the top")
+    testing.expect_value(t, tree.first, c)
+    testing.expect_value(t, TreeGet(tree, c).next, a)
+    testing.expect_value(t, TreeGet(tree, a).previous, c)
+    testing.expect(t, TreeMove(tree, a1, b, a2), "before a node of the new parent")
+    testing.expect_value(t, TreeGet(tree, b).first_child, a1)
+    testing.expect_value(t, TreeGet(tree, a1).next, a2)
+    testing.expect_value(t, TreeGet(tree, b).last_child, a2)
+    testing.expect_value(t, TreeGet(tree, a).child_count, 0)
+    testing.expect_value(t, TreeGet(tree, a).first_child, TreeHandle{})
+    testing.expect(t, TreeMove(tree, b, a), "a folder with children moves")
+    testing.expect_value(t, TreeGet(tree, a2).parent, b)
+    testing.expect(t, !TreeMove(tree, a, b), "not under its own child")
+    testing.expect(t, !TreeMove(tree, a, a), "not into itself")
+    testing.expect(t, !TreeMove(tree, c, a, a1), "before a node that is not a child of the parent")
+    // to the top, last
+    testing.expect(t, TreeMove(tree, a1, {}))
+    testing.expect_value(t, tree.last, a1)
+    testing.expect_value(t, TreeGet(tree, b).child_count, 1)
+    // the rows follow
+    rows: [16]TreeRow
+    TreeExpand(tree, a)
+    TreeExpand(tree, b)
+    testing.expect_value(t, TreeVisible(tree, rows[:]), 5)                     // c, a, b, a2, a1
+    testing.expect(t, TreeRename(tree, c, "renamed") && TreeName(TreeGet(tree, c)) == "renamed")
+    testing.expect(t, !TreeRename(tree, c, ""))
+}
+
+@(test)
+test_a_tree_widget_drops_a_node_into_a_folder_and_renames_in_place :: proc(t: ^testing.T) {
+    storage: ^InspectorStorage = new(InspectorStorage)
+    ctx: ^Context = new(Context)
+    tree: ^Tree = new(Tree)
+    view: ^TreeView = new(TreeView)
+    defer { free(storage); free(ctx); free(tree); free(view) }
+    style: Style = makeStyle()
+    UiInit(ctx, storage, testMeasure)
+    TreeInit(tree)
+    TreeViewInit(view)
+    src, _ := TreeAdd(tree, {}, "src", branch = true)
+    main, _ := TreeAdd(tree, src, "main")
+    readme, _ := TreeAdd(tree, {}, "README")
+    TreeExpand(tree, src)
+    for _ in 0 ..< 3 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    testing.expect_value(t, view.row_count, 3)
+    // drag README (row 2) onto the folder (row 0): a press, a move far enough, the release over the folder
+    treeFrame(ctx, &style, tree, view, pointerAt({100, 50}))
+    treeFrame(ctx, &style, tree, view, pointerAt({100, 50}, true, true))
+    treeFrame(ctx, &style, tree, view, pointerAt({100, 30}, true))
+    treeFrame(ctx, &style, tree, view, pointerAt({100, 10}, true))
+    testing.expect(t, view.dragging && view.drop_row == 0, "the folder is the target")
+    treeFrame(ctx, &style, tree, view, pointerAt({100, 10}, false, false, true))
+    testing.expect_value(t, view.moved, readme)
+    testing.expect_value(t, TreeGet(tree, readme).parent, src)
+    testing.expect_value(t, TreeGet(tree, src).last_child, readme)
+    testing.expect(t, !view.dragging)
+    // a short press and release is a click, not a drag
+    treeFrame(ctx, &style, tree, view, pointerAt({-10, -10}))
+    treeClick(ctx, &style, tree, view, {100, 30})
+    testing.expect_value(t, view.moved, TreeHandle{})
+    testing.expect_value(t, view.selected, main)
+    // F2: the name is edited with the whole name selected, typed text replaces it, Enter keeps it
+    treeAction(ctx, &style, tree, view, .RENAME)
+    testing.expect_value(t, view.renaming, main)
+    treeFrame(ctx, &style, tree, view, pointerAt({-10, -10}))
+    typed: Input = pointerAt({-10, -10})
+    typed.text[0], typed.text[1], typed.text_count = '!', '?', 2
+    treeFrame(ctx, &style, tree, view, typed)
+    enter: Input = pointerAt({-10, -10})
+    enter.keys = {.ENTER}
+    treeFrame(ctx, &style, tree, view, enter)
+    testing.expect_value(t, view.renamed, main)
+    testing.expect(t, TreeName(TreeGet(tree, main)) == "!?", "the typed text replaced the selected name")
+    testing.expect_value(t, view.renaming, TreeHandle{})
+    // Escape: nothing is changed
+    treeAction(ctx, &style, tree, view, .RENAME)
+    treeFrame(ctx, &style, tree, view, pointerAt({-10, -10}))
+    treeAction(ctx, &style, tree, view, .CANCEL)
+    testing.expect_value(t, view.renaming, TreeHandle{})
+    testing.expect(t, TreeName(TreeGet(tree, main)) == "!?")
+}

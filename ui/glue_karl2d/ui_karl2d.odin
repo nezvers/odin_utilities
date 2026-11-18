@@ -105,6 +105,7 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
         if karl2d.key_went_down(keys[key], allow_repeat = true) { input.keys += {key} }
     }
     input.actions = actionsPoll()
+    if karl2d.key_went_down(.F2) { input.actions += {.RENAME} }
     if ctrl {
         if karl2d.key_went_down(.C) { input.actions += {.COPY} }
         if karl2d.key_went_down(.X) { input.actions += {.CUT} }
