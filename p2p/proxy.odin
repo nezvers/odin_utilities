@@ -4,14 +4,13 @@
 // Many company and school networks only let a browser out through a proxy. The proxy is taken from the usual environment variables,
 // HTTPS_PROXY / https_proxy / ALL_PROXY / all_proxy, and NO_PROXY / no_proxy (a comma separated list of names or ".suffix"s that go direct,
 // "*" = everything). The URL says which kind it is (the user name and password may be percent encoded, "%5C" is a backslash):
-//   http://[user:password@]host[:3128]    CONNECT over plain TCP; Basic and NTLM logins
+//   http://[user:password@]host[:3128]    CONNECT over plain TCP; Basic, NTLM and Negotiate (Kerberos) logins
 //   https://[user:password@]host[:443]    the same CONNECT inside a TLS connection to the proxy (its certificate is checked like a relay's)
 //   socks5://, socks5h://                 SOCKS5 (RFC 1928), no login or user name and password; the name is always sent to the proxy
 //   socks4://, socks4a://                 SOCKS4 with the name sent to the proxy (SOCKS4a); the user part is the ident name
-// Logins for an HTTP(S) proxy: Basic (user:password in the URL); NTLM when the proxy asks for it: with DOMAIN\user:password
+// Logins for an HTTP(S) proxy: Basic (user:password in the URL); NTLM and Negotiate when the proxy asks for them: with DOMAIN\user:password
 // in the URL on every platform (NTLMv2, proxy_ntlm.odin), and on Windows without any credentials in the URL through SSPI with the login of
-// the user (the NTLM package; proxy_sspi_windows.odin). Kerberos (the Negotiate scheme) is not supported: a proxy that offers only that is
-// told so, one that offers NTLM besides it gets NTLM.
+// the user (Negotiate = Kerberos, falling back to NTLM; proxy_sspi_windows.odin). Kerberos needs Windows: nowhere else is GSSAPI used.
 //
 // The proxy sees only the name and the port that is asked for; what flows through is the TLS connection of the relay, which the proxy cannot
 // read, and the packets inside it are sealed on top of that. Not covered: anything that is not TCP, a PAC file, WPAD. The direct UDP path
@@ -325,7 +324,7 @@ ProxyBase64 :: proc(data: []byte) -> string {
     return encoded
 }
 
-// CONNECT host:port through the proxy on `io`, logging in when it asks. Logins in the order of what the proxy offers: NTLM
+// CONNECT host:port through the proxy on `io`, logging in when it asks. Logins in the order of what the proxy offers: Negotiate / NTLM
 // (SSPI with the login of the user when no credentials are given on Windows; NTLMv2 by hand with "DOMAIN\user:password"), Basic. `error` is
 // the whole message for the caller (allocated).
 @(private)
@@ -357,7 +356,7 @@ ProxyHttpConnect :: proc(io: ^ProxyIo, label: string, proxy_host: string, userin
         head, status, read_ok := ProxyReadReply(io, reply[:])
         if !read_ok {
             if exchange != .NONE {
-                return fmt.aprintf("the proxy %s closed the connection during the login (an NTLM login needs it kept open)", label), false
+                return fmt.aprintf("the proxy %s closed the connection during the login (NTLM and Kerberos logins need it kept open)", label), false
             }
             return fmt.aprintf("the proxy %s did not answer the CONNECT request", label), false
         }
@@ -374,13 +373,10 @@ ProxyHttpConnect :: proc(io: ^ProxyIo, label: string, proxy_host: string, userin
         case .NONE:
             _, has_negotiate := ProxyChallenge(offered, "Negotiate")
             _, has_ntlm := ProxyChallenge(offered, "NTLM")
-            if has_negotiate && !has_ntlm {
-                return fmt.aprintf("the proxy %s offers only Negotiate (Kerberos), which is not supported here: it has to offer NTLM or Basic", label), false
-            }
             _, has_basic := ProxyChallenge(offered, "Basic")
             switch {
-            case has_ntlm && userinfo == "" && SSPI_AVAILABLE:
-                scheme = "NTLM"
+            case (has_negotiate || has_ntlm) && userinfo == "" && SSPI_AVAILABLE:
+                scheme = "Negotiate" if has_negotiate else "NTLM"
                 state, open_ok := SspiOpen(scheme, proxy_host)
                 if !open_ok {
                     return fmt.aprintf("the proxy %s wants a Windows login, which could not be started on this computer", label), false
@@ -394,15 +390,15 @@ ProxyHttpConnect :: proc(io: ^ProxyIo, label: string, proxy_host: string, userin
                 authorization = fmt.tprintf("%s %s", scheme, ProxyBase64(token))
                 exchange = .SSPI
                 stage = 1
-            case has_ntlm && userinfo != "":
-                scheme = "NTLM"
+            case (has_negotiate || has_ntlm) && userinfo != "":
+                scheme = "NTLM" if has_ntlm else "Negotiate"
                 message: [32]byte
                 length: int = NtlmNegotiate(message[:])
                 authorization = fmt.tprintf("%s %s", scheme, ProxyBase64(message[:length]))
                 exchange = .NTLM
                 stage = 1
-            case has_ntlm:
-                return fmt.aprintf("the proxy %s wants an NTLM login: give DOMAIN\\user:password in the proxy URL", label), false
+            case has_negotiate || has_ntlm:
+                return fmt.aprintf("the proxy %s wants a Windows login (NTLM / Negotiate): give DOMAIN\\user:password in the proxy URL (Kerberos without a password needs Windows)", label), false
             case has_basic && userinfo != "" && !basic_sent:
                 authorization = fmt.tprintf("Basic %s", ProxyBase64(transmute([]byte)userinfo))
                 basic_sent = true
@@ -931,7 +927,6 @@ LoginTestServer :: struct {
     sspi: bool,
     authenticated: bool,
     requests: int,
-    negotiate_only: bool,                // offers Negotiate and nothing else
 }
 
 LOGIN_TEST_CHALLENGE :: [8]byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef}
@@ -940,10 +935,6 @@ LOGIN_TEST_TIME :: u64(0x01d9_0000_0000_0011)
 // The answer of the proxy to one request, and whether the login is complete.
 LoginTestAnswer :: proc(server: ^LoginTestServer, authorization: string, sspi_server: rawptr) -> (reply: string) {
     if authorization == "" {
-        if server.negotiate_only {
-            return "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Negotiate\r\nContent-Length: 5\r\n\r\nhello"
-        }
-        // Negotiate is offered too: the client has to pick NTLM
         return "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Negotiate\r\nProxy-Authenticate: NTLM\r\nContent-Length: 5\r\n\r\nhello"
     }
     space: int = strings.index_byte(authorization, ' ')
@@ -957,7 +948,7 @@ LoginTestAnswer :: proc(server: ^LoginTestServer, authorization: string, sspi_se
                 server.authenticated = true
                 reply = "HTTP/1.1 200 Connection established\r\n\r\n"
             } else if step_ok {
-                reply = fmt.tprintf("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: NTLM %s\r\nContent-Length: 0\r\n\r\n", ProxyBase64(output))
+                reply = fmt.tprintf("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Negotiate %s\r\nContent-Length: 0\r\n\r\n", ProxyBase64(output))
             }
         }
     } else if len(token_bytes) > 8 && token_bytes[8] == 1 {
@@ -1041,9 +1032,8 @@ LoginTestServe :: proc(data: rawptr) {
     }
 }
 
-LoginTestRun :: proc(t: ^testing.T, userinfo: string, sspi: bool, negotiate_only: bool = false) -> (error: string, ok: bool, server: ^LoginTestServer) {
+LoginTestRun :: proc(t: ^testing.T, userinfo: string, sspi: bool) -> (error: string, ok: bool, server: ^LoginTestServer) {
     server = new(LoginTestServer)
-    server.negotiate_only = negotiate_only
     listener, listen_error := net.listen_tcp({address = net.IP4_Loopback, port = 0})
     testing.expect(t, listen_error == nil)
     server.listener = listener
@@ -1085,21 +1075,7 @@ ProxyNtlmLoginTest :: proc(t: ^testing.T) {
     }
 }
 
-// Kerberos is not supported: a proxy that offers only Negotiate is told so (also with credentials and with the login of the Windows user),
-// and the login is not even tried.
-@(test)
-ProxyNegotiateOnlyTest :: proc(t: ^testing.T) {
-    for userinfo in ([?]string{"CORP%5Calice:s3cret@", ""}) {
-        error, ok, server := LoginTestRun(t, userinfo, false, true)
-        defer free(server)
-        testing.expect(t, !ok && strings.contains(error, "only Negotiate") && strings.contains(error, "not supported"), error)
-        testing.expect_value(t, server.requests, 1)                 // it asked once, saw only Negotiate and stopped
-        testing.expect(t, !server.authenticated)
-        delete(error)
-    }
-}
-
-// The login of the Windows user through SSPI (the NTLM package), with the proxy checking it against the accounts of this computer.
+// The login of the Windows user through SSPI, with the proxy checking it against the accounts of this computer.
 @(test)
 ProxySspiLoginTest :: proc(t: ^testing.T) {
     when ODIN_OS == .Windows {
