@@ -21,10 +21,13 @@ State :: struct {
     sound_count: u32,
     fonts: [MAX_FONTS]karl2d.Font,
     font_count: u32,
+    default_font: karl2d.Font,      // Fira Code (assets/fonts): the font of every text that does not ask for another one
     last_mouse: kit.Vec2,
 }
 
 // `options` is what Karl2D is started with: a demo of the 3D layer of the fork needs depth_test = true
+FIRA_CODE :: #load("../../assets/fonts/FiraCode-Regular.ttf")
+
 Run :: proc(title: string, demos: []kit.Demo, width: int = 1280, height: int = 720, options: karl2d.Init_Options = {window_mode = .Windowed_Resizable}) {
     run_options: karl2d.Init_Options = options
     // reading the screen back is a function of the 3D layer of the fork, which needs the depth buffer
@@ -59,6 +62,8 @@ Run :: proc(title: string, demos: []kit.Demo, width: int = 1280, height: int = 7
 // Fill a Backend with the Karl2D procs. Karl2D has to be initialized. `state` has to live as long as the backend.
 Init :: proc(backend: ^kit.Backend, state: ^State) {
     state.last_mouse = karl2d.get_mouse_position()
+    state.default_font = karl2d.FONT_DEFAULT
+    if font, ok := karl2d.load_dynamic_font_from_bytes(FIRA_CODE); ok { state.default_font = font }
     backend^ = {
         name = "karl2d",
         state = state,
@@ -86,10 +91,12 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             karl2d.draw_triangle({a, b, c}, color)
         },
         draw_text = proc(backend: ^kit.Backend, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
-            karl2d.draw_text(text, position, size, color)
+            state: ^State = cast(^State)backend.state
+            karl2d.draw_text(text, position, size, color, state.default_font)
         },
         measure_text = proc(backend: ^kit.Backend, text: string, size: f32) -> kit.Vec2 {
-            return karl2d.measure_text(text, size)
+            state: ^State = cast(^State)backend.state
+            return karl2d.measure_text(text, size, state.default_font)
         },
         font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int) -> kit.Font {
             state: ^State = cast(^State)backend.state
@@ -109,13 +116,13 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         },
         measure_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, size: f32) -> kit.Vec2 {
             state: ^State = cast(^State)backend.state
-            face: karl2d.Font = karl2d.FONT_DEFAULT
+            face: karl2d.Font = state.default_font
             if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
             return karl2d.measure_text(text, size, face)
         },
         draw_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
             state: ^State = cast(^State)backend.state
-            face: karl2d.Font = karl2d.FONT_DEFAULT
+            face: karl2d.Font = state.default_font
             if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
             karl2d.draw_text(text, position, size, color, face)
         },

@@ -23,7 +23,10 @@ State :: struct {
     fonts: [MAX_FONTS]rl.Font,
     font_count: u32,
     last_mouse: kit.Vec2,
+    default_font: kit.Font,         // Fira Code (assets/fonts): the font of every text that does not ask for another one
 }
+
+FIRA_CODE :: #load("../../assets/fonts/FiraCode-Regular.ttf")
 
 // Open a window and run. Escape closes it.
 Run :: proc(title: string, demos: []kit.Demo, width: i32 = 1280, height: i32 = 720) {
@@ -58,6 +61,7 @@ Run :: proc(title: string, demos: []kit.Demo, width: i32 = 1280, height: i32 = 7
 // Fill a Backend with the raylib procs. The window has to be open. `state` has to live as long as the backend.
 Init :: proc(backend: ^kit.Backend, state: ^State) {
     state.last_mouse = rl.GetMousePosition()
+    state.default_font = fontLoad(nil, FIRA_CODE, 32, 1280, state)
     backend^ = {
         name = "raylib",
         state = state,
@@ -83,14 +87,16 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         },
         draw_triangle = drawTriangle,
         draw_text = proc(backend: ^kit.Backend, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
+            state: ^State = cast(^State)backend.state
             buffer: [TEXT_BUFFER_SIZE]u8
-            rl.DrawText(cstringInto(&buffer, text), i32(position.x), i32(position.y), i32(size), rl.Color(color))
+            rl.DrawTextEx(face(state, kit.FONT_DEFAULT), cstringInto(&buffer, text), position, size, 0, rl.Color(color))
         },
         measure_text = proc(backend: ^kit.Backend, text: string, size: f32) -> kit.Vec2 {
+            state: ^State = cast(^State)backend.state
             buffer: [TEXT_BUFFER_SIZE]u8
-            return {f32(rl.MeasureText(cstringInto(&buffer, text), i32(size))), size}
+            return rl.MeasureTextEx(face(state, kit.FONT_DEFAULT), cstringInto(&buffer, text), size, 0)
         },
-        font_load = fontLoad,
+        font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int) -> kit.Font { return fontLoad(backend, bytes, size, glyph_count, cast(^State)backend.state) },
         font_unload = proc(backend: ^kit.Backend, font: kit.Font) {
             state: ^State = cast(^State)backend.state
             if u32(font) == 0 || u32(font) > state.font_count { return }
@@ -99,17 +105,13 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         },
         measure_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, size: f32) -> kit.Vec2 {
             state: ^State = cast(^State)backend.state
-            face: rl.Font = rl.GetFontDefault()
-            if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
             buffer: [TEXT_BUFFER_SIZE]u8
-            return rl.MeasureTextEx(face, cstringInto(&buffer, text), size, 0)
+            return rl.MeasureTextEx(face(state, font), cstringInto(&buffer, text), size, 0)
         },
         draw_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
             state: ^State = cast(^State)backend.state
-            face: rl.Font = rl.GetFontDefault()
-            if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
             buffer: [TEXT_BUFFER_SIZE]u8
-            rl.DrawTextEx(face, cstringInto(&buffer, text), position, size, 0, rl.Color(color))
+            rl.DrawTextEx(face(state, font), cstringInto(&buffer, text), position, size, 0, rl.Color(color))
         },
         texture_load = textureLoad,
         texture_from_pixels = proc(backend: ^kit.Backend, width: int, height: int, rgba: []u8) -> kit.Texture {
@@ -239,9 +241,16 @@ drawTriangle :: proc(backend: ^kit.Backend, a: kit.Vec2, b: kit.Vec2, c: kit.Vec
     }
 }
 
+// The raylib font of a kit font: FONT_DEFAULT is Fira Code (raylib's own pixel font when it could not be made).
 @(private)
-fontLoad :: proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int) -> kit.Font {
-    state: ^State = cast(^State)backend.state
+face :: proc(state: ^State, font: kit.Font) -> rl.Font {
+    id: kit.Font = font if font != kit.FONT_DEFAULT else state.default_font
+    if u32(id) != 0 && u32(id) <= state.font_count { return state.fonts[id] }
+    return rl.GetFontDefault()
+}
+
+@(private)
+fontLoad :: proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int, state: ^State) -> kit.Font {
     if state.font_count + 1 >= MAX_FONTS { return kit.FONT_DEFAULT }
     codepoints: [dynamic]rune
     defer delete(codepoints)

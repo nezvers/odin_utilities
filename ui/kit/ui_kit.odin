@@ -26,11 +26,11 @@ PainterInit :: proc(painter: ^ui_default.Painter) {
         },
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
             scale: f32 = ui_default.PainterScale(painter)
-            kit.DrawTextFont(contextOf(painter), kit.Font(painter.font), text, ui_default.PaintPoint(painter, position), size * scale, kit.Color(color))
+            kit.DrawText(contextOf(painter), text, ui_default.PaintPoint(painter, position), size * scale, kit.Color(color))
         },
         measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
             scale: f32 = ui_default.PainterScale(painter)
-            return kit.MeasureTextFont(contextOf(painter), kit.Font(painter.font), text, size * scale) / scale
+            return kit.MeasureText(contextOf(painter), text, size * scale) / scale
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             if begin {
@@ -40,26 +40,6 @@ PainterInit :: proc(painter: ^ui_default.Painter) {
             }
         },
     }
-}
-
-// The font of a ttf file for the painters of a kit context: loaded once for each context (a demo that starts again finds it), FONT_DEFAULT when there are no bytes (the file is
-// optional: `#load_or` in the demo) or the framework could not make it.
-@(private)
-cache_context: ^kit.Context
-@(private)
-cache_font: kit.Font
-
-FontFor :: proc(ctx: ^kit.Context, bytes: []u8) -> kit.Font {
-    if len(bytes) == 0 { return kit.FONT_DEFAULT }
-    if cache_context != ctx {
-        cache_context, cache_font = ctx, kit.FontLoad(ctx, bytes, 32, 1280)
-    }
-    return cache_font
-}
-
-// Makes the painter draw with the font of the ttf bytes (the framework's own when there are none): call it before the frame, ui_kit.Begin does the rest.
-PainterFont :: proc(painter: ^ui_default.Painter, ctx: ^kit.Context, bytes: []u8) {
-    painter.font = u32(FontFor(ctx, bytes))
 }
 
 @(private)

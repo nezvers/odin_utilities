@@ -8,14 +8,6 @@ import ui_default "../default_style"
 import ui_kit "../kit"
 import kit "../../demo_kit"
 
-// The font of the demos: JetBrains Sans Regular from odin_utilities/assets/fonts when the file is there (it is not part of the repository: see the README of the folder), else the font of
-// the framework. The pictures of the stored screenshots were made with it.
-when #exists("../../assets/fonts/JetBrainsSans-Regular.ttf") {
-    DEMO_FONT: []byte = #load("../../assets/fonts/JetBrainsSans-Regular.ttf")
-} else {
-    DEMO_FONT: []byte
-}
-
 UiDemo :: struct {
     storage: ui.Storage(512, 1024, 128, 8192),
     ctx: ui.Context,
@@ -31,7 +23,6 @@ ui_demo_init :: proc(demo: ^UiDemo) {
 
 // The frame of the ui: begin, the widgets of the demo, then end (layout and drawing in the batch of the kit)
 ui_demo_begin :: proc(demo: ^UiDemo, kit_ctx: ^kit.Context) {
-    ui_kit.PainterFont(&demo.painter, kit_ctx, DEMO_FONT)
     ui_kit.Begin(&demo.ctx, &demo.painter, &demo.style, kit_ctx)
 }
 

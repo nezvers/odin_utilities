@@ -4,6 +4,7 @@ package demo_raylib
 // The axes and buttons of the gamepads that are connected, with the state input/raylib reads from them (axes as buttons past a dead zone).
 // raylib only: it shows what the gamepad API of raylib reports.
 
+import "core:fmt"
 import "core:reflect"
 import "core:strings"
 import rl "vendor:raylib"
@@ -40,11 +41,11 @@ draw :: proc(ctx: ^kit.Context) {
     X :: 250
     for device in i32(0) ..< 4 {
         if !rl.IsGamepadAvailable(device) { continue }
-        rl.DrawText(rl.TextFormat("%d", device), X + 30 * device, 10, 20, rl.BLACK)
+        kit.DrawText(ctx, fmt.tprintf("%d", device), {f32(X + 30 * device), 10}, 20, kit.BLACK)
     }
     for i in 0 ..< len(axis_names) {
         y: i32 = 40 + 25 * i32(i)
-        rl.DrawText(axis_names[i], 10, y, 20, rl.BLACK)
+        kit.DrawText(ctx, string(axis_names[i]), {10, f32(y)}, 20, kit.BLACK)
         id: rl.GamepadAxis = rl.GamepadAxis(i)
         for device in i32(0) ..< 4 {
             if !rl.IsGamepadAvailable(device) { continue }
@@ -53,16 +54,16 @@ draw :: proc(ctx: ^kit.Context) {
             if axis_state == .pressed || axis_state == .held {
                 rl.DrawRectangleRec({X, f32(y), 70, 20}, rl.LIGHTGRAY)
             }
-            rl.DrawText(rl.TextFormat("%f", rl.GetGamepadAxisMovement(device, id)), X + 30 * device, y, 20, rl.BLACK)
+            kit.DrawText(ctx, fmt.tprintf("%f", rl.GetGamepadAxisMovement(device, id)), {f32(X + 30 * device), f32(y)}, 20, kit.BLACK)
         }
     }
     for i in 0 ..< len(button_names) {
         y: i32 = 190 + 25 * i32(i)
-        rl.DrawText(button_names[i], 10, y, 20, rl.BLACK)
+        kit.DrawText(ctx, string(button_names[i]), {10, f32(y)}, 20, kit.BLACK)
         id: rl.GamepadButton = rl.GamepadButton(i)
         for device in i32(0) ..< 4 {
             if !rl.IsGamepadAvailable(device) { continue }
-            rl.DrawText("1" if rl.IsGamepadButtonDown(device, id) else "0", X + 30 * device, y, 20, rl.BLACK)
+            kit.DrawText(ctx, "1" if rl.IsGamepadButtonDown(device, id) else "0", {f32(X + 30 * device), f32(y)}, 20, kit.BLACK)
         }
     }
     kit.DrawText(ctx, "gamepad state: connect a gamepad", {600, 10}, 18, kit.GRAY)

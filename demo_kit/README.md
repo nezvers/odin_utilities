@@ -71,7 +71,7 @@ Keep the positions a script clicks fixed numbers (not relative to the window siz
   Karl2D demos too (their pictures are separate), `-- --update ui` replaces the stored pictures of a library. Exit code 0: every picture is as stored. 1: a picture changed or a demo failed. 2: pictures that
   did not exist were stored (a missing golden passes by itself, so it is reported until someone has looked at it: `-- --allow-new` says that is fine). Nothing runs it automatically: run it before committing a
   change to drawing, text layout or a style.
-- One folder per backend (fonts differ). The pictures do **not** depend on the display or its scaling: a test window has exactly the size the demo asked for (1280 x 720), whatever Windows scales the display by
+- Both backends draw text in Fira Code (`assets/fonts`, loaded by `kit_raylib.Init` / `kit_karl2d.Init`: `FONT_DEFAULT` is that font), so the only difference left is how each framework renders it. One folder per backend (the rendering differs). The pictures do **not** depend on the display or its scaling: a test window has exactly the size the demo asked for (1280 x 720), whatever Windows scales the display by
   (a Karl2D window on a 150 % display used to be 1920 x 1080). Karl2D is started with `disable_auto_scale_hint` in a test run, raylib's window is set to its size after it settled on its display; a window that
   cannot get its size stops the run with a message that says the display, its size and its scale instead of failing every picture.
 - **Which display.** The environment variable `DEMO_MONITOR` (a part of the name of the display, without regard to case) moves the test window to that display (`kit.DisplayRequest`, `glue_raylib`, `glue_karl2d`); the tool sets it from

@@ -119,7 +119,6 @@ update :: proc(ctx: ^kit.Context) {
 }
 
 draw :: proc(ctx: ^kit.Context) {
-    ui_kit.PainterFont(&state.painter, ctx, DEMO_FONT)
     ui_kit.Begin(&state.ctx, &state.painter, &state.style, ctx)
     c: ^ui.Context = &state.ctx
     for action in ui.Action {

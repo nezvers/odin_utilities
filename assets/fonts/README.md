@@ -1,7 +1,8 @@
 # Fonts
 
+- `FiraCode-Regular.ttf` + `FiraCode_OFL.txt` (SIL Open Font License 1.1): the font of every demo that draws through `demo_kit` (the raylib and the Karl2D backend load it when they start, so text
+  that asks for no font gets it, the ui demos included). Taken from [Google Fonts](https://github.com/google/fonts/tree/main/ofl/firacode) (`FiraCode[wght].ttf`, a variable font whose default
+  is Light) and made static at weight 400 with `fontTools.varLib.instancer FiraCode.ttf wght=400 --update-name-table`, because stb_truetype and raylib read the default instance only.
 - `font.ttf`, `pixellocale-v-1-4.ttf`: used by the atlas packer, localization and web build demos.
-- `JetBrainsSans-Regular.ttf` (not in the repository, kept out of git on purpose: the font file says "Copyright (c) 2020 by Philipp Nurullin. All rights reserved" and no
-  license was found; it was made from the WOFF that JetBrains serves at `resources.jetbrains.com/storage/jetbrains-sans/`). The demos of `ui` and `reports` use it when the file is there
-  (`#exists` at compile time) and the font of the framework otherwise. The stored screenshots (`captures/`) were made with it: without the file `odin run demo_kit/tool/captures`
-  reports every picture as changed, and a script that clicks at fixed coordinates may miss (headless runs use a fixed width font, so the scripts click where both fit).
+
+The stored screenshots of `ui` and `reports` (`captures/`) are made with Fira Code.
