@@ -1204,6 +1204,12 @@ splitBody :: proc(ctx: ^Context) {
         }
     case 5:
         if UiSplitFirst(ctx) { UiButton(ctx, "alone", {Grow(), Grow()}) }
+    case 8:
+        // a start size in pixels
+        if UiSplit(ctx, "split", direction, 0.5, {}, 40, 30, 100) {
+            if UiSplitFirst(ctx) { UiButton(ctx, "a", {Grow(), Grow()}) }
+            if UiSplitSecond(ctx) { UiButton(ctx, "b", {Grow(), Grow()}) }
+        }
     case 7:
         // content wider than its section: the sections still add up to the container
         if UiSplit(ctx, "split", direction, 0.9, {}, 40, 30) {
@@ -1372,6 +1378,24 @@ test_a_split_stays_right_when_it_is_used_wrongly :: proc(t: ^testing.T) {
 @(private = "file")
 SPLIT_MISUSE_IS_SET :: proc(ctx: ^Context) -> bool {
     return .SPLIT_MISUSE in ctx.problems
+}
+
+@(test)
+test_a_split_can_start_with_a_size_in_pixels :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    cs: ResizeCase = {width = 300, mode = 8}
+    harness.ctx.user = &cs
+    actionFrame(harness, splitBody)
+    testing.expect(t, near(rectOf(harness, "area", "split", "a").z, 100), "the pixels are right in the very first frame")
+    for _ in 0 ..< 3 { actionFrame(harness, splitBody) }
+    testing.expect(t, near(rectOf(harness, "area", "split", "a").z, 100), "and after it became a proportion")
+    testing.expect(t, near(UiSplitRatio(&harness.ctx, UiIdPath("area", "split")), 100.0 / 300))
+    cs.width = 600
+    for _ in 0 ..< 3 { actionFrame(harness, splitBody) }
+    testing.expect(t, near(rectOf(harness, "area", "split", "a").z, 200), "from then on it is a proportion of the container")
+    testing.expect_value(t, harness.ctx.problems, Problems{})
 }
 
 @(test)

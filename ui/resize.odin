@@ -36,21 +36,28 @@ SplitFrame :: struct {
     min_second: f32,
     ratio: f32,                 // what the first section has this frame: the stored one, kept between the minimums
     extent: f32,                // the room the container had along the direction in the last frame (0: unknown, the first frame)
+    pixels: f32,                // the first section starts with this many pixels until the room is known (0: the ratio is used)
 }
 
 // A container with two sections and a handle between them: `UiSplitFirst` and `UiSplitSecond` declare what goes in each. `ratio` is the part
-// of the container the first section starts with (0..1); dragging the handle with the pointer, or the arrow keys when it has the focus,
+// of the container the first section starts with (0..1), or `first_size` pixels when that is given instead; dragging the handle with the pointer, or the arrow keys when it has the focus,
 // changes it, and the split remembers it. The sections keep at least `min_first` and `min_second` pixels, whatever the ratio and the size of the
 // container; a content that does not fit is cut at the edge of its section. The container takes all the room it is given unless `size` says
 // otherwise. Declared out of order (the second before the first) or not at all, a section is made empty; one too many is not shown
 // (and is a `SPLIT_MISUSE` problem): the layout stays right either way.
 @(deferred_in = UiSplitEnd)
-UiSplit :: proc(ctx: ^Context, name: string, direction: SplitDirection = .HORIZONTAL, ratio: f32 = 0.5, size: Size = {}, min_first: f32 = 40, min_second: f32 = 40) -> bool {
+UiSplit :: proc(ctx: ^Context, name: string, direction: SplitDirection = .HORIZONTAL, ratio: f32 = 0.5, size: Size = {}, min_first: f32 = 40, min_second: f32 = 40, first_size: f32 = 0) -> bool {
     id: Id = UiId(ctx, name)
     state: ^WidgetState = stateGet(ctx, id)
     if !state.initialized {
         state.initialized = true
         state.ratio = clamp(ratio, SPLIT_RATIO_MIN, 1 - SPLIT_RATIO_MIN)
+        state.split_pixels = max(first_size, 0)
+    }
+    // a start size in pixels becomes a proportion as soon as the room is known (the first frame has the pixels themselves)
+    if state.split_pixels > 0 && splitExtent(state, direction) > 0 {
+        state.ratio = clamp(state.split_pixels / splitExtent(state, direction), SPLIT_RATIO_MIN, 1 - SPLIT_RATIO_MIN)
+        state.split_pixels = 0
     }
     open: bool = ElementOpen(ctx, {
         id = id,
@@ -72,6 +79,7 @@ UiSplit :: proc(ctx: ^Context, name: string, direction: SplitDirection = .HORIZO
     frame.ratio = state.ratio
     extent: f32 = splitExtent(state, direction)
     frame.extent = extent
+    frame.pixels = state.split_pixels
     if extent > 0 {
         low: f32 = frame.min_first / extent
         high: f32 = max((extent - SPLITTER_THICKNESS - frame.min_second) / extent, low)
@@ -80,7 +88,7 @@ UiSplit :: proc(ctx: ^Context, name: string, direction: SplitDirection = .HORIZO
     return open
 }
 
-UiSplitEnd :: proc(ctx: ^Context, name: string, direction: SplitDirection = .HORIZONTAL, ratio: f32 = 0.5, size: Size = {}, min_first: f32 = 40, min_second: f32 = 40) {
+UiSplitEnd :: proc(ctx: ^Context, name: string, direction: SplitDirection = .HORIZONTAL, ratio: f32 = 0.5, size: Size = {}, min_first: f32 = 40, min_second: f32 = 40, first_size: f32 = 0) {
     if ctx.split_lost > 0 {
         ctx.split_lost -= 1
         ElementClose(ctx)
@@ -190,6 +198,8 @@ splitSectionOpen :: proc(ctx: ^Context, frame: ^SplitFrame, second: bool) -> boo
         } else {
             along = Grow(frame.min_second)
         }
+    } else if frame.pixels > 0 && frame.extent == 0 {
+        along = Fixed(max(frame.pixels, frame.min_first))      // the first frame: the room is not known, so no percent yet
     } else {
         along = Percent(frame.ratio)
         along.min = frame.min_first

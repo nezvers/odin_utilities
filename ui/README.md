@@ -51,7 +51,7 @@ if ui.UiWindowResizable(&ctx, "Workspace", initial_position = {60, 40}, initial_
     }
 }
 ```
-- `UiSplit` is a container with two sections and the handle between them. It keeps the proportion (`ratio` is where it starts; `UiSplitRatio` / `UiSplitSetRatio` read and set it, to save a layout), so the
+- `UiSplit` is a container with two sections and the handle between them. It keeps the proportion (`ratio` is where it starts, or `first_size` pixels when the program thinks in pixels: the pixels are used in the first frame and become a proportion once the room is known; `UiSplitRatio` / `UiSplitSetRatio` read and set it, to save a layout), so the
   proportion stays when the container or the window changes size. It builds the handle (a bar; dragging it, or the arrow keys when it has the focus, moves the border), sizes both sections from the room
   it has, keeps each above its minimum (`min_first`, `min_second`, 40 px by default) whatever the ratio and the room, and cuts what does not fit at the edge of its section. It takes all the room it is given
   unless `size` says otherwise. A pointer pushed past a limit does not pull the border away: the border follows again from where it is. Used wrongly it still lays out right: a section left out is made empty,

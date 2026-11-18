@@ -345,6 +345,7 @@ WidgetState :: struct {
     press_time: f32,                // seconds the widget has been held (a button that repeats)
     anim: f32,                      // UiAnimate: a value that follows a target
     ratio: f32,                     // UiSplit: the part of the container the first section has
+    split_pixels: f32,              // UiSplit started with a size in pixels: kept until the room of the container is known, then it becomes the ratio
     window_position: Vec2,          // UiWindowResizable that keeps its own position and size
     window_size: Vec2,
 }
