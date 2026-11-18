@@ -44,6 +44,8 @@ StyleKind :: enum u8 {
     MENU,               // the title of a menu in a bar (OPEN flag) or a submenu entry (actual 1)
     MENU_ITEM,          // name, text: the shortcut, ON flag: a checked item
     WINDOW_TITLE,       // the title bar of a window: name
+    SPLITTER,           // the handle between two sections: actual 0 for sections side by side (a vertical bar), 1 for stacked ones; HOVERED, PRESSED, FOCUSED flags
+    RESIZE_GRIP,        // the corner of a window that is resized: HOVERED, PRESSED flags
     BULLET,             // the dot of a bullet text
     SEPARATOR_TEXT,     // a line with a name in it
     BACKDROP,           // what dims the screen behind a modal dialog

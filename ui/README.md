@@ -41,7 +41,17 @@ Widgets: `UiWindow UiPanel UiRow UiColumn UiBox UiScroll UiLabel UiButton UiTogg
 More widgets (`widgets_more.odin`): `UiCollapsing` / `UiTreeNode` (headers with a body; opening one scrolls the container to show what it opened, with the header kept in view), `UiRadio`, `UiSelectable`, `UiListBox`, `UiTabBar`, `UiArrowButton` (repeats),
 `UiDrag` / `UiDragInt`, `UiSliderInt` / `UiSliderAngle`, `UiInputInt` / `UiInputFloat`, `UiPlotLines` / `UiPlotHistogram`, `UiColorEdit3` / `UiColorButton`,
 `UiLabelColored` / `UiBullet` / `UiLabelText` / `UiSeparatorText`, `UiTooltip`, `UiDisabled` (a block of disabled widgets), menus (`UiMenuBar`, `UiMenu` with submenus, `UiMenuItem` with shortcut and check),
-`UiModal` (a dialog over a dimmed screen that keeps the focus) and `UiWindowTitled` (a window with a title bar that is dragged).
+`UiModal` (a dialog over a dimmed screen that keeps the focus), `UiWindowTitled` (a window with a title bar that is dragged), `UiWindowResizable` and `UiSplitter` (see below).
+Resizing by the pointer (`resize.odin`, demo `resize`):
+- `UiSplitter(&ctx, "name", &size, .HORIZONTAL | .VERTICAL, min_before, min_after, max_before)` is the handle that sits between two sections and moves the border between them: `.HORIZONTAL` for sections
+  side by side (a bar that moves left and right), `.VERTICAL` for stacked ones (a bar that moves up and down). The program keeps `size`, the size of the section before the handle, and gives that section
+  `Fixed(size)`; the section after it is `Grow()`, so it takes what is left, and more when the container grows. `size` stays between `min_before` and what the container leaves (minus the handle, the gaps
+  and `min_after`: known when the container has a name, else `max_before` limits, 0 for none). The arrow keys move a focused splitter by 10 px (left / right, up / down). True when `size` changed. A pointer
+  pushed past a limit does not pull the border away from it: the border follows again from where it is. The style draws it as `SPLITTER` (`actual` 0 for a vertical bar, 1 for a horizontal one).
+- `UiWindowResizable(&ctx, "Title", &position, &size, min_size, max_size)` is `UiWindowTitled` that the user also resizes: its four edges and four corners take the pointer (cursors `RESIZE_HORIZONTAL`,
+  `RESIZE_VERTICAL` and the two diagonals, mapped by the glue), the edge that moves follows the pointer and the opposite one stays (dragging the left or top edge changes `position` by what the size lost),
+  it never gets smaller than `min_size` (or bigger than `max_size`, 0 for none) and the top never goes above the screen. The body fills what is below the title bar and cuts what does not fit: widgets that
+  are `Grow()` take the room a bigger window gives. The bottom right corner is drawn by the style as `RESIZE_GRIP`. The edges and the title bar take the pointer but not the keyboard focus (`HitKind.NO_FOCUS`).
 ``UiBox` takes a whole `Decl`, `UiCustom` draws a widget of your own with a proc. A zero `Size` is what the style metrics say, `{ui.Grow(), ui.Fixed(30)}` is yours.
 Names are ids inside their container: `"Save##slot2"` shows "Save" and hashes the whole string. `UiIdPath("Settings", "Volume")` finds an id from outside.
 

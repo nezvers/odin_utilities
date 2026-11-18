@@ -23,7 +23,7 @@ package ui
 @(private)
 focusable :: proc(ctx: ^Context, box: ^HitBox) -> bool {
     if ctx.modal_root != 0 && box.root != ctx.modal_root { return false }      // a dialog is open: the focus stays in it
-    return .INTERACTIVE in box.kinds && box.id != 0
+    return .INTERACTIVE in box.kinds && .NO_FOCUS not_in box.kinds && box.id != 0
 }
 
 // Moves the focus one step in `direction`. True when the focus moved (or a slider took the step). With nothing focused the first widget is
@@ -40,6 +40,10 @@ UiNavigate :: proc(ctx: ^Context, direction: Direction) -> bool {
         }
         if state.adjustable && (direction == .LEFT || direction == .RIGHT) {
             state.pending_adjust += 1 if direction == .RIGHT else -1
+            return true
+        }
+        if state.adjust_vertical && (direction == .UP || direction == .DOWN) {
+            state.pending_adjust += 1 if direction == .DOWN else -1
             return true
         }
     }

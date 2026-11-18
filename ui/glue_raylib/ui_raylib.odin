@@ -172,6 +172,8 @@ ApplyCursor :: proc(ctx: ^ui.Context) {
     case .HAND: cursor = .POINTING_HAND
     case .RESIZE_HORIZONTAL: cursor = .RESIZE_EW
     case .RESIZE_VERTICAL: cursor = .RESIZE_NS
+    case .RESIZE_DIAGONAL_NWSE: cursor = .RESIZE_NWSE
+    case .RESIZE_DIAGONAL_NESW: cursor = .RESIZE_NESW
     case .NOT_ALLOWED: cursor = .NOT_ALLOWED
     }
     rl.SetMouseCursor(cursor)

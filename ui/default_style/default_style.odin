@@ -107,6 +107,8 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.MENU] = DrawMenu
     style.procs[.MENU_ITEM] = DrawMenuItem
     style.procs[.WINDOW_TITLE] = DrawWindowTitle
+    style.procs[.SPLITTER] = DrawSplitter
+    style.procs[.RESIZE_GRIP] = DrawResizeGrip
     style.procs[.BULLET] = DrawBullet
     style.procs[.SEPARATOR_TEXT] = DrawSeparatorText
     style.procs[.BACKDROP] = DrawBackdrop
@@ -502,6 +504,39 @@ DrawWindowTitle :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     color: ui.Color = ui.ColorLerp(theme.control, theme.accent, 0.55 if .FOCUSED in info.flags else 0.3)
     FillRounded(painter, info.rect, theme.panel_rounding, color, theme.max_radius)
     TextLeft(painter, info.name, info.rect, info.font_size, 10, theme.text)
+}
+
+// The handle between two sections: a thin line in the middle of its rectangle that lights up under the pointer and while it is dragged
+DrawSplitter :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    strength: f32 = max(info.hover, info.press)
+    if .PRESSED in info.flags { strength = 1 }
+    color: ui.Color = ui.ColorLerp(theme.border, theme.accent, strength)
+    line: f32 = 2 if strength > 0.05 else 1
+    rect: ui.Rect = info.rect
+    if info.actual == 0 {
+        painter.fill_rect(painter, {rect.x + (rect.z - line) * 0.5, rect.y, line, rect.w}, color)
+    } else {
+        painter.fill_rect(painter, {rect.x, rect.y + (rect.w - line) * 0.5, rect.z, line}, color)
+    }
+    if .FOCUSED in info.flags {
+        painter.fill_rect(painter, {rect.x, rect.y, rect.z, 1}, theme.accent)
+    }
+}
+
+// Three rows of small squares in the corner, the usual sign that a window can be resized
+DrawResizeGrip :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    color: ui.Color = ui.ColorLerp(theme.text_dim, theme.accent, max(info.hover, info.press))
+    if .PRESSED in info.flags { color = theme.accent }
+    corner: ui.Vec2 = {info.rect.x + info.rect.z - 3, info.rect.y + info.rect.w - 3}
+    for row in 0 ..< 3 {
+        for column in 0 ..< 3 - row {
+            painter.fill_rect(painter, {corner.x - f32(column) * 4 - 2, corner.y - f32(row) * 4 - 2, 2, 2}, color)
+        }
+    }
 }
 
 DrawBullet :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {

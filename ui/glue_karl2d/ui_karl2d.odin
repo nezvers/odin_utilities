@@ -154,6 +154,8 @@ ApplyCursor :: proc(ctx: ^ui.Context) {
     case .HAND: cursor = .Hand
     case .RESIZE_HORIZONTAL: cursor = .Resize_EW
     case .RESIZE_VERTICAL: cursor = .Resize_NS
+    case .RESIZE_DIAGONAL_NWSE: cursor = .Resize_NWSE
+    case .RESIZE_DIAGONAL_NESW: cursor = .Resize_NESW
     case .NOT_ALLOWED: cursor = .Not_Allowed
     }
     karl2d.set_cursor(cursor)

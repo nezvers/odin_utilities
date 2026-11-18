@@ -2,6 +2,7 @@
 
 Tick an item when it is done and verified (tests pass, committed).
 
+- [x] Resizing by the pointer: `UiSplitter` between two sections (side by side or stacked, drag and arrow keys, limits from the container) and `UiWindowResizable` (edges and corners, minimum and maximum size, the body grows with the window)
 - [x] Widget state survives one absent frame: state is dropped after 3 frames without a declaration
 - [x] `UiAnimating(ctx)`: true while any hover / press fade is still moving, so a host can redraw on demand; fades use the frame rate independent `1 - 2^(-rate * dt)`; `UiAnimate(ctx, id, target)` for styles
 - [x] `UiDisabled(ctx)` scope (like ImGui BeginDisabled): every widget declared inside is greyed out and takes no input and no focus

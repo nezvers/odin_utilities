@@ -1149,3 +1149,175 @@ test_focus_returns_to_the_remembered_widget_of_a_window :: proc(t: ^testing.T) {
     UiFocusRoot(&harness.ctx, UiIdPath("A"))
     testing.expect_value(t, UiFocused(&harness.ctx), UiIdPath("A", "a1"))     // window A: where its focus was last
 }
+
+// ------------------------------------------------------------------------------------------------------------------------
+// Resizing: the splitter between two sections and the window that is resized by its edges
+
+@(private = "file")
+ResizeCase :: struct {
+    split_size: f32,
+    split_vertical: bool,
+    split_changed: int,
+    win_position: Vec2,
+    win_size: Vec2,
+}
+
+@(private = "file")
+caseOf :: proc(ctx: ^Context) -> ^ResizeCase {
+    return cast(^ResizeCase)ctx.user
+}
+
+@(private = "file")
+box :: proc(ctx: ^Context, name: string, size: Size, direction: LayoutDirection = .TOP_TO_BOTTOM) {
+    id: Id = UiId(ctx, name)
+    _ = stateGet(ctx, id)
+    ElementOpen(ctx, {id = id, layout = {size = size, direction = direction}})
+}
+
+@(private = "file")
+splitBody :: proc(ctx: ^Context) {
+    state: ^ResizeCase = caseOf(ctx)
+    box(ctx, "area", {Fixed(300), Fixed(200)}, .LEFT_TO_RIGHT if !state.split_vertical else .TOP_TO_BOTTOM)
+    first: Size = {Fixed(state.split_size), Grow()} if !state.split_vertical else {Grow(), Fixed(state.split_size)}
+    box(ctx, "first", first)
+    ElementClose(ctx)
+    if UiSplitter(ctx, "split", &state.split_size, .HORIZONTAL if !state.split_vertical else .VERTICAL, 40, 30, 0, 6) { state.split_changed += 1 }
+    box(ctx, "second", {Grow(), Grow()})
+    ElementClose(ctx)
+    ElementClose(ctx)
+}
+
+@(private = "file")
+dragFrames :: proc(harness: ^Harness, body: proc(ctx: ^Context), from: Vec2, to: Vec2) {
+    frame(harness, pointerAt(from)); body(&harness.ctx); UiEnd(&harness.ctx)
+    frame(harness, pointerAt(from, true, true)); body(&harness.ctx); UiEnd(&harness.ctx)
+    for step in 1 ..= 6 {
+        frame(harness, pointerAt(from + (to - from) * (f32(step) / 6), true)); body(&harness.ctx); UiEnd(&harness.ctx)
+    }
+    frame(harness, pointerAt(to, false, false, true)); body(&harness.ctx); UiEnd(&harness.ctx)
+    frame(harness, pointerAt({-100, -100})); body(&harness.ctx); UiEnd(&harness.ctx)
+}
+
+@(test)
+test_a_splitter_moves_the_border_between_two_side_by_side_sections :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    cs: ResizeCase
+    harness.ctx.user = &cs
+    cs.split_size = 100
+    cs.split_vertical = false
+    cs.split_changed = 0
+    for _ in 0 ..< 3 { actionFrame(harness, splitBody) }
+    handle, found := UiElementRect(&harness.ctx, UiIdPath("area", "split"))
+    testing.expect(t, found)
+    testing.expect(t, near(handle.x, 100) && near(handle.z, 6), "the handle sits right after the first section")
+    centre: Vec2 = RectCenter(handle)
+
+    dragFrames(harness, splitBody, centre, centre + {50, 0})
+    testing.expect(t, near(cs.split_size, 150), "the first section grew by what the pointer moved")
+    second, _ := UiElementRect(&harness.ctx, UiIdPath("area", "second"))
+    testing.expect(t, near(second.z, 300 - 150 - 6), "the other section took the rest")
+    testing.expect(t, cs.split_changed > 0)
+
+    // pushed past the limit: the first section stops where the other one keeps its minimum, and the handle does not run away from the pointer
+    handle, _ = UiElementRect(&harness.ctx, UiIdPath("area", "split"))
+    dragFrames(harness, splitBody, RectCenter(handle), RectCenter(handle) + {500, 0})
+    testing.expect(t, near(cs.split_size, 300 - 6 - 30), "the largest the first section may be")
+    handle, _ = UiElementRect(&harness.ctx, UiIdPath("area", "split"))
+    dragFrames(harness, splitBody, RectCenter(handle), RectCenter(handle) - {500, 0})
+    testing.expect(t, near(cs.split_size, 40), "the smallest")
+    // and it follows the pointer again from where it is
+    handle, _ = UiElementRect(&harness.ctx, UiIdPath("area", "split"))
+    dragFrames(harness, splitBody, RectCenter(handle), RectCenter(handle) + {20, 0})
+    testing.expect(t, near(cs.split_size, 60))
+
+    // the keyboard: the handle has the focus after the press, the arrows move it
+    before: f32 = cs.split_size
+    actionFrame(harness, splitBody, {.RIGHT})
+    actionFrame(harness, splitBody)
+    testing.expect(t, near(cs.split_size, before + SPLITTER_KEY_STEP), "an arrow key moves it by a step")
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}
+
+@(test)
+test_a_splitter_between_stacked_sections_moves_up_and_down :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    cs: ResizeCase
+    harness.ctx.user = &cs
+    cs.split_size = 80
+    cs.split_vertical = true
+    cs.split_changed = 0
+    for _ in 0 ..< 3 { actionFrame(harness, splitBody) }
+    handle, _ := UiElementRect(&harness.ctx, UiIdPath("area", "split"))
+    testing.expect(t, near(handle.y, 80) && near(handle.w, 6) && near(handle.z, 300), "a bar across the container")
+    dragFrames(harness, splitBody, RectCenter(handle), RectCenter(handle) + {0, 40})
+    testing.expect(t, near(cs.split_size, 120))
+    second, _ := UiElementRect(&harness.ctx, UiIdPath("area", "second"))
+    testing.expect(t, near(second.w, 200 - 120 - 6))
+    actionFrame(harness, splitBody, {.UP})
+    actionFrame(harness, splitBody)
+    testing.expect(t, near(cs.split_size, 120 - SPLITTER_KEY_STEP), "up and down move a splitter between stacked sections")
+}
+
+@(private = "file")
+windowBody :: proc(ctx: ^Context) {
+    state: ^ResizeCase = caseOf(ctx)
+    if UiWindowResizable(ctx, "win", &state.win_position, &state.win_size, {100, 80}, {400, 0}) {
+        UiButton(ctx, "fill", {Grow(), Grow()})
+    }
+}
+
+@(test)
+test_a_window_is_resized_by_its_corner_and_its_edges :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    cs: ResizeCase
+    harness.ctx.user = &cs
+    cs.win_position = {40, 30}
+    cs.win_size = {200, 150}
+    for _ in 0 ..< 3 { actionFrame(harness, windowBody) }
+    window: Id = UiIdPath("win")
+    corner, found := UiElementRect(&harness.ctx, IdFromString("grip.bottom_right", window))
+    testing.expect(t, found)
+    testing.expect(t, near(corner.x + corner.z, 240) && near(corner.y + corner.w, 180), "the corner grip is in the corner of the window")
+
+    dragFrames(harness, windowBody, RectCenter(corner), RectCenter(corner) + {40, 30})
+    testing.expect(t, near(cs.win_size.x, 240) && near(cs.win_size.y, 180), "the corner took both sizes")
+    testing.expect(t, near(cs.win_position.x, 40) && near(cs.win_position.y, 30), "the top left stays")
+    button, _ := UiElementRect(&harness.ctx, UiIdPath("win", "fill"))
+    testing.expect(t, button.z > 200, "what is Grow() inside took the room")
+
+    // the right edge cannot take it past the largest width, the smallest stops at min_size
+    right, _ := UiElementRect(&harness.ctx, IdFromString("grip.right", window))
+    dragFrames(harness, windowBody, RectCenter(right), RectCenter(right) + {300, 0})
+    testing.expect(t, near(cs.win_size.x, 400), "the largest width")
+    right, _ = UiElementRect(&harness.ctx, IdFromString("grip.right", window))
+    dragFrames(harness, windowBody, RectCenter(right), RectCenter(right) - {900, 0})
+    testing.expect(t, near(cs.win_size.x, 100), "the smallest width")
+    testing.expect(t, near(cs.win_position.x, 40), "the right edge never moves the left one")
+
+    // the left edge moves the position by what the size lost: the right edge stays
+    right_edge: f32 = cs.win_position.x + cs.win_size.x
+    left, _ := UiElementRect(&harness.ctx, IdFromString("grip.left", window))
+    dragFrames(harness, windowBody, RectCenter(left), RectCenter(left) - {60, 0})
+    testing.expect(t, near(cs.win_size.x, 160) && near(cs.win_position.x, 40 - 60), "the left edge grew the window to the left")
+    testing.expect(t, near(cs.win_position.x + cs.win_size.x, right_edge), "and the right edge is where it was")
+
+    // the top edge stops at the top of the screen
+    top, _ := UiElementRect(&harness.ctx, IdFromString("grip.top", window))
+    bottom_edge: f32 = cs.win_position.y + cs.win_size.y
+    dragFrames(harness, windowBody, RectCenter(top), RectCenter(top) - {0, 500})
+    testing.expect(t, near(cs.win_position.y, 0), "not above the screen")
+    testing.expect(t, near(cs.win_position.y + cs.win_size.y, bottom_edge), "the bottom edge stays")
+
+    // the title bar still drags the window as it was and the window does not change size
+    size_before: Vec2 = cs.win_size
+    title, _ := UiElementRect(&harness.ctx, IdFromString("title", window))
+    dragFrames(harness, windowBody, RectCenter(title) + {0, 4}, RectCenter(title) + {30, 44})
+    testing.expect(t, near(cs.win_size.x, size_before.x) && near(cs.win_size.y, size_before.y))
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}

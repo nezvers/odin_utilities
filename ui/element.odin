@@ -146,6 +146,8 @@ Cursor :: enum u8 {
     HAND,               // over something that opens or follows
     RESIZE_HORIZONTAL,  // over a value that is dragged sideways
     RESIZE_VERTICAL,
+    RESIZE_DIAGONAL_NWSE,   // the corners of a window: top left and bottom right
+    RESIZE_DIAGONAL_NESW,   // top right and bottom left
     NOT_ALLOWED,        // over a disabled widget
 }
 
@@ -155,6 +157,7 @@ HitKind :: enum u8 {
     BLOCKER,            // the pointer over it is not for what is below (panels, popups)
     SCROLL,             // takes the mouse wheel
     HOVER,              // only wants to know that the pointer is over it (ctx.hover_info): a truncated text that shows itself in a tooltip; no focus, no click
+    NO_FOCUS,           // with INTERACTIVE: takes the pointer, but the keyboard focus skips it (the edges of a window, its title bar)
 }
 HitKinds :: bit_set[HitKind; u8]
 
@@ -332,6 +335,7 @@ WidgetState :: struct {
     open: bool,
     nav: [Direction]Id,             // where navigation goes from here: 0 the nearest widget, NAV_BLOCK nowhere, else that widget
     adjustable: bool,               // a slider: left and right of the navigation change its value
+    adjust_vertical: bool,          // a splitter between sections that are stacked: up and down change it
     pending_adjust: int,            // steps asked by UiNavigate, taken by the widget in its next call
     editing: bool,                  // a text field that has the focus: it keeps left, right, home and end for the caret
     initialized: bool,              // the widget was declared before (a header that starts open sets its state once)
