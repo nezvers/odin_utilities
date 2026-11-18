@@ -37,6 +37,9 @@ Kind :: enum u8 {
     AGENT_STATUS,                       // [running bool][model][note]: the agent of `from` started, stopped or was refused (`note` says why)
     MODERATE,                           // [action u8: 1 dismiss the agent, 2 close the program][reason]: only from the host (id 0), obeyed by the member's program
     AGENT_REPORT,                       // [more bool][text]: the last message of the agent of `from` when it went idle, in pieces (more = another piece follows); only for who subscribed
+    REMOTE_GRANT,                       // [granted bool]: the person of `from` gives `to` remote control of their device (true) or takes it back (false)
+    REMOTE_RUN,                         // [job u32][command]: run a shell command on the device of `to` (only when it gave `from` remote control)
+    REMOTE_OUT,                         // [job u32][done bool][exit i32][text]: output of the command of that job, in pieces; the last one has done = true and the exit code
 }
 
 ModerationAction :: enum u8 {

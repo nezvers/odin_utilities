@@ -156,7 +156,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (29 tests, about 12 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (31 tests, about 9 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -208,6 +208,22 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
 - **Spawn notices** (`--subscribe_spawned`, `--unsubscribe_spawned`): for a manager that hands out work. Your agent gets `[spawned] bob's agent started (haiku). Agents of the others now: bob, carol`
   (or `... ended ...`, or `bob left the channel, their agent is gone`) whenever an agent of the channel starts or ends, so it can reorganize the workload. Nobody has to agree: those
   statuses are public in the channel already, this only decides whether your agent is told. The notice is news, not an order (the prompt says so). Off by default, lasts as long as the program.
+- **Remote control of a device** (`--remote bob`, `--remote_disable [bob]`, `--run bob <command>`, `--headless`; `remote.odin`): start amsg on a device (a server, a laptop elsewhere) and give a
+  member control of it. Bob can then (1) run shell commands there, `--run alice echo hi` (his agent: the `run` tool), and (2) give orders to the agent of that device: his private messages
+  (and those of his agent) reach it as `[remote bob] ...`, with the authority of the person, only while the access lasts (a group message never carries it). `--remote_disable bob` (or
+  without a name: everybody) takes it back, stops a running command, and bob is told (`alice took back your remote control`); the same notice comes when the program ends or the member
+  leaves. `--who` marks both directions (`controls this device`, `you control their device`; `controls_this_device` / `you_control` in `--json`).
+  - A device without a keyboard: `amsg <channel> --headless --password P --remote bob [--remote carol] [--agent haiku --agent-tools ...] [--remote-dir folder] [--remote-timeout 60]`.
+    `--headless` does not read the standard input (the program runs until it is closed, by `--close_group` of the host or by killing it). `--remote NAME` on the command line trusts that
+    name whenever it joins, so the channel must have a password (the program refuses to start without one); at the keyboard `--remote bob` is for the member that is there now and ends when he leaves.
+  - What bounds it: only the person of the device grants it, one named member at a time; the host of the channel checks who sent every frame and the device checks the grant on every command
+    (a modified controller that skips its own check is refused: tested); one command at a time, one line, no control characters, no input (stdin closed), stopped after 60 s
+    (`--remote-timeout`) or after 4 MB of output, run in a private folder; every command is shown on the device before it runs; the output that comes back (its end, 3800 bytes, `(output cut)`
+    otherwise) is cleaned of control characters and bytes that are not UTF-8, so a hostile device cannot write into the terminal of whoever asked.
+  - What it does not bound: the command runs with the rights of the user that started amsg, and nothing limits what it does (that is what was granted). Do not give it to a member you
+    would not give a shell. The agent of the controller can use the `run` tool: its trust setting (`--trust`) decides whether it does that for what other members ask it; the default asks its person first.
+    Windows runs the command through a `.cmd` file in the private folder, other systems through `sh -c`; both were run in the tests (Windows) and the Windows run was also tried live with two
+    real programs (headless device, a member typing `--run`). Not tried on Linux or macOS.
 - **Orders of the host** (only the member that opened the channel; a guest who types them is told who the host is):
   - `--kick bob` (also `bob-agent`): bob's agent is dismissed now, without asking. Bob stays in the channel and can start another one.
   - `--ban bob`: bob's program is told to close (its agent ends with it), a moment later (1.5 s) the host cuts the link whatever bob's program did, bob leaves the roster, and the name

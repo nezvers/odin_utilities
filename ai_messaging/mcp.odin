@@ -7,6 +7,7 @@
 //   say(text)           a message to everybody in the channel
 //   tell(to, text)      a message to one member
 //   send(to, path)      a file or a folder (only from the agent's own folder) to one member or "all"
+//   run(to, command)    one shell command on the device of a member who gave remote control (remote.odin)
 //   inbox()             what the channel said since the agent last looked
 //   who()               the members, and which of them have an agent
 // Why a server and not a shell command: a shell makes the agent's words a quoting problem and gives it a shell, a tool call is data and
@@ -28,6 +29,7 @@ MCP_TOOLS :: `[` +
     `{"name":"say","description":"Send a message to everybody in the channel. Short and useful: the others read it, and their agents may answer.","inputSchema":{"type":"object","properties":{"text":{"type":"string","description":"The message (up to 800 characters)."}},"required":["text"]}},` +
     `{"name":"tell","description":"Send a private message to one member of the channel (a person or the person's agent).","inputSchema":{"type":"object","properties":{"to":{"type":"string","description":"The member's name, see who."},"text":{"type":"string","description":"The message (up to 800 characters)."}},"required":["to","text"]}},` +
     `{"name":"send","description":"Offer a file or a whole folder to one member, or to \"all\". Only files inside your own folder can be sent. The member decides whether to accept.","inputSchema":{"type":"object","properties":{"to":{"type":"string","description":"The member's name, or all."},"path":{"type":"string","description":"A file or folder inside your folder (a relative path is relative to it)."}},"required":["to","path"]}},` +
+    `{"name":"run","description":"Run one shell command on the device of a member who gave you remote control. It runs there with that person's rights, one at a time, 60 s at most. The result arrives later as a message \"[run name] exit N: output\". Use it only for what your person asked.","inputSchema":{"type":"object","properties":{"to":{"type":"string","description":"The member's name, see who."},"command":{"type":"string","description":"One line (up to 400 characters)."}},"required":["to","command"]}},` +
     `{"name":"inbox","description":"Read what the channel has said since you last looked (messages, files offered, members coming and going). Empty when nothing is new.","inputSchema":{"type":"object","properties":{}}},` +
     `{"name":"who","description":"List the members of the channel and which of them have an agent.","inputSchema":{"type":"object","properties":{}}}` +
     `]`
@@ -81,7 +83,10 @@ McpToolRequest :: proc(name: string, arguments: json.Object) -> (command: string
     text, has_text := arguments["text"].(json.String)
     to, has_to := arguments["to"].(json.String)
     path, has_path := arguments["path"].(json.String)
+    run_command, has_run := arguments["command"].(json.String)
     switch name {
+    case "run":
+        return "run", strings.concatenate({to, "\n", run_command}, context.temp_allocator), has_to && has_run && to != "" && run_command != "" && !strings.contains_rune(to, '\n')
     case "say":
         return "say", text, has_text && text != ""
     case "tell":
@@ -173,13 +178,13 @@ McpTest :: proc(t: ^testing.T) {
     testing.expect_value(t, version, "2025-06-18")
     testing.expect(t, ask(`{"jsonrpc":"2.0","method":"notifications/initialized"}`, &log) == nil)
 
-    // the list names the five tools, every one with a schema
+    // the list names the six tools, every one with a schema
     listing := ask(`{"jsonrpc":"2.0","id":"abc","method":"tools/list"}`, &log)
     id, _ := listing["id"].(json.String)
     testing.expect_value(t, id, "abc")
     list_result, _ := listing["result"].(json.Object)
     tools, _ := list_result["tools"].(json.Array)
-    testing.expect_value(t, len(tools), 5)
+    testing.expect_value(t, len(tools), 6)
     for tool in tools {
         entry, _ := tool.(json.Object)
         _, has_schema := entry["inputSchema"]

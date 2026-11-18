@@ -711,3 +711,191 @@ SpawnedWatchTest :: proc(t: ^testing.T) {
     Pump(both, 300)
     testing.expect_value(t, NoteCount(manager, "[spawned]"), count)
 }
+
+// Remote control: the device of alice lets bob run commands and give orders to its agent; every other way is refused; taking it back tells bob.
+@(test)
+RemoteControlTest :: proc(t: ^testing.T) {
+    fake: string = FakeAgent()
+    testing.expect(t, fake != "")
+    if fake == "" {
+        return
+    }
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("remote-%x", random)
+    defer delete(channel)
+    folder: string = TempFolder("remote")
+    defer os.remove_all(folder)
+    defer delete(folder)
+
+    names: [2]string = {"alice", "bob"}
+    nodes: [2]^Node
+    for name, i in names {
+        directory: string = fmt.aprintf("%s/%s", folder, name)
+        defer delete(directory)
+        receive: string = fmt.aprintf("%s/in", directory)
+        defer delete(receive)
+        agent_dir: string = fmt.aprintf("%s/agent", directory)
+        defer delete(agent_dir)
+        nodes[i] = NodeOpen({channel = channel, name = name, role = .HOST if i == 0 else .GUEST, lan = true, receive_dir = receive})
+        testing.expect(t, nodes[i] != nil)
+        nodes[i].session = new(Session)
+        testing.expect(t, SessionInit(nodes[i].session, nodes[i].m, {agent_command = fake, agent_dir = agent_dir, remote_timeout_ms = 1500}))
+    }
+    device, controller := nodes[0], nodes[1]
+    defer {
+        for node in nodes {
+            SessionClose(node.session, p2p.LinkNow())
+            free(node.session)
+            NodeClose(node)
+        }
+    }
+    both: []^Node = nodes[:]
+    testing.expect(t, PumpUntil(both, proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 1 && nodes[1].connected
+    }))
+
+    // nothing is granted: the controller refuses by itself, and a device that is asked anyway refuses too
+    message, ok := RemoteRun(controller.session, "alice", "echo nope", false, p2p.LinkNow())
+    testing.expect(t, !ok && strings.contains(message, "has not given you remote control"), message)
+    controller.session.remote.given[0] = true                                  // a modified program that skips its own check
+    _, ok = RemoteRun(controller.session, "alice", "echo nope", false, p2p.LinkNow())
+    testing.expect(t, ok)
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[1], "[run alice] exit -1")
+    }))
+    testing.expect(t, NoteHas(controller, "this device did not give you remote access"))
+    testing.expect(t, NoteHas(device, "has no remote access: refused"))
+    controller.session.remote.given[0] = false
+
+    // the person of the device gives it: the member is told, then a command runs and its output and exit code come back
+    message, ok = RemoteGrant(device.session, "bob", p2p.LinkNow())
+    testing.expect(t, ok, message)
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return nodes[1].session.remote.given[0]
+    }))
+    testing.expect(t, NoteHas(controller, "alice gave you remote control of their device"))
+    _, ok = RemoteRun(controller.session, "alice", "echo hello-remote", false, p2p.LinkNow())
+    testing.expect(t, ok)
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[1], "[run alice] exit 0:\nhello-remote")
+    }))
+    testing.expect(t, NoteHas(device, "remote: bob runs: echo hello-remote"))          // the person of the device sees every command
+    _, ok = RemoteRun(controller.session, "alice", "exit 3", false, p2p.LinkNow())
+    testing.expect(t, ok)
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[1], "[run alice] exit 3")
+    }))
+
+    // a command that runs too long is stopped
+    when ODIN_OS == .Windows {
+        slow :: "ping -n 30 127.0.0.1 > nul"
+    } else {
+        slow :: "sleep 30"
+    }
+    _, ok = RemoteRun(controller.session, "alice", slow, false, p2p.LinkNow())
+    testing.expect(t, ok)
+    testing.expect(t, PumpUntil(both, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[1], "stopped: it ran longer than 1 s")
+    }, 6000))
+    testing.expect(t, !device.session.remote.job.active)
+
+    // output is cleaned of what a terminal would obey
+    testing.expect_value(t, RemoteClean("a\x1b[31mred\x07\r\nb\xffc"), "a?[31mred?\nb?c")
+
+    // the agent of the device takes the private messages of the controller as orders, and only while the access lasts
+    for node in nodes {
+        started: bool
+        message, started = SessionSpawn(node.session, "", p2p.LinkNow())
+        testing.expect(t, started, message)
+    }
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return nodes[0].session.ready && nodes[1].session.ready
+    }))
+    testing.expect(t, MessengerSendText(controller.m, 0, "restart the service", p2p.LinkNow(), false))
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[0], "echo: [remote bob] restart the service")
+    }))
+    testing.expect(t, MessengerSendText(controller.m, ALL, "hello everybody @alice-agent", p2p.LinkNow(), false))
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[0], "echo: [group bob] hello everybody @alice-agent")                   // a group message never carries the authority
+    }))
+    testing.expect(t, !NoteHas(device, "[remote bob] hello everybody"))
+
+    // the agent of the controller runs a command: the result reaches it
+    reply: string = SessionControl(controller.session, "run", "alice\necho via-agent", p2p.LinkNow())
+    testing.expect(t, strings.has_prefix(reply, "sent to alice"), reply)
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return NoteHas(nodes[1], "echo: [run alice] exit 0:\nvia-agent")
+    }))
+
+    // taking it back: the member is told, and the private messages are plain again
+    message, ok = RemoteDisable(device.session, "bob", p2p.LinkNow())
+    testing.expect(t, ok, message)
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return !nodes[1].session.remote.given[0]
+    }))
+    testing.expect(t, NoteHas(controller, "alice took back your remote control"))
+    _, ok = RemoteRun(controller.session, "alice", "echo again", false, p2p.LinkNow())
+    testing.expect(t, !ok)
+    before: int = NoteCount(device, "[remote bob]")
+    testing.expect(t, MessengerSendText(controller.m, 0, "one more order", p2p.LinkNow(), false))
+    Pump(both, 400)
+    testing.expect_value(t, NoteCount(device, "[remote bob]"), before)
+    testing.expect(t, !device.session.remote.allowed[1])
+}
+
+// A name on the command line is trusted whenever it joins (a device without a keyboard); a member that left keeps nothing.
+@(test)
+RemoteNamesTest :: proc(t: ^testing.T) {
+    random: [4]byte
+    crypto.rand_bytes(random[:])
+    channel: string = fmt.aprintf("remotenames-%x", random)
+    defer delete(channel)
+    folder: string = TempFolder("remotenames")
+    defer os.remove_all(folder)
+    defer delete(folder)
+
+    names: [2]string = {"alice", "bob"}
+    nodes: [2]^Node
+    for name, i in names {
+        directory: string = fmt.aprintf("%s/%s", folder, name)
+        defer delete(directory)
+        receive: string = fmt.aprintf("%s/in", directory)
+        defer delete(receive)
+        nodes[i] = NodeOpen({channel = channel, name = name, role = .HOST if i == 0 else .GUEST, lan = true, receive_dir = receive})
+        testing.expect(t, nodes[i] != nil)
+        nodes[i].session = new(Session)
+        testing.expect(t, SessionInit(nodes[i].session, nodes[i].m, {remote_names = "bob, carol" if i == 0 else ""}))
+    }
+    device := nodes[0]
+    defer {
+        for node in nodes {
+            SessionClose(node.session, p2p.LinkNow())
+            free(node.session)
+            NodeClose(node)
+        }
+    }
+    both: []^Node = nodes[:]
+    testing.expect(t, PumpUntil(both, proc(nodes: []^Node) -> bool {
+        return nodes[0].joined == 1 && nodes[1].connected
+    }))
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return nodes[1].session.remote.given[0]
+    }))
+    testing.expect(t, device.session.remote.allowed[1])
+    testing.expect(t, NoteHas(device, "bob joined and has remote access"))
+
+    // withdrawn by name: the access ends and the name is not trusted at the next join
+    message, ok := RemoteDisable(device.session, "bob", p2p.LinkNow())
+    testing.expect(t, ok, message)
+    testing.expect(t, !RemoteNameListed(device.session, "bob"))
+    testing.expect(t, RemoteNameListed(device.session, "carol"))
+    testing.expect(t, Until(both, proc(nodes: []^Node) -> bool {
+        return !nodes[1].session.remote.given[0]
+    }))
+    // everybody at once
+    message, ok = RemoteDisable(device.session, "", p2p.LinkNow())
+    testing.expect(t, ok, message)
+    testing.expect_value(t, device.session.remote.name_count, 0)
+}

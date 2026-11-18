@@ -17,6 +17,8 @@
 //   --cmd bob /compact           ask bob to run a slash command on their agent (--private is the same; they decide)
 //   --subscribe_idle bob          tell my agent (no tokens spent on watching) when bob's agent goes idle, with its last message; bob agrees
 //   --kick bob  --ban bob  --close_group   only the host: dismiss bob's agent / remove bob / close every program of the group
+//   --remote bob  --remote_disable [bob]  --run bob <cmd>   bob may run commands on THIS device and give orders to its agent / take it back / run a command on bob's device
+//                                (a device without a keyboard: --headless --password P --remote bob, see remote.odin)
 //   --agents                     who has an agent         --listen all|mentions|none   what the channel passes to your agent
 //   --trust ask|members|bob,carol   how far your agent believes other members: ask (default) = it asks you first, members = it does what
 //                                any member asks with its tools, a list = only those members
@@ -67,6 +69,8 @@ lines: LineQueue
 session: ^ai.Session
 autostart_agent: bool
 autostart_model: string
+headless: bool
+remote_names: [dynamic]string
 json_mode: bool
 auto_reconnect: bool
 reopen_requested: bool
@@ -181,6 +185,26 @@ main :: proc() {
         case "--agent-dir":
             i += 1
             session_config.agent_dir = os.args[i] if i < len(os.args) else "agent_files"
+        case "--headless":
+            headless = true                                  // no keyboard: do not read the standard input, run until closed (remote.odin)
+        case "--remote":
+            i += 1
+            if i >= len(os.args) || strings.has_prefix(os.args[i], "--") {
+                fmt.eprintln("--remote needs the name of the member that may control this device")
+                os.exit(2)
+            }
+            append(&remote_names, os.args[i])
+        case "--remote-dir":
+            i += 1
+            session_config.remote_dir = os.args[i] if i < len(os.args) else ""
+        case "--remote-timeout":
+            i += 1
+            seconds, seconds_ok := strconv.parse_int(os.args[i] if i < len(os.args) else "")
+            if !seconds_ok || seconds < 1 {
+                fmt.eprintln("--remote-timeout needs a number of seconds")
+                os.exit(2)
+            }
+            session_config.remote_timeout_ms = i64(seconds) * 1000
         case "--allow-remote-agent":
             session_config.allow_remote = true
         case "--agent-trust":
@@ -219,6 +243,14 @@ main :: proc() {
     if config.password == "" {
         // the environment keeps it out of the process list and the shell history
         config.password = os.get_env("AMSG_PASSWORD", context.allocator)
+    }
+    if len(remote_names) > 0 {
+        // a name alone is no proof of who is behind it; the password of the channel is what keeps a stranger from taking the name
+        if config.password == "" {
+            fmt.eprintln("--remote NAME gives the member of that name control of this device whenever they join: that needs a --password (or AMSG_PASSWORD) on the channel")
+            os.exit(2)
+        }
+        session_config.remote_names = strings.join(remote_names[:], ",")
     }
     if config.channel == "" {
         fmt.eprintln("amsg --help lists everything. usage: amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--exclude name] [--include-git] [--keep-exec] [--derp [N] | --derp-host name] [--derp-only] [--auto-reconnect] [--password P] [--agent [model]] [--agent-model M] [--agent-cmd claude] [--agent-tools Read,Glob] [--agent-dir agent_files] [--listen mentions|all|none] [--agent-trust ask|members|name,name] [--allow-remote-agent]")
@@ -267,7 +299,9 @@ main :: proc() {
     if !ai.SessionInit(session, m, session_config) {
         Info("cannot open the local door for the agent: --agent will not work")
     }
-    thread.create_and_start(ReadLines, context)
+    if !headless {
+        thread.create_and_start(ReadLines, context)
+    }
     Loop(m, config)
 }
 
@@ -349,7 +383,7 @@ ShowEvent :: proc(m: ^ai.Messenger, event: ^ai.Event) {
         } else {
             fmt.printfln("<%s> (to you) %s", speaker, text)
         }
-    case .AGENT_REQUEST, .AGENT_STATUS, .MODERATION, .AGENT_REPORT:                    // the session says what it means (ShowSession)
+    case .AGENT_REQUEST, .AGENT_STATUS, .MODERATION, .AGENT_REPORT, .REMOTE_GRANT, .REMOTE_RUN, .REMOTE_OUT:   // the session says what it means (ShowSession)
     case .FILE_OFFERED:
         what: string = fmt.tprintf("the folder \"%s\" (%d files, %d bytes)", text, event.files, event.size) if event.folder else fmt.tprintf("the file \"%s\" (%d bytes)", text, event.size)
         fmt.printfln("* %s offers %s: --yes %d or --no %d", name, what, event.transfer, event.transfer)
@@ -380,7 +414,7 @@ ShowEventJson :: proc(m: ^ai.Messenger, event: ^ai.Event, text: string, name: st
         fmt.printfln(`{{"event":"left","id":%d,"name":%s}}`, event.member, Json(text))
     case .TEXT:
         fmt.printfln(`{{"event":"text","from":%s,"from_id":%d,"to":%s,"agent":%v,"text":%s}}`, Json(name), event.member, `"all"` if event.to == ai.ALL else `"you"`, event.agent, Json(text))
-    case .AGENT_REQUEST, .AGENT_STATUS, .MODERATION, .AGENT_REPORT:
+    case .AGENT_REQUEST, .AGENT_STATUS, .MODERATION, .AGENT_REPORT, .REMOTE_GRANT, .REMOTE_RUN, .REMOTE_OUT:
     case .FILE_OFFERED:
         fmt.printfln(`{{"event":"file_offered","from":%s,"from_id":%d,"transfer":%d,"name":%s,"size":%d,"folder":%v,"files":%d}}`, Json(name), event.member, event.transfer, Json(text), event.size, event.folder, event.files)
     case .FILE_PROGRESS:
@@ -507,6 +541,23 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
         Info(message if message != "no member called " else "usage: --subscribe_idle <member>")
     case line == "--subscribe_spawned" || line == "--unsubscribe_spawned":
         Info(ai.SessionSubscribeSpawned(session, line == "--subscribe_spawned"))
+    case line == "--remote" || strings.has_prefix(line, "--remote "):
+        message, _ := ai.RemoteGrant(session, strings.trim_space(line[len("--remote"):]), now)
+        Info(message if message != "no member called " else "usage: --remote <member>   (that member may run commands on this device and give orders to its agent)")
+    case line == "--remote_disable" || strings.has_prefix(line, "--remote_disable "):
+        message, _ := ai.RemoteDisable(session, strings.trim_space(line[len("--remote_disable"):]), now)
+        Info(message)
+    case strings.has_prefix(line, "--run "):
+        rest: string = strings.trim_space(line[len("--run "):])
+        space: int = strings.index_byte(rest, ' ')
+        if space < 0 {
+            Info("usage: --run <member> <command>")
+            return
+        }
+        message, _ := ai.RemoteRun(session, rest[:space], strings.trim_space(rest[space + 1:]), false, now)
+        Info(message)
+    case line == "--run":
+        Info("usage: --run <member> <command>   (a member that gave you remote control, see --who)")
     case line == "--kick" || strings.has_prefix(line, "--kick "):
         message, _ := ai.SessionKick(session, strings.trim_space(line[len("--kick"):]), now)
         Info(message)
@@ -563,11 +614,17 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
                 continue
             }
             has_agent: bool = ai.AgentRunning(&session.agent) if u8(id) == ai.MessengerSelf(m) else session.members[id].running
+            remote_note: string = ""
+            if session.remote.allowed[id] {
+                remote_note = " (controls this device)"
+            } else if session.remote.given[id] {
+                remote_note = " (you control their device)"
+            }
             if json_mode {
-                fmt.printfln(`{{"event":"member","id":%d,"name":%s,"host":%v,"you":%v,"agent":%v,"path":"%s"}}`, id, Json(name), id == 0, u8(id) == ai.MessengerSelf(m), has_agent, PathWord(ai.MessengerPath(m, u8(id))))
+                fmt.printfln(`{{"event":"member","id":%d,"name":%s,"host":%v,"you":%v,"agent":%v,"path":"%s","controls_this_device":%v,"you_control":%v}}`, id, Json(name), id == 0, u8(id) == ai.MessengerSelf(m), has_agent, PathWord(ai.MessengerPath(m, u8(id))), session.remote.allowed[id], session.remote.given[id])
             } else {
                 path: string = PathText(ai.MessengerPath(m, u8(id)))
-                fmt.printfln("* member %d: %s%s%s%s%s", id, name, " (host)" if id == 0 else "", " (you)" if u8(id) == ai.MessengerSelf(m) else "", " (with an agent)" if has_agent else "", fmt.tprintf(" [%s]", path) if path != "" else "")
+                fmt.printfln("* member %d: %s%s%s%s%s%s", id, name, " (host)" if id == 0 else "", " (you)" if u8(id) == ai.MessengerSelf(m) else "", " (with an agent)" if has_agent else "", remote_note, fmt.tprintf(" [%s]", path) if path != "" else "")
             }
         }
     case strings.has_prefix(line, "--to "):

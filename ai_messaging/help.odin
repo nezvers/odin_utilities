@@ -42,6 +42,11 @@ Other members' agents (they decide, you only ask):
   --subscribe_spawned           tell your agent whenever an agent of the channel starts or ends (or its member leaves), and who has one now,
                                 so it can reorganize the work; no consent needed, it is public.   --unsubscribe_spawned   stop
   --yes agent / --no agent      what you answer when somebody asks that of you
+Remote control of a device (this one to a member, or theirs to you):
+  --remote bob                  bob may run commands on THIS device (with your rights) and give orders to its agent; bob is told
+  --remote_disable [bob]        take it back from bob (from everybody); they are told and a running command is stopped
+  --run bob <command>           run one command on bob's device when bob gave you remote control (output comes back, 60 s at most)
+  amsg <channel> --headless --password P --remote bob ...   a device without a keyboard: bob is trusted whenever he joins (--remote-dir, --remote-timeout)
 Only the host (the member that opened the channel) can give orders:
   --kick bob                    dismiss bob's agent now, without asking (bob stays and can start another one)
   --ban bob                     remove bob: their program is told to close (its agent too), the link is cut a moment later, and the name
@@ -58,6 +63,7 @@ HelpAgent :: proc() -> string {
   send(to, path)     a file or folder from your own folder to a member (or "all")
   inbox()            what the channel said since you last looked
   who()              the members, and which of them have an agent
+  run(to, command)   one shell command on the device of a member who gave you remote control; the result comes back as "[run name] exit N: output"
 Your person's lines arrive as "[name] text". Messages of others arrive as "[group name] text" or "[private name] text". Answer your person
 in your normal reply; use the tools to speak to the channel. Be brief.
 `
@@ -69,7 +75,7 @@ HelpFor :: proc() -> string {
 }
 
 // The words that only a person at the keyboard has. Nothing of the agent side may contain them.
-USER_ONLY_WORDS :: [?]string{"--subscribe_idle", "--unsubscribe_idle", "--subscribe_spawned", "--unsubscribe_spawned", "--kick", "--ban", "--close_group", "--spawn", "--dismiss", "--group_msg", "--group ", "--trust", "--listen", "--agents", "--allow-remote-agent", "--agent-trust", "--agent-model", "--cmd", "--private", "--yes", "--no ", "--quit", "--send", "--to "}
+USER_ONLY_WORDS :: [?]string{"--subscribe_idle", "--unsubscribe_idle", "--subscribe_spawned", "--unsubscribe_spawned", "--remote", "--run ", "--headless", "--kick", "--ban", "--close_group", "--spawn", "--dismiss", "--group_msg", "--group ", "--trust", "--listen", "--agents", "--allow-remote-agent", "--agent-trust", "--agent-model", "--cmd", "--private", "--yes", "--no ", "--quit", "--send", "--to "}
 
 @(test)
 HelpSplitTest :: proc(t: ^testing.T) {
@@ -79,7 +85,7 @@ HelpSplitTest :: proc(t: ^testing.T) {
     }
     // the agent's help names the tools and none of the commands of the keyboard
     agent: string = HelpAgent()
-    for tool in ([?]string{"say(", "tell(", "send(", "inbox(", "who("}) {
+    for tool in ([?]string{"say(", "tell(", "send(", "inbox(", "who(", "run("}) {
         testing.expectf(t, strings.contains(agent, tool), "the help of an agent lacks %q", tool)
     }
     for word in USER_ONLY_WORDS {

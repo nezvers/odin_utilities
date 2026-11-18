@@ -151,7 +151,7 @@ AgentStart :: proc(agent: ^Agent, config: AgentConfig) -> (error: string, ok: bo
         return "cannot make the pipes for the agent", false
     }
     if config.log_file != "" {
-        agent.log, _ = os.open(config.log_file, {.Write, .Create, .Trunc})
+        agent.log, _ = os.open(config.log_file, {.Write, .Create, .Trunc, .Inheritable})
     }
     // the environment of the agent is ours plus a mark: a program run in it (amsg, if the agent were given a shell) knows it is not a person
     environment, _ := os.environ(context.temp_allocator)

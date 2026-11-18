@@ -101,6 +101,7 @@ NodeUpdate :: proc(node: ^Node) {
             append(&node.orders, event)
         case .AGENT_REPORT:
             append(&node.reports, event)
+        case .REMOTE_GRANT, .REMOTE_RUN, .REMOTE_OUT:                // the session handles them
         }
     }
     if node.session != nil {

@@ -94,6 +94,9 @@ EventKind :: enum {
     AGENT_STATUS,                        // the agent of `member`: `ok` = running, text = its model, `note` = what happened ("started", "declined", ...)
     MODERATION,                          // the host orders this member: `moderation` (dismiss the agent, close the program), text = the reason
     AGENT_REPORT,                        // a piece of the last message of the agent of `member` that went idle; `more` = another piece follows (idle reports are only for who asked)
+    REMOTE_GRANT,                        // `member` gave this member remote control of their device (`ok`) or took it back (not `ok`)
+    REMOTE_RUN,                          // `member` wants to run the command `text` on this device (`job` numbers it): the session checks the grant
+    REMOTE_OUT,                          // output of command `job` that this member asked `member` to run: a piece in `text`, `more` = not the last one, `exit_code` in the last
 }
 
 Event :: struct {
@@ -110,7 +113,9 @@ Event :: struct {
     agent: bool,                         // TEXT: said by the agent of `member`
     action: AgentAction,                 // AGENT_REQUEST
     moderation: ModerationAction,        // MODERATION
-    more: bool,                          // AGENT_REPORT
+    more: bool,                          // AGENT_REPORT, REMOTE_OUT
+    job: u32,                            // REMOTE_RUN, REMOTE_OUT
+    exit_code: i32,                      // REMOTE_OUT (the last piece)
     text: [MAX_TEXT]byte,
     text_length: int,
     note: [AGENT_NOTE_MAX]byte,          // AGENT_STATUS
@@ -120,6 +125,8 @@ Event :: struct {
 AGENT_NOTE_MAX :: 120
 AGENT_REPORT_PIECE :: 760                // bytes of a report in one frame
 AGENT_REPORT_MAX :: 5 * AGENT_REPORT_PIECE
+REMOTE_COMMAND_MAX :: 400                // bytes of a command for the device of another member
+REMOTE_OUT_MAX :: 5 * AGENT_REPORT_PIECE // output of one command that is sent back: the end of it, the rest is cut
 MAX_BANS :: 16
 BAN_DROP_MS :: 1500                      // after the order to close, the link of a banned member is cut (the order needs a moment to arrive)
 AGENT_MODEL_MAX :: 64
@@ -874,6 +881,60 @@ MessengerSendAgentRequest :: proc(m: ^Messenger, to: u8, action: AgentAction, mo
     return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
 }
 
+// Gives `to` remote control of this device (true) or takes it back (false); the member is told either way.
+MessengerSendRemoteGrant :: proc(m: ^Messenger, to: u8, granted: bool, now_ms: i64) -> bool {
+    if to == ALL || !MessengerReady(m) {
+        return false
+    }
+    writer: serial.Writer
+    FrameBegin(&writer, m.scratch[:], .REMOTE_GRANT, m.self_id, to)
+    serial.WriteBool(&writer, granted)
+    return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
+}
+
+// Asks the device of `to` to run a command. `job` numbers it, the output comes back with the same number.
+MessengerSendRemoteRun :: proc(m: ^Messenger, to: u8, job: u32, command: string, now_ms: i64) -> bool {
+    if to == ALL || len(command) > REMOTE_COMMAND_MAX || !MessengerReady(m) {
+        return false
+    }
+    writer: serial.Writer
+    FrameBegin(&writer, m.scratch[:], .REMOTE_RUN, m.self_id, to)
+    serial.WriteU32(&writer, job)
+    serial.WriteString(&writer, command)
+    return FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true)
+}
+
+// The output of a command in pieces (the last REMOTE_OUT_MAX bytes of it), then the end with the exit code.
+MessengerSendRemoteOut :: proc(m: ^Messenger, to: u8, job: u32, output: string, exit_code: i32, now_ms: i64) -> bool {
+    if to == ALL || !MessengerReady(m) {
+        return false
+    }
+    rest: string = output[max(0, len(output) - REMOTE_OUT_MAX):]
+    for rest != "" && rest[0] & 0xC0 == 0x80 {
+        rest = rest[1:]                       // starts at a whole character
+    }
+    for {
+        piece: int = min(len(rest), AGENT_REPORT_PIECE)
+        for piece > 0 && piece < len(rest) && rest[piece] & 0xC0 == 0x80 {
+            piece -= 1
+        }
+        last: bool = piece == len(rest)
+        writer: serial.Writer
+        FrameBegin(&writer, m.scratch[:], .REMOTE_OUT, m.self_id, to)
+        serial.WriteU32(&writer, job)
+        serial.WriteBool(&writer, last)
+        serial.WriteI32(&writer, exit_code if last else 0)
+        serial.WriteBytes(&writer, transmute([]byte)rest[:piece])
+        if !FrameSend(m, to, serial.WriterBytes(&writer), now_ms, true) {
+            return false
+        }
+        rest = rest[piece:]
+        if last {
+            return true
+        }
+    }
+}
+
 // A report in pieces (the last message of an agent that went idle): up to AGENT_REPORT_MAX bytes, the rest is cut. To one member.
 MessengerSendAgentReport :: proc(m: ^Messenger, to: u8, report: string, now_ms: i64) -> bool {
     if to == ALL || !MessengerReady(m) {
@@ -1038,6 +1099,29 @@ Deliver :: proc(m: ^Messenger, frame: ^Frame, now_ms: i64) {
         if !m.is_host && frame.from == HOST_ID && serial.ReaderOk(&frame.body) && (action == u8(ModerationAction.KICK_AGENT) || action == u8(ModerationAction.CLOSE)) && len(reason) <= AGENT_NOTE_MAX {
             event: ^Event = EventPush(m, .MODERATION, HOST_ID, reason)
             event.moderation = ModerationAction(action)
+        }
+    case .REMOTE_GRANT:
+        granted: bool = serial.ReadBool(&frame.body)
+        if serial.ReaderOk(&frame.body) {
+            event: ^Event = EventPush(m, .REMOTE_GRANT, frame.from, "")
+            event.ok = granted
+        }
+    case .REMOTE_RUN:
+        job: u32 = serial.ReadU32(&frame.body)
+        command: string = serial.ReadString(&frame.body)
+        if serial.ReaderOk(&frame.body) && len(command) <= REMOTE_COMMAND_MAX {
+            event: ^Event = EventPush(m, .REMOTE_RUN, frame.from, command)
+            event.job = job
+        }
+    case .REMOTE_OUT:
+        job: u32 = serial.ReadU32(&frame.body)
+        done: bool = serial.ReadBool(&frame.body)
+        exit_code: i32 = serial.ReadI32(&frame.body)
+        if text := serial.ReaderRemaining(&frame.body); serial.ReaderOk(&frame.body) && text <= AGENT_REPORT_PIECE {
+            event: ^Event = EventPush(m, .REMOTE_OUT, frame.from, string(serial.ReadBytes(&frame.body, text)))
+            event.job = job
+            event.more = !done
+            event.exit_code = exit_code
         }
     case .AGENT_REPORT:
         more: bool = serial.ReadBool(&frame.body)
