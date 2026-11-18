@@ -702,3 +702,39 @@ test_points_are_copied_cut_and_pasted_with_their_curves :: proc(t: ^testing.T) {
     testing.expect_value(t, TimelinePointsRemove(timeline), 2)
     testing.expect_value(t, TimelinePointCount(timeline), 5)
 }
+
+@(test)
+test_the_tangents_of_the_points_shape_a_hermite_segment_and_are_events :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    lane, _ := TimelineAutomationAdd(timeline, "p", 0, 100)
+    a, _ := TimelinePointAdd(timeline, lane, 0, 0)
+    b, _ := TimelinePointAdd(timeline, lane, 10, 100)
+    testing.expect(t, TimelinePointShape(timeline, a, .HERMITE))
+    value, _ := TimelineAutomationValue(timeline, lane, 2.5)
+    testing.expect(t, abs(value - 15.625) < 0.001, "no tangents: the smooth step")
+    drainTimeline(timeline)
+    testing.expect(t, TimelinePointTangents(timeline, a, 0, 2))
+    event, _ := TimelinePollEvent(timeline)
+    testing.expect(t, event.kind == .POINT_SHAPED && event.point == a && event.tangent_out == 2 && event.previous_tangent_out == 0)
+    testing.expect(t, TimelinePointTangents(timeline, b, 0.5, 0))
+    value, _ = TimelineAutomationValue(timeline, lane, 5)
+    testing.expect(t, abs(value - 100 * CurveEvalTangents(2, 0.5, 0.5)) < 0.001, "the tangent out of the first point and the tangent in of the second")
+    testing.expect(t, TimelinePointTangents(timeline, a, 9, -3))
+    testing.expect_value(t, TimelinePointGet(timeline, a).tangent_in, TANGENT_LIMIT)
+    testing.expect_value(t, TimelinePointGet(timeline, a).tangent_out, 0)
+    drainTimeline(timeline)
+    testing.expect(t, TimelinePointTangents(timeline, a, TANGENT_LIMIT, 0) && timeline.event_count == 0, "the same is nothing")
+    // the plan and the block renderer follow the same cubic
+    TimelinePointTangents(timeline, a, 0, 2)
+    storage: [4]AutomationSegment
+    plan, ok := AutomationCompile(timeline, lane, storage[:])
+    testing.expect(t, ok && abs(AutomationValueAt(&plan, 5) - 100 * CurveEvalTangents(2, 0.5, 0.5)) < 0.01)
+    worst, _ := maxError(&plan, 0, 1.0 / 48000, 48000 * 10, 512)
+    testing.expectf(t, worst <= 2e-2, "the block is the exact value within %v (of a range of 100)", worst)
+    // mirrored: the slopes swap ends
+    TimelinePointGet(timeline, a).selected, TimelinePointGet(timeline, b).selected = true, true
+    TimelinePointsMirror(timeline)
+    testing.expect_value(t, TimelinePointGet(timeline, b).tangent_out, 0.5)
+    testing.expect_value(t, TimelinePointGet(timeline, a).tangent_in, 2)
+}

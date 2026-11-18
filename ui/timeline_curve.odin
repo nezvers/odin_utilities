@@ -16,6 +16,7 @@ CurveShape :: enum u8 {
     CURVE,              // Schlick's bias: `curve` above 0 goes fast first and slows down (ease out), below 0 starts slowly and speeds up (ease in), 0 is a line
     S_CURVE,            // Schlick's gain: `curve` above 0 is steeper in the middle and flat at both ends, below 0 is flat in the middle, 0 is a line
     EXP,                // an exponential: `curve` above 0 grows slowly first and fast at the end (the way pitch and decibels are heard), below 0 the other way, 0 is a line (see CURVE_EXP_RANGE)
+    HERMITE,            // a cubic with a slope at each end (the tangents of the points: TimelinePointTangents): the control points of a Bezier curve at a third of the width of the segment, two handles
     // The shapes that repeat: `curve` is not a bend but how many times (CurveCount: 1 to 30, growing with the square of `curve` so the small counts are easy to set).
     STAIRS,             // that many steps (at least 2) from the first value to the second
     SMOOTH_STAIRS,      // the same steps, each one eased
@@ -26,6 +27,10 @@ CurveShape :: enum u8 {
 
 // The exponent of EXP at the limit of `curve`: the steepness e^8 is a factor of about 3000 between the end and the start of the curve (70 dB).
 CURVE_EXP_RANGE :: f32(8)
+
+// The slope at an end of a HERMITE segment is a part of the slope of the straight line between the points (1: that slope, 0: flat), kept within 0 .. TANGENT_LIMIT: with those the curve
+// never goes below the first value or above the second one and never turns back (the monotone cubics of Fritsch and Carlson).
+TANGENT_LIMIT :: f32(3)
 
 CURVE_LIMIT :: f32(0.98)            // `curve` is kept within -CURVE_LIMIT .. CURVE_LIMIT: at 1 the bias is a jump
 
@@ -68,9 +73,15 @@ bias :: proc(x: f32, coefficient: f32) -> f32 {
     return x / (coefficient * (1 - x) + 1)
 }
 
-// The shape at x (0 .. 1) with the coefficient of CurveCoefficient.
-CurveEvalCoefficient :: proc(shape: CurveShape, coefficient: f32, x: f32) -> f32 {
+// The cubic through (0, 0) and (1, 1) with the slopes `start` and `end` there: Horner's form, three multiplies and three adds. The same as 3x^2 - 2x^3 when both are 0, a line when both are 1.
+CurveEvalTangents :: proc(start: f32, end: f32, x: f32) -> f32 {
+    return ((start + end - 2) * x * x + (3 - 2 * start - end) * x + start) * x
+}
+
+// The shape at x (0 .. 1) with the coefficient of CurveCoefficient; `coefficient2` is the slope at the end of a HERMITE segment (`coefficient` is the one at the start).
+CurveEvalCoefficient :: proc(shape: CurveShape, coefficient: f32, x: f32, coefficient2: f32 = 0) -> f32 {
     switch shape {
+    case .HERMITE: return CurveEvalTangents(coefficient, coefficient2, x)
     case .LINEAR: return x
     case .HOLD: return 0 if x < 1 else 1
     case .SMOOTH: return x * x * (3 - 2 * x)
@@ -117,7 +128,8 @@ CurveShapeNext :: proc(shape: CurveShape) -> CurveShape {
     case .SMOOTH: return .CURVE
     case .CURVE: return .S_CURVE
     case .S_CURVE: return .EXP
-    case .EXP: return .STAIRS
+    case .EXP: return .HERMITE
+    case .HERMITE: return .STAIRS
     case .STAIRS: return .SMOOTH_STAIRS
     case .SMOOTH_STAIRS: return .PULSE
     case .PULSE: return .TRIANGLE
@@ -130,7 +142,7 @@ CurveShapeNext :: proc(shape: CurveShape) -> CurveShape {
 
 // The line of a segment as straight pieces between the screen points `a` and `b` (the value and the time are mapped linearly onto the screen): HOLD is the corner, LINEAR one piece, the
 // curved shapes as many pieces as their width allows (about every 4 pixels, at least 4, at most 64). Writes the points after `a` into `out` (so the line starts at `a`) and returns them.
-CurveSegmentPoints :: proc(shape: CurveShape, curve: f32, a: Vec2, b: Vec2, out: []Vec2) -> []Vec2 {
+CurveSegmentPoints :: proc(shape: CurveShape, curve: f32, a: Vec2, b: Vec2, out: []Vec2, tangents: [2]f32 = {}) -> []Vec2 {
     switch shape {
     case .HOLD:
         if len(out) < 2 { return out[:0] }
@@ -140,15 +152,17 @@ CurveSegmentPoints :: proc(shape: CurveShape, curve: f32, a: Vec2, b: Vec2, out:
         if len(out) < 1 { return out[:0] }
         out[0] = b
         return out[:1]
-    case .SMOOTH, .CURVE, .S_CURVE, .EXP, .STAIRS, .SMOOTH_STAIRS, .PULSE, .TRIANGLE, .WAVE:
+    case .SMOOTH, .CURVE, .S_CURVE, .EXP, .HERMITE, .STAIRS, .SMOOTH_STAIRS, .PULSE, .TRIANGLE, .WAVE:
         // a counted shape needs a piece for every edge: at least 8 per cycle (a step or a pulse is cut at its edges by the sampling, which is fine for a line on a screen)
         pieces: int = clamp(int(abs(b.x - a.x) / 4), 4, 64)
         if CurveIsCounted(shape) { pieces = clamp(CurveCount(curve) * 8, pieces, len(out)) }
         pieces = min(pieces, len(out))
         coefficient: f32 = CurveCoefficient(shape, curve)
+        if shape == .HERMITE { coefficient = clamp(tangents[0], 0, TANGENT_LIMIT) }
+        second: f32 = clamp(tangents[1], 0, TANGENT_LIMIT)
         for i in 1 ..= pieces {
             x: f32 = f32(i) / f32(pieces)
-            out[i - 1] = {a.x + (b.x - a.x) * x, a.y + (b.y - a.y) * CurveEvalCoefficient(shape, coefficient, x)}
+            out[i - 1] = {a.x + (b.x - a.x) * x, a.y + (b.y - a.y) * CurveEvalCoefficient(shape, coefficient, x, second)}
         }
         return out[:pieces]
     }
@@ -172,4 +186,19 @@ CurveFromHandle :: proc(shape: CurveShape, covered: f32) -> f32 {
     if shape == .EXP { return clamp(2 * math.ln(1 / clamp(covered, 0.001, 0.999) - 1) / CURVE_EXP_RANGE, -CURVE_LIMIT, CURVE_LIMIT) }
     if shape == .S_CURVE { return clamp(1 - 4 * covered, -CURVE_LIMIT, CURVE_LIMIT) }
     return clamp(2 * covered - 1, -CURVE_LIMIT, CURVE_LIMIT)
+}
+
+// The handles of a segment between the screen points `a` and `b`, for a style to draw and a widget to pick: one for the shapes that bend (CurveHandle), two for HERMITE (the control points of
+// the Bezier curve it is: a third of the way along, at the height the slope gives), none for a step. `tangents` are the slope that leaves `a` and the slope that arrives at `b`.
+CurveHandles :: proc(shape: CurveShape, curve: f32, tangents: [2]f32, a: Vec2, b: Vec2) -> (positions: [2]Vec2, count: int) {
+    if !CurveHasHandle(shape) { return }
+    if shape == .HERMITE {
+        third: f32 = (b.x - a.x) / 3
+        positions[0] = {a.x + third, a.y + clamp(tangents[0], 0, TANGENT_LIMIT) * (b.y - a.y) / 3}
+        positions[1] = {b.x - third, b.y - clamp(tangents[1], 0, TANGENT_LIMIT) * (b.y - a.y) / 3}
+        return positions, 2
+    }
+    along, covered := CurveHandle(shape, curve)
+    positions[0] = {a.x + (b.x - a.x) * along, a.y + (b.y - a.y) * covered}
+    return positions, 1
 }

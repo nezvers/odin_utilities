@@ -137,19 +137,23 @@ DrawCurve :: proc(ctx: ^ui.Context, curve: ^ui.CurveDraw) {
     for i in 1 ..< len(curve.points) {
         a, b: ui.CurvePoint = curve.points[i - 1], curve.points[i]
         previous: ui.Vec2 = {a.x, a.y}
-        for next in ui.CurveSegmentPoints(a.shape, a.curve, {a.x, a.y}, {b.x, b.y}, pieces[:]) {
+        for next in ui.CurveSegmentPoints(a.shape, a.curve, {a.x, a.y}, {b.x, b.y}, pieces[:], {a.tangent_out, b.tangent_in}) {
             Line(painter, previous, next, 2, color)
             previous = next
         }
-        // the handle that bends the segment (a held one has none)
+        // the handles that shape the segment (a held one has none; a HERMITE one has two, joined to its points by a thin line)
         if ui.CurveHasHandle(a.shape) && b.x >= curve.rect.x && a.x <= curve.rect.x + curve.rect.z {
-            along, covered := ui.CurveHandle(a.shape, a.curve)
-            center: ui.Vec2 = {a.x + (b.x - a.x) * along, a.y + (b.y - a.y) * covered}
-            active: bool = .HOVERED in a.handle_flags || .PRESSED in a.handle_flags
-            size: f32 = 4 if active else 3
-            outline: ui.Color = ui.ColorLerp(color, ui.Color{255, 255, 255, 255}, 0.6 if active else 0.2)
-            painter.fill_rect(painter, {center.x - size, center.y - size, size * 2, size * 2}, outline)
-            painter.fill_rect(painter, {center.x - size + 1.5, center.y - size + 1.5, size * 2 - 3, size * 2 - 3}, ui.ColorLerp(theme.track, color, 0.3 if active else 0))
+            positions, handles := ui.CurveHandles(a.shape, a.curve, {a.tangent_out, b.tangent_in}, {a.x, a.y}, {b.x, b.y})
+            for h in 0 ..< handles {
+                center: ui.Vec2 = positions[h]
+                flags: ui.Flags = a.handle_flags_end if h == 1 else a.handle_flags
+                active: bool = .HOVERED in flags || .PRESSED in flags
+                if a.shape == .HERMITE { Line(painter, {a.x, a.y} if h == 0 else {b.x, b.y}, center, 1, ui.ColorLerp(color, theme.track, 0.5)) }
+                size: f32 = 4 if active else 3
+                outline: ui.Color = ui.ColorLerp(color, ui.Color{255, 255, 255, 255}, 0.6 if active else 0.2)
+                painter.fill_rect(painter, {center.x - size, center.y - size, size * 2, size * 2}, outline)
+                painter.fill_rect(painter, {center.x - size + 1.5, center.y - size + 1.5, size * 2 - 3, size * 2 - 3}, ui.ColorLerp(theme.track, color, 0.3 if active else 0))
+            }
         }
     }
     for point in curve.points {

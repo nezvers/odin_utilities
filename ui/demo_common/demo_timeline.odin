@@ -185,6 +185,27 @@ script: []kit.Step = {
         ui.TimelineTrackPoints(&state.timeline, state.cutoff, out[:])
         return ui.TimelinePointGet(&state.timeline, out[3]).shape == .CURVE
     }, "Ctrl + Y brought it back"),
+    // a HERMITE segment has two handles, the control points of a Bezier curve: the slopes at its ends (the program sets them here, the pointer drags them)
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        out: [8]ui.PointHandle
+        ui.TimelineTrackPoints(&state.timeline, state.cutoff, out[:])
+        ui.TimelinePointShape(&state.timeline, out[1], .HERMITE)
+        ui.TimelinePointTangents(&state.timeline, out[1], 0, 2.5)
+        ui.TimelinePointTangents(&state.timeline, out[2], 0.4, 0)
+        return true
+    }, "the segment from 4 to 8 is a cubic with two tangents"),
+    kit.Wait(3),
+    kit.Capture("timeline_tangents"),
+    kit.Wait(1),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        out: [8]ui.PointHandle
+        ui.TimelineTrackPoints(&state.timeline, state.cutoff, out[:])
+        ui.TimelinePointShape(&state.timeline, out[1], .LINEAR)
+        ui.TimelinePointTangents(&state.timeline, out[2], 0, 0)
+        ui.TimelinePointTangents(&state.timeline, out[1], 0, 0)
+        return true
+    }, "back to a line"),
+    kit.Wait(2),
     // "Beat" (beats 0 .. 4, x 10 .. 170) two beats later and two tracks down, on the free part of "Lead"
     kit.MoveTo({60, 50}),
     kit.Wait(3),

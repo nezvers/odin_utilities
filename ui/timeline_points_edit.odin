@@ -48,7 +48,7 @@ TimelinePointsMirror :: proc(timeline: ^Timeline) -> (moved: int) {
         first: f64 = TimelinePointGet(timeline, ordered[0]).time
         last: f64 = TimelinePointGet(timeline, ordered[count - 1]).time
         // the segments first: they are read before any point is moved
-        Segment :: struct { shape: CurveShape, curve: f32 }
+        Segment :: struct { shape: CurveShape, curve: f32, start: f32, end: f32 }       // start and end: the slopes of a HERMITE segment
         shapes: [TIMELINE_POINTS]Segment
         for k in 0 ..< count - 1 {
             point: ^TimelinePoint = TimelinePointGet(timeline, ordered[k])
@@ -56,7 +56,7 @@ TimelinePointsMirror :: proc(timeline: ^Timeline) -> (moved: int) {
             // a bias that eased out eases in backwards; a pulse starts at the other value (the sign of its curve says which one, so a curve of 0 becomes a hair below 0)
             if point.shape == .CURVE { curve = -curve }
             if point.shape == .PULSE { curve = -curve if curve != 0 else -0.0001 }
-            shapes[k] = {point.shape, curve}
+            shapes[k] = {point.shape, curve, point.tangent_out, TimelinePointGet(timeline, ordered[k + 1]).tangent_in}
         }
         for k in 0 ..< count {
             point: ^TimelinePoint = TimelinePointGet(timeline, ordered[k])
@@ -65,6 +65,10 @@ TimelinePointsMirror :: proc(timeline: ^Timeline) -> (moved: int) {
         // the segment that was between k and k + 1 is now between the old k + 1 (now on the left) and the old k
         for k in 0 ..< count - 1 {
             TimelinePointShape(timeline, ordered[k + 1], shapes[k].shape, shapes[k].curve)
+            // backwards, the slope that left the first point arrives at it and the one that arrived at the second leaves it
+            left, right: ^TimelinePoint = TimelinePointGet(timeline, ordered[k + 1]), TimelinePointGet(timeline, ordered[k])
+            TimelinePointTangents(timeline, ordered[k + 1], left.tangent_in, shapes[k].end)
+            TimelinePointTangents(timeline, ordered[k], shapes[k].start, right.tangent_out)
         }
     }
     return
@@ -100,6 +104,7 @@ TimelinePointsRepeat :: proc(timeline: ^Timeline, minimum_span: f64 = 1) -> (add
             created, ok := TimelinePointAdd(timeline, track, source.time + span, source.value)
             if !ok { return }
             TimelinePointShape(timeline, created, source.shape, source.curve)
+            TimelinePointTangents(timeline, created, source.tangent_in, source.tangent_out)
             TimelinePointGet(timeline, created).selected = true
             TimelinePointGet(timeline, ordered[k]).selected = false
             added += 1
@@ -125,6 +130,7 @@ TimelineCopyPoints :: proc(timeline: ^Timeline) -> int {
         if !point.selected || timeline.point_copy_count >= len(timeline.point_copies) { continue }
         timeline.point_copies[timeline.point_copy_count] = {
             track_offset = TimelineTrackIndex(timeline, point.track) - top, time_offset = point.time - earliest, value = point.value, shape = point.shape, curve = point.curve,
+            tangent_in = point.tangent_in, tangent_out = point.tangent_out,
         }
         timeline.point_copy_count += 1
     }
@@ -146,6 +152,7 @@ TimelinePastePoints :: proc(timeline: ^Timeline, time: f64, track: int = -1) -> 
         handle, ok := TimelinePointAdd(timeline, timeline.order[index], max(time + entry.time_offset, 0), entry.value)
         if !ok { continue }
         TimelinePointShape(timeline, handle, entry.shape, entry.curve)
+        TimelinePointTangents(timeline, handle, entry.tangent_in, entry.tangent_out)
         pasted[count] = handle
         count += 1
     }

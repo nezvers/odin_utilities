@@ -68,7 +68,9 @@ TimelineView :: struct {
     hover_point: PointHandle,
     gesture_point: PointHandle,
     hover_handle: PointHandle,          // the point whose segment has the handle that is under the pointer
+    hover_handle_end: bool,             // HERMITE: it is the second handle of the segment (at its end)
     gesture_handle: PointHandle,
+    gesture_handle_end: bool,
     history: ^TimelineHistory,          // set: finished edits become steps and Ctrl + Z, Ctrl + Y go through them (timeline_history.odin)
     stretch_anchor: f64,                // Alt and a drag of the first or last selected point stretches the selection: the time that stays
     stretch_far: f64,                   // and the time of the end that is dragged, when it began
@@ -239,7 +241,7 @@ timelinePickPoint :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^Time
 
 // The point whose segment has its bending handle under the pointer (a segment that is held has none).
 @(private)
-timelinePickHandle :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^TimelineStyle, mouse: Vec2) -> (found: PointHandle) {
+timelinePickHandle :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^TimelineStyle, mouse: Vec2) -> (found: PointHandle, end: bool) {
     points: [TIMELINE_CURVE_POINTS]CurveEntry
     radius: f32 = style.point_radius
     for i in 0 ..< timeline.track_count {
@@ -252,10 +254,11 @@ timelinePickHandle :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^Tim
         for k in 0 ..< count - 1 {
             a, b: CurveEntry = points[k], points[k + 1]
             if !CurveHasHandle(a.shape) || a.last_in_view { continue }
-            along, covered := CurveHandle(a.shape, a.curve)
-            position: Vec2 = {a.x + (b.x - a.x) * along, a.y + (b.y - a.y) * covered}
-            delta: Vec2 = position - mouse
-            if delta.x * delta.x + delta.y * delta.y <= radius * radius { found = a.point }
+            positions, handles := CurveHandles(a.shape, a.curve, {a.tangent_out, a.next_tangent_in}, {a.x, a.y}, {b.x, b.y})
+            for h in 0 ..< handles {
+                delta: Vec2 = positions[h] - mouse
+                if delta.x * delta.x + delta.y * delta.y <= radius * radius { found, end = a.point, h == 1 }
+            }
         }
     }
     return
@@ -374,10 +377,10 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
     }
     min_length: f64 = max(timeline.rules.min_length, 4 / f64(zoom))
     view.hover_point = {}
-    view.hover_handle = {}
+    view.hover_handle, view.hover_handle_end = {}, false
     if hovering && mouse.y >= lanes_top {
         view.hover_point = timelinePickPoint(timeline, view, &style, mouse)
-        if view.hover_point == {} { view.hover_handle = timelinePickHandle(timeline, view, &style, mouse) }
+        if view.hover_point == {} { view.hover_handle, view.hover_handle_end = timelinePickHandle(timeline, view, &style, mouse) }
     }
     // the marker whose flag is under the pointer (on the ruler, in the upper half of it)
     view.hover_marker = {}
@@ -450,7 +453,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 }
             }
         case view.hover_handle != {}:
-            view.gesture, view.gesture_handle = .CURVE, view.hover_handle
+            view.gesture, view.gesture_handle, view.gesture_handle_end = .CURVE, view.hover_handle, view.hover_handle_end
         case row >= 0 && TimelineTrackGet(timeline, timeline.order[row]).kind == .AUTOMATION && interaction.double_clicked && !ctrl && view.tool != .BOX:
             // a double click on an automation lane puts a point there
             lane: ^TimelineTrack = TimelineTrackGet(timeline, timeline.order[row])
@@ -555,6 +558,16 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                     count: int = timelineLanePoints(timeline, view, &style, track, lane, points[:])
                     for k in 0 ..< count - 1 {
                         if points[k].point != view.gesture_handle || points[k + 1].y == points[k].y { continue }
+                        if points[k].shape == .HERMITE {
+                            // a control point of the Bezier curve: its height says the slope (a third of the way, so three times the rise over the change of the value)
+                            change: f32 = points[k + 1].y - points[k].y
+                            if !view.gesture_handle_end {
+                                TimelinePointTangents(timeline, view.gesture_handle, owner.tangent_in, (mouse.y - points[k].y) * 3 / change)
+                            } else if next := TimelinePointGet(timeline, points[k + 1].point); next != nil {
+                                TimelinePointTangents(timeline, points[k + 1].point, (points[k + 1].y - mouse.y) * 3 / change, next.tangent_out)
+                            }
+                            continue
+                        }
                         // the part of the way from this value to the next that the handle is at; a segment that was straight or smooth becomes a bias when it is bent
                         covered: f32 = clamp((mouse.y - points[k].y) / (points[k + 1].y - points[k].y), 0.02, 0.98)
                         shape: CurveShape = owner.shape if owner.shape == .S_CURVE || owner.shape == .EXP || CurveIsCounted(owner.shape) else .CURVE
@@ -869,6 +882,9 @@ CurveEntry :: struct {
     value: f32,
     shape: CurveShape,
     curve: f32,
+    tangent_in: f32,
+    tangent_out: f32,
+    next_tangent_in: f32,       // the slope at the end of the segment that leaves this point (HERMITE)
     selected: bool,
     bend: f32,                  // what the bend macro of the track added to `curve` (the handle is where the segment really is, a drag takes it off again)
     last_in_view: bool,         // the last point of the list: no segment leaves it
@@ -885,7 +901,7 @@ timelineLanePoints :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^Tim
     entry_of :: proc(point: ^TimelinePoint, view: ^TimelineView, track: ^TimelineTrack, inner: Rect, range: f32) -> CurveEntry {
         return {
             x = TimelineX(view, point.time), y = inner.y + inner.w * (1 - (point.value - track.value_min) / range), point = point.handle, time = point.time, value = point.value,
-            shape = .HOLD if track.steps else point.shape, curve = point.curve, selected = point.selected,
+            shape = .HOLD if track.steps else point.shape, curve = point.curve, tangent_in = point.tangent_in, tangent_out = point.tangent_out, selected = point.selected,
         }
     }
     it := hm.iterator_make(&timeline.points)
@@ -919,6 +935,7 @@ timelineLanePoints :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^Tim
         count += 1
     }
     for i in 0 ..< count - 1 {
+        points[i].next_tangent_in = points[i + 1].tangent_in
         // the curve of the segment as the track bends it: the handle and the line are where it really is
         real: f32 = TimelineSegmentCurve(track, points[i].shape, points[i].curve, points[i + 1].value - points[i].value)
         points[i].bend, points[i].curve = real - points[i].curve, real
@@ -935,12 +952,12 @@ timelineDrawCurve :: proc(ctx: ^Context, timeline: ^Timeline, view: ^TimelineVie
     count: int = timelineLanePoints(timeline, view, style, track, lane, entries[:])
     for i in 0 ..< count {
         entry: CurveEntry = entries[i]
-        points[i] = {x = entry.x, y = entry.y, point = entry.point, time = entry.time, value = entry.value, shape = entry.shape, curve = entry.curve}
+        points[i] = {x = entry.x, y = entry.y, point = entry.point, time = entry.time, value = entry.value, shape = entry.shape, curve = entry.curve, tangent_in = entry.tangent_in, tangent_out = entry.tangent_out}
         if entry.selected { points[i].flags += {.SELECTED} }
         if view.hover_point == entry.point { points[i].flags += {.HOVERED} }
         if view.gesture_point == entry.point && view.gesture == .POINTS { points[i].flags += {.PRESSED} }
-        if view.hover_handle == entry.point { points[i].handle_flags += {.HOVERED} }
-        if view.gesture_handle == entry.point && view.gesture == .CURVE { points[i].handle_flags += {.PRESSED} }
+        if view.hover_handle == entry.point { (&points[i].handle_flags_end if view.hover_handle_end else &points[i].handle_flags)^ += {.HOVERED} }
+        if view.gesture_handle == entry.point && view.gesture == .CURVE { (&points[i].handle_flags_end if view.gesture_handle_end else &points[i].handle_flags)^ += {.PRESSED} }
     }
     curve: CurveDraw = {
         rect = lane, inner = timelineLaneInner(lane), points = points[:count], name = TimelineTrackName(track), color = track.color, steps = track.steps,

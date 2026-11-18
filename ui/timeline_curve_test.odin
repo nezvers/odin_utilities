@@ -45,7 +45,7 @@ test_the_shapes_have_the_form_they_are_named_for :: proc(t: ^testing.T) {
     testing.expect(t, CurveEval(.CURVE, 1, 0.01) <= 1 && CurveEval(.CURVE, -1, 0.99) >= 0)
     testing.expect_value(t, CurveShapeNext(.LINEAR), CurveShape.SMOOTH)
     s: CurveShape = .LINEAR
-    for _ in 0 ..< 11 { s = CurveShapeNext(s) }
+    for _ in 0 ..< 12 { s = CurveShapeNext(s) }
     testing.expect_value(t, s, CurveShape.LINEAR)                       // a full turn
 }
 
@@ -145,4 +145,39 @@ test_the_exponential_grows_by_a_constant_ratio_and_is_a_line_at_zero :: proc(t: 
         _, covered := CurveHandle(.EXP, curve)
         testing.expectf(t, abs(CurveFromHandle(.EXP, covered) - curve) < 2e-3, "the handle of %v gives %v back", curve, CurveFromHandle(.EXP, covered))
     }
+}
+
+@(test)
+test_the_hermite_cubic_has_the_slopes_it_is_given_and_stays_between_the_values :: proc(t: ^testing.T) {
+    near :: proc(a, b: f32) -> bool { return abs(a - b) < 1e-4 }
+    for x in ([5]f32{0, 0.2, 0.5, 0.8, 1}) {
+        testing.expect(t, near(CurveEvalTangents(0, 0, x), x * x * (3 - 2 * x)), "no slopes: the smooth step")
+        testing.expect(t, near(CurveEvalTangents(1, 1, x), x), "the slope of the line at both ends: the line")
+    }
+    for start in ([4]f32{0, 0.5, 1.5, 3}) {
+        for end in ([4]f32{0, 0.7, 2, 3}) {
+            testing.expect_value(t, CurveEvalTangents(start, end, 0), 0)
+            testing.expect(t, near(CurveEvalTangents(start, end, 1), 1))
+            previous: f32
+            for i in 0 ..= 200 {
+                value: f32 = CurveEvalTangents(start, end, f32(i) / 200)
+                testing.expectf(t, value >= previous - 1e-5 && value >= -1e-5 && value <= 1 + 1e-5, "%v %v at %d: %v after %v", start, end, i, value, previous)
+                previous = value
+            }
+            // the slope at the ends, by a small step
+            testing.expectf(t, abs((CurveEvalTangents(start, end, 0.0001) - 0) / 0.0001 - start) < 0.01, "slope at 0 is %v", start)
+            testing.expectf(t, abs((1 - CurveEvalTangents(start, end, 0.9999)) / 0.0001 - end) < 0.01, "slope at 1 is %v", end)
+        }
+    }
+    // the handles are the control points of the Bezier curve: a third of the way, at the height of the slope
+    positions, count := CurveHandles(.HERMITE, 0, {2, 0.5}, {0, 100}, {90, 40})
+    testing.expect_value(t, count, 2)
+    testing.expect(t, near(positions[0].x, 30) && near(positions[0].y, 100 + 2 * (40 - 100) / 3))
+    testing.expect(t, near(positions[1].x, 60) && near(positions[1].y, 40 - 0.5 * (40 - 100) / 3))
+    _, none := CurveHandles(.HOLD, 0, {}, {0, 0}, {10, 10})
+    testing.expect_value(t, none, 0)
+    // the line of a segment
+    out: [64]Vec2
+    line := CurveSegmentPoints(.HERMITE, 0, {0, 0}, {100, 100}, out[:], {1, 1})
+    testing.expect(t, len(line) >= 4 && near(line[len(line) / 2 - 1].y, line[len(line) / 2 - 1].x))
 }

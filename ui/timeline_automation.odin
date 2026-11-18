@@ -15,7 +15,7 @@ package ui
 //  - LINEAR is a ramp: one add per sample (forward differencing), started again from an exact value every AUTOMATION_CHUNK samples so that the rounding of f32 cannot add up;
 //  - STAIRS, SMOOTH_STAIRS and PULSE have edges that a ramp would smear: exact at every sample (a few ns each); TRIANGLE and WAVE are continuous: a ramp per run, anchored inside of a run for WAVE;
 //  - EXP is one multiply a sample (the ratio of neighbours is constant), started again from an exact e^(c x) every AUTOMATION_CHUNK samples, like the linear ramp;
-//  - SMOOTH, CURVE and S_CURVE are evaluated exactly only every few samples (the anchors) and ramped linearly between them. The distance between anchors is a part (1 / 125) of the length of the
+//  - SMOOTH, CURVE, S_CURVE and HERMITE are evaluated exactly only every few samples (the anchors) and ramped linearly between them. The distance between anchors is a part (1 / 125) of the length of the
 //    segment, at most AUTOMATION_ANCHOR samples, so the error is the same small part of the change of the value whatever the length: at most about 5e-5 for SMOOTH, more for a strongly bent CURVE
 //    (see the test). A segment shorter than 125 samples is evaluated at every sample, exactly. `AutomationRenderExact` is the per-sample reference.
 
@@ -31,7 +31,8 @@ AutomationSegment :: struct {
     inverse_length: f64,            // 1 / (end - start)
     value: f32,                     // the value at the start
     change: f32,                    // the value at the end minus the one at the start
-    coefficient: f32,               // CurveCoefficient of the shape
+    coefficient: f32,               // CurveCoefficient of the shape (HERMITE: the slope at the start)
+    coefficient2: f32,              // HERMITE: the slope at the end
     shape: CurveShape,
 }
 
@@ -64,7 +65,8 @@ AutomationCompile :: proc(timeline: ^Timeline, track: TrackHandle, storage: []Au
         length: f64 = b.time - a.time
         storage[i] = {
             start = a.time, end = b.time, inverse_length = 1 / length if length > 0 else 0, value = a.value, change = b.value - a.value,
-            coefficient = CurveCoefficient(shape, TimelineSegmentCurve(owner, shape, a.curve, b.value - a.value)), shape = shape,
+            coefficient = clamp(a.tangent_out, 0, TANGENT_LIMIT) if shape == .HERMITE else CurveCoefficient(shape, TimelineSegmentCurve(owner, shape, a.curve, b.value - a.value)), shape = shape,
+            coefficient2 = clamp(b.tangent_in, 0, TANGENT_LIMIT) if shape == .HERMITE else 0,
         }
     }
     plan.segments = storage[:count - 1]
@@ -85,7 +87,7 @@ automationSeek :: proc(plan: ^AutomationPlan, time: f64) -> int {
 @(private)
 automationValueIn :: proc(segment: ^AutomationSegment, time: f64) -> f32 {
     x: f32 = f32(clamp((time - segment.start) * segment.inverse_length, 0, 1))
-    return segment.value + segment.change * CurveEvalCoefficient(segment.shape, segment.coefficient, x)
+    return segment.value + segment.change * CurveEvalCoefficient(segment.shape, segment.coefficient, x, segment.coefficient2)
 }
 
 // The value at one time (a binary search and one evaluation): for a program that wants a value now, and the reference of the tests.
@@ -164,7 +166,7 @@ automationSegmentFill :: proc(segment: ^AutomationSegment, time: f64, step: f64,
         run_samples: f64 = 1 / (runs * delta_x)
         spacing: int = 1 if segment.shape == .TRIANGLE else clamp(int(run_samples / AUTOMATION_ANCHOR_PART), 1, AUTOMATION_ANCHOR)
         evaluate :: proc(segment: ^AutomationSegment, x: f64) -> f32 {
-            return segment.value + segment.change * CurveEvalCoefficient(segment.shape, segment.coefficient, f32(clamp(x, 0, 1)))
+            return segment.value + segment.change * CurveEvalCoefficient(segment.shape, segment.coefficient, f32(clamp(x, 0, 1)), segment.coefficient2)
         }
         i: int
         for i < len(out) {
@@ -191,15 +193,15 @@ automationSegmentFill :: proc(segment: ^AutomationSegment, time: f64, step: f64,
         x0: f64 = (time - segment.start) * segment.inverse_length
         delta_x: f64 = step * segment.inverse_length
         for i in 0 ..< len(out) {
-            out[i] = segment.value + segment.change * CurveEvalCoefficient(segment.shape, segment.coefficient, f32(clamp(x0 + f64(i) * delta_x, 0, 1)))
+            out[i] = segment.value + segment.change * CurveEvalCoefficient(segment.shape, segment.coefficient, f32(clamp(x0 + f64(i) * delta_x, 0, 1)), segment.coefficient2)
         }
-    case .SMOOTH, .CURVE, .S_CURVE:
+    case .SMOOTH, .CURVE, .S_CURVE, .HERMITE:
         samples_in_segment: f64 = (segment.end - segment.start) / step
         spacing: int = clamp(int(samples_in_segment / AUTOMATION_ANCHOR_PART), 1, AUTOMATION_ANCHOR)
         x0: f64 = (time - segment.start) * segment.inverse_length
         delta_x: f64 = step * segment.inverse_length
         evaluate :: proc(segment: ^AutomationSegment, x: f64) -> f32 {
-            return segment.value + segment.change * CurveEvalCoefficient(segment.shape, segment.coefficient, f32(clamp(x, 0, 1)))
+            return segment.value + segment.change * CurveEvalCoefficient(segment.shape, segment.coefficient, f32(clamp(x, 0, 1)), segment.coefficient2)
         }
         if spacing == 1 {
             for i in 0 ..< len(out) { out[i] = evaluate(segment, x0 + f64(i) * delta_x) }

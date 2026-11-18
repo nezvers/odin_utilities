@@ -3733,3 +3733,24 @@ test_a_tree_drop_goes_before_or_after_the_row_by_how_far_down_the_pointer_is :: 
     testing.expect_value(t, TreeGet(tree, c).parent, folder)
     testing.expect_value(t, ctx.problems, Problems{})
 }
+
+@(test)
+test_the_two_handles_of_a_hermite_segment_set_the_tangents_of_its_points :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, first, second := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    TimelinePointShape(timeline, first, .HERMITE)
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    // the segment is from (100, 48) to (300, 29): the handles are a third of the way along, at the height of the slope (0 now: the heights of the points)
+    timelineDrag(harness, timeline, view, {167, 48}, {167, 38.5})
+    testing.expect(t, abs(TimelinePointGet(timeline, first).tangent_out - 1.5) < 0.1, "the first handle set the slope that leaves the first point")
+    testing.expect_value(t, TimelinePointGet(timeline, first).time, 1)                    // nothing moved
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {233, 29}, {233, 38.5})
+    testing.expect(t, abs(TimelinePointGet(timeline, second).tangent_in - 1.5) < 0.1, "the second one the slope that arrives at the second point")
+    testing.expect_value(t, TimelinePointGet(timeline, second).time, 3)
+    // pulled far past the limit: it stops there
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, {167, 38}, {167, 5})
+    testing.expect_value(t, TimelinePointGet(timeline, first).tangent_out, TANGENT_LIMIT)
+}

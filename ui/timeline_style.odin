@@ -27,8 +27,11 @@ CurvePoint :: struct {
     value: f32,
     shape: CurveShape,          // the shape of the segment that leaves this point (to the next one in the list)
     curve: f32,
+    tangent_in: f32,            // HERMITE: the slopes at this point (TimelinePoint)
+    tangent_out: f32,
     flags: Flags,               // SELECTED, HOVERED, PRESSED: it is being dragged
-    handle_flags: Flags,        // of the handle that bends the segment that leaves it: HOVERED, PRESSED
+    handle_flags: Flags,        // of the handle that bends the segment that leaves it (HERMITE: the first one, at the start of the segment): HOVERED, PRESSED
+    handle_flags_end: Flags,    // HERMITE: the second handle, at the end of the segment
 }
 
 // The curve of an automation lane: the points in the order of their time, those in view and one before and one after them (for the lines that leave the view).

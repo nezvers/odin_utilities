@@ -85,6 +85,8 @@ TimelinePoint :: struct {
     value: f32,
     shape: CurveShape,          // the shape of the curve from this point to the next one (a point has none after it: the last value is held)
     curve: f32,                 // -1 .. 1: how bent CURVE and S_CURVE are (see timeline_curve.odin)
+    tangent_in: f32,            // HERMITE: the slope with which the curve arrives at this point and leaves it (0 .. TANGENT_LIMIT, as a part of the slope of the straight line): 0 and 0 is a smooth step
+    tangent_out: f32,
     selected: bool,
     drag_selected: bool,
     drag_time: f64,             // where it was when a drag began (timeline_widgets.odin)
@@ -145,6 +147,10 @@ TimelineEvent :: struct {
     previous_shape: CurveShape,
     curve: f32,
     previous_curve: f32,
+    tangent_in: f32,            // POINT_SHAPED: the tangents after and before
+    tangent_out: f32,
+    previous_tangent_in: f32,
+    previous_tangent_out: f32,
     copied_from: ClipHandle,    // CLIP_ADDED by a paste: the clip it is a copy of (the handle may be gone when it was cut): a program that keeps data for a clip makes its own copy of it now
     clip_user: rawptr,
     track_user: rawptr,
@@ -183,6 +189,8 @@ TimelinePointCopy :: struct {
     value: f32,
     shape: CurveShape,
     curve: f32,
+    tangent_in: f32,
+    tangent_out: f32,
 }
 
 Timeline :: struct {
@@ -632,6 +640,21 @@ TimelineTrackBend :: proc(timeline: ^Timeline, handle: TrackHandle, rise: f32, f
     return true
 }
 
+// Sets the slopes of the HERMITE curve at a point (kept within 0 .. TANGENT_LIMIT): the one it arrives with from the point before and the one it leaves with to the next. One POINT_SHAPED event.
+TimelinePointTangents :: proc(timeline: ^Timeline, handle: PointHandle, tangent_in: f32, tangent_out: f32) -> bool {
+    point: ^TimelinePoint = TimelinePointGet(timeline, handle)
+    if point == nil { return false }
+    tin, tout: f32 = clamp(tangent_in, 0, TANGENT_LIMIT), clamp(tangent_out, 0, TANGENT_LIMIT)
+    if point.tangent_in == tin && point.tangent_out == tout { return true }
+    event: TimelineEvent = {
+        kind = .POINT_SHAPED, point = handle, track = point.track, time = point.time, value = point.value, shape = point.shape, previous_shape = point.shape, curve = point.curve, previous_curve = point.curve,
+        tangent_in = tin, tangent_out = tout, previous_tangent_in = point.tangent_in, previous_tangent_out = point.tangent_out,
+    }
+    point.tangent_in, point.tangent_out = tin, tout
+    timelineEmit(timeline, event)
+    return true
+}
+
 TimelinePointRemove :: proc(timeline: ^Timeline, handle: PointHandle) -> bool {
     point: ^TimelinePoint = TimelinePointGet(timeline, handle)
     if point == nil { return false }
@@ -716,5 +739,8 @@ TimelineAutomationValue :: proc(timeline: ^Timeline, track: TrackHandle, time: f
     }
     shape: CurveShape = .HOLD if owner.steps else before.shape
     fraction: f32 = f32((time - before.time) / (after.time - before.time))
+    if shape == .HERMITE {
+        return before.value + (after.value - before.value) * CurveEvalTangents(clamp(before.tangent_out, 0, TANGENT_LIMIT), clamp(after.tangent_in, 0, TANGENT_LIMIT), fraction), true
+    }
     return before.value + (after.value - before.value) * CurveEval(shape, TimelineSegmentCurve(owner, shape, before.curve, after.value - before.value), fraction), true
 }
