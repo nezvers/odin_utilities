@@ -25,6 +25,7 @@ CableDraw :: struct {
     link: LinkHandle,           // not valid for a cable that is being dragged
     from_type: u32,             // the data types of its ports (0 when only one end is known), for a style that draws a bus thicker than a signal
     to_type: u32,
+    label: string,              // the text on the cable (GraphLinkLabel), empty for none: a style draws it where the cable is half way
     user: rawptr,               // `user` of the GraphStyle
 }
 

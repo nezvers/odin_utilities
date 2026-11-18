@@ -134,7 +134,26 @@ DrawCable :: proc(ctx: ^ui.Context, cable: ^ui.CableDraw) {
     for i in 1 ..< len(flat) {
         Line(painter, flat[i - 1], flat[i], width, color)
     }
-    _ = theme
+    // the text on the cable, on a small plate at the middle of its length
+    if cable.label != "" && len(flat) >= 2 {
+        total: f32
+        for i in 1 ..< len(flat) { total += math.sqrt(math.pow(flat[i].x - flat[i - 1].x, 2) + math.pow(flat[i].y - flat[i - 1].y, 2)) }
+        walked: f32
+        middle: ui.Vec2 = flat[len(flat) / 2]
+        for i in 1 ..< len(flat) {
+            piece: f32 = math.sqrt(math.pow(flat[i].x - flat[i - 1].x, 2) + math.pow(flat[i].y - flat[i - 1].y, 2))
+            if walked + piece >= total * 0.5 && piece > 0 {
+                middle = flat[i - 1] + (flat[i] - flat[i - 1]) * ((total * 0.5 - walked) / piece)
+                break
+            }
+            walked += piece
+        }
+        size: f32 = ctx.style.metrics.font_size * 0.85
+        measured: ui.Vec2 = painter.measure_text(painter, cable.label, size)
+        plate: ui.Rect = {middle.x - measured.x * 0.5 - 4, middle.y - measured.y * 0.5 - 1, measured.x + 8, measured.y + 2}
+        painter.fill_rect(painter, plate, ui.ColorLerp(theme.panel, ui.Color{0, 0, 0, 255}, 0.2))
+        painter.draw_text(painter, cable.label, {plate.x + 4, plate.y + 1}, size, theme.text_dim)
+    }
 }
 
 // A strap across the cables with a round head at its +normal end (the handle that turns it); lanes show as small marks.

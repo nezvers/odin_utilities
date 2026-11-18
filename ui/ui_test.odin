@@ -3986,3 +3986,50 @@ test_the_graph_widget_copies_cuts_and_pastes_the_selected_nodes_with_the_keys ::
     actions(harness, graph, &view, {300, 250}, {.COPY, .DUPLICATE})
     testing.expect_value(t, GraphNodeCount(graph), 3)
 }
+
+@(test)
+test_a_double_click_on_a_title_collapses_the_node_and_on_a_cable_puts_a_reroute_point_there :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    graph: ^Graph = new(Graph)
+    defer free(graph)
+    GraphInit(graph)
+    view: GraphView
+    view.reroute_on_double_click = true
+    one, _ := GraphNodeAdd(graph, "one", {20, 20})
+    out, _ := GraphPortAdd(graph, one, "out", .OUTPUT, 1)
+    two, _ := GraphNodeAdd(graph, "two", {260, 20})
+    target, _ := GraphPortAdd(graph, two, "in", .INPUT, 1)
+    link, _ := GraphConnect(graph, out, target)
+    for _ in 0 ..< 4 { coveredGraphFrame(harness, graph, &view, {}) }
+    testing.expect(t, GraphPort(graph, out).anchor_known)
+    open_anchor: Vec2 = GraphPort(graph, out).anchor
+    // the title of "one": at its position, 14 down; a double click is two presses
+    title: Vec2 = {60, 34}
+    for _ in 0 ..< 2 {
+        coveredGraphFrame(harness, graph, &view, pointerAt(title))
+        coveredGraphFrame(harness, graph, &view, pointerAt(title, true, true))
+        coveredGraphFrame(harness, graph, &view, pointerAt(title, false, false, true))
+    }
+    testing.expect(t, GraphNode(graph, one).collapsed, "a double click on the title collapsed the node")
+    for _ in 0 ..< 3 { coveredGraphFrame(harness, graph, &view, {}) }
+    collapsed_anchor: Vec2 = GraphPort(graph, out).anchor
+    node: ^Node = GraphNode(graph, one)
+    testing.expect(t, abs(collapsed_anchor.x - (node.position.x + node.size.x)) < 1 && abs(collapsed_anchor.y - (node.position.y + harness.ctx.style.metrics.control_height * 0.5)) < 1, "the cable goes to the edge of the title")
+    testing.expect(t, node.size.y < 40, "only the title is left")
+    _ = open_anchor
+    // a double click on the cable, half way between its ends
+    middle: Vec2 = (GraphPort(graph, out).anchor + GraphPort(graph, target).anchor) * 0.5
+    for _ in 0 ..< 2 {
+        coveredGraphFrame(harness, graph, &view, pointerAt(middle))
+        coveredGraphFrame(harness, graph, &view, pointerAt(middle, true, true))
+        coveredGraphFrame(harness, graph, &view, pointerAt(middle, false, false, true))
+    }
+    testing.expect(t, GraphLink(graph, link) == nil, "the cable was split")
+    testing.expect_value(t, GraphNodeCount(graph), 3)
+    testing.expect_value(t, GraphLinkCount(graph), 2)
+    testing.expect_value(t, GraphSelectedCount(graph), 1)
+    for _ in 0 ..< 3 { coveredGraphFrame(harness, graph, &view, {}) }
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}

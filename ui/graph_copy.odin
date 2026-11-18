@@ -37,6 +37,8 @@ GraphCopiedNode :: struct {
     offset: Vec2,               // from the top left of everything that was copied
     color: Color,
     user: rawptr,
+    collapsed: bool,
+    reroute: bool,
     source: NodeHandle,
     first_port: int,            // in the clipboard
     port_count: int,
@@ -48,6 +50,8 @@ GraphCopiedLink :: struct {
     to: int,
     color: Color,
     user: rawptr,
+    label: [GRAPH_NAME_MAX]u8,
+    label_length: int,
     source: LinkHandle,
 }
 
@@ -92,7 +96,7 @@ GraphCopy :: proc(graph: ^Graph, clipboard: ^GraphClipboard) -> int {
         // all of its ports or none of them
         if clipboard.port_count + node.port_count > len(clipboard.ports) { continue }
         entry: ^GraphCopiedNode = &clipboard.nodes[clipboard.node_count]
-        entry^ = {name = node.name, name_length = node.name_length, offset = node.position - low, color = node.color, user = node.user, source = handle, first_port = clipboard.port_count}
+        entry^ = {name = node.name, name_length = node.name_length, offset = node.position - low, color = node.color, user = node.user, collapsed = node.collapsed, reroute = node.reroute, source = handle, first_port = clipboard.port_count}
         port_handle: PortHandle = node.first_port
         for port_handle != {} {
             port: ^Port = GraphPort(graph, port_handle)
@@ -118,7 +122,7 @@ GraphCopy :: proc(graph: ^Graph, clipboard: ^GraphClipboard) -> int {
         if clipboard.link_count >= len(clipboard.links) { break }
         from, to: int = index_of_port(clipboard, link.from), index_of_port(clipboard, link.to)
         if from < 0 || to < 0 { continue }
-        clipboard.links[clipboard.link_count] = {from = from, to = to, color = link.color, user = link.user, source = handle}
+        clipboard.links[clipboard.link_count] = {from = from, to = to, color = link.color, user = link.user, label = link.label, label_length = link.label_length, source = handle}
         clipboard.link_count += 1
     }
     ties := hm.iterator_make(&graph.ties)
@@ -160,6 +164,7 @@ GraphPaste :: proc(graph: ^Graph, clipboard: ^GraphClipboard, position: Vec2) ->
         if !ok { break }
         made += 1
         GraphNodeSelect(graph, handle)
+        if stored := GraphNode(graph, handle); stored != nil { stored.collapsed, stored.reroute = entry.collapsed, entry.reroute }
         for k in entry.first_port ..< entry.first_port + entry.port_count {
             copied: ^GraphCopiedPort = &clipboard.ports[k]
             ports[k], _ = GraphPortAdd(graph, handle, string(copied.name[:copied.name_length]), copied.kind, copied.data_type, copied.flags, copied.user, copied.color)
@@ -170,7 +175,7 @@ GraphPaste :: proc(graph: ^Graph, clipboard: ^GraphClipboard, position: Vec2) ->
         if ports[copied.from] == {} || ports[copied.to] == {} { continue }
         link, result := GraphConnect(graph, ports[copied.from], ports[copied.to], copied.user)
         if ConnectOk(result) && link != {} {
-            if stored := GraphLink(graph, link); stored != nil { stored.color = copied.color }
+            if stored := GraphLink(graph, link); stored != nil { stored.color, stored.label, stored.label_length = copied.color, copied.label, copied.label_length }
             links[i] = link
         }
     }

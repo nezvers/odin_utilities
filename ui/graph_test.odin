@@ -653,3 +653,56 @@ test_a_duplicate_is_a_copy_next_to_the_originals_and_the_rules_decide_for_the_li
     testing.expect_value(t, GraphNodeCount(graph), 6)
     testing.expect_value(t, GraphLinkCount(graph), 2)
 }
+
+@(test)
+test_a_node_collapses_a_cable_has_a_label_and_a_reroute_point_splits_a_cable :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    defer free(graph)
+    a, _, a_out := makeNode(graph, "A", 0, 1, {0, 0})
+    b, b_in, _ := makeNode(graph, "B", 1, 0, {300, 0})
+    link, _ := GraphConnect(graph, a_out[0], b_in[0])
+    drain(graph)
+    // collapse: one event, the same state is nothing
+    testing.expect(t, GraphNodeCollapse(graph, a))
+    event, _ := GraphPollEvent(graph)
+    testing.expect(t, event.kind == .NODE_COLLAPSED && event.node == a && event.collapsed)
+    testing.expect(t, GraphNodeCollapse(graph, a) && graph.event_count == 0)
+    testing.expect(t, GraphNodeCollapse(graph, a, false) && !GraphNode(graph, a).collapsed)
+    testing.expect(t, !GraphNodeCollapse(graph, NodeHandle{}))
+    drain(graph)
+    // the label
+    testing.expect(t, GraphLinkLabel(graph, link, "left channel"))
+    testing.expect(t, GraphLinkLabelText(GraphLink(graph, link)) == "left channel")
+    event, _ = GraphPollEvent(graph)
+    testing.expect(t, event.kind == .LINK_LABELED && event.link == link)
+    testing.expect(t, GraphLinkLabel(graph, link, "left channel") && graph.event_count == 0)
+    GraphLink(graph, link).color = {9, 8, 7, 255}
+    // the reroute point: A to B becomes A to R to B, the color and the label are on both halves
+    drain(graph)
+    node, ok := GraphRerouteAdd(graph, link, {150, 40})
+    testing.expect(t, ok)
+    testing.expect(t, GraphLink(graph, link) == nil, "the old cable is gone")
+    testing.expect_value(t, GraphNodeCount(graph), 3)
+    testing.expect_value(t, GraphLinkCount(graph), 2)
+    reroute: ^Node = GraphNode(graph, node)
+    testing.expect(t, reroute.reroute && reroute.port_count == 2)
+    input: ^Port = GraphPort(graph, reroute.first_port)
+    output: ^Port = GraphPort(graph, reroute.last_port)
+    testing.expect(t, input.kind == .INPUT && output.kind == .OUTPUT && input.link_count == 1 && output.link_count == 1)
+    first: ^Link = GraphLink(graph, input.first_link)
+    second: ^Link = GraphLink(graph, output.first_link)
+    testing.expect(t, first.from == a_out[0] && second.to == b_in[0])
+    testing.expect(t, first.color == Color{9, 8, 7, 255} && second.color == Color{9, 8, 7, 255})
+    testing.expect(t, GraphLinkLabelText(first) == "left channel" && GraphLinkLabelText(second) == "left channel")
+    _, order_result := GraphOrder(graph, make([]NodeHandle, 8, context.temp_allocator))
+    testing.expect_value(t, order_result, OrderResult.OK)
+    // a rule that refuses the halves: the graph is as it was
+    graph.rules.can_connect = proc(graph: ^Graph, output: ^Port, input: ^Port, user: rawptr) -> ConnectResult {
+        return .TYPE if GraphNode(graph, output.node).reroute || GraphNode(graph, input.node).reroute else DefaultCanConnect(graph, output, input)
+    }
+    again, again_ok := GraphRerouteAdd(graph, input.first_link, {100, 100})
+    testing.expect(t, !again_ok && again == NodeHandle{})
+    testing.expect_value(t, GraphNodeCount(graph), 3)
+    testing.expect_value(t, GraphLinkCount(graph), 2)
+    _ = b
+}

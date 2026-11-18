@@ -80,6 +80,7 @@ init :: proc(ctx: ^kit.Context) {
     ui_demo_init(&state.app)
     ui.GraphInit(&state.graph)
     state.view.clipboard = &state.clipboard
+    state.view.reroute_on_double_click = true
     ctx.background = {24, 26, 32, 255}
     osc: ui.NodeHandle = addNode("Oscillator", {40, 50}, {}, {"saw"})
     noise: ui.NodeHandle = addNode("Noise", {40, 210}, {}, {"white"})
@@ -87,11 +88,13 @@ init :: proc(ctx: ^kit.Context) {
     filter: ui.NodeHandle = addNode("Filter", {290, 190}, {"in"}, {"out"})
     mixer: ui.NodeHandle = addNode("Mixer", {540, 110}, {"sum"}, {"mix"}, merging = true)
     output: ui.NodeHandle = addNode("Output", {800, 110}, {"left"}, {})
-    ui.GraphConnect(&state.graph, firstPort(osc, .OUTPUT), firstPort(gain, .INPUT))
+    wave, _ := ui.GraphConnect(&state.graph, firstPort(osc, .OUTPUT), firstPort(gain, .INPUT))
+    ui.GraphLinkLabel(&state.graph, wave, "saw 440")
     ui.GraphConnect(&state.graph, firstPort(noise, .OUTPUT), firstPort(filter, .INPUT))
     ui.GraphConnect(&state.graph, firstPort(gain, .OUTPUT), firstPort(mixer, .INPUT))
     ui.GraphConnect(&state.graph, firstPort(filter, .OUTPUT), firstPort(mixer, .INPUT))
-    ui.GraphConnect(&state.graph, firstPort(mixer, .OUTPUT), firstPort(output, .INPUT))
+    master, _ := ui.GraphConnect(&state.graph, firstPort(mixer, .OUTPUT), firstPort(output, .INPUT))
+    ui.GraphLinkLabel(&state.graph, master, "master")
     state.graph.on_event = onEvent
     state.graph.user = &state
     state.log_length = 0
@@ -141,7 +144,7 @@ draw :: proc(ctx: ^kit.Context) {
         }
         if ui.UiPanel(c, "body", {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, gap = 8}, blocks_pointer = false) {
             if ui.UiGraph(c, "canvas", &state.graph, &state.view) {
-                order: [8]ui.NodeHandle
+                order: [16]ui.NodeHandle
                 count: int = ui.GraphNodesByDepth(&state.graph, order[:], &state.view)      // the nodes outside of the view are not declared
                 for node in order[:count] {
                     if ui.UiGraphNode(c, &state.graph, node) {
@@ -301,5 +304,16 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         return ui.GraphNodeCount(&state.graph) == state.before_nodes + 2 && ui.GraphLinkCount(&state.graph) >= state.before_links + 1 && ui.GraphSelectedCount(&state.graph) == 2
     }, "Ctrl + D copied the two nodes and the link between them"),
+    // a node collapsed to its title, and a reroute point on the cable to the Output node
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        ui.GraphNodeCollapse(&state.graph, state.nodes[3])
+        mixer_out: ^ui.Port = ui.GraphPort(&state.graph, ui.GraphNode(&state.graph, state.nodes[4]).last_port)
+        ui.GraphRerouteAdd(&state.graph, mixer_out.first_link, {690, 190})
+        return true
+    }, "the Filter node is collapsed and the cable from the Mixer has a reroute point"),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.GraphNode(&state.graph, state.nodes[3]).collapsed && ui.GraphNodeCount(&state.graph) == state.before_nodes + 3 }, "the reroute point is a node"),
+    kit.Capture("graph_reroute"),
+    kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

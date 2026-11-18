@@ -69,6 +69,7 @@ GraphView :: struct {
     pickup_link: LinkHandle,    // the link whose end is being dragged
     drag_source: PortHandle,    // where the cable that is dragged starts
     drag_target: PortHandle,    // the pin under the pointer that it fits
+    reroute_on_double_click: bool,  // a double click on a cable puts a reroute point there (GraphRerouteAdd)
     clipboard: ^GraphClipboard, // set: Ctrl + C, X, V and D copy, cut, paste (at the pointer) and duplicate the selected nodes (graph_copy.odin)
 }
 
@@ -412,6 +413,14 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
             view.selected_tie, view.selected_link = view.hover_tie, {}
             GraphSelectClear(graph)
         case view.hover_link != {}:
+            if interaction.double_clicked && view.reroute_on_double_click {
+                if made, ok := GraphRerouteAdd(graph, view.hover_link, canvas_mouse); ok {
+                    GraphSelectClear(graph)
+                    GraphNodeSelect(graph, made)
+                    view.selected_link, view.hover_link = {}, {}
+                    break
+                }
+            }
             view.selected_link, view.selected_tie = view.hover_link, {}
             GraphSelectClear(graph)
         case:
@@ -585,6 +594,28 @@ UiGraphNode :: proc(ctx: ^Context, graph: ^Graph, handle: NodeHandle) -> bool {
     node_element: i32 = i32(ctx.element_count)
     node.element, node.stamp = node_element, frame.stamp
     selected: bool = node.selected
+    if node.reroute {
+        // a small dot on a cable: the two pins side by side, the node itself is what is held to move it
+        grab: Interaction = widgetBehavior(ctx, id)
+        if grab.pressed && ctx.input.mouse_pressed {
+            GraphNodeRaise(graph, handle)
+            if !node.selected {
+                GraphSelectClear(graph)
+                node.selected = true
+            }
+            view.selected_link, view.selected_tie = {}, {}
+            view.moving, view.move_last = handle, ctx.input.mouse_position
+        }
+        ElementOpen(ctx, {
+            id = id,
+            layout = {size = {Fit(), Fit()}, direction = .LEFT_TO_RIGHT, padding = PaddingXY(3, 3), gap = 2},
+            absolute = {enabled = true, offset = node.position - view.origin},
+            hit = {.INTERACTIVE, .NO_FOCUS},
+            draw = {kind = .GRAPH_NODE, name = "", color = node.color, flags = {.SELECTED} if selected else {}, font_size = metrics.font_size},
+        })
+        return ElementOpen(ctx, {layout = {size = {Fit(), Fit()}, direction = .LEFT_TO_RIGHT, gap = 2}})
+    }
+    if interaction.double_clicked && interaction.pressed && ctx.input.mouse_pressed { GraphNodeCollapse(graph, handle, !node.collapsed) }
     ElementOpen(ctx, {
         id = id,
         layout = {size = {Fit(style.node_width), Fit()}, direction = .TOP_TO_BOTTOM},
@@ -599,6 +630,11 @@ UiGraphNode :: proc(ctx: ^Context, graph: ^Graph, handle: NodeHandle) -> bool {
         draw = {kind = .WINDOW_TITLE, name = GraphNodeName(node), font_size = metrics.font_size, flags = {.FOCUSED} if selected else {}},
     })
     ElementClose(ctx)
+    if node.collapsed {
+        // only the title: an empty body, and false so that the program declares no pins (the cables go to the edges of the title)
+        ElementOpen(ctx, {layout = {size = {Grow(), Fixed(0)}}})
+        return false
+    }
     return ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM, padding = PaddingXY(metrics.gap, metrics.gap), gap = metrics.gap}})
 }
 
@@ -704,6 +740,21 @@ graphAfterLayout :: proc(ctx: ^Context) {
             if node.stamp != frame.stamp || node.element < 0 || int(node.element) >= ctx.element_count { continue }
             node.size = {ctx.elements[node.element].rect.z, ctx.elements[node.element].rect.w} / zoom
         }
+        // the pins of a collapsed node are not declared: its cables go to the middle of the left and right edges of the title
+        collapsed := hm.iterator_make(&graph.nodes)
+        for node, _ in hm.iterate(&collapsed) {
+            if node.stamp != frame.stamp || !node.collapsed || node.element < 0 || int(node.element) >= ctx.element_count { continue }
+            port_handle: PortHandle = node.first_port
+            for port_handle != {} {
+                port: ^Port = GraphPort(graph, port_handle)
+                if port == nil { break }
+                port.anchor = node.position + {0 if port.kind == .INPUT else node.size.x, ctx.style.metrics.control_height * 0.5}
+                port.anchor_known = true
+                port.offset = port.anchor - node.position
+                port.stamp = 0
+                port_handle = port.next_in_node
+            }
+        }
         ports := hm.iterator_make(&graph.ports)
         for port, _ in hm.iterate(&ports) {
             if port.stamp != frame.stamp || port.element < 0 || int(port.element) >= ctx.element_count { continue }
@@ -797,7 +848,7 @@ GraphDrawLinks :: proc(ctx: ^Context, info: ^DrawInfo) {
         if !RectOverlaps(style.bounds(&route, style.cable_width), visible) { continue }      // the broad phase: only the cables that are in the view
         routeToScreen(&route, view)
         from, to: ^Port = GraphPort(graph, link.from), GraphPort(graph, link.to)
-        draw: CableDraw = {route = &route, color = link.color if link.color.a > 0 else from.color, width = style.cable_width * zoom, link = handle, from_type = from.data_type, to_type = to.data_type, user = style.user}
+        draw: CableDraw = {route = &route, color = link.color if link.color.a > 0 else from.color, width = style.cable_width * zoom, link = handle, from_type = from.data_type, to_type = to.data_type, user = style.user, label = GraphLinkLabelText(link)}
         if view.hover_link == handle { draw.flags += {.HOVERED} }
         if view.selected_link == handle { draw.flags += {.SELECTED} }
         if view.pickup_link == handle { draw.flags += {.DISABLED} }

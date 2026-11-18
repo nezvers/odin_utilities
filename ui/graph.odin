@@ -84,6 +84,8 @@ Node :: struct {
     port_count: int,
     z: i16,                     // drawn after the nodes with a lower number (GraphNodeRaise)
     selected: bool,
+    collapsed: bool,            // only the title is drawn; its cables go to the edges of the title (a double click on the title, GraphNodeCollapse)
+    reroute: bool,              // a point on a cable (GraphRerouteAdd): one input and one output, drawn as a small dot; a program passes the data straight through it
     element: i32,
     stamp: u32,
     degree: u32,                // scratch of GraphOrder
@@ -100,6 +102,8 @@ Link :: struct {
     user: rawptr,
     ties: [GRAPH_LINK_TIES]TieHandle,   // the zip ties it passes through, in the order along the link (GraphTieOrderLinks)
     tie_count: int,
+    label: [GRAPH_NAME_MAX]u8,          // a text on the cable (GraphLinkLabel): what flows there
+    label_length: int,
 }
 
 // A zip tie: a strap that gathers several links into a ribbon. The links go through it side by side, in the order of `members`, each in its own lane,
@@ -159,6 +163,8 @@ GraphEventKind :: enum u8 {
     TIE_ADDED,
     TIE_REMOVED,
     TIE_CHANGED,        // moved, turned or scaled and let go
+    NODE_COLLAPSED,     // a node was collapsed or opened: `node`, `collapsed`
+    LINK_LABELED,       // the text on a cable changed: `link`
     DROPPED_ON_EMPTY,   // a cable that was dragged from a port was let go over empty room at `position` (canvas coordinates): a program may offer a node to put there
 }
 
@@ -186,6 +192,7 @@ GraphEvent :: struct {
     to_node_user: rawptr,
     graph_user: rawptr,
     node: NodeHandle,           // NODE_*
+    collapsed: bool,            // NODE_COLLAPSED: the state now
     copied_from: NodeHandle,    // NODE_ADDED by a paste: the node it is a copy of (it may be gone): a program that keeps data for a node makes its own copy of it now
     tie: TieHandle,             // TIE_*
     position: Vec2,
@@ -931,4 +938,69 @@ GraphSelectedCount :: proc(graph: ^Graph) -> (count: int) {
         if node.selected { count += 1 }
     }
     return
+}
+
+// ------------------------------------------------------------------------------------------------------------------------
+// Collapsed nodes, labels on cables, reroute points
+
+// Collapses a node to its title (its pins are not declared, its cables go to the edges of the title) or opens it again. One NODE_COLLAPSED event when it changed.
+GraphNodeCollapse :: proc(graph: ^Graph, handle: NodeHandle, collapsed: bool = true) -> bool {
+    node: ^Node = GraphNode(graph, handle)
+    if node == nil { return false }
+    if node.collapsed != collapsed {
+        node.collapsed = collapsed
+        graphEmit(graph, {kind = .NODE_COLLAPSED, node = handle, collapsed = collapsed, position = node.position})
+    }
+    return true
+}
+
+// The text on a cable (cut to GRAPH_NAME_MAX bytes, empty: none): what flows through it, a gain, a channel. One LINK_LABELED event when it changed.
+GraphLinkLabel :: proc(graph: ^Graph, handle: LinkHandle, text: string) -> bool {
+    link: ^Link = GraphLink(graph, handle)
+    if link == nil { return false }
+    if GraphLinkLabelText(link) != text[:min(len(text), GRAPH_NAME_MAX)] {
+        setName(link.label[:], &link.label_length, text)
+        graphEmit(graph, linkEvent(graph, .LINK_LABELED, link))
+    }
+    return true
+}
+
+GraphLinkLabelText :: proc(link: ^Link) -> string {
+    return string(link.label[:link.label_length])
+}
+
+// Puts a reroute point on a cable: a small node at `position` (its middle) with one input and one output, and two cables in place of the one (the color, the `user` pointer
+// and the label of the cable stay on both halves). The ports have the data types of the ends they face. False, and the graph as it was, when the cable is not there, the graph has
+// no room or the rules refuse a half.
+GraphRerouteAdd :: proc(graph: ^Graph, handle: LinkHandle, position: Vec2) -> (node: NodeHandle, ok: bool) {
+    link: ^Link = GraphLink(graph, handle)
+    if link == nil { return }
+    from, to: PortHandle = link.from, link.to
+    from_port, to_port: ^Port = GraphPort(graph, from), GraphPort(graph, to)
+    color, user, label, label_length := link.color, link.user, link.label, link.label_length
+    from_type, to_type: u32 = from_port.data_type, to_port.data_type
+    made, made_ok := graphNodeAdd(graph, "", position - {10, 8}, nil, {}, {})
+    if !made_ok { return }
+    GraphNode(graph, made).reroute = true
+    input, input_ok := GraphPortAdd(graph, made, "", .INPUT, from_type)
+    output, output_ok := GraphPortAdd(graph, made, "", .OUTPUT, to_type)
+    // both halves are asked of the rules before the cable is touched (a full port is fine: the old cable goes)
+    fits :: proc(result: ConnectResult) -> bool { return ConnectOk(result) || result == .FULL }
+    if !input_ok || !output_ok || !fits(GraphCanConnect(graph, from, input)) || !fits(GraphCanConnect(graph, output, to)) {
+        GraphNodeRemove(graph, made)
+        return
+    }
+    GraphDisconnect(graph, handle)
+    first, first_result := GraphConnect(graph, from, input, user)
+    second, second_result := GraphConnect(graph, output, to, user)
+    if !ConnectOk(first_result) || !ConnectOk(second_result) {
+        GraphNodeRemove(graph, made)
+        GraphConnect(graph, from, to, user)
+        return
+    }
+    for half in ([2]LinkHandle{first, second}) {
+        stored: ^Link = GraphLink(graph, half)
+        stored.color, stored.label, stored.label_length = color, label, label_length
+    }
+    return made, true
 }
