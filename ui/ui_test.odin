@@ -3614,3 +3614,69 @@ test_a_tree_filter_keeps_the_matches_and_opens_the_nodes_above_them :: proc(t: ^
     testing.expect_value(t, view.rows[0].node, src)
     testing.expect_value(t, ctx.problems, Problems{})
 }
+
+@(test)
+test_a_tree_selects_several_nodes_and_moves_them_together :: proc(t: ^testing.T) {
+    storage: ^InspectorStorage = new(InspectorStorage)
+    ctx: ^Context = new(Context)
+    tree: ^Tree = new(Tree)
+    view: ^TreeView = new(TreeView)
+    defer { free(storage); free(ctx); free(tree); free(view) }
+    style: Style = makeStyle()
+    UiInit(ctx, storage, testMeasure)
+    TreeInit(tree)
+    TreeViewInit(view)
+    a, _ := TreeAdd(tree, {}, "a")
+    b, _ := TreeAdd(tree, {}, "b")
+    c, _ := TreeAdd(tree, {}, "c")
+    d, _ := TreeAdd(tree, {}, "d")
+    folder, _ := TreeAdd(tree, {}, "folder", branch = true)
+    for _ in 0 ..< 3 { treeFrame(ctx, &style, tree, view, pointerAt({-10, -10})) }
+    // rows are 20 high from y 0: a 10, b 30, c 50, d 70, folder 90
+    click :: proc(ctx: ^Context, style: ^Style, tree: ^Tree, view: ^TreeView, y: f32, modifiers: Modifiers) {
+        for step in 0 ..< 3 {
+            input: Input = pointerAt({120, y}, step == 1, step == 1, step == 2)
+            input.modifiers = modifiers
+            treeFrame(ctx, style, tree, view, input)
+        }
+    }
+    marks: [8]TreeHandle
+    click(ctx, &style, tree, view, 10, {})                                       // a
+    click(ctx, &style, tree, view, 50, {.CTRL})                                  // and c, with the selected one first
+    testing.expect_value(t, TreeMarked(tree, marks[:]), 2)
+    testing.expect(t, marks[0] == a && marks[1] == c)
+    click(ctx, &style, tree, view, 70, {.CTRL})
+    testing.expect_value(t, TreeMarked(tree, marks[:]), 3)
+    click(ctx, &style, tree, view, 50, {.CTRL})                                  // Ctrl again takes it off
+    testing.expect_value(t, TreeMarked(tree, marks[:]), 2)
+    // a plain click selects one node and clears the marks
+    click(ctx, &style, tree, view, 30, {})
+    testing.expect_value(t, TreeMarked(tree, marks[:]), 0)
+    testing.expect_value(t, view.selected, b)
+    // Shift and a click: the visible rows from the anchor (b) to the node (d)
+    click(ctx, &style, tree, view, 70, {.SHIFT})
+    testing.expect_value(t, TreeMarked(tree, marks[:]), 3)
+    testing.expect(t, marks[0] == b && marks[1] == c && marks[2] == d)
+    // the marked rows are drawn as selected
+    treeFrame(ctx, &style, tree, view, pointerAt({-10, -10}))
+    testing.expect(t, view.chosen[1] && view.chosen[2] && view.chosen[3] && !view.chosen[0] && !view.chosen[4])
+    // a click on a marked node without a drag selects only it (when the button is up)
+    click(ctx, &style, tree, view, 50, {})
+    testing.expect_value(t, TreeMarked(tree, marks[:]), 0)
+    testing.expect_value(t, view.selected, c)
+    // mark b, c, d again and drag c onto the folder: all three go in, in their order
+    click(ctx, &style, tree, view, 30, {})
+    click(ctx, &style, tree, view, 70, {.SHIFT})
+    treeFrame(ctx, &style, tree, view, pointerAt({120, 50}))
+    treeFrame(ctx, &style, tree, view, pointerAt({120, 50}, true, true))
+    treeFrame(ctx, &style, tree, view, pointerAt({120, 70}, true))
+    treeFrame(ctx, &style, tree, view, pointerAt({120, 90}, true))
+    treeFrame(ctx, &style, tree, view, pointerAt({120, 90}, false, false, true))
+    testing.expect_value(t, view.moved_count, 3)
+    testing.expect_value(t, view.moved, b)
+    testing.expect(t, TreeGet(tree, b).parent == folder && TreeGet(tree, c).parent == folder && TreeGet(tree, d).parent == folder)
+    testing.expect(t, TreeGet(tree, folder).first_child == b && TreeGet(tree, b).next == c && TreeGet(tree, c).next == d && TreeGet(tree, folder).last_child == d)
+    testing.expect_value(t, TreeGet(tree, a).parent, TreeHandle{})
+    treeFrame(ctx, &style, tree, view, pointerAt({-10, -10}))
+    testing.expect_value(t, ctx.problems, Problems{})
+}

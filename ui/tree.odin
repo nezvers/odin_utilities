@@ -38,6 +38,7 @@ TreeNode :: struct {
     expanded: bool,
     branch: bool,               // it can have children (it shows an arrow) even while it has none: a folder that is read when it is opened
     child_count: int,
+    marked: bool,               // part of a selection of several (Ctrl and a click, Shift and a click): TreeMarked
 }
 
 Tree :: struct {
@@ -115,6 +116,37 @@ TreeIsAbove :: proc(tree: ^Tree, ancestor: TreeHandle, handle: TreeHandle) -> bo
         current = node.parent
     }
     return false
+}
+
+// The next node in the order of the tree (a node, then its children, then its next sibling), none after the last.
+@(private)
+treeNext :: proc(tree: ^Tree, handle: TreeHandle) -> TreeHandle {
+    node: ^TreeNode = TreeGet(tree, handle)
+    if node.first_child != {} { return node.first_child }
+    for current: TreeHandle = handle; current != {}; {
+        item: ^TreeNode = TreeGet(tree, current)
+        if item.next != {} { return item.next }
+        current = item.parent
+    }
+    return {}
+}
+
+// The marked nodes (a selection of several) in the order of the tree, into `out`: how many.
+TreeMarked :: proc(tree: ^Tree, out: []TreeHandle) -> int {
+    count: int
+    for current: TreeHandle = tree.first; current != {} && count < len(out); current = treeNext(tree, current) {
+        if TreeGet(tree, current).marked {
+            out[count] = current
+            count += 1
+        }
+    }
+    return count
+}
+
+// Unmarks every node.
+TreeMarkClear :: proc(tree: ^Tree) {
+    it := hm.iterator_make(&tree.nodes)
+    for node, _ in hm.iterate(&it) { node.marked = false }
 }
 
 // Moves a node with everything under it: under `parent` (none: to the top), before the node `before` of that parent (none: as the last child). False when a handle is gone, when `before`
@@ -314,6 +346,10 @@ TreeView :: struct {
     rename_length: int,
     filter: [TREE_NAME_MAX]u8,  // only the nodes that match and the nodes above them are shown, all open (TreeViewFilter)
     filter_length: int,
+    chosen: [TREE_ROWS]bool,    // the rows in view that are marked (what UiVirtualRow draws as selected)
+    anchor: TreeHandle,         // where a Shift and a click starts from: the last node clicked without Shift
+    pending_single: TreeHandle, // a press on a marked node keeps the marks until the button is up: a drag moves them all, a click selects only that node
+    moved_count: int,           // how many nodes the last drop moved (view.moved is the first of them)
 }
 
 // Sets the filter of the tree view (a text without regard to case; empty: no filter).
@@ -351,6 +387,7 @@ UiTree :: proc(ctx: ^Context, name: string, tree: ^Tree, view: ^TreeView, size: 
     height: f32 = row_height if row_height > 0 else metrics.control_height
     id: Id = UiId(ctx, name)
     view.changed, view.activated, view.toggled, view.moved, view.renamed = false, false, {}, {}, {}
+    view.moved_count = 0
     if TreeGet(tree, view.renaming) == nil { view.renaming = {} }
     editing: bool = view.renaming != {}               // the Enter that ends an edit does not also activate the row
     view.row_count = treeRows(tree, view)
@@ -391,10 +428,44 @@ UiTree :: proc(ctx: ^Context, name: string, tree: ^Tree, view: ^TreeView, size: 
     }
 
     view.list.marked = view.drop_row + 1 if view.dragging && view.drop_row != VIRTUAL_NONE else 0
+    view.list.chosen = view.chosen[:]
     if UiVirtual(ctx, name, &view.list, view.row_count, height, size) {
         if view.list.changed && view.list.selected != VIRTUAL_NONE {
-            view.selected = view.rows[view.list.selected].node
+            clicked: TreeHandle = view.rows[view.list.selected].node
+            node: ^TreeNode = TreeGet(tree, clicked)
+            shift: bool = .SHIFT in ctx.input.modifiers
+            ctrl: bool = .CTRL in ctx.input.modifiers
+            if ctx.input.mouse_pressed && shift && treeRowOf(view, view.anchor) != VIRTUAL_NONE {
+                // a range of the visible rows, from the anchor to the node
+                TreeMarkClear(tree)
+                a, b: int = treeRowOf(view, view.anchor), view.list.selected
+                for i in min(a, b) ..= max(a, b) { TreeGet(tree, view.rows[i].node).marked = true }
+            } else if ctx.input.mouse_pressed && ctrl {
+                if view.selected != {} && TreeGet(tree, view.selected) != nil && view.selected != clicked {
+                    marks: [1]TreeHandle
+                    if TreeMarked(tree, marks[:]) == 0 { TreeGet(tree, view.selected).marked = true }       // the selected one is the first of the marks
+                }
+                node.marked = !node.marked
+                view.anchor = clicked
+            } else if ctx.input.mouse_pressed && node.marked {
+                view.pending_single = clicked                       // it may be the start of a drag of all the marks
+            } else {
+                TreeMarkClear(tree)
+                view.anchor = clicked
+            }
+            view.selected = clicked
             view.changed = true
+        }
+        if ctx.input.mouse_released && view.pending_single != {} {
+            // a click on a marked node, no drag: only that node is selected
+            if !view.dragging {
+                TreeMarkClear(tree)
+                view.anchor = view.pending_single
+            }
+            view.pending_single = {}
+        }
+        for i in view.list.first ..< view.list.last {
+            view.chosen[i] = TreeGet(tree, view.rows[i].node).marked if i < view.row_count else false
         }
         if view.list.activated && view.selected != {} && !editing {
             view.activated = true
@@ -467,17 +538,55 @@ treeDrag :: proc(ctx: ^Context, tree: ^Tree, view: ^TreeView) {
         view.drop_row = view.list.hover if view.dragging else VIRTUAL_NONE
         return
     }
-    // released
+    // released: the marked nodes go together when the one that was grabbed is one of them
     if view.dragging && view.list.hover != VIRTUAL_NONE {
         target: ^TreeNode = TreeGet(tree, view.rows[view.list.hover].node)
-        if target != nil && target.handle != view.drag_node {
+        moving: [TREE_ROWS]TreeHandle
+        count: int
+        if grabbed := TreeGet(tree, view.drag_node); grabbed != nil && grabbed.marked {
+            count = TreeMarked(tree, moving[:])
+        } else {
+            moving[0], count = view.drag_node, 1
+        }
+        // a node under another moving node goes with it, and nothing goes into itself or under what it moves
+        top: int
+        blocked: bool
+        for i in 0 ..< count {
+            under: bool
+            for j in 0 ..< count {
+                if i != j && TreeIsAbove(tree, moving[j], moving[i]) { under = true }
+            }
+            if target != nil && TreeIsAbove(tree, moving[i], target.handle) { blocked = true }
+            if !under {
+                moving[top] = moving[i]
+                top += 1
+            }
+        }
+        count = top
+        if target != nil && !blocked && count > 0 {
             parent, before: TreeHandle = target.parent, target.next
             into: bool = target.branch || target.first_child != {}
             if into { parent, before = target.handle, {} }
-            if (view.can_drop == nil || view.can_drop(tree, view.drag_node, parent, before)) && TreeMove(tree, view.drag_node, parent, before) {
-                view.moved = view.drag_node
+            // not before a node that moves too
+            for before != {} {
+                skipped: bool
+                for i in 0 ..< count {
+                    if moving[i] == before { skipped = true }
+                }
+                if !skipped { break }
+                before = TreeGet(tree, before).next
+            }
+            moved: int
+            for i in 0 ..< count {
+                if (view.can_drop == nil || view.can_drop(tree, moving[i], parent, before)) && TreeMove(tree, moving[i], parent, before) {
+                    if moved == 0 { view.moved = moving[i] }
+                    moved += 1
+                }
+            }
+            view.moved_count = moved
+            if moved > 0 {
                 if into { target.expanded = true }
-                view.selected, view.changed = view.drag_node, true
+                view.selected, view.changed = view.moved, true
             }
         }
     }
