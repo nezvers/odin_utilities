@@ -45,8 +45,9 @@ DrawGraph :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     frame: ^ui.GraphFrame = cast(^ui.GraphFrame)info.user
     if frame == nil { return }
     // a grid that moves with the view
-    grid: f32 = frame.style.grid
-    origin: ui.Vec2 = frame.view.origin
+    zoom: f32 = ui.GraphViewZoom(frame.view)
+    grid: f32 = frame.style.grid * zoom
+    origin: ui.Vec2 = frame.view.origin * zoom
     line: ui.Color = ui.ColorLerp(theme.track, theme.border, 0.35)
     first_x: f32 = grid - math.mod(origin.x, grid)
     for x := first_x; x < info.rect.z; x += grid {

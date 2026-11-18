@@ -57,6 +57,9 @@ Painter :: struct {
     user: rawptr,                   // the glue's own data (the kit.Context of the frame, a font...)
     theme: Theme,
     scale: f32,                     // UI scale (0 is 1): the layout and the styles work in logical units, the glue multiplies what it draws by this and divides the pointer by it
+    offset: ui.Vec2,              // where the logical origin is on the screen: a zoomed container moves it (Style.zoom); the glue draws a point p at p * scale + offset
+    saved_scale: f32,               // what a zoomed container found, put back when it ends
+    saved_offset: ui.Vec2,
     fill_rect: proc(painter: ^Painter, rect: ui.Rect, color: ui.Color),
     fill_polygon: proc(painter: ^Painter, points: []ui.Vec2, color: ui.Color),                  // convex, nil: no polygons (arrows and rounded corners fall back)
     fill_rounded: proc(painter: ^Painter, rect: ui.Rect, radius: f32, color: ui.Color),         // nil: made from fill_polygon
@@ -69,6 +72,30 @@ Painter :: struct {
 // text is divided (text is measured at the size it is drawn at, so the layout gets the logical size of the pixels that are drawn).
 PainterScale :: proc(painter: ^Painter) -> f32 {
     return painter.scale if painter.scale > 0 else 1
+}
+
+// What the glue draws: a rectangle or a point of the logical space on the screen (scale, then offset). Sizes (a radius, a text size) are only multiplied by PainterScale.
+PaintRect :: proc(painter: ^Painter, rect: ui.Rect) -> ui.Rect {
+    scale: f32 = PainterScale(painter)
+    return {rect.x * scale + painter.offset.x, rect.y * scale + painter.offset.y, rect.z * scale, rect.w * scale}
+}
+
+PaintPoint :: proc(painter: ^Painter, point: ui.Vec2) -> ui.Vec2 {
+    return point * PainterScale(painter) + painter.offset
+}
+
+// Style.zoom: a zoomed container starts, everything in it is scaled by `factor` around `origin` (so a point p of its logical space is shown at origin + (p - origin) * factor,
+// then through the transform that was in force); at its end the painter is as it was. Does not nest (the layout does not zoom a zoomed container again).
+Zoom :: proc(ctx: ^ui.Context, origin: ui.Vec2, factor: f32, begin: bool) {
+    painter: ^Painter = painterOf(ctx)
+    if begin {
+        painter.saved_scale, painter.saved_offset = painter.scale, painter.offset
+        scale: f32 = PainterScale(painter)
+        painter.offset = painter.offset + origin * scale * (1 - factor)
+        painter.scale = scale * factor
+    } else {
+        painter.scale, painter.offset = painter.saved_scale, painter.saved_offset
+    }
 }
 
 @(private)
@@ -86,6 +113,7 @@ Measure :: proc(ctx: ^ui.Context, text: string, font_size: f32) -> ui.Vec2 {
 StyleMake :: proc() -> ui.Style {
     style: ui.Style = {
         metrics = ui.DEFAULT_METRICS,
+        zoom = Zoom,
         clip = proc(ctx: ^ui.Context, rect: ui.Rect, begin: bool) {
             painter: ^Painter = painterOf(ctx)
             if painter.clip != nil { painter.clip(painter, rect, begin) }

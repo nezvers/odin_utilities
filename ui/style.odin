@@ -130,6 +130,8 @@ Style :: struct {
     // sets the scissor to `rect` (begin = true: it replaces the one that is set, UiRender tells the area that is left of nested clips) or
     // switches it off (begin = false): nothing outside of the scissor is drawn. nil: no clipping.
     clip: proc(ctx: ^Context, rect: Rect, begin: bool),
+    // a zoomed container starts (begin = true: everything up to its end is in its logical space, scaled by `factor` around `origin`) or ends: the style moves its painter. nil: no zoom.
+    zoom: proc(ctx: ^Context, origin: Vec2, factor: f32, begin: bool),
     metrics: Metrics,
     graph: GraphStyle,              // routing, bounds, distance and drawing of the cables and ties of a node graph (graph_style.odin)
 }

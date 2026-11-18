@@ -1769,3 +1769,104 @@ test_the_delete_key_removes_the_selected_nodes_and_their_cables :: proc(t: ^test
     testing.expect(t, GraphNode(graph, first) != nil, "the other stays")
     testing.expect_value(t, GraphLinkCount(graph), 0)
 }
+
+@(private = "file")
+zoomFrame :: proc(harness: ^Harness, input: Input) {
+    frame(harness, input)
+    ctx: ^Context = &harness.ctx
+    ElementOpen(ctx, {id = 9, layout = {padding = {20, 0, 30, 0}}})
+    ElementOpen(ctx, {id = 10, layout = {size = {Fixed(200), Fixed(100)}}, zoom = 2, clip = {horizontal = true, vertical = true, cut = true}})
+    ElementOpen(ctx, {id = 11, layout = {size = {Fixed(30), Fixed(20)}}, absolute = {enabled = true, offset = {10, 10}}, hit = {.INTERACTIVE}, draw = {kind = .BUTTON}})
+    ElementClose(ctx)
+    ElementOpen(ctx, {id = 12, layout = {size = {Grow(), Grow()}}})
+    ElementClose(ctx)
+    ElementClose(ctx)
+    ElementClose(ctx)
+    UiEnd(ctx)
+}
+
+@(test)
+test_a_zoomed_container_lays_out_in_logical_units_and_is_shown_bigger :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    for _ in 0 ..< 2 { zoomFrame(harness, pointerAt({-5, -5})) }
+    container, _ := UiElementRect(&harness.ctx, 10)
+    testing.expect_value(t, container, Rect{20, 30, 200, 100})          // the container itself is not zoomed
+    button, _ := UiElementRect(&harness.ctx, 11)
+    testing.expect_value(t, button, Rect{40, 50, 60, 40})               // 10 logical units from its corner, twice as big
+    grown, _ := UiElementRect(&harness.ctx, 12)
+    testing.expect_value(t, grown, Rect{20, 30, 200, 100})              // it grew to the logical size (100 x 50), shown twice as big: all of the container
+    // the pointer finds it where it is shown
+    zoomFrame(harness, pointerAt({50, 60}))
+    testing.expect_value(t, harness.ctx.hover, Id(11))
+    zoomFrame(harness, pointerAt({35, 60}))                              // 15 logical units: left of it
+    testing.expect_value(t, harness.ctx.hover, Id(0))
+    // the commands: the zoom is announced with its origin and factor, the draw is in logical units, the clip is the container
+    zoom_begin, zoom_end, draw: int
+    draw_rect: Rect
+    for command in UiCommands(&harness.ctx) {
+        #partial switch command.kind {
+        case .ZOOM_BEGIN:
+            zoom_begin += 1
+            testing.expect_value(t, command.info.rect, Rect{20, 30, 2, 0})
+        case .ZOOM_END: zoom_end += 1
+        case .DRAW:
+            draw += 1
+            draw_rect = command.info.rect
+        }
+    }
+    testing.expect(t, zoom_begin == 1 && zoom_end == 1 && draw == 1)
+    testing.expect_value(t, draw_rect, Rect{30, 40, 30, 20})             // logical: corner of the container plus 10, the size it was declared with
+}
+
+@(test)
+test_a_zoomed_graph_zooms_around_the_pointer_and_still_connects_and_drags :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    graph: ^Graph = new(Graph)
+    defer free(graph)
+    GraphInit(graph)
+    view: GraphView
+    left, _ := GraphNodeAdd(graph, "a", {0, 0})
+    out, _ := GraphPortAdd(graph, left, "out", .OUTPUT, 1)
+    right, _ := GraphNodeAdd(graph, "b", {300, 0})
+    input, _ := GraphPortAdd(graph, right, "in", .INPUT, 1)
+    for _ in 0 ..< 4 { coveredGraphFrame(harness, graph, &view, {}) }
+    size_before: Vec2 = GraphNode(graph, left).size
+    anchor_before: Vec2 = GraphPort(graph, out).anchor
+
+    // two notches of the wheel over the empty canvas: 1.1 twice
+    wheel: Input = pointerAt({250, 2})
+    wheel.wheel = {0, 2}
+    coveredGraphFrame(harness, graph, &view, pointerAt({250, 2}))
+    coveredGraphFrame(harness, graph, &view, wheel)
+    zoom: f32 = GraphViewZoom(&view)
+    testing.expect(t, abs(zoom - 1.21) < 0.001)
+    testing.expect(t, abs(250 / zoom + view.origin.x - 250) < 0.01 && abs(2 / zoom + view.origin.y - 2) < 0.01, "the canvas point under the pointer did not move")
+    for _ in 0 ..< 3 { coveredGraphFrame(harness, graph, &view, {}) }
+    // what the model knows is in canvas units, whatever the zoom
+    testing.expect(t, abs(GraphNode(graph, left).size.x - size_before.x) < 0.5 && abs(GraphNode(graph, left).size.y - size_before.y) < 0.5, "a node is as big as it was in canvas units")
+    testing.expect(t, abs(GraphPort(graph, out).anchor.x - anchor_before.x) < 0.5 && abs(GraphPort(graph, out).anchor.y - anchor_before.y) < 0.5)
+    testing.expect(t, abs(view.viewport.x - 400 / zoom) < 0.01, "the view is as many canvas units as fit in the pixels")
+
+    // a cable from the pin to the pin, at the places they are shown
+    from: Vec2 = GraphToScreen(&view, GraphPort(graph, out).anchor)
+    to: Vec2 = GraphToScreen(&view, GraphPort(graph, input).anchor)
+    coveredGraphFrame(harness, graph, &view, pointerAt(from))
+    coveredGraphFrame(harness, graph, &view, pointerAt(from, true, true))
+    for i in 1 ..= 10 { coveredGraphFrame(harness, graph, &view, pointerAt(from + (to - from) * (f32(i) / 10), true)) }
+    coveredGraphFrame(harness, graph, &view, pointerAt(to, false, false, true))
+    testing.expect_value(t, GraphLinkCount(graph), 1)
+
+    // a title that is dragged 40 pixels on the screen moves the node 40 / zoom canvas units
+    corner: Vec2 = GraphToScreen(&view, GraphNode(graph, right).position)
+    title: Vec2 = corner + {40, 8}
+    before: f32 = GraphNode(graph, right).position.x
+    coveredGraphFrame(harness, graph, &view, pointerAt(title))
+    coveredGraphFrame(harness, graph, &view, pointerAt(title, true, true))
+    for i in 1 ..= 8 { coveredGraphFrame(harness, graph, &view, pointerAt(title + {f32(i) * 5, 0}, true)) }
+    coveredGraphFrame(harness, graph, &view, pointerAt(title + {40, 0}, false, false, true))
+    testing.expect(t, abs(GraphNode(graph, right).position.x - (before + 40 / zoom)) < 0.5, "the node followed the pointer")
+}

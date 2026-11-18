@@ -16,6 +16,9 @@ UiRenderRange :: proc(ctx: ^Context, from: int, to: int) {
     // clips nest (a scrolling list inside of a scrolling window): the style is told the area that is left, so it needs no stack of its own
     clips: [UI_MAX_DEPTH * 2]Rect
     clip_count: int = 0
+    zoom_origin: Vec2
+    zoom_factor: f32 = 1
+    zoom_pushed: bool
     for i in from ..< min(to, ctx.command_count) {
         command: ^Command = &ctx.commands[i]
         switch command.kind {
@@ -35,6 +38,30 @@ UiRenderRange :: proc(ctx: ^Context, from: int, to: int) {
                 clip_count += 1
             }
             if style.clip != nil { style.clip(ctx, area, true) }
+        case .ZOOM_BEGIN:
+            zoom_origin, zoom_factor = {command.info.rect.x, command.info.rect.y}, command.info.rect.z
+            if style.zoom != nil { style.zoom(ctx, zoom_origin, zoom_factor, true) }
+            // the clip that was in force is in screen space: inside of the zoom it is the same area in logical units
+            zoom_pushed = false
+            if clip_count > 0 && clip_count < len(clips) {
+                outer: Rect = clips[clip_count - 1]
+                inner: Rect = {zoom_origin.x + (outer.x - zoom_origin.x) / zoom_factor, zoom_origin.y + (outer.y - zoom_origin.y) / zoom_factor, outer.z / zoom_factor, outer.w / zoom_factor}
+                clips[clip_count] = inner
+                clip_count += 1
+                zoom_pushed = true
+                if style.clip != nil { style.clip(ctx, inner, true) }
+            }
+        case .ZOOM_END:
+            if zoom_pushed && clip_count > 0 { clip_count -= 1 }
+            if style.zoom != nil { style.zoom(ctx, zoom_origin, zoom_factor, false) }
+            if zoom_pushed && style.clip != nil {
+                if clip_count > 0 {
+                    style.clip(ctx, clips[clip_count - 1], true)
+                } else {
+                    style.clip(ctx, {}, false)
+                }
+            }
+            zoom_pushed = false
         case .CLIP_END:
             if clip_count > 0 { clip_count -= 1 }
             if style.clip != nil {

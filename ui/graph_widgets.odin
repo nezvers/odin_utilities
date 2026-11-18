@@ -26,6 +26,9 @@ import "core:math"
 import hm "core:container/handle_map"
 
 UI_MAX_GRAPHS :: 4              // canvases in one frame
+GRAPH_ZOOM_MIN :: f32(0.25)
+GRAPH_ZOOM_MAX :: f32(2.5)
+GRAPH_ZOOM_STEP :: f32(1.1)     // per notch of the wheel
 GRAPH_CABLE_KIND :: "graph cable"
 
 GraphTool :: enum u8 {
@@ -47,7 +50,8 @@ GraphGesture :: enum u8 {
 // What the canvas keeps for the program: where it looks, what is selected, which tool is on. Everything is plain data, so a program can save the view with the graph.
 GraphView :: struct {
     origin: Vec2,               // canvas coordinates at the top left corner of the view
-    viewport: Vec2,             // the size of the view in pixels (as drawn in the last frame)
+    zoom: f32,                  // how many pixels a canvas unit is (0 is 1); the wheel over the empty canvas changes it, around the pointer
+    viewport: Vec2,             // the size of the view in canvas units (the pixels of the canvas divided by the zoom, as in the last frame)
     rect: Rect,                 // where the canvas is on the screen (the same)
     tool: GraphTool,
     moving: NodeHandle,         // the node whose title is held: every selected node moves with it
@@ -65,6 +69,11 @@ GraphView :: struct {
     pickup_link: LinkHandle,    // the link whose end is being dragged
     drag_source: PortHandle,    // where the cable that is dragged starts
     drag_target: PortHandle,    // the pin under the pointer that it fits
+}
+
+// The zoom of a view (1 when it was left at 0).
+GraphViewZoom :: proc(view: ^GraphView) -> f32 {
+    return clamp(view.zoom, GRAPH_ZOOM_MIN, GRAPH_ZOOM_MAX) if view.zoom > 0 else 1
 }
 
 // What a canvas is in a frame, for what draws it.
@@ -331,12 +340,23 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
     graph.frame += 1
     style: GraphStyle = GraphStyleResolved(ctx.style)
     view.rect = state.rect
-    view.viewport = {state.rect.z, state.rect.w}
     interaction: Interaction = widgetBehavior(ctx, id)
     mouse: Vec2 = ctx.input.mouse_position
-    canvas_mouse: Vec2 = mouse - {state.rect.x, state.rect.y} + view.origin
-    delta: Vec2 = mouse - view.last_mouse
+    // the wheel over the empty canvas zooms around the pointer: the canvas point under it stays there
+    if ctx.hover == id && ctx.input.wheel.y != 0 && view.gesture == .NONE && ctx.disabled_depth == 0 {
+        before: f32 = GraphViewZoom(view)
+        after: f32 = clamp(before * math.pow(GRAPH_ZOOM_STEP, ctx.input.wheel.y), GRAPH_ZOOM_MIN, GRAPH_ZOOM_MAX)
+        view.origin += (mouse - {state.rect.x, state.rect.y}) * (1 / before - 1 / after)
+        view.zoom = after
+    }
+    zoom: f32 = GraphViewZoom(view)
+    view.viewport = {state.rect.z, state.rect.w} / zoom
+    canvas_mouse: Vec2 = (mouse - {state.rect.x, state.rect.y}) / zoom + view.origin
+    delta: Vec2 = (mouse - view.last_mouse) / zoom                      // in canvas units
     view.last_mouse = mouse
+    // what the pointer may be away from a cable or a tie to count as on it is in pixels: in canvas units it is less when zoomed in
+    pick: GraphStyle = style
+    pick.hit_distance /= zoom
     view.drag_target = {}
 
     cable_active: bool = ctx.drag.active && ctx.drag.kind == IdFromString(GRAPH_CABLE_KIND)
@@ -359,7 +379,7 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
         if GraphNode(graph, view.moving) == nil || (!ctx.input.mouse_down && !ctx.input.mouse_released) {
             view.moving = {}
         } else {
-            graphMoveSelected(graph, style.snap, mouse - view.move_last, ctx.input.mouse_released)
+            graphMoveSelected(graph, style.snap, (mouse - view.move_last) / zoom, ctx.input.mouse_released)
             view.move_last = mouse
             if ctx.input.mouse_released { view.moving = {} }
         }
@@ -368,8 +388,8 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
     if view.gesture == .NONE {
         view.hover_tie, view.hover_link = {}, {}
         if ctx.hover == id && !cable_active && ctx.disabled_depth == 0 {
-            view.hover_tie = graphPickTie(graph, &style, canvas_mouse)
-            if view.hover_tie == {} && view.tool == .SELECT { view.hover_link = graphPickLink(graph, &style, canvas_mouse) }
+            view.hover_tie = graphPickTie(graph, &pick, canvas_mouse)
+            if view.hover_tie == {} && view.tool == .SELECT { view.hover_link = graphPickLink(graph, &pick, canvas_mouse) }
         }
     }
     // a press on the canvas itself
@@ -477,6 +497,7 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
     return ElementOpen(ctx, {
         id = id,
         layout = {size = {size.width if size.width != {} else Grow(), size.height if size.height != {} else Grow()}},
+        zoom = zoom,
         clip = {horizontal = true, vertical = true, cut = true},
         hit = {.INTERACTIVE, .NO_FOCUS},
         draw = {kind = .GRAPH, name = IdSplitName(name), user = &ctx.graph_frames[frame_index]},
@@ -648,20 +669,21 @@ graphAfterLayout :: proc(ctx: ^Context) {
         frame: ^GraphFrame = &ctx.graph_frames[i]
         if int(frame.element) >= ctx.element_count { continue }
         canvas: Rect = ctx.elements[frame.element].rect
+        zoom: f32 = GraphViewZoom(frame.view)
         frame.view.rect = canvas
-        frame.view.viewport = {canvas.z, canvas.w}
+        frame.view.viewport = {canvas.z, canvas.w} / zoom
         graph: ^Graph = frame.graph
         origin: Vec2 = frame.view.origin
         it := hm.iterator_make(&graph.nodes)
         for node, _ in hm.iterate(&it) {
             if node.stamp != frame.stamp || node.element < 0 || int(node.element) >= ctx.element_count { continue }
-            node.size = {ctx.elements[node.element].rect.z, ctx.elements[node.element].rect.w}
+            node.size = {ctx.elements[node.element].rect.z, ctx.elements[node.element].rect.w} / zoom
         }
         ports := hm.iterator_make(&graph.ports)
         for port, _ in hm.iterate(&ports) {
             if port.stamp != frame.stamp || port.element < 0 || int(port.element) >= ctx.element_count { continue }
             rect: Rect = ctx.elements[port.element].rect
-            port.anchor = {rect.x + rect.z * 0.5 - canvas.x + origin.x, rect.y + rect.w * 0.5 - canvas.y + origin.y}
+            port.anchor = {(rect.x + rect.z * 0.5 - canvas.x) / zoom + origin.x, (rect.y + rect.w * 0.5 - canvas.y) / zoom + origin.y}
             port.anchor_known = true
             if node := GraphNode(graph, port.node); node != nil { port.offset = port.anchor - node.position }
         }
@@ -723,7 +745,7 @@ GraphMinimapTransform :: proc(content: Rect, rect: Rect) -> (scale: f32, offset:
 
 // A point of the canvas as a point of the screen.
 GraphToScreen :: proc(view: ^GraphView, point: Vec2) -> Vec2 {
-    return point - view.origin + {view.rect.x, view.rect.y}
+    return (point - view.origin) * GraphViewZoom(view) + {view.rect.x, view.rect.y}
 }
 
 @(private)
@@ -741,7 +763,8 @@ GraphDrawLinks :: proc(ctx: ^Context, info: ^DrawInfo) {
     frame: ^GraphFrame = cast(^GraphFrame)info.user
     if frame == nil || frame.style.draw_cable == nil { return }
     graph, view, style := frame.graph, frame.view, &frame.style
-    visible: Rect = {view.origin.x, view.origin.y, view.rect.z, view.rect.w}
+    visible: Rect = {view.origin.x, view.origin.y, view.viewport.x, view.viewport.y}
+    zoom: f32 = GraphViewZoom(view)
     it := hm.iterator_make(&graph.links)
     for link, handle in hm.iterate(&it) {
         route, ok := graphLinkRoute(graph, link, style)
@@ -749,7 +772,7 @@ GraphDrawLinks :: proc(ctx: ^Context, info: ^DrawInfo) {
         if !RectOverlaps(style.bounds(&route, style.cable_width), visible) { continue }      // the broad phase: only the cables that are in the view
         routeToScreen(&route, view)
         from, to: ^Port = GraphPort(graph, link.from), GraphPort(graph, link.to)
-        draw: CableDraw = {route = &route, color = link.color if link.color.a > 0 else from.color, width = style.cable_width, link = handle, from_type = from.data_type, to_type = to.data_type, user = style.user}
+        draw: CableDraw = {route = &route, color = link.color if link.color.a > 0 else from.color, width = style.cable_width * zoom, link = handle, from_type = from.data_type, to_type = to.data_type, user = style.user}
         if view.hover_link == handle { draw.flags += {.HOVERED} }
         if view.selected_link == handle { draw.flags += {.SELECTED} }
         if view.pickup_link == handle { draw.flags += {.DISABLED} }
@@ -768,7 +791,7 @@ GraphDrawLinks :: proc(ctx: ^Context, info: ^DrawInfo) {
         if !RectOverlaps({low.x, low.y, high.x - low.x, high.y - low.y}, visible) { continue }
         tangent, normal := TieAxes(tie.angle)
         draw: TieDraw = {
-            center = GraphToScreen(view, tie.position), tangent = tangent, normal = normal, half_length = TieHalfLength(tie, style.tie_spacing), width = style.tie_width,
+            center = GraphToScreen(view, tie.position), tangent = tangent, normal = normal, half_length = TieHalfLength(tie, style.tie_spacing) * zoom, width = style.tie_width * zoom,
             color = tie.color, name = GraphTieName(tie), lanes = tie.member_count, user = style.user,
         }
         for k in 0 ..< 4 { draw.corners[k] = GraphToScreen(view, corners[k]) }
@@ -796,7 +819,7 @@ GraphDrawOverlay :: proc(ctx: ^Context, info: ^DrawInfo) {
             if source.kind == .INPUT { input.from, input.to = end, start }              // a cable that is dragged from an input flows into it
             route: CableRoute
             style.route_dragged(&input, &route)
-            draw: CableDraw = {route = &route, color = source.color, width = style.cable_width, flags = {.PRESSED}, dragging = true, from_type = source.data_type, user = style.user}
+            draw: CableDraw = {route = &route, color = source.color, width = style.cable_width * GraphViewZoom(view), flags = {.PRESSED}, dragging = true, from_type = source.data_type, user = style.user}
             style.draw_cable(ctx, &draw)
         }
     }

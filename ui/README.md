@@ -149,6 +149,8 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
   (with their cables, events included), a cable or a tie.
 - **Many nodes.** `GraphNodesByDepth(graph, order, &view)` leaves out the nodes that are known to be outside of the view: they are not declared, so they cost nothing in layout. Cables and ties are drawn from the model, and `GraphNodeMove`
   keeps the anchors of the pins right for a node that is not on screen (the offsets of the pins are measured while it is).
+- **Zoom.** `GraphView.zoom` (`GraphViewZoom`, 0 is 1, `GRAPH_ZOOM_MIN` .. `GRAPH_ZOOM_MAX`): the wheel over the empty canvas zooms around the pointer. The nodes, their text and widgets are laid out once in canvas units and shown bigger or smaller
+  (`Decl.zoom`, below), so everything inside of a node zooms with it; the model (`node.size`, `port.anchor`, `view.viewport`) stays in canvas units whatever the zoom. Cables, ties and the grid are drawn from the model at the zoom.
 - **Minimap and view.** `GraphView` (plain data: the origin of the view, tool, selection) can be saved with the graph. `GraphMinimapTransform` gives a style the scale and the offset of the content span in its rectangle.
 - A node is an absolute child of the canvas (`Decl.absolute`: out of the flow of its parent, placed at an offset from its top left corner, drawn and hit in declaration order, not a floating root), so the number of nodes is limited only by the elements of the `Storage`. Demo: `demo_common/demo_graph.odin`.
 
@@ -156,6 +158,11 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
 `widgets_audio.odin`: `UiKnob` (drag up and down, `KNOB_DRAG_PIXELS` for the whole range; wheel, navigation keys and a double click that sets the default also turn it), `UiFader` (stands up, the middle of the handle is at the pointer, `FaderHandleHeight`)
 and `UiMeter` (a level and a peak mark that the program holds and lets fall, standing or lying). Each is one element with a style kind (`KNOB`, `FADER`, `METER`): value 0..1, the real number, its text, where the default is. Nothing allocates;
 the scroll areas have a draggable scrollbar (the thumb keeps its place under the pointer, a press on the track centers it).
+
+## Zoom of one container
+`Decl.zoom` (0 or 1: none): the children of the container are laid out in logical units (the room they have is its size divided by the zoom, the origin is its top left corner) and shown `zoom` times bigger around that corner. Drawing goes through
+`Style.zoom` (the default style moves its painter: `Painter.scale` and `Painter.offset`, the glue draws a point as `p * scale + offset`), hit boxes, `UiElementRect` and the pointer stay in screen space, so widgets inside need no change
+(a slider still reads the pointer against its rectangle). Not for a floating element inside of it, a scroll area inside of it scrolls in logical units, and a zoomed container inside of a zoomed one is not zoomed again.
 
 ## UI scale
 `ui_default.Painter.scale` (0 is 1) makes the whole ui bigger or smaller, for a high DPI screen or a setting for people who want it bigger. The layout and every style keep working in logical units; the glue does the rest at the two borders:

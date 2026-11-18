@@ -26,19 +26,19 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
         user = font,
         theme = ui_default.THEME_DARK,
         fill_rect = proc(painter: ^ui_default.Painter, rect: ui.Rect, color: ui.Color) {
-            rl.DrawRectangleRec(transmute(rl.Rectangle)(rect * ui_default.PainterScale(painter)), rl.Color(color))
+            rl.DrawRectangleRec(transmute(rl.Rectangle)ui_default.PaintRect(painter, rect), rl.Color(color))
         },
         fill_polygon = fillPolygon,
         fill_rounded = proc(painter: ^ui_default.Painter, rect: ui.Rect, radius: f32, color: ui.Color) {
             // raylib's roundness is the radius as a part of half of the shortest side: the same as the rounding of the ui
             scale: f32 = ui_default.PainterScale(painter)
             roundness: f32 = radius / (min(rect.z, rect.w) * 0.5)
-            rl.DrawRectangleRounded(transmute(rl.Rectangle)(rect * scale), roundness, i32(ui.RoundedSegments(radius * scale) * 4), rl.Color(color))
+            rl.DrawRectangleRounded(transmute(rl.Rectangle)ui_default.PaintRect(painter, rect), roundness, i32(ui.RoundedSegments(radius * scale) * 4), rl.Color(color))
         },
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
             buffer: [TEXT_BUFFER_SIZE]u8
             scale: f32 = ui_default.PainterScale(painter)
-            rl.DrawTextEx(fontOf(painter), cstringInto(&buffer, text), position * scale, size * scale, size * scale / 10, rl.Color(color))
+            rl.DrawTextEx(fontOf(painter), cstringInto(&buffer, text), ui_default.PaintPoint(painter, position), size * scale, size * scale / 10, rl.Color(color))
         },
         measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
             buffer: [TEXT_BUFFER_SIZE]u8
@@ -47,7 +47,7 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             if begin {
-                physical: ui.Rect = rect * ui_default.PainterScale(painter)
+                physical: ui.Rect = ui_default.PaintRect(painter, rect)
                 rl.BeginScissorMode(i32(physical.x), i32(physical.y), i32(physical.z), i32(physical.w))
             } else {
                 rl.EndScissorMode()
@@ -80,9 +80,8 @@ fontOf :: proc(painter: ^ui_default.Painter) -> rl.Font {
 fillPolygon :: proc(painter: ^ui_default.Painter, points: []ui.Vec2, color: ui.Color) {
     buffer: ui.RoundedBuffer
     count: int = min(len(points), len(buffer))
-    scale: f32 = ui_default.PainterScale(painter)
     for i in 0 ..< count {
-        buffer[i] = points[count - 1 - i] * scale
+        buffer[i] = ui_default.PaintPoint(painter, points[count - 1 - i])
     }
     rl.DrawTriangleFan(raw_data(buffer[:]), i32(count), rl.Color(color))
 }

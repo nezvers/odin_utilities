@@ -260,5 +260,21 @@ script: []kit.Step = {
     kit.Click({985, 100}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.view.origin.x > 400 }, "pressing in the minimap moved the view there"),
+    // the wheel over the empty canvas zooms around the pointer: three notches out show the whole graph, the Output node too
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        state.view.origin, state.view.zoom = {}, 0
+        return true
+    }, "back to the start"),
+    kit.Wait(3),
+    kit.MoveTo({400, 500}),
+    kit.Wait(3),
+    kit.Scroll(-3),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return abs(ui.GraphViewZoom(&state.view) - 0.7513) < 0.001 }, "the wheel zoomed out"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        output: ^ui.Node = ui.GraphNode(&state.graph, state.nodes[5])
+        return ui.GraphNodeVisible(&state.view, output)
+    }, "the Output node is in the view now"),
+    kit.Capture("graph_zoom"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

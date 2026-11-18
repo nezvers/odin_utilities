@@ -402,6 +402,7 @@ sizeChildren :: proc(ctx: ^Context, parent_index: i32, x_axis: bool) {
     children: []i32 = ctx.children[parent.children_start:int(parent.children_start) + count]
 
     parent_size: f32 = sizeAxisOf(parent, x_axis)^
+    if parent.decl.zoom > 0 && parent.decl.zoom != 1 { parent_size /= parent.decl.zoom }      // the children of a zoomed container have its size in logical units
     padding: f32 = layout.padding.left + layout.padding.right if x_axis else layout.padding.top + layout.padding.bottom
     inner_content: f32 = 0
     padding_and_gaps: f32 = padding
@@ -817,7 +818,7 @@ LayoutCalculate :: proc(ctx: ^Context) {
             layoutPushClip(ctx, RectIntersect(clip_rect, screen_rect))
         }
         root_id: Id = element.id if element.decl.floating.attach_to != .NONE else 0
-        placeElement(ctx, root.element, position, clip_rect, root_id)
+        placeElement(ctx, root.element, position, clip_rect, root_id, {})
         if clipped {
             layoutPopClip(ctx)
         }
@@ -845,16 +846,43 @@ layoutCommand :: proc(ctx: ^Context, command: Command) {
 }
 
 // Gives the element its place and writes what the style needs to draw it, then does the same for its children
+// Inside of a zoomed container the layout is in logical units: a point is shown at origin + (point - origin) * factor
 @(private)
-placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect, root_id: Id) {
+Transform :: struct {
+    active: bool,
+    origin: Vec2,
+    factor: f32,
+}
+
+@(private)
+transformRect :: proc(transform: Transform, rect: Rect) -> Rect {
+    if !transform.active { return rect }
+    return {
+        transform.origin.x + (rect.x - transform.origin.x) * transform.factor,
+        transform.origin.y + (rect.y - transform.origin.y) * transform.factor,
+        rect.z * transform.factor, rect.w * transform.factor,
+    }
+}
+
+@(private)
+transformRectInverse :: proc(transform: Transform, rect: Rect) -> Rect {
+    return {
+        transform.origin.x + (rect.x - transform.origin.x) / transform.factor,
+        transform.origin.y + (rect.y - transform.origin.y) / transform.factor,
+        rect.z / transform.factor, rect.w / transform.factor,
+    }
+}
+
+@(private)
+placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect, root_id: Id, transform: Transform) {
     element: ^Element = &ctx.elements[index]
     rect: Rect = {position.x, position.y, element.size.x, element.size.y}
     screen_rect: Rect = {0, 0, ctx.screen.x, ctx.screen.y}
-    element.rect = rect
+    element.rect = transformRect(transform, rect)
     element.clip_rect = clip_rect
 
     if element.is_text {
-        textCommands(ctx, element, rect, clip_rect)
+        textCommands(ctx, element, rect, clip_rect, transform)
         return
     }
 
@@ -876,25 +904,40 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
         shown = {rect.x - floating.expand.x, rect.y - floating.expand.y, rect.z + floating.expand.x * 2, rect.w + floating.expand.y * 2}
         element.rect = shown
     }
+    shown_screen: Rect = transformRect(transform, shown)
+    clip_screen: Rect = transformRect(transform, own_clip)
 
     // hit box for the pointer of the next frame
     kinds: HitKinds = element.decl.hit
     if floating.attach_to != .NONE && floating.capture { kinds += {.BLOCKER} }
     if kinds != {} && ctx.hit_count < len(ctx.hits) {
-        ctx.hits[ctx.hit_count] = {id = element.id, rect = shown, clip_rect = own_clip, kinds = kinds, cursor = element.decl.cursor, root = root_id}
+        ctx.hits[ctx.hit_count] = {id = element.id, rect = shown_screen, clip_rect = clip_screen, kinds = kinds, cursor = element.decl.cursor, root = root_id}
         ctx.hit_count += 1
     }
 
     info: DrawInfo = element.decl.draw
-    visible: bool = !ctx.culling || RectOverlaps(shown, RectIntersect(own_clip, {0, 0, ctx.screen.x, ctx.screen.y}))
+    visible: bool = !ctx.culling || RectOverlaps(shown_screen, RectIntersect(clip_screen, {0, 0, ctx.screen.x, ctx.screen.y}))
     if clips {
-        layoutPushClip(ctx, RectIntersect(own_clip, screen_rect))
+        // inside of a zoom the clip is in logical units: the screen is not its limit
+        layoutPushClip(ctx, own_clip if transform.active else RectIntersect(own_clip, screen_rect))
     }
     if info.kind != .NONE && visible {
         info.id = element.id
         info.rect = shown
         drawInfoInteraction(ctx, &info)
         layoutCommand(ctx, {kind = .DRAW, info = info})
+    }
+
+    // a zoomed container: from here on its children are in logical units
+    child_transform: Transform = transform
+    child_clip: Rect = own_clip
+    inner: Vec2 = element.size
+    zoom_active: bool = element.decl.zoom > 0 && element.decl.zoom != 1 && !transform.active
+    if zoom_active {
+        child_transform = {true, {rect.x, rect.y}, element.decl.zoom}
+        inner = element.size / element.decl.zoom
+        child_clip = transformRectInverse(child_transform, own_clip)
+        layoutCommand(ctx, {kind = .ZOOM_BEGIN, info = {rect = {rect.x, rect.y, element.decl.zoom, 0}}})
     }
 
     // children: the alignment of the free room, then one after the other
@@ -925,7 +968,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
     }
     next: Vec2 = {layout.padding.left, layout.padding.top}
     if layout.direction == .LEFT_TO_RIGHT {
-        extra: f32 = element.size.x - layout.padding.left - layout.padding.right - content.x
+        extra: f32 = inner.x - layout.padding.left - layout.padding.right - content.x
         switch layout.align.x {
         case .LEFT: extra = 0
         case .CENTER: extra *= 0.5
@@ -933,7 +976,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
         }
         next.x += max(0, extra)
     } else {
-        extra: f32 = element.size.y - layout.padding.top - layout.padding.bottom - content.y
+        extra: f32 = inner.y - layout.padding.top - layout.padding.bottom - content.y
         switch layout.align.y {
         case .TOP: extra = 0
         case .CENTER: extra *= 0.5
@@ -944,21 +987,21 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
     element.content_size = {content.x + layout.padding.left + layout.padding.right, content.y + layout.padding.top + layout.padding.bottom}
     state: ^WidgetState = stateFind(ctx, element.id)
     if state != nil {
-        state.rect = shown
-        state.content_size = element.content_size
+        state.rect = shown_screen
+        state.content_size = element.content_size * transform.factor if transform.active else element.content_size
     }
 
     scroll: Vec2 = element.decl.clip.offset if clips else {}
     for child_index in children {
         child: ^Element = &ctx.elements[child_index]
         if child.decl.absolute.enabled {
-            placeElement(ctx, child_index, {rect.x + child.decl.absolute.offset.x + scroll.x, rect.y + child.decl.absolute.offset.y + scroll.y}, own_clip, root_id)
+            placeElement(ctx, child_index, {rect.x + child.decl.absolute.offset.x + scroll.x, rect.y + child.decl.absolute.offset.y + scroll.y}, child_clip, root_id, child_transform)
             continue
         }
         // across the direction of the layout: the alignment inside of the free room
         if layout.direction == .LEFT_TO_RIGHT {
             next.y = layout.padding.top
-            around: f32 = element.size.y - layout.padding.top - layout.padding.bottom - child.size.y
+            around: f32 = inner.y - layout.padding.top - layout.padding.bottom - child.size.y
             switch layout.align.y {
             case .TOP:
             case .CENTER: next.y += around * 0.5
@@ -966,7 +1009,7 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
             }
         } else {
             next.x = layout.padding.left
-            around: f32 = element.size.x - layout.padding.left - layout.padding.right - child.size.x
+            around: f32 = inner.x - layout.padding.left - layout.padding.right - child.size.x
             switch layout.align.x {
             case .LEFT:
             case .CENTER: next.x += around * 0.5
@@ -974,12 +1017,16 @@ placeElement :: proc(ctx: ^Context, index: i32, position: Vec2, clip_rect: Rect,
             }
         }
         child_position: Vec2 = {rect.x + next.x + scroll.x, rect.y + next.y + scroll.y}
-        placeElement(ctx, child_index, child_position, own_clip, root_id)
+        placeElement(ctx, child_index, child_position, child_clip, root_id, child_transform)
         if layout.direction == .LEFT_TO_RIGHT {
             next.x += child.size.x + layout.gap
         } else {
             next.y += child.size.y + layout.gap
         }
+    }
+
+    if zoom_active {
+        layoutCommand(ctx, {kind = .ZOOM_END})
     }
 
     // a scrolling area shows how far it is scrolled, inside of its own clip
@@ -1026,9 +1073,9 @@ drawInfoInteraction :: proc(ctx: ^Context, info: ^DrawInfo) {
 
 // A text element is one command per line
 @(private)
-textCommands :: proc(ctx: ^Context, element: ^Element, rect: Rect, clip_rect: Rect) {
+textCommands :: proc(ctx: ^Context, element: ^Element, rect: Rect, clip_rect: Rect, transform: Transform) {
     data: ^TextData = &element.text
-    visible: bool = !ctx.culling || RectOverlaps(rect, RectIntersect(clip_rect, {0, 0, ctx.screen.x, ctx.screen.y}))
+    visible: bool = !ctx.culling || RectOverlaps(transformRect(transform, rect), RectIntersect(transformRect(transform, clip_rect), {0, 0, ctx.screen.x, ctx.screen.y}))
     if !visible { return }
     config: TextConfig = data.config
     natural_height: f32 = data.preferred.y

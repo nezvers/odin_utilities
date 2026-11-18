@@ -11,22 +11,22 @@ PainterInit :: proc(painter: ^ui_default.Painter) {
     painter^ = {
         theme = ui_default.THEME_DARK,
         fill_rect = proc(painter: ^ui_default.Painter, rect: ui.Rect, color: ui.Color) {
-            kit.DrawRect(contextOf(painter), kit.Rect(rect * ui_default.PainterScale(painter)), kit.Color(color))
+            kit.DrawRect(contextOf(painter), kit.Rect(ui_default.PaintRect(painter, rect)), kit.Color(color))
         },
         fill_polygon = proc(painter: ^ui_default.Painter, points: []ui.Vec2, color: ui.Color) {
             // the polygon is convex: a fan from its first point
-            scale: f32 = ui_default.PainterScale(painter)
+            first: ui.Vec2 = ui_default.PaintPoint(painter, points[0])
             for i in 1 ..< len(points) - 1 {
-                kit.DrawTriangle(contextOf(painter), points[0] * scale, points[i] * scale, points[i + 1] * scale, kit.Color(color))
+                kit.DrawTriangle(contextOf(painter), first, ui_default.PaintPoint(painter, points[i]), ui_default.PaintPoint(painter, points[i + 1]), kit.Color(color))
             }
         },
         fill_rounded = proc(painter: ^ui_default.Painter, rect: ui.Rect, radius: f32, color: ui.Color) {
             scale: f32 = ui_default.PainterScale(painter)
-            fillRounded(painter, rect * scale, radius * scale, color)
+            fillRounded(painter, ui_default.PaintRect(painter, rect), radius * scale, color)
         },
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
             scale: f32 = ui_default.PainterScale(painter)
-            kit.DrawText(contextOf(painter), text, position * scale, size * scale, kit.Color(color))
+            kit.DrawText(contextOf(painter), text, ui_default.PaintPoint(painter, position), size * scale, kit.Color(color))
         },
         measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
             scale: f32 = ui_default.PainterScale(painter)
@@ -34,7 +34,7 @@ PainterInit :: proc(painter: ^ui_default.Painter) {
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             if begin {
-                kit.ClipBegin(contextOf(painter), kit.Rect(rect * ui_default.PainterScale(painter)))
+                kit.ClipBegin(contextOf(painter), kit.Rect(ui_default.PaintRect(painter, rect)))
             } else {
                 kit.ClipEnd(contextOf(painter))
             }

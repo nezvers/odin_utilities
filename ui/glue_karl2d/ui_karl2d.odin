@@ -30,18 +30,18 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^karl2d.Font = nil) {
         user = font,
         theme = ui_default.THEME_DARK,
         fill_rect = proc(painter: ^ui_default.Painter, rect: ui.Rect, color: ui.Color) {
-            karl2d.draw_rect(transmute(karl2d.Rect)(rect * ui_default.PainterScale(painter)), color)
+            karl2d.draw_rect(transmute(karl2d.Rect)ui_default.PaintRect(painter, rect), color)
         },
         fill_polygon = proc(painter: ^ui_default.Painter, points: []ui.Vec2, color: ui.Color) {
             // the polygon is convex: a fan from its first point
-            scale: f32 = ui_default.PainterScale(painter)
+            first: ui.Vec2 = ui_default.PaintPoint(painter, points[0])
             for i in 1 ..< len(points) - 1 {
-                karl2d.draw_triangle({points[0] * scale, points[i] * scale, points[i + 1] * scale}, color)
+                karl2d.draw_triangle({first, ui_default.PaintPoint(painter, points[i]), ui_default.PaintPoint(painter, points[i + 1])}, color)
             }
         },
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
             scale: f32 = ui_default.PainterScale(painter)
-            karl2d.draw_text(text, position * scale, size * scale, color, fontOf(painter))
+            karl2d.draw_text(text, ui_default.PaintPoint(painter, position), size * scale, color, fontOf(painter))
         },
         measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
             scale: f32 = ui_default.PainterScale(painter)
@@ -49,7 +49,7 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^karl2d.Font = nil) {
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             if begin {
-                karl2d.set_scissor_rect(transmute(karl2d.Rect)(rect * ui_default.PainterScale(painter)))
+                karl2d.set_scissor_rect(transmute(karl2d.Rect)ui_default.PaintRect(painter, rect))
             } else {
                 karl2d.set_scissor_rect(nil)
             }

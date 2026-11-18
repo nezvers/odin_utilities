@@ -177,6 +177,9 @@ Decl :: struct {
     layout: Layout,
     floating: Floating,
     absolute: Absolute,
+    zoom: f32,                      // 0 or 1: none. Else the children are laid out in logical units (the room they have is the size of this element divided by `zoom`, the origin is its top left corner)
+                                    // and everything of them is shown `zoom` times bigger around that corner: drawing (through Style.zoom), hit boxes and UiElementRect are in screen space.
+                                    // Not for a floating element inside of it, and a scroll area inside of it scrolls in logical units. A zoomed container inside of a zoomed one is not zoomed again.
     clip: Clip,
     aspect_ratio: f32,              // width / height, 0 for none
     hit: HitKinds,
@@ -260,6 +263,8 @@ CommandKind :: enum u8 {
     DRAW,               // call the style proc of `info.kind`
     CLIP_BEGIN,         // `info.rect` is the area to keep
     CLIP_END,
+    ZOOM_BEGIN,         // everything up to ZOOM_END is in the layout space of a zoomed container: `info.rect` is {origin.x, origin.y, factor, 0}; the style moves its painter (Style.zoom)
+    ZOOM_END,
 }
 
 Command :: struct {
