@@ -159,6 +159,12 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
 and `UiMeter` (a level and a peak mark that the program holds and lets fall, standing or lying). Each is one element with a style kind (`KNOB`, `FADER`, `METER`): value 0..1, the real number, its text, where the default is. Nothing allocates;
 the scroll areas have a draggable scrollbar (the thumb keeps its place under the pointer, a press on the track centers it).
 
+## Editing text
+`UiTextField` has a selection (anchor and cursor in bytes: `WidgetState`, `DrawInfo.anchor` for the style): the pointer drags one, a double click takes a word, Shift with the arrows, Home and End extends it, Ctrl moves and deletes by words, typing and pasting replace it.
+`Input.modifiers` (Shift, Ctrl, the command key of a Mac is Ctrl) and the actions `COPY`, `CUT`, `PASTE`, `SELECT_ALL` (Ctrl + C, X, V, A; glues map them, and drop the typed letter when Ctrl is held) drive it.
+The clipboard: `UiClipboardSet` / `UiClipboardGet`; a glue that knows the system's connects it (`ui_raylib.ClipboardInstall(&ctx)`), without it the text stays in a buffer of the context (`CLIPBOARD_LOCAL` bytes), so copy and paste work inside of the program and in the tests.
+Karl2D has no clipboard: its glue uses the local one. Pasted newlines and tabs become spaces (a field is one line).
+
 ## Zoom of one container
 `Decl.zoom` (0 or 1: none): the children of the container are laid out in logical units (the room they have is its size divided by the zoom, the origin is its top left corner) and shown `zoom` times bigger around that corner. Drawing goes through
 `Style.zoom` (the default style moves its painter: `Painter.scale` and `Painter.offset`, the glue draws a point as `p * scale + offset`), hit boxes, `UiElementRect` and the pointer stay in screen space, so widgets inside need no change
@@ -185,5 +191,5 @@ Three levels: `odin test ui` (layout and behavior with a fake font), `odin test 
 (see `demo_kit/README.md`). `UiCommands(&ctx)` is the third way: assert on what the style would be asked to draw, without pixels.
 
 ## Known limits
-Text is measured per word each frame (no cache); a text field edits one line of UTF-8 without selection;
+Text is measured per word each frame (no cache); a text field edits one line of UTF-8 (no several lines yet);
 an element that is declared after the floating element that names it as parent is not found (declare the parent first).

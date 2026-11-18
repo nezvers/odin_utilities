@@ -18,7 +18,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Node graph: model with rules, events with user pointers, topological order and buffer plan; cable routes, bounds and distance by the style; canvas, nodes, pins, minimap, zip ties; demo with a script and screenshots
 - [x] Draggable scrollbar (a hit box of its own, wider than it is drawn)
 - [x] Knob, fader and level meter (`widgets_audio.odin`, default style in `default_style/audio.odin`), demo `audio` with a screenshot
-- [ ] Text field: selection, copy and paste, several lines
+- [x] Text field: selection (pointer, Shift, words), copy, cut, paste, select all, clipboard (system through the glue, else local)
+- [ ] Text area: several lines (up and down, Home and End of a line, scrolling), word wrap
 - [ ] Text measure cache (text hash and size) so big tables and logs do not measure every frame
 - [x] UI scale factor (`Painter.scale`): layout and styles in logical units, the glue scales the drawing and divides the pointer; demo `scale`
 - [x] Node graph: box selection, moving several nodes together, Delete for selected nodes
