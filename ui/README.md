@@ -159,6 +159,14 @@ ui.UiGraphMinimap(&ctx, "map", &graph, &view)                      // the conten
 and `UiMeter` (a level and a peak mark that the program holds and lets fall, standing or lying). Each is one element with a style kind (`KNOB`, `FADER`, `METER`): value 0..1, the real number, its text, where the default is. Nothing allocates;
 the scroll areas have a draggable scrollbar (the thumb keeps its place under the pointer, a press on the track centers it).
 
+## Lists and tables of many rows
+`virtual.odin`: only the rows in view are declared, the rest of the height is a spacer, so a hundred thousand rows cost the rows on screen. The program owns the data and the selection (`VirtualList`, `selected` is `VIRTUAL_NONE` for none).
+`if ui.UiVirtual(&ctx, "Files", &list, len(files), 24, size) { for row in list.first ..< list.last { if ui.UiVirtualRow(&ctx, &list, row) { ...widgets... } } }`: a click selects the row under the pointer (`list.changed`), a double click or
+Enter sets `list.activated`, up, down, page up, page down, Home and End move the selection while the list has the focus (they do not move the keyboard focus away), the view follows it, the wheel and the scrollbar scroll, a button inside of a row takes its own clicks.
+`UiTable` adds a header: a click on a column makes it ascending, descending, then none (`table.sort_changed`, `sort_column`, `sort_descending`: the program sorts its own list of row numbers), the edge of a header is dragged to resize the column (`TableColumn.width`,
+never below `min_width`), `UiTableRow` / `UiTableCell` / `UiTableText` declare the cells at the width of their column. Before the size of the view is known the first frame declares a fixed height worth of rows (or ten): give a table a fixed height when its rows have many elements
+and the storage is small. A tree is a list of the rows that are visible: the program flattens its tree and draws the indentation and the arrow in the row. Demo: `demo_common/demo_table.odin`.
+
 ## Timeline
 A retained model with an immediate mode widget, like the node graph. The model (`timeline.odin`: `Timeline`, tracks, clips in fixed storage with checked handles, `TIMELINE_TRACKS`, `TIMELINE_CLIPS`, `TIMELINE_EVENTS` are `#config`, no allocation) is the
 program's: a clip has a start and a length in the unit of the program (seconds, beats, samples), a track keeps its clips and a `user` pointer. `TimelineRules.can_place` says where a clip may be (`TimelineRuleNoOverlap` is one), `min_length` the shortest.

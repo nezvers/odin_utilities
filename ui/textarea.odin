@@ -108,7 +108,7 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
     length^ = clamp(length^, 0, len(buffer))
     state.cursor = clamp(state.cursor, 0, length^)
     state.anchor = clamp(state.anchor, 0, length^)
-    state.multiline = true
+    state.own_vertical = true
 
     padding: Vec2 = {metrics.padding.x, metrics.padding.y}
     line_height: f32 = max(measureText(ctx, "A", metrics.font_size).y, metrics.font_size) * 1.1

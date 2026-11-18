@@ -22,6 +22,9 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Text area (`UiTextArea`): several lines, word wrap, up and down with a column, selection over rows, scrolling that follows the cursor, a scrollbar
 - [x] Timeline (`UiTimeline`): tracks and clips model with rules and events, ruler, playhead, move across tracks, resize, multi selection, zoom around the pointer, lock; demo with a screenshot
 - [ ] Timeline: box selection, a loop range on the ruler, markers, automation lanes (keys on a line), a vertical zoom of the tracks, copy and paste of clips
+- [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot
+- [ ] Table: horizontal scrolling when the columns are wider than the table, a column that fills the room, reordering columns by dragging a header, double click on an edge to fit the column, keys inside of a row (cells that are widgets)
+- [ ] Tree view: a helper that flattens an open or closed tree into rows (indent, arrow, keys left and right to close and open)
 - [ ] Text area: rows are found from the whole text every frame (measures per word): keep them between frames while the text and the width do not change
 - [x] Text measure cache (`measure.odin`): a fixed table by hash of text and size, cleared by a new font or UI scale
 - [x] UI scale factor (`Painter.scale`): layout and styles in logical units, the glue scales the drawing and divides the pointer; demo `scale`

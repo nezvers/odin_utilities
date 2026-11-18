@@ -2382,3 +2382,162 @@ test_the_ruler_step_is_one_two_or_five_times_a_power_of_ten :: proc(t: ^testing.
     testing.expect_value(t, TimelineRulerStep(1000), 0.1)
     testing.expect_value(t, TimelineRulerStep(0.5), 200)
 }
+
+@(private = "file")
+LIST_ROWS :: 10000
+
+@(private = "file")
+listFrame :: proc(harness: ^Harness, list: ^VirtualList, input: Input) {
+    frame(harness, input)
+    UiButton(&harness.ctx, "Above")
+    if UiVirtual(&harness.ctx, "L", list, LIST_ROWS, 20, {Fixed(200), Fixed(100)}) {
+        for row in list.first ..< list.last {
+            if UiVirtualRow(&harness.ctx, list, row) { UiLabel(&harness.ctx, "row") }
+        }
+    }
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(private = "file")
+listClick :: proc(harness: ^Harness, list: ^VirtualList, at: Vec2) {
+    listFrame(harness, list, pointerAt(at))
+    listFrame(harness, list, pointerAt(at, true, true))
+    listFrame(harness, list, pointerAt(at, false, false, true))
+}
+
+@(private = "file")
+listKey :: proc(harness: ^Harness, list: ^VirtualList, actions: Actions) {
+    input: Input = pointerAt({-10, -10})
+    input.actions = actions
+    listFrame(harness, list, input)
+}
+
+@(test)
+test_a_list_of_ten_thousand_rows_declares_only_the_rows_in_view :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    list: VirtualList = {selected = VIRTUAL_NONE}
+    for _ in 0 ..< 3 { listFrame(harness, &list, pointerAt({-10, -10})) }
+    testing.expect_value(t, harness.ctx.problems, Problems{})            // the storage holds 64 elements: all the rows would not fit
+    testing.expect_value(t, list.first, 0)
+    testing.expect(t, list.last >= 5 && list.last <= 8, "a hundred pixels of twenty pixel rows, and one more")
+    // the wheel scrolls: the rows in view are others
+    wheel: Input = pointerAt({100, 60})
+    wheel.wheel = {0, -1}
+    listFrame(harness, &list, pointerAt({100, 60}))
+    for _ in 0 ..< 10 { listFrame(harness, &list, wheel) }
+    testing.expect(t, list.first > 0 && list.last > list.first)
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}
+
+@(test)
+test_a_click_selects_a_row_a_double_click_and_enter_activate_it_and_the_keys_move_the_selection :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    list: VirtualList = {selected = VIRTUAL_NONE}
+    for _ in 0 ..< 3 { listFrame(harness, &list, pointerAt({-10, -10})) }
+    // the list is under the button (28 high): its first row is at y 28 .. 48, the fourth at 88 .. 108
+    listClick(harness, &list, {100, 100})
+    testing.expect_value(t, list.selected, 3)
+    listFrame(harness, &list, pointerAt({100, 100}, true, true))
+    listFrame(harness, &list, pointerAt({100, 100}, false, false, true))
+    listFrame(harness, &list, pointerAt({100, 100}, true, true))
+    testing.expect(t, list.activated, "a second press within the double click time")
+    // the keys move the selection while the list has the focus, and the focus does not leave for the button above
+    listKey(harness, &list, {.DOWN})
+    testing.expect_value(t, list.selected, 4)
+    testing.expect(t, list.changed)
+    listKey(harness, &list, {.UP})
+    listKey(harness, &list, {.UP})
+    testing.expect_value(t, list.selected, 2)
+    testing.expect_value(t, harness.ctx.focus, UiIdPath("L"))
+    listKey(harness, &list, {.ACCEPT})
+    testing.expect(t, list.activated && !list.changed)
+    // the end and the home: the view follows the selection
+    listKey(harness, &list, {.END})
+    testing.expect_value(t, list.selected, LIST_ROWS - 1)
+    listFrame(harness, &list, pointerAt({-10, -10}))
+    testing.expect(t, list.first > LIST_ROWS - 10 && list.last == LIST_ROWS, "the last rows are in view")
+    listKey(harness, &list, {.HOME})
+    listFrame(harness, &list, pointerAt({-10, -10}))
+    testing.expect_value(t, list.selected, 0)
+    testing.expect_value(t, list.first, 0)
+    listKey(harness, &list, {.PAGE_DOWN})
+    testing.expect_value(t, list.selected, 4)                           // a page is the rows in view, less one
+}
+
+@(private = "file")
+tableFrame :: proc(harness: ^Harness, table: ^Table, input: Input) {
+    frame(harness, input)
+    if UiTable(&harness.ctx, "T", table, 1000, 20, {Fixed(300), Fixed(120)}) {
+        for row in table.list.first ..< table.list.last {
+            if UiTableRow(&harness.ctx, table, row) {
+                UiTableText(&harness.ctx, table, 0, "name")
+                UiTableText(&harness.ctx, table, 1, "size")
+            }
+        }
+    }
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(private = "file")
+tableClick :: proc(harness: ^Harness, table: ^Table, at: Vec2) {
+    tableFrame(harness, table, pointerAt(at))
+    tableFrame(harness, table, pointerAt(at, true, true))
+    tableFrame(harness, table, pointerAt(at, false, false, true))
+}
+
+@(test)
+test_a_table_sorts_by_a_click_on_a_header_and_resizes_a_column_by_its_edge :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    table: Table
+    TableInit(&table, {{name = "Name", width = 100}, {name = "Size", width = 80}})
+    for _ in 0 ..< 3 { tableFrame(harness, &table, pointerAt({-10, -10})) }
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+    // the header is 28 high; "Size" is at x 100 .. 174
+    tableClick(harness, &table, {130, 14})
+    testing.expect(t, table.sort_changed && table.sort_column == 1 && !table.sort_descending, "the first click: ascending")
+    tableFrame(harness, &table, pointerAt({-10, -10}))
+    testing.expect(t, !table.sort_changed, "it is told once")
+    tableClick(harness, &table, {130, 14})
+    testing.expect(t, table.sort_column == 1 && table.sort_descending, "the second: descending")
+    tableClick(harness, &table, {130, 14})
+    testing.expect_value(t, table.sort_column, VIRTUAL_NONE)               // the third: back to the order of the data
+    tableClick(harness, &table, {30, 14})
+    testing.expect_value(t, table.sort_column, 0)
+    // the edge of the first column (its last 6 pixels) is dragged 40 pixels to the right
+    tableFrame(harness, &table, pointerAt({97, 14}))
+    tableFrame(harness, &table, pointerAt({97, 14}, true, true))
+    for i in 1 ..= 4 { tableFrame(harness, &table, pointerAt({97 + f32(i) * 10, 14}, true)) }
+    tableFrame(harness, &table, pointerAt({137, 14}, false, false, true))
+    testing.expect_value(t, table.columns[0].width, 140)
+    testing.expect_value(t, table.columns[1].width, 80)
+    // never narrower than the minimum
+    tableFrame(harness, &table, pointerAt({137, 14}))
+    tableFrame(harness, &table, pointerAt({137, 14}, true, true))
+    for i in 1 ..= 10 { tableFrame(harness, &table, pointerAt({137 - f32(i) * 20, 14}, true)) }
+    tableFrame(harness, &table, pointerAt({-63, 14}, false, false, true))
+    testing.expect_value(t, table.columns[0].width, TABLE_MIN_COLUMN)
+    // a row is selected by a click in the body
+    tableClick(harness, &table, {50, 28 + 20 * 2 + 5})
+    testing.expect_value(t, table.list.selected, 2)
+    // the cells of a row are side by side: the same y, the next one a column further
+    tableFrame(harness, &table, pointerAt({-10, -10}))
+    labels: [4]Rect
+    count: int
+    for command in UiCommands(&harness.ctx) {
+        if command.kind == .DRAW && command.info.kind == .LABEL && count < len(labels) {
+            labels[count] = command.info.rect
+            count += 1
+        }
+    }
+    testing.expect(t, count == 4)
+    testing.expect(t, abs(labels[0].y - labels[1].y) < 0.5 && labels[1].x - labels[0].x > 20, "two cells of one row: one line, one after the other")
+    testing.expect(t, labels[2].y - labels[0].y > 15 && labels[2].y - labels[0].y < 25, "the next row is one row height below")
+}

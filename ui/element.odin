@@ -368,7 +368,7 @@ WidgetState :: struct {
     pending_adjust: int,            // steps asked by UiNavigate, taken by the widget in its next call
     editing: bool,                  // a text field that has the focus: it keeps left, right, home and end for the caret
     initialized: bool,              // the widget was declared before (a header that starts open sets its state once)
-    multiline: bool,                // a text area that is edited: up and down are for the cursor, not for the navigation
+    own_vertical: bool,             // a text area, a list: up and down are for the cursor or the selection, not for the navigation
     column: f32,                    // a text area: the distance from the start of the row the cursor keeps while it goes up and down
     last_cursor: int,               // a text area: where the cursor was when the column was taken
     shown_cursor: int,              // a text area: where the cursor was when the view last followed it
