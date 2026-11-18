@@ -3100,3 +3100,130 @@ test_duplicate_puts_a_copy_of_the_selected_clips_right_after_them :: proc(t: ^te
     timelineActions(harness, timeline, view, {200, 40}, {.DUPLICATE})
     testing.expect_value(t, TimelineClipCount(timeline), 3)
 }
+
+@(private = "file")
+automationSetup :: proc(harness: ^Harness) -> (timeline: ^Timeline, view: ^TimelineView, lane: TrackHandle, first: PointHandle, second: PointHandle) {
+    harnessInit(harness)
+    timeline = new(Timeline)
+    TimelineInit(timeline)
+    view = new(TimelineView)
+    view.zoom = 100
+    view.snap = 0.5
+    lane, _ = TimelineAutomationAdd(timeline, "Cutoff", 0, 100)
+    first, _ = TimelinePointAdd(timeline, lane, 1, 50)
+    second, _ = TimelinePointAdd(timeline, lane, 3, 100)
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrain(timeline)
+    return
+}
+
+@(test)
+test_a_point_of_an_automation_lane_is_dragged_in_time_and_value_and_a_double_click_adds_one :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, lane, first, second := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    // the lane is at y 24 .. 72, its values from y 29 (100) down to y 67 (0): the first point (time 1, value 50) is at (100, 48)
+    timelineDrag(harness, timeline, view, {100, 48}, {200, 38})
+    moved: ^TimelinePoint = TimelinePointGet(timeline, first)
+    testing.expect_value(t, moved.time, 2)
+    testing.expect(t, abs(moved.value - (50 + 100 * 10.0 / 38)) < 0.5, "ten pixels up in a lane of 38 pixels of values is 10 / 38 of the range more")
+    testing.expect(t, moved.selected)
+    first_move: TimelineEvent
+    for {
+        e, has := TimelinePollEvent(timeline)
+        if !has { break }
+        if e.kind == .POINT_MOVED && first_move.kind == .NONE { first_move = e }
+    }
+    testing.expect(t, first_move.point == first && first_move.track == lane && first_move.previous_start == 1 && first_move.previous_value == 50, "told with where it was")
+    // the other point did not move, and a value cannot leave the range
+    testing.expect_value(t, TimelinePointGet(timeline, second).time, 3)
+    timelineDrag(harness, timeline, view, {300, 29}, {300, -60})
+    testing.expect_value(t, TimelinePointGet(timeline, second).value, 100)
+    // a double click on the empty lane puts a point there: at the time (to the grid) and the value of the place
+    for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    at: Vec2 = {240, 60}
+    timelineFrame(harness, timeline, view, pointerAt(at))
+    timelineFrame(harness, timeline, view, pointerAt(at, true, true))
+    timelineFrame(harness, timeline, view, pointerAt(at, false, false, true))
+    timelineFrame(harness, timeline, view, pointerAt(at, true, true))
+    timelineFrame(harness, timeline, view, pointerAt(at, false, false, true))
+    testing.expect_value(t, TimelinePointCount(timeline), 3)
+    out: [8]PointHandle
+    count: int = TimelineTrackPoints(timeline, lane, out[:])
+    added: ^TimelinePoint
+    for i in 0 ..< count {
+        if out[i] != first && out[i] != second { added = TimelinePointGet(timeline, out[i]) }
+    }
+    testing.expect(t, added != nil && added.time == 2.5 && abs(added.value - 18.4) < 0.5 && added.selected)
+}
+
+@(test)
+test_delete_removes_the_selected_points_and_a_box_selects_them :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, lane, first, second := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    // a box (Ctrl and a drag over the empty lane) around both points: from the left of the first one to the right of the second one
+    timelineDrag(harness, timeline, view, {50, 26}, {350, 70}, {.CTRL})
+    testing.expect_value(t, TimelineSelectedPoints(timeline), 2)
+    // a smaller one: only the first
+    timelineDrag(harness, timeline, view, {50, 26}, {150, 70}, {.CTRL})
+    testing.expect(t, TimelinePointGet(timeline, first).selected && !TimelinePointGet(timeline, second).selected)
+    deleting: Input = pointerAt({-10, -10})
+    deleting.keys = {.DELETE}
+    testing.expect(t, timelineFrame(harness, timeline, view, deleting))
+    testing.expect_value(t, TimelinePointCount(timeline), 1)
+    testing.expect(t, TimelinePointGet(timeline, first) == nil && TimelinePointGet(timeline, second) != nil)
+    _ = lane
+}
+
+@(test)
+test_points_that_are_moved_together_keep_their_distance_and_each_lanes_own_range :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, lane, first, second := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    big, _ := TimelineAutomationAdd(timeline, "Big", 0, 1000)
+    other, _ := TimelinePointAdd(timeline, big, 1, 500)
+    for _ in 0 ..< 3 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    _ = lane
+    TimelinePointGet(timeline, first).selected = true
+    TimelinePointGet(timeline, other).selected = true
+    // dragged by the first point: 100 pixels to the right and 19 pixels up (half of the height of the lane): both move a whole unit later and half of their own range up
+    timelineDrag(harness, timeline, view, {100, 48}, {200, 29})
+    testing.expect_value(t, TimelinePointGet(timeline, first).time, 2)
+    testing.expect_value(t, TimelinePointGet(timeline, other).time, 2)
+    testing.expect_value(t, TimelinePointGet(timeline, first).value, 100)
+    testing.expect_value(t, TimelinePointGet(timeline, other).value, 1000)
+    testing.expect_value(t, TimelinePointGet(timeline, second).time, 3)
+}
+
+@(private = "file", thread_local)
+curve_points: int
+@(private = "file", thread_local)
+curve_first: CurvePoint
+
+@(test)
+test_the_curve_of_a_lane_gets_the_points_in_view_and_one_on_each_side_in_order :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, lane, first, second := automationSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    harness.style.procs[.TIMELINE] = proc(ctx: ^Context, info: ^DrawInfo) { TimelineDraw(ctx, info) }
+    harness.style.timeline.draw_lane = proc(ctx: ^Context, lane: ^LaneDraw) {}
+    harness.style.timeline.draw_curve = proc(ctx: ^Context, curve: ^CurveDraw) {
+        curve_points = len(curve.points)
+        if len(curve.points) > 0 { curve_first = curve.points[0] }
+    }
+    // later points, far away on both sides: only the ones next to the view come along
+    TimelinePointAdd(timeline, lane, 20, 10)
+    TimelinePointAdd(timeline, lane, 30, 20)
+    TimelinePointAdd(timeline, lane, 0.1, 5)
+    view.origin = 1.5                                                    // the view shows the times 1.5 .. 5.5: the point at 3 is in it
+    timelineFrame(harness, timeline, view, pointerAt({-10, -10}))
+    testing.expect_value(t, curve_points, 3)                             // 1 (the one before), 3 (in view), 20 (the one after)
+    testing.expect_value(t, curve_first.time, 1)
+    testing.expect(t, abs(curve_first.x - (TimelineX(view, 1))) < 0.01)
+    view.origin = 0
+    timelineFrame(harness, timeline, view, pointerAt({-10, -10}))
+    testing.expect_value(t, curve_points, 4)                             // 0.1, 1, 3 and the one after (20)
+    testing.expect_value(t, curve_first.time, 0.1)
+    _, _ = first, second
+}

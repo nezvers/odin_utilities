@@ -25,7 +25,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Timeline: markers (flags on the ruler, drag, events, Delete) and snapping to the edges of clips, markers and the playhead
 - [x] Timeline: copy, cut, paste and select all of clips (a paste is told with the clip it was copied from)
 - [x] Timeline: duplicate (Ctrl + D) and a vertical zoom of the tracks (Ctrl and the wheel)
-- [ ] Timeline: automation lanes (keys on a line)
+- [x] Timeline: automation lanes (points on a curve in a lane, dragged in time and value, double click to add, events, interpolation for the program that plays them)
+- [ ] Timeline: curve shapes between points (ease, bezier handles), copy and paste of points, snapping of values to a grid
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot
 - [x] Inspector panel (`UiInspector`): element tree of the last frame, buffer usage, measure cache, picking by the pointer; demo with a screenshot
 - [x] Inspector: the layout details of the selected element, a filter by name, text or kind, a selection that follows its element

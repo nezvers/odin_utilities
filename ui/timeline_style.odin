@@ -14,7 +14,32 @@ LaneDraw :: struct {
     index: int,                 // from the top
     track: TrackHandle,
     flags: Flags,               // HOVERED: the pointer is on it, DISABLED: muted, ON: locked
+    automation: bool,           // a lane of points: the curve is drawn after it (CurveDraw)
     user: rawptr,               // `user` of the TimelineStyle
+}
+
+// One point of an automation curve, on the screen.
+CurvePoint :: struct {
+    x: f32,
+    y: f32,
+    point: PointHandle,
+    time: f64,
+    value: f32,
+    flags: Flags,               // SELECTED, HOVERED, PRESSED: it is being dragged
+}
+
+// The curve of an automation lane: the points in the order of their time, those in view and one before and one after them (for the lines that leave the view).
+CurveDraw :: struct {
+    rect: Rect,                 // the lane
+    inner: Rect,                // the part of the lane a value can be at: its top is the highest value, its bottom the lowest
+    points: []CurvePoint,       // valid during the call
+    name: string,
+    color: Color,               // of the track, alpha 0: the style's own
+    steps: bool,                // the value is held until the next point
+    track: TrackHandle,
+    value_min: f32,
+    value_max: f32,
+    user: rawptr,
 }
 
 // A clip.
@@ -79,6 +104,7 @@ RulerDrawProc :: proc(ctx: ^Context, ruler: ^RulerDraw)
 PlayheadDrawProc :: proc(ctx: ^Context, head: ^PlayheadDraw)
 BoxDrawProc :: proc(ctx: ^Context, box: ^BoxDraw)
 MarkerDrawProc :: proc(ctx: ^Context, marker: ^MarkerDraw)
+CurveDrawProc :: proc(ctx: ^Context, curve: ^CurveDraw)
 
 TimelineStyle :: struct {
     draw_lane: LaneDrawProc,
@@ -87,9 +113,11 @@ TimelineStyle :: struct {
     draw_playhead: PlayheadDrawProc,
     draw_box: BoxDrawProc,
     draw_marker: MarkerDrawProc,
+    draw_curve: CurveDrawProc,
     ruler_height: f32,          // 0: 24
     track_height: f32,          // of a track that has none of its own: 0 is 48
     edge: f32,                  // the width of the part of a clip's side that resizes it: 0 is 6
+    point_radius: f32,          // how far from a point of an automation curve the pointer still picks it: 0 is 7
     track_scale: f32,           // set by the widget from the vertical zoom of the view: the heights of all the tracks are multiplied by it (0 is 1)
     marker_width: f32,          // the room of the flag of a marker, to the right of its line (the part of the ruler that picks it): 0 is 64
     user: rawptr,               // comes back in what is drawn
@@ -99,6 +127,9 @@ TIMELINE_RULER_HEIGHT :: f32(24)
 TIMELINE_TRACK_HEIGHT :: f32(48)
 TIMELINE_EDGE :: f32(6)
 TIMELINE_MARKER_WIDTH :: f32(64)
+TIMELINE_POINT_RADIUS :: f32(7)
+TIMELINE_LANE_MARGIN :: f32(5)             // between the top of an automation lane and its highest value, and the same below
+TIMELINE_CURVE_POINTS :: 1024              // the points of one lane that are drawn (those in view and one on each side)
 
 TimelineStyleResolved :: proc(style: ^Style) -> TimelineStyle {
     result: TimelineStyle = style.timeline
@@ -106,5 +137,6 @@ TimelineStyleResolved :: proc(style: ^Style) -> TimelineStyle {
     if result.track_height <= 0 { result.track_height = TIMELINE_TRACK_HEIGHT }
     if result.edge <= 0 { result.edge = TIMELINE_EDGE }
     if result.marker_width <= 0 { result.marker_width = TIMELINE_MARKER_WIDTH }
+    if result.point_radius <= 0 { result.point_radius = TIMELINE_POINT_RADIUS }
     return result
 }

@@ -12,6 +12,7 @@ TimelineStyleInstall :: proc(style: ^ui.Style) {
     style.timeline.draw_playhead = DrawPlayhead
     style.timeline.draw_box = DrawTimelineBox
     style.timeline.draw_marker = DrawMarker
+    style.timeline.draw_curve = DrawCurve
 }
 
 DrawTimeline :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
@@ -28,6 +29,10 @@ DrawLane :: proc(ctx: ^ui.Context, lane: ^ui.LaneDraw) {
     if .DISABLED in lane.flags { shade = ui.ColorLerp(shade, theme.track, 0.6) }
     painter.fill_rect(painter, lane.rect, shade)
     painter.fill_rect(painter, {lane.rect.x, lane.rect.y + lane.rect.w - 1, lane.rect.z, 1}, theme.border)
+    if lane.automation {
+        // the middle of the range
+        painter.fill_rect(painter, {lane.rect.x, lane.rect.y + lane.rect.w * 0.5, lane.rect.z, 1}, {theme.border.r, theme.border.g, theme.border.b, 90})
+    }
     painter.draw_text(painter, lane.name, {lane.rect.x + 6, lane.rect.y + lane.rect.w - ctx.style.metrics.font_size - 4}, ctx.style.metrics.font_size * 0.85, ui.Color{theme.text_dim.r, theme.text_dim.g, theme.text_dim.b, 150})
 }
 
@@ -122,4 +127,26 @@ DrawMarker :: proc(ctx: ^ui.Context, marker: ^ui.MarkerDraw) {
     painter.fill_rect(painter, flag, body)
     painter.fill_rect(painter, {marker.x, marker.ruler.y, 2, marker.ruler.w}, color)
     painter.draw_text(painter, marker.name, {marker.x + 6, marker.ruler.y + 1}, size, theme.text)
+}
+
+DrawCurve :: proc(ctx: ^ui.Context, curve: ^ui.CurveDraw) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    color: ui.Color = curve.color if curve.color.a > 0 else GraphTypeColor(5)
+    for i in 1 ..< len(curve.points) {
+        a, b: ui.CurvePoint = curve.points[i - 1], curve.points[i]
+        if curve.steps {
+            Line(painter, {a.x, a.y}, {b.x, a.y}, 2, color)
+            Line(painter, {b.x, a.y}, {b.x, b.y}, 2, color)
+        } else {
+            Line(painter, {a.x, a.y}, {b.x, b.y}, 2, color)
+        }
+    }
+    for point in curve.points {
+        if point.x < curve.rect.x - 4 || point.x > curve.rect.x + curve.rect.z + 4 { continue }
+        size: f32 = 4
+        fill: ui.Color = theme.accent if .SELECTED in point.flags else ui.ColorLerp(color, ui.Color{255, 255, 255, 255}, 0.5 if .HOVERED in point.flags else 0)
+        painter.fill_rect(painter, {point.x - size, point.y - size, size * 2, size * 2}, ui.ColorLerp(fill, ui.Color{0, 0, 0, 255}, 0.55))
+        painter.fill_rect(painter, {point.x - size + 1.5, point.y - size + 1.5, size * 2 - 3, size * 2 - 3}, fill)
+    }
 }

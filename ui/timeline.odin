@@ -20,12 +20,14 @@ TIMELINE_TRACKS :: #config(TIMELINE_TRACKS, 64)
 TIMELINE_CLIPS :: #config(TIMELINE_CLIPS, 4096)
 TIMELINE_EVENTS :: #config(TIMELINE_EVENTS, 256)
 TIMELINE_MARKERS :: #config(TIMELINE_MARKERS, 256)
+TIMELINE_POINTS :: #config(TIMELINE_POINTS, 8192)           // the points of all the automation lanes together
 TIMELINE_COPIES :: #config(TIMELINE_COPIES, 256)             // the clips one copy can hold
 TIMELINE_NAME_MAX :: 48
 
 TrackHandle :: distinct hm.Handle32
 ClipHandle :: distinct hm.Handle32
 MarkerHandle :: distinct hm.Handle32
+PointHandle :: distinct hm.Handle32
 
 TrackFlag :: enum u8 {
     MUTED,              // drawn faint, the program does not play it
@@ -33,8 +35,19 @@ TrackFlag :: enum u8 {
 }
 TrackFlags :: bit_set[TrackFlag; u8]
 
+// What a track holds: clips, or the points of an automation (a value that changes in time: a volume, a filter).
+TrackKind :: enum u8 {
+    CLIPS,
+    AUTOMATION,
+}
+
 TimelineTrack :: struct {
     handle: TrackHandle,
+    kind: TrackKind,
+    value_min: f32,             // an automation track: the lowest and the highest value of its points, the bottom and the top of its lane
+    value_max: f32,
+    steps: bool,                // an automation track: the value is held until the next point (else it goes straight to it)
+    point_count: int,
     name: [TIMELINE_NAME_MAX]u8,
     name_length: int,
     color: Color,               // alpha 0: the style's own
@@ -61,6 +74,18 @@ TimelineClip :: struct {
 }
 
 // A named point of time: a flag on the ruler with a line down through the tracks.
+// A point of an automation track: at a time, with a value in the range of the track.
+TimelinePoint :: struct {
+    handle: PointHandle,
+    track: TrackHandle,
+    time: f64,
+    value: f32,
+    selected: bool,
+    drag_selected: bool,
+    drag_time: f64,             // where it was when a drag began (timeline_widgets.odin)
+    drag_value: f32,
+}
+
 TimelineMarker :: struct {
     handle: MarkerHandle,
     time: f64,
@@ -86,6 +111,9 @@ TimelineEventKind :: enum u8 {
     MARKER_ADDED,
     MARKER_REMOVED,
     MARKER_MOVED,       // `time` is the new time, `previous_start` the old one
+    POINT_ADDED,        // an automation point: `point`, `track`, `time`, `value`
+    POINT_MOVED,        // the new `time` and `value`, and `previous_start` and `previous_value`
+    POINT_REMOVED,
 }
 
 // What happened, with the user pointers of the clip, its track and the timeline, and what it was before (for an undo).
@@ -101,6 +129,9 @@ TimelineEvent :: struct {
     time: f64,
     marker: MarkerHandle,
     marker_user: rawptr,
+    point: PointHandle,
+    value: f32,
+    previous_value: f32,
     copied_from: ClipHandle,    // CLIP_ADDED by a paste: the clip it is a copy of (the handle may be gone when it was cut): a program that keeps data for a clip makes its own copy of it now
     clip_user: rawptr,
     track_user: rawptr,
@@ -135,6 +166,7 @@ Timeline :: struct {
     tracks: hm.Static_Handle_Map(TIMELINE_TRACKS, TimelineTrack, TrackHandle),
     clips: hm.Static_Handle_Map(TIMELINE_CLIPS, TimelineClip, ClipHandle),
     markers: hm.Static_Handle_Map(TIMELINE_MARKERS, TimelineMarker, MarkerHandle),
+    points: hm.Static_Handle_Map(TIMELINE_POINTS, TimelinePoint, PointHandle),
     order: [TIMELINE_TRACKS]TrackHandle,    // the tracks from the top
     track_count: int,
     rules: TimelineRules,
@@ -196,6 +228,10 @@ timelineEmit :: proc(timeline: ^Timeline, event: TimelineEvent) {
     if clip := TimelineClipGet(timeline, event.clip); clip != nil { stored.clip_user = clip.user }
     if track := TimelineTrackGet(timeline, event.track); track != nil { stored.track_user = track.user }
     if marker := TimelineMarkerGet(timeline, event.marker); marker != nil { stored.marker_user = marker.user }
+    if point := TimelinePointGet(timeline, event.point); point != nil && stored.track == {} {
+        stored.track = point.track
+        if track := TimelineTrackGet(timeline, point.track); track != nil { stored.track_user = track.user }
+    }
     if timeline.event_count == len(timeline.events) {
         timeline.event_head = (timeline.event_head + 1) % len(timeline.events)
         timeline.event_count -= 1
@@ -251,6 +287,17 @@ TimelineTrackRemove :: proc(timeline: ^Timeline, handle: TrackHandle) -> bool {
             }
         }
     }
+    for removed := true; removed; {
+        removed = false
+        points := hm.iterator_make(&timeline.points)
+        for point, point_handle in hm.iterate(&points) {
+            if point.track == handle {
+                TimelinePointRemove(timeline, point_handle)
+                removed = true
+                break
+            }
+        }
+    }
     timelineEmit(timeline, {kind = .TRACK_REMOVED, track = handle})
     for i in index ..< timeline.track_count - 1 { timeline.order[i] = timeline.order[i + 1] }
     timeline.track_count -= 1
@@ -262,7 +309,7 @@ TimelineTrackRemove :: proc(timeline: ^Timeline, handle: TrackHandle) -> bool {
 // A clip on a track. False when the track is gone, the length is not above the minimum, the storage is full or the rules say no.
 TimelineClipAdd :: proc(timeline: ^Timeline, track: TrackHandle, start: f64, length: f64, name: string, user: rawptr = nil, color: Color = {}) -> (handle: ClipHandle, ok: bool) {
     owner: ^TimelineTrack = TimelineTrackGet(timeline, track)
-    if owner == nil || length <= 0 || length < timeline.rules.min_length { return }
+    if owner == nil || owner.kind != .CLIPS || length <= 0 || length < timeline.rules.min_length { return }
     if timeline.rules.can_place != nil && !timeline.rules.can_place(timeline, nil, track, start, length, timeline.rules.user) { return }
     clip: TimelineClip = {track = track, start = start, length = length, user = user, color = color}
     timelineName(clip.name[:], &clip.name_length, name)
@@ -289,7 +336,7 @@ TimelineClipRemove :: proc(timeline: ^Timeline, handle: ClipHandle) -> bool {
 TimelineClipPlace :: proc(timeline: ^Timeline, handle: ClipHandle, track: TrackHandle, start: f64, length: f64) -> bool {
     clip: ^TimelineClip = TimelineClipGet(timeline, handle)
     owner: ^TimelineTrack = TimelineTrackGet(timeline, track)
-    if clip == nil || owner == nil || length <= 0 || length < timeline.rules.min_length || start < 0 { return false }
+    if clip == nil || owner == nil || owner.kind != .CLIPS || length <= 0 || length < timeline.rules.min_length || start < 0 { return false }
     if clip.track == track && clip.start == start && clip.length == length { return true }
     if timeline.rules.can_place != nil && !timeline.rules.can_place(timeline, clip, track, start, length, timeline.rules.user) { return false }
     event: TimelineEvent = {
@@ -310,12 +357,14 @@ TimelineClipSelect :: proc(timeline: ^Timeline, handle: ClipHandle, selected: bo
     if clip := TimelineClipGet(timeline, handle); clip != nil { clip.selected = selected }
 }
 
-// Nothing is selected: no clip and no marker.
+// Nothing is selected: no clip, no marker, no point.
 TimelineSelectClear :: proc(timeline: ^Timeline) {
     it := hm.iterator_make(&timeline.clips)
     for clip, _ in hm.iterate(&it) { clip.selected = false }
     markers := hm.iterator_make(&timeline.markers)
     for marker, _ in hm.iterate(&markers) { marker.selected = false }
+    points := hm.iterator_make(&timeline.points)
+    for point, _ in hm.iterate(&points) { point.selected = false }
 }
 
 TimelineSelectedCount :: proc(timeline: ^Timeline) -> (count: int) {
@@ -330,6 +379,8 @@ TimelineSelectedCount :: proc(timeline: ^Timeline) -> (count: int) {
 TimelineEnd :: proc(timeline: ^Timeline) -> (end: f64) {
     it := hm.iterator_make(&timeline.clips)
     for clip, _ in hm.iterate(&it) { end = max(end, clip.start + clip.length) }
+    points := hm.iterator_make(&timeline.points)
+    for point, _ in hm.iterate(&points) { end = max(end, point.time) }
     return
 }
 
@@ -459,7 +510,7 @@ TimelinePaste :: proc(timeline: ^Timeline, time: f64, track: int = -1) -> int {
         start: f64 = max(time + entry.start_offset, 0)
         target: TrackHandle = timeline.order[index]
         owner: ^TimelineTrack = TimelineTrackGet(timeline, target)
-        if owner == nil || entry.length < timeline.rules.min_length { continue }
+        if owner == nil || owner.kind != .CLIPS || entry.length < timeline.rules.min_length { continue }
         if timeline.rules.can_place != nil && !timeline.rules.can_place(timeline, nil, target, start, entry.length, timeline.rules.user) { continue }
         clip: TimelineClip = {track = target, start = start, length = entry.length, user = entry.user, color = entry.color}
         clip.name, clip.name_length = entry.name, entry.name_length
@@ -475,4 +526,108 @@ TimelinePaste :: proc(timeline: ^Timeline, time: f64, track: int = -1) -> int {
         for i in 0 ..< count { TimelineClipSelect(timeline, pasted[i]) }
     }
     return count
+}
+
+// ------------------------------------------------------------------------------------------------------------------------
+// Automation: tracks of points
+
+// A track that holds the points of an automation (not clips): a value from `minimum` to `maximum` that changes in time. Its `user` pointer is what the program connects it to (a parameter).
+TimelineAutomationAdd :: proc(timeline: ^Timeline, name: string, minimum: f32 = 0, maximum: f32 = 1, height: f32 = 0, user: rawptr = nil, color: Color = {}) -> (handle: TrackHandle, ok: bool) {
+    if maximum <= minimum { return }
+    handle, ok = TimelineTrackAdd(timeline, name, height, user, color)
+    if !ok { return }
+    track: ^TimelineTrack = TimelineTrackGet(timeline, handle)
+    track.kind, track.value_min, track.value_max = .AUTOMATION, minimum, maximum
+    return
+}
+
+TimelinePointGet :: proc(timeline: ^Timeline, handle: PointHandle) -> ^TimelinePoint {
+    if handle == {} { return nil }
+    item, ok := hm.get(&timeline.points, handle)
+    return item if ok else nil
+}
+
+TimelinePointCount :: proc(timeline: ^Timeline) -> int {
+    return int(hm.len(timeline.points))
+}
+
+// A point on an automation track (the value is kept within the range of the track). False when the track is not an automation track, the time is below 0 or the storage is full.
+TimelinePointAdd :: proc(timeline: ^Timeline, track: TrackHandle, time: f64, value: f32) -> (handle: PointHandle, ok: bool) {
+    owner: ^TimelineTrack = TimelineTrackGet(timeline, track)
+    if owner == nil || owner.kind != .AUTOMATION || time < 0 { return }
+    point: TimelinePoint = {track = track, time = time, value = clamp(value, owner.value_min, owner.value_max)}
+    handle, ok = hm.add(&timeline.points, point)
+    if !ok { return }
+    owner.point_count += 1
+    timelineEmit(timeline, {kind = .POINT_ADDED, point = handle, track = track, time = time, value = point.value})
+    return
+}
+
+// Moves a point (time not below 0, the value kept within the range). One event with where it was.
+TimelinePointMove :: proc(timeline: ^Timeline, handle: PointHandle, time: f64, value: f32) -> bool {
+    point: ^TimelinePoint = TimelinePointGet(timeline, handle)
+    if point == nil || time < 0 { return false }
+    owner: ^TimelineTrack = TimelineTrackGet(timeline, point.track)
+    clamped: f32 = clamp(value, owner.value_min, owner.value_max)
+    if point.time == time && point.value == clamped { return true }
+    event: TimelineEvent = {kind = .POINT_MOVED, point = handle, track = point.track, time = time, value = clamped, previous_start = point.time, previous_value = point.value}
+    point.time, point.value = time, clamped
+    timelineEmit(timeline, event)
+    return true
+}
+
+TimelinePointRemove :: proc(timeline: ^Timeline, handle: PointHandle) -> bool {
+    point: ^TimelinePoint = TimelinePointGet(timeline, handle)
+    if point == nil { return false }
+    if owner := TimelineTrackGet(timeline, point.track); owner != nil { owner.point_count -= 1 }
+    timelineEmit(timeline, {kind = .POINT_REMOVED, point = handle, track = point.track, time = point.time, value = point.value})
+    hm.remove(&timeline.points, handle)
+    return true
+}
+
+TimelineSelectedPoints :: proc(timeline: ^Timeline) -> (count: int) {
+    it := hm.iterator_make(&timeline.points)
+    for point, _ in hm.iterate(&it) {
+        if point.selected { count += 1 }
+    }
+    return
+}
+
+// The points of a track in the order of their time, into `out` (as many as fit): how many. For the program that plays the automation.
+TimelineTrackPoints :: proc(timeline: ^Timeline, track: TrackHandle, out: []PointHandle) -> int {
+    count: int
+    it := hm.iterator_make(&timeline.points)
+    for point, handle in hm.iterate(&it) {
+        if point.track != track || count >= len(out) { continue }
+        position: int = count
+        for position > 0 && TimelinePointGet(timeline, out[position - 1]).time > point.time {
+            out[position] = out[position - 1]
+            position -= 1
+        }
+        out[position] = handle
+        count += 1
+    }
+    return count
+}
+
+// The value of an automation track at a time: the first value before the first point, the last one after the last, in between a straight line from one point to the next
+// (or the value of the earlier point until the next one when the track `steps`). False for a track that has no points or is not an automation track.
+TimelineAutomationValue :: proc(timeline: ^Timeline, track: TrackHandle, time: f64) -> (value: f32, found: bool) {
+    owner: ^TimelineTrack = TimelineTrackGet(timeline, track)
+    if owner == nil || owner.kind != .AUTOMATION { return }
+    before, after: ^TimelinePoint
+    it := hm.iterator_make(&timeline.points)
+    for point, _ in hm.iterate(&it) {
+        if point.track != track { continue }
+        if point.time <= time && (before == nil || point.time >= before.time) { before = point }
+        if point.time > time && (after == nil || point.time < after.time) { after = point }
+    }
+    switch {
+    case before == nil && after == nil: return 0, false
+    case before == nil: return after.value, true
+    case after == nil: return before.value, true
+    case owner.steps: return before.value, true
+    }
+    fraction: f32 = f32((time - before.time) / (after.time - before.time))
+    return before.value + (after.value - before.value) * fraction, true
 }

@@ -26,8 +26,9 @@ State :: struct {
     app: UiDemo,
     timeline: ui.Timeline,
     view: ui.TimelineView,
-    channels: [4]Channel,
+    channels: [5]Channel,
     tracks: [4]ui.TrackHandle,
+    cutoff: ui.TrackHandle,
     log: [160]u8,
     log_length: int,
 }
@@ -53,6 +54,10 @@ init :: proc(ctx: ^kit.Context) {
     ui.TimelineClipAdd(&state.timeline, state.tracks[1], 2, 8, "Line")
     ui.TimelineClipAdd(&state.timeline, state.tracks[2], 8, 4, "Hook")
     ui.TimelineClipAdd(&state.timeline, state.tracks[3], 4, 6, "Verse")
+    state.channels[4] = {name = "Cutoff"}
+    cutoff, _ := ui.TimelineAutomationAdd(&state.timeline, "Cutoff", 0, 100, user = &state.channels[4])
+    state.cutoff = cutoff
+    for point in ([5][2]f64{{0, 20}, {4, 80}, {8, 40}, {12, 90}, {16, 10}}) { ui.TimelinePointAdd(&state.timeline, cutoff, point[0], f32(point[1])) }
     ui.TimelineMarkerAdd(&state.timeline, 0, "Intro")
     ui.TimelineMarkerAdd(&state.timeline, 8, "Drop")
     for {
@@ -72,6 +77,10 @@ onEvent :: proc(timeline: ^ui.Timeline, event: ^ui.TimelineEvent) {
         s.log_length = len(fmt.bprintf(s.log[:], "resized on %s: %.2f .. %.2f", track, event.start, event.start + event.length))
     case .PLAYHEAD:
         s.log_length = len(fmt.bprintf(s.log[:], "playhead at %.2f", event.time))
+    case .POINT_MOVED:
+        s.log_length = len(fmt.bprintf(s.log[:], "%s: %.1f at %.2f", track, event.value, event.time))
+    case .POINT_ADDED:
+        s.log_length = len(fmt.bprintf(s.log[:], "%s: point added, %.1f at %.2f", track, event.value, event.time))
     case .MARKER_MOVED:
         s.log_length = len(fmt.bprintf(s.log[:], "marker moved to %.2f", event.time))
     case .CLIP_REMOVED:
@@ -85,7 +94,7 @@ draw :: proc(ctx: ^kit.Context) {
     ui_demo_begin(&state.app, ctx)
     c: ^ui.Context = &state.app.ctx
     if ui.UiPanel(c, "timeline demo", {size = {ui.Fixed(800), ui.Fit()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(10), gap = 8}) {
-        ui.UiTimeline(c, "Arrangement", &state.timeline, &state.view, {ui.Fixed(780), ui.Fixed(240)})
+        ui.UiTimeline(c, "Arrangement", &state.timeline, &state.view, {ui.Fixed(780), ui.Fixed(320)})
         ui.UiLabel(c, string(state.log[:state.log_length]))
     }
     ui_demo_end(&state.app)
@@ -102,6 +111,32 @@ clipOf :: proc(index: int) -> ^ui.TimelineClip {
 script: []kit.Step = {
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.TimelineClipCount(&state.timeline) == 5 }, "five clips"),
+    // the automation lane (y 226 .. 274, the values from y 231 down to y 269): its second point is dragged two beats later and up to the top, a double click on the empty lane adds a point
+    kit.MoveTo({170, 239}),
+    kit.Wait(3),
+    kit.Drag({170, 239}, {250, 220}, 10),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        out: [8]ui.PointHandle
+        count: int = ui.TimelineTrackPoints(&state.timeline, state.cutoff, out[:])
+        if count != 5 { return false }
+        moved: ^ui.TimelinePoint = ui.TimelinePointGet(&state.timeline, out[1])
+        return abs(moved.time - 6) < 0.01 && moved.value == 100
+    }, "a point was dragged two beats later and to the top of the range"),
+    kit.MoveTo({410, 262}),
+    kit.Wait(3),
+    kit.Click({410, 262}),
+    kit.Click({410, 262}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        value, found := ui.TimelineAutomationValue(&state.timeline, state.cutoff, 10)
+        return found && ui.TimelinePointCount(&state.timeline) == 6 && abs(value - 18.4) < 1
+    }, "a double click on the lane added a point at its place"),
+    kit.Capture("timeline_automation"),
+    kit.Wait(1),
+    kit.Tap(.DELETE),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.TimelinePointCount(&state.timeline) == 5 }, "Delete removed the selected point"),
     // "Beat" (beats 0 .. 4, x 10 .. 170) two beats later and two tracks down, on the free part of "Lead"
     kit.MoveTo({60, 50}),
     kit.Wait(3),

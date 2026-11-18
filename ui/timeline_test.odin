@@ -230,3 +230,77 @@ test_copied_clips_are_pasted_at_a_time_on_the_same_tracks_with_the_rules_and_a_s
     testing.expect_value(t, TimelinePaste(other, 0), 0)
     testing.expect_value(t, TimelineCopy(other), 0)
 }
+
+@(test)
+test_an_automation_track_holds_points_with_events_and_a_value_between_them :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    parameter: int = 5
+    cutoff, ok := TimelineAutomationAdd(timeline, "Cutoff", 20, 20000, user = &parameter)
+    testing.expect(t, ok)
+    clips_track, _ := TimelineTrackAdd(timeline, "Drums")
+    testing.expect_value(t, TimelineTrackGet(timeline, cutoff).kind, TrackKind.AUTOMATION)
+    _, refused := TimelineAutomationAdd(timeline, "bad", 1, 1)
+    testing.expect(t, !refused, "an empty range")
+    drainTimeline(timeline)
+    a, _ := TimelinePointAdd(timeline, cutoff, 4, 1000)
+    event, _ := TimelinePollEvent(timeline)
+    testing.expect_value(t, event.kind, TimelineEventKind.POINT_ADDED)
+    testing.expect(t, event.point == a && event.track == cutoff && event.track_user == &parameter && event.time == 4 && event.value == 1000)
+    b, _ := TimelinePointAdd(timeline, cutoff, 0, 50000)               // above the range: kept within it
+    testing.expect_value(t, TimelinePointGet(timeline, b).value, 20000)
+    c, _ := TimelinePointAdd(timeline, cutoff, 8, 10)                  // below the range
+    testing.expect_value(t, TimelinePointGet(timeline, c).value, 20)
+    _, on_clips := TimelinePointAdd(timeline, clips_track, 1, 1)
+    testing.expect(t, !on_clips, "points go on automation tracks")
+    _, negative := TimelinePointAdd(timeline, cutoff, -1, 100)
+    testing.expect(t, !negative)
+    _, clip_on_automation := TimelineClipAdd(timeline, cutoff, 1, 1, "no")
+    testing.expect(t, !clip_on_automation, "clips go on tracks of clips")
+    testing.expect_value(t, TimelineTrackGet(timeline, cutoff).point_count, 3)
+    // in the order of the time, for the program that plays them
+    out: [8]PointHandle
+    count: int = TimelineTrackPoints(timeline, cutoff, out[:])
+    testing.expect(t, count == 3 && out[0] == b && out[1] == a && out[2] == c)
+    // the value: before the first point the first one, after the last the last one, in between a line
+    value, found := TimelineAutomationValue(timeline, cutoff, -3)
+    testing.expect(t, found && value == 20000)
+    value, _ = TimelineAutomationValue(timeline, cutoff, 2)             // half way from 20000 (time 0) to 1000 (time 4)
+    testing.expect(t, abs(value - 10500) < 0.5)
+    value, _ = TimelineAutomationValue(timeline, cutoff, 6)             // half way from 1000 to 20
+    testing.expect(t, abs(value - 510) < 0.5)
+    value, _ = TimelineAutomationValue(timeline, cutoff, 100)
+    testing.expect_value(t, value, 20)
+    value, _ = TimelineAutomationValue(timeline, cutoff, 4)             // exactly on a point
+    testing.expect_value(t, value, 1000)
+    TimelineTrackGet(timeline, cutoff).steps = true
+    value, _ = TimelineAutomationValue(timeline, cutoff, 6)
+    testing.expect_value(t, value, 1000)                                // held until the next point
+    _, none := TimelineAutomationValue(timeline, clips_track, 1)
+    testing.expect(t, !none)
+    // moving: told with where it was
+    drainTimeline(timeline)
+    testing.expect(t, TimelinePointMove(timeline, a, 5, 2000))
+    event, _ = TimelinePollEvent(timeline)
+    testing.expect_value(t, event.kind, TimelineEventKind.POINT_MOVED)
+    testing.expect(t, event.time == 5 && event.value == 2000 && event.previous_start == 4 && event.previous_value == 1000)
+    testing.expect(t, TimelinePointMove(timeline, a, 5, 2000) && timeline.event_count == 0, "the same place is nothing")
+    testing.expect(t, !TimelinePointMove(timeline, a, -1, 2000))
+    testing.expect_value(t, TimelineEnd(timeline), 8)
+    // removing: told once, the handle is refused after
+    testing.expect(t, TimelinePointRemove(timeline, a))
+    event, _ = TimelinePollEvent(timeline)
+    testing.expect(t, event.kind == .POINT_REMOVED && event.track_user == &parameter)
+    testing.expect(t, TimelinePointGet(timeline, a) == nil && !TimelinePointRemove(timeline, a))
+    // a track that is removed takes its points, each one is told
+    drainTimeline(timeline)
+    testing.expect(t, TimelineTrackRemove(timeline, cutoff))
+    removed: int
+    for {
+        e, has := TimelinePollEvent(timeline)
+        if !has { break }
+        if e.kind == .POINT_REMOVED { removed += 1 }
+    }
+    testing.expect_value(t, removed, 2)
+    testing.expect_value(t, TimelinePointCount(timeline), 0)
+}
