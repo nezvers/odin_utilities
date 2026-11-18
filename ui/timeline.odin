@@ -20,6 +20,7 @@ TIMELINE_TRACKS :: #config(TIMELINE_TRACKS, 64)
 TIMELINE_CLIPS :: #config(TIMELINE_CLIPS, 4096)
 TIMELINE_EVENTS :: #config(TIMELINE_EVENTS, 256)
 TIMELINE_MARKERS :: #config(TIMELINE_MARKERS, 256)
+TIMELINE_COPIES :: #config(TIMELINE_COPIES, 256)             // the clips one copy can hold
 TIMELINE_NAME_MAX :: 48
 
 TrackHandle :: distinct hm.Handle32
@@ -100,6 +101,7 @@ TimelineEvent :: struct {
     time: f64,
     marker: MarkerHandle,
     marker_user: rawptr,
+    copied_from: ClipHandle,    // CLIP_ADDED by a paste: the clip it is a copy of (the handle may be gone when it was cut): a program that keeps data for a clip makes its own copy of it now
     clip_user: rawptr,
     track_user: rawptr,
     timeline_user: rawptr,
@@ -116,6 +118,19 @@ TimelineRules :: struct {
     user: rawptr,
 }
 
+// One clip of the copy: where it was, relative to the earliest start and the top track of the copied clips.
+@(private)
+TimelineCopyEntry :: struct {
+    source: ClipHandle,
+    track_offset: int,
+    start_offset: f64,
+    length: f64,
+    name: [TIMELINE_NAME_MAX]u8,
+    name_length: int,
+    color: Color,
+    user: rawptr,
+}
+
 Timeline :: struct {
     tracks: hm.Static_Handle_Map(TIMELINE_TRACKS, TimelineTrack, TrackHandle),
     clips: hm.Static_Handle_Map(TIMELINE_CLIPS, TimelineClip, ClipHandle),
@@ -124,6 +139,9 @@ Timeline :: struct {
     track_count: int,
     rules: TimelineRules,
     user: rawptr,
+    copies: [TIMELINE_COPIES]TimelineCopyEntry,        // the copied clips (TimelineCopy)
+    copy_count: int,
+    copy_top_track: int,        // the place of the top track of the copied clips when they were copied
     on_event: TimelineEventProc,
     events: [TIMELINE_EVENTS]TimelineEvent,
     event_head: int,
@@ -399,4 +417,62 @@ TimelineMarkerRemove :: proc(timeline: ^Timeline, handle: MarkerHandle) -> bool 
     timelineEmit(timeline, {kind = .MARKER_REMOVED, marker = handle, time = marker.time})
     hm.remove(&timeline.markers, handle)
     return true
+}
+
+// ------------------------------------------------------------------------------------------------------------------------
+// Copy and paste
+
+// Copies the selected clips (as many as TIMELINE_COPIES) into the copy of the timeline, in place of what was there. How many.
+TimelineCopy :: proc(timeline: ^Timeline) -> int {
+    timeline.copy_count = 0
+    earliest: f64 = f64(INFINITE)
+    top: int = timeline.track_count
+    it := hm.iterator_make(&timeline.clips)
+    for clip, _ in hm.iterate(&it) {
+        if !clip.selected { continue }
+        earliest = min(earliest, clip.start)
+        top = min(top, TimelineTrackIndex(timeline, clip.track))
+    }
+    timeline.copy_top_track = top
+    it = hm.iterator_make(&timeline.clips)
+    for clip, handle in hm.iterate(&it) {
+        if !clip.selected || timeline.copy_count >= len(timeline.copies) { continue }
+        entry: ^TimelineCopyEntry = &timeline.copies[timeline.copy_count]
+        entry^ = {source = handle, track_offset = TimelineTrackIndex(timeline, clip.track) - top, start_offset = clip.start - earliest, length = clip.length, color = clip.color, user = clip.user}
+        entry.name, entry.name_length = clip.name, clip.name_length
+        timeline.copy_count += 1
+    }
+    return timeline.copy_count
+}
+
+// Puts the copied clips back: the earliest one at `time`, the top one on the track at `track` (an index from the top; -1: where it was), the others around them as they were. The pasted clips
+// are selected, the others are not. The rules decide for each one (a clip that may not be there is left out; a track that is not there takes none). How many were made.
+TimelinePaste :: proc(timeline: ^Timeline, time: f64, track: int = -1) -> int {
+    if timeline.copy_count == 0 { return 0 }
+    base: int = timeline.copy_top_track if track < 0 else track
+    pasted: [TIMELINE_COPIES]ClipHandle
+    count: int
+    for i in 0 ..< timeline.copy_count {
+        entry: ^TimelineCopyEntry = &timeline.copies[i]
+        index: int = base + entry.track_offset
+        if index < 0 || index >= timeline.track_count { continue }
+        start: f64 = max(time + entry.start_offset, 0)
+        target: TrackHandle = timeline.order[index]
+        owner: ^TimelineTrack = TimelineTrackGet(timeline, target)
+        if owner == nil || entry.length < timeline.rules.min_length { continue }
+        if timeline.rules.can_place != nil && !timeline.rules.can_place(timeline, nil, target, start, entry.length, timeline.rules.user) { continue }
+        clip: TimelineClip = {track = target, start = start, length = entry.length, user = entry.user, color = entry.color}
+        clip.name, clip.name_length = entry.name, entry.name_length
+        handle, ok := hm.add(&timeline.clips, clip)
+        if !ok { break }
+        owner.clip_count += 1
+        pasted[count] = handle
+        count += 1
+        timelineEmit(timeline, {kind = .CLIP_ADDED, clip = handle, track = target, start = start, length = entry.length, copied_from = entry.source})
+    }
+    if count > 0 {
+        TimelineSelectClear(timeline)
+        for i in 0 ..< count { TimelineClipSelect(timeline, pasted[i]) }
+    }
+    return count
 }

@@ -179,3 +179,54 @@ test_markers_are_told_with_their_user_pointer_and_cleared_with_the_selection :: 
     testing.expect(t, TimelineMarkerGet(timeline, marker) == nil && !TimelineMarkerRemove(timeline, marker))
     testing.expect_value(t, TimelineMarkerCount(timeline), 0)
 }
+
+@(test)
+test_copied_clips_are_pasted_at_a_time_on_the_same_tracks_with_the_rules_and_a_source_in_the_event :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    first, _ := TimelineTrackAdd(timeline, "one")
+    second, _ := TimelineTrackAdd(timeline, "two")
+    TimelineTrackAdd(timeline, "three")
+    a_data: int = 1
+    b_data: int = 2
+    a, _ := TimelineClipAdd(timeline, first, 2, 2, "A", user = &a_data)
+    b, _ := TimelineClipAdd(timeline, second, 3, 2, "B", user = &b_data)
+    TimelineClipSelect(timeline, a)
+    TimelineClipSelect(timeline, b)
+    testing.expect_value(t, TimelineCopy(timeline), 2)
+    drainTimeline(timeline)
+    testing.expect_value(t, TimelinePaste(timeline, 10), 2)
+    pasted: [2]TimelineEvent
+    count: int
+    for {
+        event, has := TimelinePollEvent(timeline)
+        if !has { break }
+        if event.kind == .CLIP_ADDED && count < 2 {
+            pasted[count] = event
+            count += 1
+        }
+    }
+    testing.expect_value(t, count, 2)
+    testing.expect(t, pasted[0].start == 10 && pasted[0].track == first && pasted[0].copied_from == a && pasted[0].clip_user == &a_data, "the earliest at the time, on its own track, with where it came from")
+    testing.expect(t, pasted[1].start == 11 && pasted[1].track == second && pasted[1].copied_from == b && pasted[1].clip_user == &b_data, "the other one the same distance later, one track down")
+    testing.expect_value(t, TimelineClipCount(timeline), 4)
+    testing.expect(t, !TimelineClipGet(timeline, a).selected && !TimelineClipGet(timeline, b).selected, "the copies are selected, the originals are not")
+    testing.expect_value(t, TimelineSelectedCount(timeline), 2)
+    testing.expect_value(t, TimelineClipName(TimelineClipGet(timeline, pasted[0].clip)), "A")
+    // on another track: the top one goes there, the one below it to the next, a track that is not there takes none
+    TimelineSelectClear(timeline)
+    testing.expect_value(t, TimelinePaste(timeline, 20, 1), 2)
+    testing.expect_value(t, TimelineClipGet(timeline, TimelineClipAt(timeline, second, 20)).length, 2)
+    testing.expect(t, TimelineClipAt(timeline, TimelineTrackGet(timeline, timeline.order[2]).handle, 21) != {})
+    testing.expect_value(t, TimelinePaste(timeline, 30, 2), 1)          // the second would be on a fourth track
+    // the rules: where it may not be, nothing is made and the selection stays
+    timeline.rules.can_place = TimelineRuleNoOverlap
+    selected: int = TimelineSelectedCount(timeline)
+    testing.expect_value(t, TimelinePaste(timeline, 10), 0)
+    testing.expect_value(t, TimelineSelectedCount(timeline), selected)
+    // nothing copied: nothing pasted
+    other: ^Timeline = newTimeline()
+    defer free(other)
+    testing.expect_value(t, TimelinePaste(other, 0), 0)
+    testing.expect_value(t, TimelineCopy(other), 0)
+}

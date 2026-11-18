@@ -173,5 +173,32 @@ script: []kit.Step = {
         return false
     }, "the marker was dragged 1.9 beats and snapped to the end of the Line clip"),
     kit.Capture("timeline_markers"),
+    kit.Wait(1),
+    // copy a clip, put the playhead on the ruler, paste: the copy lands at the playhead on the track it came from, selected
+    kit.Click({190, 60}),
+    kit.Wait(2),
+    kit.KeyDownStep(.LEFT_CTRL),
+    kit.Wait(1),
+    kit.Tap(.C),
+    kit.Wait(1),
+    kit.KeyUpStep(.LEFT_CTRL),
+    kit.Wait(2),
+    kit.Click({401, 28}),
+    kit.Wait(2),
+    kit.KeyDownStep(.LEFT_CTRL),
+    kit.Wait(1),
+    kit.Tap(.V),
+    kit.Wait(1),
+    kit.KeyUpStep(.LEFT_CTRL),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if ui.TimelineClipCount(&state.timeline) != 6 { return false }
+        out: [8]ui.ClipHandle
+        count: int = ui.TimelineTrackClips(&state.timeline, state.tracks[0], out[:])
+        if count != 2 { return false }
+        copy: ^ui.TimelineClip = ui.TimelineClipGet(&state.timeline, out[1])
+        return ui.TimelineClipName(copy) == "Fill" && abs(copy.start - 11) < 0.01 && copy.selected
+    }, "Ctrl + C and Ctrl + V made a copy of Fill at the playhead"),
+    kit.Capture("timeline_paste"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

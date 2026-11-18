@@ -457,6 +457,33 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
         }
     }
 
+    // copy, cut, paste and select all while the timeline has the focus: a paste goes to the playhead, on the track under the pointer when it is on a lane
+    if ctx.focus == id && ctx.disabled_depth == 0 {
+        actions: Actions = ctx.input.actions
+        if .SELECT_ALL in actions {
+            it := hm.iterator_make(&timeline.clips)
+            for clip, _ in hm.iterate(&it) { clip.selected = true }
+        }
+        if .COPY in actions || .CUT in actions { TimelineCopy(timeline) }
+        if .CUT in actions {
+            for removed := true; removed; {
+                removed = false
+                it := hm.iterator_make(&timeline.clips)
+                for clip, handle in hm.iterate(&it) {
+                    if clip.selected {
+                        TimelineClipRemove(timeline, handle)
+                        removed = true
+                        break
+                    }
+                }
+            }
+        }
+        if .PASTE in actions {
+            lane: int = row if mouse.y >= lanes_top && row >= 0 && ctx.hover == id else -1
+            TimelinePaste(timeline, max(timelineSnapTime(timeline, view, view.playhead, false), 0), lane)
+        }
+    }
+
     index: int = ctx.timeline_frame_count
     if index >= UI_MAX_TIMELINES {
         ctx.problems += {.GRAPH_MISUSE}

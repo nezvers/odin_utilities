@@ -2965,3 +2965,41 @@ test_with_snap_to_edges_clips_markers_and_the_playhead_snap_to_each_other :: pro
     timelineDrag(harness, timeline, view, {380, 18}, {380, 18})
     testing.expect_value(t, view.playhead, 3.8)
 }
+
+@(private = "file")
+timelineActions :: proc(harness: ^Harness, timeline: ^Timeline, view: ^TimelineView, at: Vec2, actions: Actions) {
+    input: Input = pointerAt(at)
+    input.actions = actions
+    timelineFrame(harness, timeline, view, input)
+}
+
+@(test)
+test_a_timeline_that_has_the_focus_copies_cuts_pastes_and_selects_all_with_the_actions :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, first, second, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    // a click on the clip gives the timeline the focus and selects the clip
+    timelineClick(harness, timeline, view, {200, 40}, {})
+    testing.expect(t, TimelineClipGet(timeline, clip).selected)
+    timelineActions(harness, timeline, view, {200, 40}, {.COPY})
+    testing.expect_value(t, timeline.copy_count, 1)
+    // paste at the playhead (2 after the snap) on the lane under the pointer: the second one
+    view.playhead = 2.2
+    timelineActions(harness, timeline, view, {300, 100}, {.PASTE})
+    testing.expect_value(t, TimelineClipCount(timeline), 2)
+    pasted: ClipHandle = TimelineClipAt(timeline, second, 2)
+    testing.expect(t, pasted != {} && TimelineClipGet(timeline, pasted).selected && TimelineClipGet(timeline, pasted).length == 2)
+    testing.expect(t, !TimelineClipGet(timeline, clip).selected)
+    // with the pointer outside of the lanes the copy goes where it was
+    timelineActions(harness, timeline, view, {390, 10}, {.PASTE})
+    newest: ClipHandle = TimelineClipAt(timeline, first, 2.5)
+    testing.expect(t, newest != clip && TimelineClipGet(timeline, newest).start == 2 && TimelineClipGet(timeline, newest).selected)
+    // cut: the selected clips (the newest) are gone and in the copy, the others stay
+    timelineActions(harness, timeline, view, {300, 100}, {.CUT})
+    testing.expect(t, TimelineClipGet(timeline, newest) == nil && TimelineClipGet(timeline, pasted) != nil)
+    testing.expect_value(t, timeline.copy_count, 1)
+    // select all
+    timelineActions(harness, timeline, view, {300, 100}, {.SELECT_ALL})
+    testing.expect_value(t, TimelineSelectedCount(timeline), TimelineClipCount(timeline))
+    testing.expect(t, TimelineSelectedCount(timeline) >= 1)
+}

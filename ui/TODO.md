@@ -23,7 +23,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Timeline (`UiTimeline`): tracks and clips model with rules and events, ruler, playhead, move across tracks, resize, multi selection, zoom around the pointer, lock; demo with a screenshot
 - [x] Timeline: box selection (tool or Ctrl, Shift keeps), a loop range on the ruler with draggable edges and events
 - [x] Timeline: markers (flags on the ruler, drag, events, Delete) and snapping to the edges of clips, markers and the playhead
-- [ ] Timeline: automation lanes (keys on a line), a vertical zoom of the tracks, copy and paste of clips
+- [x] Timeline: copy, cut, paste and select all of clips (a paste is told with the clip it was copied from)
+- [ ] Timeline: automation lanes (keys on a line), a vertical zoom of the tracks, duplicate (a copy right after the clip)
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot
 - [x] Inspector panel (`UiInspector`): element tree of the last frame, buffer usage, measure cache, picking by the pointer; demo with a screenshot
 - [ ] Inspector: the layout of the selected element (sizing, padding, gap, floating), the draw commands of a frame as a list, a filter by name, collapsing of the tree
