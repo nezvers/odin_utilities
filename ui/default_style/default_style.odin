@@ -55,6 +55,7 @@ THEME_DARK :: Theme{
 
 Painter :: struct {
     user: rawptr,                   // the glue's own data (the kit.Context of the frame, a font...)
+    vector_text: rawptr,            // the glue's text system when the text is drawn from outlines by the font library (the glue's PainterUseVectorText sets it and the text procs)
     theme: Theme,
     scale: f32,                     // UI scale (0 is 1): the layout and the styles work in logical units, the glue multiplies what it draws by this and divides the pointer by it
     offset: ui.Vec2,              // where the logical origin is on the screen: a zoomed container moves it (Style.zoom); the glue draws a point p at p * scale + offset

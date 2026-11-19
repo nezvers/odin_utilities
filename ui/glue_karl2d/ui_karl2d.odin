@@ -23,6 +23,21 @@ package ui_karl2d
 import "../../karl2d"
 import ui ".."
 import ui_default "../default_style"
+import font_karl2d "../../font/glue_karl2d"
+
+// Draws the text of the ui from the outlines of a font with the font library (sharp at any size and scale) instead of Karl2D's own font: the size of a text stays the height of its line, so the
+// layout does not change. The system (font_karl2d.TextSystem) has to live as long as the painter and be made after karl2d.init.
+PainterUseVectorText :: proc(painter: ^ui_default.Painter, system: ^font_karl2d.TextSystem) {
+    painter.vector_text = system
+    painter.draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
+        scale: f32 = ui_default.PainterScale(painter)
+        font_karl2d.TextSystemDraw(cast(^font_karl2d.TextSystem)painter.vector_text, text, ui_default.PaintPoint(painter, position), size * scale, color)
+    }
+    painter.measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
+        scale: f32 = ui_default.PainterScale(painter)
+        return font_karl2d.TextSystemMeasure(cast(^font_karl2d.TextSystem)painter.vector_text, text, size * scale) / scale
+    }
+}
 
 // Fills a painter with Karl2D draw procs. `font` is the font of the text (the default font of Karl2D when left as it is).
 PainterInit :: proc(painter: ^ui_default.Painter, font: ^karl2d.Font = nil) {

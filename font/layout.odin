@@ -175,3 +175,11 @@ TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32,
     pen = turn({x * pixels_per_em, f32(line) * line_height * pixels_per_em}, origin, cos_angle, sin_angle)
     return
 }
+
+// For text that is placed by a box: `line_height` is the height of the box of a line in pixels (the ascent and the descent of the font, which is what a measured text is high), the size
+// that user interfaces give a font. The pixels to the em that gives it, and how far the baseline is below the top of the box.
+TextBox :: proc(font: ^Font, line_height: f32) -> (pixels_per_em: f32, baseline: f32) {
+    box: f32 = font.ascent - font.descent
+    pixels_per_em = line_height / box if box > 0 else line_height
+    return pixels_per_em, font.ascent * pixels_per_em
+}

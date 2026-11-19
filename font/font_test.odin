@@ -418,3 +418,13 @@ test_text_is_rotated_around_its_origin_and_snapped_to_whole_pixels :: proc(t: ^t
     TextQuads(&atlas, "a", {}, 10, vertices[:], {}, 5)
     testing.expect_value(t, vertices[0].color, u8(5))
 }
+
+@(test)
+test_a_box_of_a_line_gives_the_em_and_the_baseline_and_measures_as_high_as_it_is :: proc(t: ^testing.T) {
+    font: ^Font = loadFont()
+    defer free(font)
+    ppem, baseline := TextBox(font, 20)
+    testing.expect(t, abs(TextMeasure(font, "Hello", ppem).y - 20) < 0.001, "a line is as high as the box")
+    testing.expect(t, abs(baseline - font.ascent * ppem) < 0.001 && baseline > 10 && baseline < 20)
+    testing.expect(t, ppem < 20, "the em is smaller than the box: the box holds the descent too")
+}

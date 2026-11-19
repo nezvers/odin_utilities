@@ -9,6 +9,10 @@ package demo_kit_karl2d
 import "base:runtime"
 import "../../karl2d"
 import kit ".."
+import font "../../font"
+import font_karl2d "../../font/glue_karl2d"
+
+_ :: font           // only used with -define:DEMO_VECTOR_TEXT
 
 MAX_TEXTURES :: 64
 MAX_SOUNDS :: 64
@@ -22,6 +26,7 @@ State :: struct {
     fonts: [MAX_FONTS]karl2d.Font,
     font_count: u32,
     default_font: karl2d.Font,      // Fira Code (assets/fonts): the font of every text that does not ask for another one
+    vector_text: font_karl2d.TextSystem,    // the text drawn from the outlines of the font (-define:DEMO_VECTOR_TEXT)
     last_mouse: kit.Vec2,
 }
 
@@ -64,8 +69,12 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
     state.last_mouse = karl2d.get_mouse_position()
     state.default_font = karl2d.FONT_DEFAULT
     if font, ok := karl2d.load_dynamic_font_from_bytes(FIRA_CODE); ok { state.default_font = font }
+    when kit.DEMO_VECTOR_TEXT != "" {
+        method: font.Method = .SCANLINE if kit.DEMO_VECTOR_TEXT == "scanline" else .SLUG
+        if !font_karl2d.TextSystemInit(&state.vector_text, FIRA_CODE, method) { exit_process(false) }
+    }
     backend^ = {
-        name = "karl2d",
+        name = "karl2d" when kit.DEMO_VECTOR_TEXT == "" else "karl2d_" + kit.DEMO_VECTOR_TEXT,
         state = state,
         begin_frame = beginFrame,
         end_frame = proc(backend: ^kit.Backend) { karl2d.present() },
@@ -92,11 +101,19 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         },
         draw_text = proc(backend: ^kit.Backend, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
             state: ^State = cast(^State)backend.state
-            karl2d.draw_text(text, position, size, color, state.default_font)
+            when kit.DEMO_VECTOR_TEXT != "" {
+                font_karl2d.TextSystemDraw(&state.vector_text, text, position, size, color)
+            } else {
+                karl2d.draw_text(text, position, size, color, state.default_font)
+            }
         },
         measure_text = proc(backend: ^kit.Backend, text: string, size: f32) -> kit.Vec2 {
             state: ^State = cast(^State)backend.state
-            return karl2d.measure_text(text, size, state.default_font)
+            when kit.DEMO_VECTOR_TEXT != "" {
+                return font_karl2d.TextSystemMeasure(&state.vector_text, text, size)
+            } else {
+                return karl2d.measure_text(text, size, state.default_font)
+            }
         },
         font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int) -> kit.Font {
             state: ^State = cast(^State)backend.state

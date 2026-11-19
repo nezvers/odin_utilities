@@ -65,6 +65,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Color picker (`UiColorPicker`: square, hue and alpha bars, hex helpers; style kinds `COLOR_FIELD`, `COLOR_STRIP`)
 - [x] Combo box with search (`UiCombo`, `UiMatchText`)
 - [x] Accessibility tree (`UiAccessNodes`, `UiAccessFocused`, `UiAccessDescribe`: roles, names, states of the last frame)
+- [x] Vector text from the font library (`PainterUseVectorText` for raylib and Karl2D, `-define:DEMO_VECTOR_TEXT`, pictures of every demo with it)
 - [x] Keyboard: a test that Tab reaches every interactive widget and that each is drawn with the FOCUSED flag; the color picker takes the focus ring and the arrow keys (`adjust_both`)
 - [x] `Decl.absolute`: a child out of the flow of its parent at an offset (no root, no limit but the storage); the graph nodes use it
 - [x] Node graph: nodes outside of the view are not declared (`GraphNodesByDepth` with a view)

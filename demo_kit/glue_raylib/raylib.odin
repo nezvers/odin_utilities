@@ -10,6 +10,10 @@ import "core:strings"
 import rl "vendor:raylib"
 import rlgl "vendor:raylib/rlgl"
 import kit ".."
+import font "../../font"
+import font_raylib "../../font/glue_raylib"
+
+_ :: font           // only used with -define:DEMO_VECTOR_TEXT
 
 MAX_TEXTURES :: 64
 MAX_SOUNDS :: 64
@@ -24,6 +28,7 @@ State :: struct {
     font_count: u32,
     last_mouse: kit.Vec2,
     default_font: kit.Font,         // Fira Code (assets/fonts): the font of every text that does not ask for another one
+    vector_text: font_raylib.TextSystem,    // the text drawn from the outlines of the font (-define:DEMO_VECTOR_TEXT)
 }
 
 FIRA_CODE :: #load("../../assets/fonts/FiraCode-Regular.ttf")
@@ -62,8 +67,12 @@ Run :: proc(title: string, demos: []kit.Demo, width: i32 = 1280, height: i32 = 7
 Init :: proc(backend: ^kit.Backend, state: ^State) {
     state.last_mouse = rl.GetMousePosition()
     state.default_font = fontLoad(nil, FIRA_CODE, 32, 1280, state)
+    when kit.DEMO_VECTOR_TEXT != "" {
+        method: font.Method = .SCANLINE if kit.DEMO_VECTOR_TEXT == "scanline" else .SLUG
+        if !font_raylib.TextSystemInit(&state.vector_text, FIRA_CODE, method) { exit_process(false) }
+    }
     backend^ = {
-        name = "raylib",
+        name = "raylib" when kit.DEMO_VECTOR_TEXT == "" else "raylib_" + kit.DEMO_VECTOR_TEXT,
         state = state,
         begin_frame = beginFrame,
         end_frame = proc(backend: ^kit.Backend) { rl.EndDrawing() },
@@ -88,13 +97,21 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         draw_triangle = drawTriangle,
         draw_text = proc(backend: ^kit.Backend, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
             state: ^State = cast(^State)backend.state
-            buffer: [TEXT_BUFFER_SIZE]u8
-            rl.DrawTextEx(face(state, kit.FONT_DEFAULT), cstringInto(&buffer, text), position, size, 0, rl.Color(color))
+            when kit.DEMO_VECTOR_TEXT != "" {
+                font_raylib.TextSystemDraw(&state.vector_text, text, position, size, rl.Color(color))
+            } else {
+                buffer: [TEXT_BUFFER_SIZE]u8
+                rl.DrawTextEx(face(state, kit.FONT_DEFAULT), cstringInto(&buffer, text), position, size, 0, rl.Color(color))
+            }
         },
         measure_text = proc(backend: ^kit.Backend, text: string, size: f32) -> kit.Vec2 {
             state: ^State = cast(^State)backend.state
-            buffer: [TEXT_BUFFER_SIZE]u8
-            return rl.MeasureTextEx(face(state, kit.FONT_DEFAULT), cstringInto(&buffer, text), size, 0)
+            when kit.DEMO_VECTOR_TEXT != "" {
+                return font_raylib.TextSystemMeasure(&state.vector_text, text, size)
+            } else {
+                buffer: [TEXT_BUFFER_SIZE]u8
+                return rl.MeasureTextEx(face(state, kit.FONT_DEFAULT), cstringInto(&buffer, text), size, 0)
+            }
         },
         font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int) -> kit.Font { return fontLoad(backend, bytes, size, glyph_count, cast(^State)backend.state) },
         font_unload = proc(backend: ^kit.Backend, font: kit.Font) {

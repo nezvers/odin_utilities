@@ -231,6 +231,10 @@ runnerMenuDraw :: proc(runner: ^Runner) {
 // in the window (so you see them), prints the report and exits with 1 when a check failed
 DEMO_TEST :: #config(DEMO_TEST, false)
 
+// `-define:DEMO_VECTOR_TEXT=slug` (or `scanline`): the text of the demos is drawn from the outlines of the font by the font library (odin_utilities/font) with that method instead of by the
+// framework's own text. The pictures of such a run are stored apart (`captures/<backend>_<method>`, see backend names). Empty: the framework's text.
+DEMO_VECTOR_TEXT :: #config(DEMO_VECTOR_TEXT, "")
+
 // Play the scripts of every demo on this backend and print what happened. Returns true when everything passed.
 RunTests :: proc(demos: []Demo, backend: ^Backend) -> bool {
     all_passed: bool = true

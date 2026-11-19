@@ -19,6 +19,7 @@ package ui_raylib
 import rl "vendor:raylib"
 import ui ".."
 import ui_default "../default_style"
+import font_raylib "../../font/glue_raylib"
 
 // Fills a painter with raylib draw procs. `font` is the font of the text (nil: the default font of raylib), it has to live as long as the painter.
 PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
@@ -53,6 +54,20 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
                 rl.EndScissorMode()
             }
         },
+    }
+}
+
+// Draws the text of the ui from the outlines of a font with the font library (sharp at any size and scale) instead of raylib's bitmap font: the size of a text stays the height of its line, so the
+// layout does not change. The system (font_raylib.TextSystem) has to live as long as the painter and be made after the window exists.
+PainterUseVectorText :: proc(painter: ^ui_default.Painter, system: ^font_raylib.TextSystem) {
+    painter.vector_text = system
+    painter.draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
+        scale: f32 = ui_default.PainterScale(painter)
+        font_raylib.TextSystemDraw(cast(^font_raylib.TextSystem)painter.vector_text, text, ui_default.PaintPoint(painter, position), size * scale, rl.Color(color))
+    }
+    painter.measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
+        scale: f32 = ui_default.PainterScale(painter)
+        return font_raylib.TextSystemMeasure(cast(^font_raylib.TextSystem)painter.vector_text, text, size * scale) / scale
     }
 }
 

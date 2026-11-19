@@ -8,6 +8,7 @@
 //   odin run demo_kit/tool/captures -- --update ui       replace the stored pictures of a library with the current frames (look at them, commit what changed)
 //   odin run demo_kit/tool/captures -- --allow-new       a picture that did not exist is written as the new stored picture: that is fine
 //   odin run demo_kit/tool/captures -- --monitor dell    the windows open on the display whose name holds "dell" (without regard to case)
+//   odin run demo_kit/tool/captures -- --vector-text slug ui    the text is drawn by the font library (odin_utilities/font) with that method (slug or scanline); the pictures are in captures/raylib_slug and so on
 //
 // The display: --monitor, else the environment variable DEMO_MONITOR, else the first line of the file demo_kit/monitor.txt (a local file, git ignored: write the name of the
 // display your pictures are tested on once). The window is moved there and its drawing area is made exactly the size the demo asked for, whatever the scaling of that display
@@ -41,6 +42,7 @@ main :: proc() {
     update: bool
     allow_new: bool
     monitor: string
+    vector_text: string                 // "slug" or "scanline": the text is drawn by the font library (the pictures are stored apart)
     arguments: []string = os.args[1:]
     for index := 0; index < len(arguments); index += 1 {
         argument: string = arguments[index]
@@ -52,6 +54,13 @@ main :: proc() {
                 os.exit(2)
             }
             monitor = arguments[index]
+        case "--vector-text":
+            index += 1
+            if index >= len(arguments) || (arguments[index] != "slug" && arguments[index] != "scanline") {
+                fmt.eprintln("captures: --vector-text wants slug or scanline")
+                os.exit(2)
+            }
+            vector_text = arguments[index]
         case "--karl2d":
             karl2d = true
         case "--update":
@@ -59,7 +68,7 @@ main :: proc() {
         case "--allow-new":
             allow_new = true
         case "--help", "-h":
-            fmt.println("captures [--karl2d] [--update] [--allow-new] [--monitor name] [library...]   (see the top of demo_kit/tool/captures/main.odin)")
+            fmt.println("captures [--karl2d] [--vector-text slug|scanline] [--update] [--allow-new] [--monitor name] [library...]   (see the top of demo_kit/tool/captures/main.odin)")
             return
         case:
             if strings.has_prefix(argument, "--") {
@@ -88,7 +97,7 @@ main :: proc() {
             if backend == "karl2d" && !karl2d { continue }
             program: string = fmt.tprintf("%s/demo_%s", library, backend)
             if !os.is_directory(program) { continue }
-            result: Result = run(library, backend, program, update)
+            result: Result = run(library, backend, program, update, vector_text)
             fmt.printfln("%-14s %-7s %d compared, %d new, %d failed%s%s", library, backend, result.compared, result.new_images, len(result.failures), fmt.tprintf("  on %s", result.display) if result.display != "" else "", fmt.tprintf("  ERROR: %s", result.error) if result.error != "" else "")
             for failure in result.failures {
                 fmt.printfln("    %s", failure)
@@ -130,11 +139,12 @@ find_libraries :: proc() -> (libraries: [dynamic]string) {
 }
 
 // One demo program of one library: its output says how many pictures were compared and which failed.
-run :: proc(library: string, backend: string, program: string, update: bool) -> (result: Result) {
+run :: proc(library: string, backend: string, program: string, update: bool, vector_text: string) -> (result: Result) {
     result = {library = library, backend = backend}
     command: [dynamic]string
     append(&command, "odin", "run", program, "-define:DEMO_TEST=true", "-define:DEMO_CAPTURE=true")
     if update { append(&command, "-define:DEMO_CAPTURE_UPDATE=true") }
+    if vector_text != "" { append(&command, fmt.tprintf("-define:DEMO_VECTOR_TEXT=%s", vector_text)) }
     state, stdout, stderr, err := os.process_exec({command = command[:]}, context.allocator)
     if err != nil {
         result.error = fmt.aprintf("cannot start odin: %v", err)

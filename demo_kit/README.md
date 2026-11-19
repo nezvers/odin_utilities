@@ -88,3 +88,5 @@ A new framework is one more backend: fill the `Backend` table (see `glue_raylib/
 `odin test demo_kit -strict-style -vet`
 
 - In a scripted test (`-define:DEMO_TEST=true`) Escape does not close the window (`Runner.escape_exits` is off): a script can press Escape as input for the demo, like a dialog that closes with it. Outside of a test Escape ends the demo as before.
+
+- `-define:DEMO_VECTOR_TEXT=slug` (or `scanline`) on a demo program: the text of the kit is drawn from the outlines of Fira Code by the font library (`odin_utilities/font`) instead of by the framework (the glues set `kit.DrawText` and `MeasureText` to a `TextSystem`). The pictures of such a run go to `captures/<backend>_<method>` (`raylib_slug`, `karl2d_scanline`...); `odin run demo_kit/tool/captures -- --vector-text slug [--karl2d] [library...]` runs them.
