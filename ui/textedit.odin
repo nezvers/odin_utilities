@@ -129,7 +129,7 @@ textInsert :: proc(state: ^WidgetState, buffer: []u8, length: ^int, text: string
 
 // What the keyboard does to a focused field. Shift extends the selection, Ctrl moves and deletes by words, the actions copy, cut, paste and select all.
 @(private)
-textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: ^int, multiline: bool = false) -> (changed: bool, submitted: bool) {
+textFieldEditKeys :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: ^int, multiline: bool = false) -> (changed: bool, submitted: bool) {
     input: ^Input = &ctx.input
     shift: bool = .SHIFT in input.modifiers
     ctrl: bool = .CTRL in input.modifiers

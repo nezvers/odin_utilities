@@ -2107,6 +2107,11 @@ test_a_text_area_takes_new_lines_and_up_and_down_keep_the_column :: proc(t: ^tes
     areaKey(harness, buffer[:], &length, keys = {.END}, modifiers = {.CTRL})
     areaKey(harness, buffer[:], &length, actions = {.PASTE})
     testing.expect_value(t, string(buffer[:length]), "oneX\ntwooneX\n")
+    // the history is the area's too: the paste is a step of its own
+    areaKey(harness, buffer[:], &length, actions = {.UNDO})
+    testing.expect_value(t, string(buffer[:length]), "oneX\ntwo")
+    areaKey(harness, buffer[:], &length, actions = {.REDO})
+    testing.expect_value(t, string(buffer[:length]), "oneX\ntwooneX\n")
 }
 
 @(test)
@@ -4478,4 +4483,69 @@ test_the_handle_of_a_dock_split_moves_its_proportion :: proc(t: ^testing.T) {
     testing.expect(t, dock.nodes[dock.root].ratio > before + 0.1, "the first part grew by the drag")
     run(harness, dock, content, pointerAt(start + {-3000, 0}, down = true))
     testing.expect(t, DockCheck(dock))
+}
+
+@(test)
+test_a_text_field_undoes_and_redoes_by_words_and_by_edits :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    buffer: [64]u8
+    length: int
+    for _ in 0 ..< 2 { fieldFrame(harness, pointerAt({20, 10}), buffer[:], &length) }
+    fieldFrame(harness, pointerAt({20, 10}, true, true), buffer[:], &length)
+    fieldFrame(harness, pointerAt({20, 10}, false, false, true), buffer[:], &length)
+    type :: proc(harness: ^Harness, buffer: []u8, length: ^int, text: string) {
+        input: Input = pointerAt({20, 10})
+        copy(input.text[:], text)
+        input.text_count = u8(len(text))
+        fieldFrame(harness, input, buffer, length)
+    }
+    press :: proc(harness: ^Harness, buffer: []u8, length: ^int, keys: Keys = {}, actions: Actions = {}) -> bool {
+        input: Input = pointerAt({20, 10})
+        input.keys, input.actions = keys, actions
+        return fieldFrame(harness, input, buffer, length)
+    }
+    for letter in ([?]string{"h", "e", "y", " ", "y", "o", "u"}) { type(harness, buffer[:], &length, letter) }
+    testing.expect_value(t, fieldText(buffer[:], length), "hey you")
+    testing.expect(t, press(harness, buffer[:], &length, actions = {.UNDO}), "an undo tells the program the text changed")
+    testing.expect_value(t, fieldText(buffer[:], length), "hey ")                    // "you" was one step
+    press(harness, buffer[:], &length, actions = {.UNDO})
+    testing.expect_value(t, fieldText(buffer[:], length), "")                        // "hey " (the space closes the word, it is part of it)
+    press(harness, buffer[:], &length, actions = {.UNDO})
+    testing.expect_value(t, fieldText(buffer[:], length), "")                        // the oldest
+    press(harness, buffer[:], &length, actions = {.REDO})
+    testing.expect_value(t, fieldText(buffer[:], length), "hey ")
+    // an edit after an undo ends what a redo would bring
+    type(harness, buffer[:], &length, "x")
+    press(harness, buffer[:], &length, actions = {.REDO})
+    testing.expect_value(t, fieldText(buffer[:], length), "hey x")
+    // a run of backspaces is one step, a paste is a step of its own
+    press(harness, buffer[:], &length, keys = {.BACKSPACE})
+    press(harness, buffer[:], &length, keys = {.BACKSPACE})
+    testing.expect_value(t, fieldText(buffer[:], length), "hey")
+    press(harness, buffer[:], &length, actions = {.UNDO})
+    testing.expect_value(t, fieldText(buffer[:], length), "hey x")
+    // a text that the program set is the new beginning
+    length = copy(buffer[:], "set by the program")
+    type(harness, buffer[:], &length, "!")
+    press(harness, buffer[:], &length, actions = {.UNDO})
+    testing.expect_value(t, fieldText(buffer[:], length), "set by the program")
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}
+
+@(test)
+test_undo_belongs_to_the_field_that_has_the_focus_and_a_full_pool_drops_the_oldest :: proc(t: ^testing.T) {
+    undo: ^TextUndo = new(TextUndo)
+    defer free(undo)
+    textUndoPush(undo, transmute([]u8)string("a"), 1, 1)
+    for i in 0 ..< UI_TEXT_UNDO_STEPS + 10 {
+        text: [8]u8
+        count: int = copy(text[:], "state")
+        text[count] = u8('0' + i % 10)
+        textUndoPush(undo, text[:count + 1], 0, 0)
+    }
+    testing.expect_value(t, undo.count, UI_TEXT_UNDO_STEPS)
+    testing.expect_value(t, undo.current, UI_TEXT_UNDO_STEPS - 1)
+    testing.expect_value(t, string(textUndoText(undo, undo.current)), "state3")      // the newest is the last one pushed (73 % 10)
 }
