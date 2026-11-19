@@ -30,6 +30,7 @@
     - ❎ closest
     - ❎ project
     - ❎ envelope
+- ✅ Icons (the Lucide set as a font, built in Odin from the SVG sprite; SVG path data, stroke to outline, TrueType writer) `odin test icons`, `odin run icons/tool/build`
 - ✅ [Input][input] `odin run input/demo_raylib`
 - ✅ Localization `odin run localization/demo_raylib -out:localization/demo.exe`
 - ✅ MicMeter `odin run mic_meter/demo_raylib`
