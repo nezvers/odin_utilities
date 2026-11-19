@@ -147,5 +147,5 @@ float4 ps_main(vs_out input) : SV_TARGET
 	float keep = min(glyph_data.SampleLevel(glyph_sampler, float2(0.0, 0.0), 0).x, 0.0);
 	if (text_params.x != 1.0) coverage = pow(coverage, text_params.x);
 	float4 paint = texel(4096 + color_index);
-	return float4(paint.rgb, paint.a * (coverage + keep));
+	return float4(paint.rgb, paint.a * (coverage + keep) * input.color.a);
 }

@@ -4,6 +4,7 @@
 in vec2 fragEm;
 flat in int fragSlot;
 flat in int fragColor;
+flat in float fragAlpha;
 out vec4 finalColor;
 uniform sampler2D glyphData;
 uniform vec4 textParams;        // x: the exponent of the coverage (1: as it is, under 1: heavier text)
@@ -120,5 +121,5 @@ void main()
     float coverage = scanlineCoverage(fragSlot, fragEm, 0.5 * emsPerPixel);
     if (textParams.x != 1.0) coverage = pow(coverage, textParams.x);
     vec4 paint = texel(4096 + fragColor);
-    finalColor = vec4(paint.rgb, paint.a * coverage);
+    finalColor = vec4(paint.rgb, paint.a * coverage * fragAlpha);
 }

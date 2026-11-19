@@ -190,7 +190,7 @@ test_the_exact_coverage_matches_a_grid_of_points_on_the_flattened_curves :: proc
 @(private = "file")
 compareAtlas :: proc(font: ^Font, character: rune, method: Method, pixels_per_em: f32) -> (mean: f32, worst: int) {
     texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 8)
-    slots: []i32 = make([]i32, font.glyph_count)
+    slots: []i32 = make([]i32, FontSlotCount(font))
     defer { delete(texels); delete(slots) }
     atlas: Atlas
     AtlasInit(&atlas, font, method, texels, slots)
@@ -254,7 +254,7 @@ test_an_atlas_bakes_a_glyph_once_says_when_it_is_full_and_has_nothing_for_a_spac
     font: ^Font = loadFont()
     defer free(font)
     texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 4)
-    slots: []i32 = make([]i32, font.glyph_count)
+    slots: []i32 = make([]i32, FontSlotCount(font))
     defer { delete(texels); delete(slots) }
     atlas: Atlas
     AtlasInit(&atlas, font, .SLUG, texels, slots)
@@ -295,12 +295,12 @@ test_text_becomes_quads_that_sit_on_the_baseline_and_advance_by_the_font :: proc
     font: ^Font = loadFont()
     defer free(font)
     texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 8)
-    slots: []i32 = make([]i32, font.glyph_count)
+    slots: []i32 = make([]i32, FontSlotCount(font))
     defer { delete(texels); delete(slots) }
     atlas: Atlas
     AtlasInit(&atlas, font, .SLUG, texels, slots)
     vertices: [256]TextVertex
-    count, pen, complete := TextQuads(&atlas, "Hi i", {100, 200}, 50, vertices[:])
+    count, pen, complete, _ := TextQuads(&atlas, "Hi i", {100, 200}, 50, vertices[:])
     testing.expect(t, complete)
     testing.expect_value(t, count, 3 * TEXT_VERTICES_PER_GLYPH)                // the space has no outline
     advance: f32 = FontAdvance(font, FontGlyph(font, 'H'))
@@ -322,11 +322,11 @@ test_text_becomes_quads_that_sit_on_the_baseline_and_advance_by_the_font :: proc
     // the second letter has its own slot, the third (an i after the space) is the third glyph
     testing.expect_value(t, vertices[TEXT_VERTICES_PER_GLYPH].slot, u32(1))
     // a new line moves the baseline down by a line height
-    _, pen_after, _ := TextQuads(&atlas, "a\nb", {0, 0}, 10, vertices[:])
+    _, pen_after, _, _ := TextQuads(&atlas, "a\nb", {0, 0}, 10, vertices[:])
     testing.expect(t, abs(pen_after.y - FontLineHeight(font) * 10) < 0.001)
     // not enough room: the text stops and says so
     small: [TEXT_VERTICES_PER_GLYPH]TextVertex
-    _, _, fit := TextQuads(&atlas, "abc", {}, 10, small[:])
+    _, _, fit, _ := TextQuads(&atlas, "abc", {}, 10, small[:])
     testing.expect(t, !fit)
     testing.expect_value(t, SlotColor(0x0203), [4]u8{3, 2, 0, 255})
     testing.expect_value(t, SlotColor(0x0203, 7), [4]u8{3, 2, 7, 255})
@@ -348,12 +348,12 @@ test_text_is_measured_and_wrapped_at_spaces :: proc(t: ^testing.T) {
     testing.expect(t, wrapped.x <= room + 0.01)
     testing.expect(t, abs(wrapped.y - (FontLineHeight(font) * 2 + font.ascent - font.descent) * 10) < 0.01, "three lines")
     texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 4)
-    slots: []i32 = make([]i32, font.glyph_count)
+    slots: []i32 = make([]i32, FontSlotCount(font))
     defer { delete(texels); delete(slots) }
     atlas: Atlas
     AtlasInit(&atlas, font, .SCANLINE, texels, slots)
     vertices: [256]TextVertex
-    _, pen, _ := TextQuads(&atlas, "aaaa bbbb cc", {0, 0}, 10, vertices[:], {wrap_width = room})
+    _, pen, _, _ := TextQuads(&atlas, "aaaa bbbb cc", {0, 0}, 10, vertices[:], {wrap_width = room})
     testing.expect(t, abs(pen.y - FontLineHeight(font) * 2 * 10) < 0.001, "the same lines as the measure says")
     tab: Vec2 = TextMeasure(font, "a\tb", 10)
     testing.expect(t, abs(tab.x - 5 * advance * 10) < 0.01, "a tab goes to the next multiple of four columns")
@@ -364,7 +364,7 @@ test_the_palette_names_colors_by_index_and_says_when_it_is_full :: proc(t: ^test
     font: ^Font = loadFont()
     defer free(font)
     texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 4)
-    slots: []i32 = make([]i32, font.glyph_count)
+    slots: []i32 = make([]i32, FontSlotCount(font))
     defer { delete(texels); delete(slots) }
     atlas: Atlas
     AtlasInit(&atlas, font, .SCANLINE, texels, slots)
@@ -389,14 +389,14 @@ test_text_is_rotated_around_its_origin_and_snapped_to_whole_pixels :: proc(t: ^t
     font: ^Font = loadFont()
     defer free(font)
     texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 4)
-    slots: []i32 = make([]i32, font.glyph_count)
+    slots: []i32 = make([]i32, FontSlotCount(font))
     defer { delete(texels); delete(slots) }
     atlas: Atlas
     AtlasInit(&atlas, font, .SLUG, texels, slots)
     vertices: [64]TextVertex
     advance: f32 = FontAdvance(font, FontGlyph(font, 'a'))
     // a quarter turn clockwise: the line that went right goes down
-    _, pen, _ := TextQuads(&atlas, "aaaa", {100, 100}, 10, vertices[:], {rotation = 1.5707964})
+    _, pen, _, _ := TextQuads(&atlas, "aaaa", {100, 100}, 10, vertices[:], {rotation = 1.5707964})
     testing.expect(t, abs(pen.x - 100) < 0.01 && abs(pen.y - (100 + 4 * advance * 10)) < 0.01, "the pen moved down")
     // a vertex of a glyph keeps its em coordinates, whatever the turn
     plain: [64]TextVertex

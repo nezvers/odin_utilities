@@ -115,7 +115,7 @@ RendererFlush :: proc(renderer: ^Renderer) {
         bottom_right: font.TextVertex = renderer.vertices[first + 1]
         top_right: font.TextVertex = renderer.vertices[first + 2]
         top_left: font.TextVertex = renderer.vertices[first + 5]
-        slot: [4]u8 = font.SlotColor(bottom_left.slot, bottom_left.color)
+        slot: [4]u8 = font.SlotColor(bottom_left.slot, bottom_left.color, bottom_left.alpha)
         // the quad is a rectangle that may be turned: its top left corner is where it turns, its sides give the size and the angle. The texture of one pixel is addressed in em units: the
         // source is the box in the em square, upside down because y goes up there
         across: k2.Vec2 = bottom_right.position - bottom_left.position
@@ -145,7 +145,7 @@ DrawText :: proc(renderer: ^Renderer, text: string, position: k2.Vec2, size: f32
     }
     needed: int = font.TEXT_VERTICES_PER_GLYPH * len(text)
     if renderer.count + needed > len(renderer.vertices) { RendererFlush(renderer) }
-    added, pen, _ := font.TextQuads(atlas, text, {position.x, position.y}, size, renderer.vertices[renderer.count:], options, index)
+    added, pen, _, _ := font.TextQuads(atlas, text, {position.x, position.y}, size, renderer.vertices[renderer.count:], options, index)
     renderer.count += added
     if !renderer.deferred { RendererFlush(renderer) }
     return {pen.x, pen.y}

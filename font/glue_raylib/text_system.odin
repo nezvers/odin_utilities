@@ -30,7 +30,7 @@ TextSystemInit :: proc(system: ^TextSystem, bytes: []u8, method: font.Method, ro
     system^ = {allocator = allocator}
     if !font.FontInit(&system.face, bytes) { return false }
     system.texels = make([]f32, 4 * font.ATLAS_WIDTH * rows, allocator)
-    system.slots = make([]i32, system.face.glyph_count, allocator)
+    system.slots = make([]i32, font.FontSlotCount(&system.face), allocator)
     system.vertices = make([]font.TextVertex, TEXT_SYSTEM_VERTICES, allocator)
     font.AtlasInit(&system.atlas, &system.face, method, system.texels, system.slots)
     return RendererInit(&system.renderer, &system.atlas, system.vertices)

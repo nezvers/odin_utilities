@@ -5,7 +5,7 @@ package font
 // a glyph is baked the first time it is asked for, and an atlas that is full says so instead of growing.
 //
 //     texels := make([]f32, 4 * 4096 * 256)                  // 4096 x 256 texels = 16 MB: some thousands of glyphs
-//     slots := make([]i32, font.glyph_count)
+//     slots := make([]i32, font.FontSlotCount(&face))
 //     atlas: font.Atlas
 //     font.AtlasInit(&atlas, &font, .SLUG, texels, slots)
 //     slot, ok := font.AtlasGlyph(&atlas, glyph)             // a number that goes into the vertices of the glyph (a texel of the glyph table says the rest)
@@ -32,7 +32,7 @@ Atlas :: struct {
     font: ^Font,
     method: Method,
     texels: []f32,              // the caller's memory, 4 floats per texel
-    slot_of_glyph: []i32,       // by glyph number: the slot, -1 not baked yet, -2 no outline (the caller's memory, font.glyph_count long)
+    slot_of_glyph: []i32,       // by glyph number: the slot, -1 not baked yet, -2 no outline (the caller's memory, FontSlotCount(font) long: the glyphs of the font and the two special ones)
     used: int,                  // texels in use (the table included)
     slots: int,                 // slots handed out
     version: u32,               // grows when texels changed: a glue uploads again when it differs from what it uploaded
@@ -45,9 +45,9 @@ Atlas :: struct {
 
 AtlasInit :: proc(atlas: ^Atlas, font: ^Font, method: Method, texels: []f32, slot_of_glyph: []i32) {
     assert(len(texels) % 4 == 0 && len(texels) >= 4 * ATLAS_WIDTH * 3, "room for the two header rows and one row of data")
-    assert(len(slot_of_glyph) >= font.glyph_count)
+    assert(len(slot_of_glyph) >= FontSlotCount(font))
     atlas^ = {font = font, method = method, texels = texels, slot_of_glyph = slot_of_glyph}
-    for i in 0 ..< font.glyph_count { slot_of_glyph[i] = -1 }
+    for i in 0 ..< FontSlotCount(font) { slot_of_glyph[i] = -1 }
     atlas.used = ATLAS_HEADER_TEXELS
     atlas.dirty_from = ATLAS_HEADER_TEXELS
     atlas.table_dirty = true
@@ -110,7 +110,7 @@ AtlasClearColors :: proc(atlas: ^Atlas) {
 
 // Forgets every glyph that was baked (the memory is reused from the start) and the colors: for an atlas that is full. What is batched for the GPU refers to the old slots, so the glue draws it first.
 AtlasClear :: proc(atlas: ^Atlas) {
-    for i in 0 ..< atlas.font.glyph_count { atlas.slot_of_glyph[i] = -1 }
+    for i in 0 ..< FontSlotCount(atlas.font) { atlas.slot_of_glyph[i] = -1 }
     atlas.used = ATLAS_HEADER_TEXELS
     atlas.dirty_from = ATLAS_HEADER_TEXELS
     atlas.slots = 0
@@ -122,7 +122,7 @@ AtlasClear :: proc(atlas: ^Atlas) {
 // Bakes every glyph of a text. False when the atlas is full (clear it and ask again: a text of more different glyphs than an atlas holds cannot be drawn).
 AtlasReserveText :: proc(atlas: ^Atlas, text: string) -> bool {
     for character in text {
-        glyph: int = FontGlyph(atlas.font, character)
+        glyph: int = FontResolve(atlas.font, character)
         if _, ok := AtlasGlyph(atlas, glyph); !ok { return false }
     }
     return true
@@ -135,7 +135,7 @@ atlasTexel :: proc(atlas: ^Atlas, index: int) -> []f32 {
 
 // The slot of a glyph: baked now if it was not. -1: there is nothing to draw (a space). ok is false when the atlas is full or the glyph is too complex for a fixed buffer.
 AtlasGlyph :: proc(atlas: ^Atlas, glyph: int) -> (slot: int, ok: bool) {
-    if glyph < 0 || glyph >= atlas.font.glyph_count { return -1, false }
+    if glyph < 0 || glyph >= FontSlotCount(atlas.font) { return -1, false }
     known: i32 = atlas.slot_of_glyph[glyph]
     if known >= 0 { return int(known), true }
     if known == -2 { return -1, true }

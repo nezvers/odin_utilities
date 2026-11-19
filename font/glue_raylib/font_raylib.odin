@@ -86,7 +86,7 @@ RendererFlush :: proc(renderer: ^Renderer) {
     rlgl.SetTexture(rlgl.GetTextureIdDefault())
     rlgl.Begin(rlgl.TRIANGLES)
     for vertex in renderer.vertices[:renderer.count] {
-        slot: [4]u8 = font.SlotColor(vertex.slot, vertex.color)
+        slot: [4]u8 = font.SlotColor(vertex.slot, vertex.color, vertex.alpha)
         rlgl.Color4ub(slot.r, slot.g, slot.b, slot.a)
         rlgl.TexCoord2f(vertex.uv.x, vertex.uv.y)
         rlgl.Vertex2f(vertex.position.x, vertex.position.y)
@@ -113,7 +113,7 @@ DrawText :: proc(renderer: ^Renderer, text: string, position: rl.Vector2, size: 
     }
     needed: int = font.TEXT_VERTICES_PER_GLYPH * len(text)
     if renderer.count + needed > len(renderer.vertices) { RendererFlush(renderer) }
-    added, pen, _ := font.TextQuads(atlas, text, {position.x, position.y}, size, renderer.vertices[renderer.count:], options, index)
+    added, pen, _, _ := font.TextQuads(atlas, text, {position.x, position.y}, size, renderer.vertices[renderer.count:], options, index)
     renderer.count += added
     if !renderer.deferred { RendererFlush(renderer) }
     return {pen.x, pen.y}

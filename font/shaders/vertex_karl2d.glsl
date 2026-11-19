@@ -7,11 +7,13 @@ uniform mat4 view_projection;
 out vec2 fragEm;
 flat out int fragSlot;
 flat out int fragColor;
+flat out float fragAlpha;
 
 void main()
 {
     fragEm = texcoord;
     fragSlot = int(color.r * 255.0 + 0.5) + 256 * int(color.g * 255.0 + 0.5);
     fragColor = int(color.b * 255.0 + 0.5);
+    fragAlpha = color.a;
     gl_Position = view_projection * vec4(position, 1.0);
 }

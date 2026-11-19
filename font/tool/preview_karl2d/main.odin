@@ -31,8 +31,8 @@ main :: proc() {
     }
     slug_texels: []f32 = make([]f32, 4 * font.ATLAS_WIDTH * 32)
     scanline_texels: []f32 = make([]f32, 4 * font.ATLAS_WIDTH * 32)
-    slug_slots: []i32 = make([]i32, face.glyph_count)
-    scanline_slots: []i32 = make([]i32, face.glyph_count)
+    slug_slots: []i32 = make([]i32, font.FontSlotCount(&face))
+    scanline_slots: []i32 = make([]i32, font.FontSlotCount(&face))
     slug: font.Atlas
     scanline: font.Atlas
     font.AtlasInit(&slug, &face, .SLUG, slug_texels, slug_slots)

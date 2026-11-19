@@ -16,6 +16,7 @@ CUBIC_MAX_DEPTH :: 4
 
 // The curves of a glyph, the contours one after the other and each contour closed. `ok` is false when `out` is too small (what fits is in `count`). A glyph without an outline has 0 curves.
 FontGlyphCurves :: proc(font: ^Font, glyph: int, out: []Curve) -> (count: int, ok: bool) {
+    if glyph >= font.glyph_count { return specialCurves(font, glyph, out) }
     vertices: [^]stbtt.vertex
     vertex_count: c.int = stbtt.GetGlyphShape(&font.info, c.int(glyph), &vertices)
     if vertex_count <= 0 { return 0, true }

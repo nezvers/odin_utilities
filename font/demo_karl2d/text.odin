@@ -25,7 +25,7 @@ draw_text :: proc(ctx: ^kit.Context, face: ^font.Font, requests: []demo_common.T
         entry: ^Method_Renderer = &renderers[request.method]
         if !entry.ready {
             entry.texels = make([]f32, 4 * font.ATLAS_WIDTH * ATLAS_ROWS)
-            entry.slots = make([]i32, face.glyph_count)
+            entry.slots = make([]i32, font.FontSlotCount(face))
             font.AtlasInit(&entry.atlas, face, request.method, entry.texels, entry.slots)
             if !font_karl2d.RendererInit(&entry.renderer, &entry.atlas, make([]font.TextVertex, 6 * 2048)) { return }
             entry.ready = true

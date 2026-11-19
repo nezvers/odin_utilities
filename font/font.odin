@@ -49,6 +49,7 @@ FontGlyph :: proc(font: ^Font, character: rune) -> int {
 
 // How far the pen moves after the glyph, in em units
 FontAdvance :: proc(font: ^Font, glyph: int) -> f32 {
+    if glyph >= font.glyph_count { return MISSING_ADVANCE if glyph == GlyphMissing(font) else 0 }
     advance, bearing: c.int
     stbtt.GetGlyphHMetrics(&font.info, c.int(glyph), &advance, &bearing)
     return f32(advance) / font.units_per_em
@@ -56,6 +57,7 @@ FontAdvance :: proc(font: ^Font, glyph: int) -> f32 {
 
 // The extra move between two glyphs that fit together (em units, mostly negative), 0 when the font has no pair
 FontKerning :: proc(font: ^Font, first: int, second: int) -> f32 {
+    if first >= font.glyph_count || second >= font.glyph_count { return 0 }
     return f32(stbtt.GetGlyphKernAdvance(&font.info, c.int(first), c.int(second))) / font.units_per_em
 }
 
@@ -66,6 +68,7 @@ FontLineHeight :: proc(font: ^Font) -> f32 {
 
 // The box around the outline of a glyph in em units, false for a glyph with no outline (a space)
 FontGlyphBox :: proc(font: ^Font, glyph: int) -> (low: Vec2, high: Vec2, ok: bool) {
+    if glyph >= font.glyph_count { return specialBox(font, glyph) }
     x0, y0, x1, y1: c.int
     if stbtt.GetGlyphBox(&font.info, c.int(glyph), &x0, &y0, &x1, &y1) == 0 { return }
     if x1 <= x0 || y1 <= y0 { return }
