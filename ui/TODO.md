@@ -58,6 +58,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Docking (`Dock`, `UiDock`): panels as tabs in a tree of splits, moved by dragging a tab (middle: a tab, edge: a split), closing and opening, a layout that is plain data; demo with screenshots
 - [x] Docking: tab reordering by a drop on the tab bar (`DockPanelInsert`) and close buttons on tabs (`DockPanelSetClosable`)
 - [x] Docking: floating panels (a tab let go outside of the dock becomes a window, its title docks it again)
+- [x] Docking: floating windows are resized by the pointer (edges and corners, a minimum)
 - [x] Text field and text area: undo and redo (Ctrl + Z, Ctrl + Y) with a fixed pool, a word is one step
 - [x] Color picker (`UiColorPicker`: square, hue and alpha bars, hex helpers; style kinds `COLOR_FIELD`, `COLOR_STRIP`)
 - [x] Combo box with search (`UiCombo`, `UiMatchText`)

@@ -4918,3 +4918,46 @@ test_a_dock_tab_let_go_outside_floats_and_its_title_docks_it_again :: proc(t: ^t
     testing.expect(t, DockCheck(dock))
     testing.expect_value(t, harness.ctx.problems, Problems{})
 }
+
+@(test)
+test_a_floating_dock_window_is_resized_by_its_edges_and_corners_and_keeps_a_minimum :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    dock: ^Dock = new(Dock)
+    defer { free(harness); free(dock) }
+    harnessInit(harness)
+    DockInit(dock)
+    DockPanelAdd(dock, "A")
+    b, _ := DockPanelAdd(dock, "B")
+    DockPanelFloat(dock, b, {200, 150}, {240, 160})
+    content :: proc(ctx: ^Context, dock: ^Dock, panel: int, user: rawptr) {}
+    run :: proc(harness: ^Harness, dock: ^Dock, content: DockContentProc, input: Input) {
+        frame(harness, input, {600, 500})
+        UiDock(&harness.ctx, "dock", dock, content, size = {Fixed(150), Fixed(100)})
+        UiEnd(&harness.ctx)
+    }
+    drag :: proc(harness: ^Harness, dock: ^Dock, content: DockContentProc, from: Vec2, to: Vec2) {
+        run(harness, dock, content, pointerAt(from))
+        run(harness, dock, content, pointerAt(from, true, true))
+        run(harness, dock, content, pointerAt((from + to) * 0.5, true))
+        run(harness, dock, content, pointerAt(to, true))
+        run(harness, dock, content, pointerAt(to, false, false, true))
+        run(harness, dock, content, pointerAt(to))
+    }
+    for _ in 0 ..< 3 { run(harness, dock, content, pointerAt({-50, -50})) }
+    testing.expect_value(t, dock.panels[b].float_size, Vec2{240, 160})
+    serial: u64 = dock.serial
+    // the bottom right corner (the window is at (200, 150), 240 x 160)
+    drag(harness, dock, content, {436, 306}, {496, 346})
+    testing.expect_value(t, dock.panels[b].float_size, Vec2{300, 200})
+    testing.expect_value(t, dock.panels[b].float_position, Vec2{200, 150})
+    testing.expect(t, dock.serial > serial, "the layout changed")
+    // the left edge moves the window and keeps the right edge where it is
+    drag(harness, dock, content, {202, 250}, {162, 250})
+    testing.expect_value(t, dock.panels[b].float_size.x, 340)
+    testing.expect_value(t, dock.panels[b].float_position.x, 160)
+    // never below the minimum
+    drag(harness, dock, content, {498, 250}, {-300, 250})
+    testing.expect_value(t, dock.panels[b].float_size.x, DOCK_FLOAT_MIN.x)
+    testing.expect(t, DockCheck(dock))
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}

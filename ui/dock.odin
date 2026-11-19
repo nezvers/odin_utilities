@@ -20,6 +20,7 @@ package ui
 
 DOCK_NODES :: #config(DOCK_NODES, 64)
 DOCK_PANELS :: #config(DOCK_PANELS, 32)
+DOCK_FLOAT_MIN :: Vec2{140, 90}         // the smallest floating window
 DOCK_MIN_SIZE :: f32(60)                // the least room a part of a split keeps
 
 DockZone :: enum u8 {
@@ -550,7 +551,14 @@ dockHandle :: proc(ctx: ^Context, dock: ^Dock, node: ^DockNode, node_id: Id, ext
 dockFloating :: proc(ctx: ^Context, dock: ^Dock, panel: int, dock_id: Id, content: DockContentProc, user: rawptr) {
     entry: ^DockPanel = &dock.panels[panel]
     metrics: ^Metrics = &ctx.style.metrics
-    size: Vec2 = entry.float_size if entry.float_size.x > 0 && entry.float_size.y > 0 else Vec2{320, 240}
+    if entry.float_size.x <= 0 || entry.float_size.y <= 0 { entry.float_size = {320, 240} }
+    largest: Vec2 = windowLargest(ctx, {})
+    entry.float_size.x = windowAxis(entry.float_size.x, DOCK_FLOAT_MIN.x, largest.x)
+    entry.float_size.y = windowAxis(entry.float_size.y, DOCK_FLOAT_MIN.y, largest.y)
+    windowKeepOnScreen(ctx, &entry.float_position, entry.float_size)
+    size: Vec2 = entry.float_size
+    old_size: Vec2 = entry.float_size
+    old_position: Vec2 = entry.float_position
     window_id: Id = IdFromIndex(u32(panel), IdFromString("float", dock_id))
     title_id: Id = IdFromString("title", window_id)
     _ = stateGet(ctx, window_id)
@@ -562,8 +570,9 @@ dockFloating :: proc(ctx: ^Context, dock: ^Dock, panel: int, dock_id: Id, conten
         hit = {.BLOCKER},
         draw = {kind = .PANEL, font_size = metrics.font_size},
     })
-    interaction: Interaction = widgetBehavior(ctx, title_id)
-    _ = interaction
+    windowGrips(ctx, window_id, &entry.float_position, &entry.float_size, DOCK_FLOAT_MIN, largest)
+    _ = widgetBehavior(ctx, title_id)                           // the title takes the press: it is the handle of the drag
+    if old_size != entry.float_size || old_position != entry.float_position { dock.serial += 1 }
     ElementOpen(ctx, {
         id = title_id,
         layout = {size = {Grow(), Fixed(metrics.control_height)}, direction = .LEFT_TO_RIGHT, align = {y = .CENTER}},

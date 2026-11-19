@@ -111,5 +111,12 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.DockPanelIsFloating(&dock, assets) && ui.DockCheck(&dock) }, "let go outside the dock the tab became a window"),
     kit.Wait(3),
     kit.Capture("dock_floating"),
+    // the bottom right corner of the window (776, 288, 320 x 240): 60 right and 40 down makes it bigger
+    kit.MoveTo({1090, 522}),
+    kit.Wait(3),
+    kit.Drag({1090, 522}, {1150, 562}, 8),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return dock.panels[assets].float_size == ui.Vec2{380, 280} }, "the corner resized the window"),
+    kit.Capture("dock_resized"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.ctx) == {} }, "the frames had no problems"),
 }
