@@ -52,6 +52,7 @@ DockPanel :: struct {
     name: [GRAPH_NAME_MAX]u8,
     name_length: int,
     node: int,                          // the leaf it is in, -1 while it is closed
+    closable: bool,                     // its tab has a button that closes it (DockPanelSetClosable)
     user: rawptr,                       // of the program (not meant to be saved)
 }
 
@@ -60,6 +61,8 @@ DockMove :: struct {
     panel: int,
     target: int,
     zone: DockZone,
+    index: int,                         // >= 0: the tab goes to this place among the tabs of the leaf
+    close: bool,                        // the panel is closed instead
 }
 
 Dock :: struct {
@@ -73,7 +76,7 @@ Dock :: struct {
 DockContentProc :: #type proc(ctx: ^Context, dock: ^Dock, panel: int, user: rawptr)
 
 DockInit :: proc(dock: ^Dock) {
-    dock^ = {root = -1, pending = {panel = -1}}
+    dock^ = {root = -1, pending = {panel = -1, index = -1}}
 }
 
 DockPanelName :: proc(dock: ^Dock, panel: int) -> string {
@@ -238,6 +241,42 @@ DockPanelDock :: proc(dock: ^Dock, panel: int, target: int, zone: DockZone = .CE
     return true
 }
 
+// Puts a panel among the tabs of leaf `target` at place `index` (0 is the first tab; a number that is too big is the last place), from another leaf or from the same one (the tabs are
+// reordered). The tab becomes the shown one. Nothing is changed when it would stay where it is.
+DockPanelInsert :: proc(dock: ^Dock, panel: int, target: int, index: int) -> bool {
+    if panel < 0 || panel >= DOCK_PANELS || !dock.panels[panel].used { return false }
+    if target < 0 || target >= DOCK_NODES || !dock.nodes[target].used || dock.nodes[target].kind != .LEAF { return false }
+    source: int = dock.panels[panel].node
+    leaf: ^DockNode = &dock.nodes[target]
+    place: int = clamp(index, 0, leaf.panel_count)
+    if source == target {
+        position: int
+        for i in 0 ..< leaf.panel_count { if int(leaf.panels[i]) == panel { position = i } }
+        if place > position { place -= 1 }                      // the tab itself leaves its place first
+        if place == position { return false }
+        for i in position ..< leaf.panel_count - 1 { leaf.panels[i] = leaf.panels[i + 1] }
+        for i := leaf.panel_count - 1; i > place; i -= 1 { leaf.panels[i] = leaf.panels[i - 1] }
+        leaf.panels[place] = i8(panel)
+        leaf.active = place
+        dock.serial += 1
+        return true
+    }
+    if leaf.panel_count == DOCK_PANELS { return false }
+    dockDetach(dock, panel)
+    leaf = &dock.nodes[target]
+    for i := leaf.panel_count; i > place; i -= 1 { leaf.panels[i] = leaf.panels[i - 1] }
+    leaf.panels[place] = i8(panel)
+    leaf.panel_count += 1
+    leaf.active = place
+    dock.panels[panel].node = target
+    dock.serial += 1
+    return true
+}
+
+DockPanelSetClosable :: proc(dock: ^Dock, panel: int, closable: bool = true) {
+    if panel >= 0 && panel < DOCK_PANELS && dock.panels[panel].used { dock.panels[panel].closable = closable }
+}
+
 DockSetRatio :: proc(dock: ^Dock, node: int, ratio: f32) {
     if node < 0 || node >= DOCK_NODES || !dock.nodes[node].used || dock.nodes[node].kind != .SPLIT { return }
     dock.nodes[node].ratio = clamp(ratio, SPLIT_RATIO_MIN, 1 - SPLIT_RATIO_MIN)
@@ -306,7 +345,7 @@ DOCK_DRAG_KIND :: "dock_panel"
 // The dock fills the room it is given (`size` says otherwise). Every shown panel's `content` is called inside of its place (a column that cuts what does not fit).
 UiDock :: proc(ctx: ^Context, name: string, dock: ^Dock, content: DockContentProc, user: rawptr = nil, size: Size = {}) {
     id: Id = UiId(ctx, name)
-    dock.pending = {panel = -1}
+    dock.pending = {panel = -1, index = -1}
     ElementOpen(ctx, {
         id = id,
         layout = {size = {growWhenUnset(size.width), growWhenUnset(size.height)}},
@@ -318,8 +357,13 @@ UiDock :: proc(ctx: ^Context, name: string, dock: ^Dock, content: DockContentPro
     }
     ElementClose(ctx)
     if dock.pending.panel >= 0 {
-        DockPanelDock(dock, dock.pending.panel, dock.pending.target, dock.pending.zone)
-        dock.pending = {panel = -1}
+        move: DockMove = dock.pending
+        switch {
+        case move.close: DockPanelClose(dock, move.panel)
+        case move.index >= 0: DockPanelInsert(dock, move.panel, move.target, move.index)
+        case: DockPanelDock(dock, move.panel, move.target, move.zone)
+        }
+        dock.pending = {panel = -1, index = -1}
     }
 }
 
@@ -353,7 +397,9 @@ dockBuild :: proc(ctx: ^Context, dock: ^Dock, node_index: int, dock_id: Id, size
         clip = {horizontal = true, vertical = true, cut = true},
         draw = {kind = .PANEL, font_size = metrics.font_size},
     })
-    ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, gap = 2}})
+    bar_id: Id = IdFromString("bar", node_id)
+    bar: ^WidgetState = stateGet(ctx, bar_id)
+    ElementOpen(ctx, {id = bar_id, layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, gap = 2}})
     for i in 0 ..< node.panel_count {
         panel: int = int(node.panels[i])
         tab: Id = IdFromIndex(u32(panel), IdFromString("tab", dock_id))
@@ -371,13 +417,48 @@ dockBuild :: proc(ctx: ^Context, dock: ^Dock, node_index: int, dock_id: Id, size
         ctx.last_id = tab
         moved: int = panel
         UiDragSourceValue(ctx, DOCK_DRAG_KIND, &moved)
+        if dock.panels[panel].closable {
+            close_id: Id = IdFromIndex(u32(panel), IdFromString("close", dock_id))
+            _ = stateGet(ctx, close_id)
+            close: Interaction = widgetBehavior(ctx, close_id)
+            if close.clicked { dock.pending = {panel = panel, index = -1, close = true} }
+            ElementOpen(ctx, {
+                id = close_id,
+                layout = {size = {Fixed(metrics.control_height * 0.7), Fixed(metrics.control_height)}},
+                hit = {.INTERACTIVE},
+                draw = {kind = .BUTTON, name = "x", font_size = metrics.font_size},
+            })
+            ElementClose(ctx)
+        }
     }
     ElementClose(ctx)
+    // a tab dragged over the bar: where among the tabs it would go (a line shows it)
+    over_bar: bool
+    if _, dragging := UiDragging(ctx); dragging && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && RectContains(bar.rect, ctx.input.mouse_position) && node.panel_count > 0 {
+        over_bar = true
+        place: int = node.panel_count
+        line: f32
+        for i in 0 ..< node.panel_count {
+            tab: Rect = stateGet(ctx, IdFromIndex(u32(node.panels[i]), IdFromString("tab", dock_id))).rect
+            if ctx.input.mouse_position.x < tab.x + tab.z * 0.5 {
+                place, line = i, tab.x - 2
+                break
+            }
+            line = tab.x + tab.z + 1
+        }
+        ElementOpen(ctx, {
+            layout = {size = {Fixed(3), Fixed(bar.rect.w)}},
+            floating = {attach_to = .ROOT, offset = {line, bar.rect.y}, z_index = 440},
+            draw = {kind = .HIGHLIGHT, color = {90, 150, 255, 255}},
+        })
+        ElementClose(ctx)
+        if ctx.input.mouse_released { dock.pending = {panel = (^int)(raw_data(UiDragPayload(ctx)))^, target = node_index, index = place} }
+    }
     ElementOpen(ctx, {layout = {size = {Grow(), Grow()}, direction = .TOP_TO_BOTTOM, padding = PaddingXY(metrics.padding.x, metrics.padding.y)}, clip = {horizontal = true, vertical = true, cut = true}})
     if node.panel_count > 0 { content(ctx, dock, int(node.panels[node.active]), user) }
     ElementClose(ctx)
     // a tab is over this place: show where it would go, and take the drop
-    if _, dragging := UiDragging(ctx); dragging && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && RectContains(state.rect, ctx.input.mouse_position) {
+    if _, dragging := UiDragging(ctx); dragging && !over_bar && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && RectContains(state.rect, ctx.input.mouse_position) {
         zone: DockZone = DockDropZone(state.rect, ctx.input.mouse_position)
         area: Rect = DockZoneRect(state.rect, zone)
         ElementOpen(ctx, {
@@ -386,7 +467,7 @@ dockBuild :: proc(ctx: ^Context, dock: ^Dock, node_index: int, dock_id: Id, size
             draw = {kind = .HIGHLIGHT, color = {90, 150, 255, 255}},
         })
         ElementClose(ctx)
-        if ctx.input.mouse_released { dock.pending = {panel = (^int)(raw_data(UiDragPayload(ctx)))^, target = node_index, zone = zone} }
+        if ctx.input.mouse_released { dock.pending = {panel = (^int)(raw_data(UiDragPayload(ctx)))^, target = node_index, zone = zone, index = -1} }
     }
     ElementClose(ctx)
 }

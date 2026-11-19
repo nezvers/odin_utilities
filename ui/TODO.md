@@ -56,6 +56,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Node graph: reroute points on a cable (`GraphRerouteAdd`, a double click on a cable with `view.reroute_on_double_click`), labels on cables (`GraphLinkLabel`), a node that collapses to its title (`GraphNodeCollapse`, a double click on the title); demo with a screenshot
 - [x] Node graph: undo and redo (`GraphHistory`, snapshots, Ctrl + Z / Y with `view.history`) and automatic layout in columns (`GraphAutoLayout`)
 - [x] Docking (`Dock`, `UiDock`): panels as tabs in a tree of splits, moved by dragging a tab (middle: a tab, edge: a split), closing and opening, a layout that is plain data; demo with screenshots
+- [x] Docking: tab reordering by a drop on the tab bar (`DockPanelInsert`) and close buttons on tabs (`DockPanelSetClosable`)
 - [x] Text field and text area: undo and redo (Ctrl + Z, Ctrl + Y) with a fixed pool, a word is one step
 - [x] Color picker (`UiColorPicker`: square, hue and alpha bars, hex helpers; style kinds `COLOR_FIELD`, `COLOR_STRIP`)
 - [x] Combo box with search (`UiCombo`, `UiMatchText`)

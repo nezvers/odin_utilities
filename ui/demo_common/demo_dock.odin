@@ -28,6 +28,7 @@ init :: proc(ctx: ^kit.Context) {
     assets, _ = ui.DockPanelAdd(&dock, "Assets")
     properties, _ = ui.DockPanelAdd(&dock, "Properties")
     console, _ = ui.DockPanelAdd(&dock, "Console")
+    ui.DockPanelSetClosable(&dock, console)
     ui.DockPanelDock(&dock, properties, ui.DockLeafOf(&dock, scene), .RIGHT)
     ui.DockPanelDock(&dock, console, ui.DockLeafOf(&dock, scene), .BOTTOM)
     dock.nodes[ui.DockLeafOf(&dock, scene)].active = 0
@@ -85,5 +86,22 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return dock.nodes[ui.DockLeafOf(&dock, console)].active == 1 }, "the dropped tab is the shown one"),
     kit.Wait(3),
     kit.Capture("dock_moved"),
+    // the Console tab (468..544, 78..106) onto the left half of the Properties tab (366..466): it goes first
+    kit.MoveTo({506, 92}),
+    kit.Wait(3),
+    kit.Drag({506, 92}, {372, 92}, 10),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        leaf: ^ui.DockNode = &dock.nodes[ui.DockLeafOf(&dock, console)]
+        return ui.DockCheck(&dock) && int(leaf.panels[0]) == console && int(leaf.panels[1]) == properties
+    }, "dropped on the bar: the tab took the place before Properties"),
+    kit.Wait(3),
+    kit.Capture("dock_reordered"),
+    // its close button (the tab is 366..442 now, the button right after it)
+    kit.MoveTo({454, 92}),
+    kit.Wait(3),
+    kit.Click({454, 92}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !ui.DockPanelIsOpen(&dock, console) && ui.DockCheck(&dock) }, "the close button closed the panel"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.ctx) == {} }, "the frames had no problems"),
 }

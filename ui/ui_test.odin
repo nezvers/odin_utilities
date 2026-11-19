@@ -4814,3 +4814,56 @@ test_the_arrow_keys_move_the_focused_parts_of_the_color_picker :: proc(t: ^testi
     picker(harness, &color, &alpha, {.DOWN})
     testing.expect(t, near(alpha, 0.5 - COLOR_PICKER_STEP), "down: more transparent")
 }
+
+@(test)
+test_a_dock_tab_is_reordered_by_a_drop_on_the_bar_and_a_close_button_closes_it :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    dock: ^Dock = new(Dock)
+    defer { free(harness); free(dock) }
+    harnessInit(harness)
+    DockInit(dock)
+    a, _ := DockPanelAdd(dock, "A")
+    b, _ := DockPanelAdd(dock, "B")
+    c, _ := DockPanelAdd(dock, "C")
+    DockPanelSetClosable(dock, b)
+    content :: proc(ctx: ^Context, dock: ^Dock, panel: int, user: rawptr) {}
+    dock_id: Id
+    run :: proc(harness: ^Harness, dock: ^Dock, content: DockContentProc, id: ^Id, input: Input) {
+        frame(harness, input)
+        id^ = UiId(&harness.ctx, "dock")
+        UiDock(&harness.ctx, "dock", dock, content, size = {Fixed(380), Fixed(280)})
+        UiEnd(&harness.ctx)
+    }
+    for _ in 0 ..< 3 { run(harness, dock, content, &dock_id, pointerAt({-50, -50})) }
+    tab_rect :: proc(ctx: ^Context, dock_id: Id, panel: int) -> Rect {
+        rect, _ := UiElementRect(ctx, IdFromIndex(u32(panel), IdFromString("tab", dock_id)))
+        return rect
+    }
+    // C (the third tab) onto the left half of A: C comes first
+    from: Vec2 = RectCenter(tab_rect(&harness.ctx, dock_id, c))
+    a_rect: Rect = tab_rect(&harness.ctx, dock_id, a)
+    to: Vec2 = {a_rect.x + 4, a_rect.y + a_rect.w * 0.5}
+    run(harness, dock, content, &dock_id, pointerAt(from))
+    run(harness, dock, content, &dock_id, pointerAt(from, true, true))
+    run(harness, dock, content, &dock_id, pointerAt(from + {-20, 0}, true))
+    run(harness, dock, content, &dock_id, pointerAt(to, true))
+    run(harness, dock, content, &dock_id, pointerAt(to, false, false, true))
+    run(harness, dock, content, &dock_id, pointerAt(to))
+    leaf: ^DockNode = &dock.nodes[DockLeafOf(dock, a)]
+    testing.expect_value(t, leaf.panels[0], i8(c))
+    testing.expect_value(t, leaf.panel_count, 3)
+    testing.expect(t, DockCheck(dock))
+    // the close button of B (the only closable one)
+    close_rect, found := UiElementRect(&harness.ctx, IdFromIndex(u32(b), IdFromString("close", dock_id)))
+    testing.expect(t, found)
+    _, no_close := UiElementRect(&harness.ctx, IdFromIndex(u32(a), IdFromString("close", dock_id)))
+    testing.expect(t, !no_close, "a tab that is not closable has no button")
+    at: Vec2 = RectCenter(close_rect)
+    run(harness, dock, content, &dock_id, pointerAt(at))
+    run(harness, dock, content, &dock_id, pointerAt(at, true, true))
+    run(harness, dock, content, &dock_id, pointerAt(at, false, false, true))
+    run(harness, dock, content, &dock_id, pointerAt(at))
+    testing.expect(t, !DockPanelIsOpen(dock, b), "the button closed the panel")
+    testing.expect_value(t, leaf.panel_count, 2)
+    testing.expect(t, DockCheck(dock))
+}

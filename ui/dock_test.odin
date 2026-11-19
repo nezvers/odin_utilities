@@ -102,3 +102,31 @@ test_the_drop_zone_is_the_middle_or_the_nearest_edge :: proc(t: ^testing.T) {
     testing.expect_value(t, DockZoneRect(rect, .LEFT), Rect{100, 100, 100, 100})
     testing.expect_value(t, DockZoneRect(rect, .BOTTOM), Rect{100, 150, 200, 50})
 }
+
+@(test)
+test_a_tab_is_inserted_among_the_tabs_of_a_leaf_or_moved_within_it :: proc(t: ^testing.T) {
+    dock: ^Dock = newDock()
+    defer free(dock)
+    a, _ := DockPanelAdd(dock, "A")
+    b, _ := DockPanelAdd(dock, "B")
+    c, _ := DockPanelAdd(dock, "C")
+    leaf: ^DockNode = &dock.nodes[DockLeafOf(dock, a)]
+    order :: proc(leaf: ^DockNode) -> [3]i8 { return {leaf.panels[0], leaf.panels[1], leaf.panels[2]} }
+    testing.expect_value(t, order(leaf), [3]i8{0, 1, 2})
+    testing.expect(t, DockPanelInsert(dock, c, DockLeafOf(dock, a), 0))
+    testing.expect_value(t, order(leaf), [3]i8{2, 0, 1})
+    testing.expect_value(t, leaf.active, 0)                                   // the moved tab is the shown one
+    testing.expect(t, !DockPanelInsert(dock, c, DockLeafOf(dock, a), 0), "where it is")
+    testing.expect(t, !DockPanelInsert(dock, c, DockLeafOf(dock, a), 1), "just after itself is where it is")
+    testing.expect(t, DockPanelInsert(dock, c, DockLeafOf(dock, a), 99), "a big number is the end")
+    testing.expect_value(t, order(leaf), [3]i8{0, 1, 2})
+    testing.expect(t, DockPanelInsert(dock, a, DockLeafOf(dock, a), 2))
+    testing.expect_value(t, order(leaf), [3]i8{1, 0, 2})
+    // from another leaf: the tab joins at the place and the empty leaf goes
+    testing.expect(t, DockPanelDock(dock, b, DockLeafOf(dock, a), .RIGHT))
+    testing.expect(t, DockPanelInsert(dock, b, DockLeafOf(dock, a), 1))
+    testing.expect(t, DockCheck(dock))
+    testing.expect_value(t, DockLeafOf(dock, b), DockLeafOf(dock, a))
+    testing.expect_value(t, dock.nodes[DockLeafOf(dock, a)].panels[1], i8(b))
+    testing.expect_value(t, dock.root, DockLeafOf(dock, a))
+}
