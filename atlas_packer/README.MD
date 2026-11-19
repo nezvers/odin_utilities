@@ -32,7 +32,8 @@ mem.arena_free_all(&arena)
 Raylib images (`rl.Image`) are allocated by raylib, so only the packer and rectangle data live in the arena there.    
 
 ## Font packing
-- `FontInit` - TTF (`[]byte`, not copied) at one pixel height. `GetFontRects` measures letters (missing characters are skipped) and gives rectangles with padding. `RenderGlyph` renders one glyph into a caller buffer, `GlyphsMaxBytes` sizes that buffer.
+- `FontInit` - TTF / OTF / TTC (`[]byte`, not copied) at one pixel height. `GetFontRects` measures letters (missing characters are skipped) and gives rectangles with padding. `RenderGlyph` renders one glyph into a caller buffer, `GlyphsMaxBytes` sizes that buffer.
+- The file is read and the glyph is drawn by the `font` library next to this one (pure Odin: its parser and its exact coverage rasterizer, the alpha of a pixel is the part the outline covers, no hinting). No stb_truetype, no allocation. `RenderGlyph` keeps the outline of a glyph on its stack (`GLYPH_CURVES` = 256 curves); a glyph with more needs room from you (the `curves` parameter), it returns false otherwise.
 - Raylib: `init_packed_font` builds an `rl.Font` from the packed rectangles.
 - Karl2D: `BakeFontGlyphs` writes glyphs into the atlas image, `RegisterFont` makes a static `karl2d.Font` that draws from the same atlas texture, so text and sprites share one draw call. Karl2D frees the glyph data, so call `karl2d.destroy_font(font)` (it also destroys the atlas texture) instead of destroying the texture.
 
