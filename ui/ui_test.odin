@@ -4152,3 +4152,206 @@ test_the_wheel_scrolls_a_zoomed_container_by_the_same_distance_on_the_screen :: 
     testing.expect(t, plain < 0 && zoomed < 0)
     testing.expect(t, abs(zoomed * 2 - plain) < 0.01, "in a container at zoom 2 the offset moves half as far, which is the same on the screen")
 }
+
+@(test)
+test_rounded_geometry_stays_inside_the_rect_and_keeps_its_counts :: proc(t: ^testing.T) {
+    rect: Rect = {10, 20, 100, 40}
+    testing.expect_value(t, RoundedSegments(0), 1)
+    testing.expect(t, RoundedSegments(8) < RoundedSegments(200), "a bigger corner gets more segments")
+    testing.expect_value(t, RoundedSegments(100000), ROUNDED_MAX_SEGMENTS)
+    testing.expect_value(t, RoundedPointCount(3), 16)
+    buffer: RoundedBuffer
+    points: []Vec2 = RoundedPoints(rect, {50, 8, 0, 8}, 4, buffer[:])
+    testing.expect_value(t, len(points), RoundedPointCount(4))
+    for point in points {
+        inside: bool = point.x >= rect.x - 0.01 && point.x <= rect.x + rect.z + 0.01 && point.y >= rect.y - 0.01 && point.y <= rect.y + rect.w + 0.01
+        testing.expect(t, inside, "every point is inside the rect, a radius over half the short side is clamped")
+    }
+    sharp_count: int = len(RoundedPointsUniform(rect, 0, buffer[:]))
+    testing.expect_value(t, sharp_count, RoundedPointCount(1))
+    testing.expect(t, near(RoundedRadius(rect, 1), 20), "full round is half of the short side")
+    testing.expect(t, near(RoundedRadius(rect, 1, 5), 5), "the limit in pixels wins")
+    testing.expect(t, len(RoundedPointsUniform(rect, 1, buffer[:])) > sharp_count)
+}
+
+@(test)
+test_render_range_calls_only_the_commands_asked_for :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    frame(harness)
+    UiButton(&harness.ctx, "One")
+    UiButton(&harness.ctx, "Two")
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    all: int = seen.kinds[.BUTTON]
+    testing.expect(t, all >= 2)
+    seen = {}
+    UiRenderRange(&harness.ctx, 0, 0)
+    testing.expect_value(t, seen.kinds[.BUTTON], 0)
+    UiRenderRange(&harness.ctx, 0, harness.ctx.command_count + 50)
+    testing.expect_value(t, seen.kinds[.BUTTON], all)
+}
+
+@(test)
+test_a_pushed_tag_reaches_the_widgets_until_it_is_popped :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    frame(harness)
+    UiPushTag(&harness.ctx, "danger")
+    UiButton(&harness.ctx, "delete")
+    UiPopTag(&harness.ctx)
+    UiPopTag(&harness.ctx)
+    UiButton(&harness.ctx, "after")
+    UiEnd(&harness.ctx)
+    found: [2]bool
+    for i in 0 ..< harness.ctx.command_count {
+        info: DrawInfo = harness.ctx.commands[i].info
+        if info.kind != .BUTTON { continue }
+        if info.name == "delete" { found[0] = DrawInfoHasTag(&info, "danger") }
+        if info.name == "after" { found[1] = !DrawInfoHasTag(&info, "danger") }
+    }
+    testing.expect(t, found[0], "the tag is on the widget declared while it was pushed")
+    testing.expect(t, found[1], "and gone after the pop (a pop too many does nothing)")
+}
+
+@(test)
+test_drag_payload_hover_and_preview_follow_a_drag :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    @(static) hover_seen: bool
+    @(static) hover_other: bool
+    @(static) payload_seen: int
+    hover_seen = false
+    hover_other = false
+    payload_seen = -1
+    build :: proc(ctx: ^Context) {
+        ElementOpen(ctx, {layout = {direction = .LEFT_TO_RIGHT, gap = 20}})
+        UiButton(ctx, "Item", {Fixed(80), Fixed(30)})
+        item: int = 7
+        UiDragSourceValue(ctx, "item", &item)
+        UiButton(ctx, "Slot", {Fixed(80), Fixed(30)})
+        if UiDropHover(ctx, "item") { hover_seen = true }
+        if UiDropHover(ctx, "other kind") { hover_other = true }
+        ElementClose(ctx)
+        if _, active := UiDragging(ctx); active {
+            payload_seen = (^int)(raw_data(UiDragPayload(ctx)))^
+        }
+        UiDragPreview(ctx, "carrying")
+    }
+    inputs: [5]Input = {
+        pointerAt({-100, -100}),
+        pointerAt({20, 12}),
+        pointerAt({20, 12}, down = true, pressed = true),
+        pointerAt({40, 12}, down = true),
+        pointerAt({120, 12}, down = true),
+    }
+    previews: int
+    for input in inputs {
+        frame(harness, input)
+        build(&harness.ctx)
+        UiEnd(&harness.ctx)
+        for i in 0 ..< harness.ctx.command_count {
+            if harness.ctx.commands[i].info.name == "drag" { previews += 1 }
+        }
+    }
+    testing.expect(t, hover_seen, "the target knows something of its kind is over it")
+    testing.expect(t, !hover_other, "and not for another kind")
+    testing.expect_value(t, payload_seen, 7)
+    testing.expect(t, previews >= 1, "the preview is declared while dragging")
+}
+
+@(test)
+test_scroll_set_moves_a_container_and_unknown_ids_are_ignored :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    list :: proc(harness: ^Harness) -> f32 {
+        frame(harness, pointerAt({-100, -100}))
+        id: Id = UiId(&harness.ctx, "list")
+        if UiScroll(&harness.ctx, "list", {Fixed(100), Fixed(50)}) {
+            for _ in 0 ..< 20 { UiLabel(&harness.ctx, "row") }
+        }
+        state: ^WidgetState = stateFind(&harness.ctx, id)
+        offset: f32 = state.scroll.y if state != nil else 1
+        UiEnd(&harness.ctx)
+        return offset
+    }
+    list(harness)
+    list(harness)
+    UiScrollSet(&harness.ctx, 12345, 30)
+    testing.expect_value(t, list(harness), 0)
+    UiScrollSet(&harness.ctx, UiId(&harness.ctx, "list"), 30)
+    testing.expect(t, near(list(harness), -30), "set to 30 pixels from the top: the offset is -30")
+}
+
+@(test)
+test_clipboard_text_cursor_and_focus_helpers :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    ctx: ^Context = &harness.ctx
+    buffer: [32]u8
+    UiClipboardSet(ctx, "hello")
+    count: int = UiClipboardGet(ctx, buffer[:])
+    testing.expect_value(t, string(buffer[:count]), "hello")
+    small: [2]u8
+    testing.expect_value(t, UiClipboardGet(ctx, small[:]), 2)
+
+    text: [16]u8
+    length: int = 0
+    field :: proc(harness: ^Harness, text: []u8, length: ^int, input: Input = {}) -> Id {
+        frame(harness, input)
+        _, _ = UiTextField(&harness.ctx, "Name", text, length, {Fixed(200), Fixed(28)})
+        id: Id = harness.ctx.last_id
+        UiEnd(&harness.ctx)
+        return id
+    }
+    id: Id = field(harness, text[:], &length)
+    _, _, found := UiTextCursor(ctx, 99999)
+    testing.expect(t, !found, "an id nobody declared has no cursor")
+    UiFocus(ctx, id)
+    testing.expect(t, UiIsFocused(ctx, id))
+    testing.expect_value(t, UiFocused(ctx), id)
+    typed: Input
+    typed.text[0] = 'a'
+    typed.text[1] = 'b'
+    typed.text_count = 2
+    _ = field(harness, text[:], &length, typed)
+    cursor, anchor, found_field := UiTextCursor(ctx, id)
+    testing.expect(t, found_field)
+    testing.expect_value(t, cursor, 2)
+    testing.expect_value(t, anchor, 2)
+}
+
+@(test)
+test_actions_move_the_focus_and_are_read_back :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    ctx: ^Context = &harness.ctx
+    ids: [2]Id
+    build :: proc(harness: ^Harness, ids: ^[2]Id, input: Input = {}) {
+        frame(harness, input)
+        UiButton(&harness.ctx, "a")
+        ids[0] = harness.ctx.last_id
+        UiButton(&harness.ctx, "b")
+        ids[1] = harness.ctx.last_id
+        UiEnd(&harness.ctx)
+    }
+    build(harness, &ids)
+    build(harness, &ids)
+    UiFocus(ctx, ids[0])
+    testing.expect(t, UiAction(ctx, .DOWN), "down goes to the button below")
+    testing.expect_value(t, UiFocused(ctx), ids[1])
+    pressed: Input
+    pressed.actions = {.ACCEPT}
+    frame(harness, pressed)
+    testing.expect(t, UiActionPressed(ctx, .ACCEPT))
+    testing.expect(t, !UiActionPressed(ctx, .CANCEL))
+    UiEnd(ctx)
+    UiFocus(ctx, 0)
+    testing.expect(t, !UiAction(ctx, .ACCEPT), "nothing focused: nothing to accept")
+}
