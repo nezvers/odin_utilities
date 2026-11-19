@@ -253,7 +253,7 @@ test_the_scanline_data_read_by_the_scanline_model_matches_the_exact_coverage :: 
 test_an_atlas_bakes_a_glyph_once_says_when_it_is_full_and_has_nothing_for_a_space :: proc(t: ^testing.T) {
     font: ^Font = loadFont()
     defer free(font)
-    texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 2)
+    texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 4)
     slots: []i32 = make([]i32, font.glyph_count)
     defer { delete(texels); delete(slots) }
     atlas: Atlas
@@ -269,19 +269,25 @@ test_an_atlas_bakes_a_glyph_once_says_when_it_is_full_and_has_nothing_for_a_spac
     testing.expect(t, space_ok && space == -1)
     dirty := AtlasTakeDirty(&atlas)
     testing.expect(t, dirty[0] == RowRange{0, 1}, "the table")
-    testing.expect(t, dirty[1].first == 1 && dirty[1].count >= 1, "and the data")
+    testing.expect(t, dirty[1] == RowRange{1, 1}, "the palette (it starts dirty)")
+    testing.expect(t, dirty[2].first == 2 && dirty[2].count >= 1, "and the data")
     none := AtlasTakeDirty(&atlas)
-    testing.expect(t, none[0].count == 0 && none[1].count == 0, "nothing changed since")
+    testing.expect(t, none[0].count == 0 && none[1].count == 0 && none[2].count == 0, "nothing changed since")
     AtlasGlyph(&atlas, FontGlyph(font, 'b'))
     later := AtlasTakeDirty(&atlas)
-    testing.expect(t, later[0].count == 1 && later[1].count >= 1, "a new glyph writes a slot of the table too")
+    testing.expect(t, later[0].count == 1 && later[2].count >= 1, "a new glyph writes a slot of the table too")
     // an atlas that is full: the glyphs that fit are in, the others are told
     failed: bool
     for glyph in 0 ..< 400 {
         _, glyph_ok := AtlasGlyph(&atlas, glyph)
         if !glyph_ok { failed = true; break }
     }
-    testing.expect(t, failed, "two rows of texels cannot hold four hundred glyphs")
+    testing.expect(t, failed, "two rows of data cannot hold four hundred glyphs")
+    // clearing starts again: the glyphs are baked anew, the slots from 0
+    AtlasClear(&atlas)
+    again_slot, again_ok := AtlasGlyph(&atlas, FontGlyph(font, 'x'))
+    testing.expect(t, again_ok && again_slot == 0)
+    testing.expect(t, AtlasReserveText(&atlas, "abc"))
 }
 
 @(test)
@@ -323,6 +329,7 @@ test_text_becomes_quads_that_sit_on_the_baseline_and_advance_by_the_font :: proc
     _, _, fit := TextQuads(&atlas, "abc", {}, 10, small[:])
     testing.expect(t, !fit)
     testing.expect_value(t, SlotColor(0x0203), [4]u8{3, 2, 0, 255})
+    testing.expect_value(t, SlotColor(0x0203, 7), [4]u8{3, 2, 7, 255})
 }
 
 @(test)
@@ -350,4 +357,64 @@ test_text_is_measured_and_wrapped_at_spaces :: proc(t: ^testing.T) {
     testing.expect(t, abs(pen.y - FontLineHeight(font) * 2 * 10) < 0.001, "the same lines as the measure says")
     tab: Vec2 = TextMeasure(font, "a\tb", 10)
     testing.expect(t, abs(tab.x - 5 * advance * 10) < 0.01, "a tab goes to the next multiple of four columns")
+}
+
+@(test)
+test_the_palette_names_colors_by_index_and_says_when_it_is_full :: proc(t: ^testing.T) {
+    font: ^Font = loadFont()
+    defer free(font)
+    texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 4)
+    slots: []i32 = make([]i32, font.glyph_count)
+    defer { delete(texels); delete(slots) }
+    atlas: Atlas
+    AtlasInit(&atlas, font, .SCANLINE, texels, slots)
+    red, ok := AtlasColor(&atlas, {255, 0, 0, 255})
+    testing.expect(t, ok && red == 0)
+    green, _ := AtlasColor(&atlas, {0, 255, 0, 128})
+    testing.expect_value(t, green, u8(1))
+    again, _ := AtlasColor(&atlas, {255, 0, 0, 255})
+    testing.expect_value(t, again, red)
+    texel: []f32 = atlasTexel(&atlas, ATLAS_PALETTE_START + 1)
+    testing.expect(t, texel[1] == 1 && abs(texel[3] - 128.0 / 255) < 0.001, "the color is in the texture")
+    for i in 2 ..< ATLAS_PALETTE { AtlasColor(&atlas, {u8(i), 1, 2, 3}) }
+    _, full_ok := AtlasColor(&atlas, {9, 9, 9, 9})
+    testing.expect(t, !full_ok)
+    AtlasClearColors(&atlas)
+    fresh, fresh_ok := AtlasColor(&atlas, {9, 9, 9, 9})
+    testing.expect(t, fresh_ok && fresh == 0)
+}
+
+@(test)
+test_text_is_rotated_around_its_origin_and_snapped_to_whole_pixels :: proc(t: ^testing.T) {
+    font: ^Font = loadFont()
+    defer free(font)
+    texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 4)
+    slots: []i32 = make([]i32, font.glyph_count)
+    defer { delete(texels); delete(slots) }
+    atlas: Atlas
+    AtlasInit(&atlas, font, .SLUG, texels, slots)
+    vertices: [64]TextVertex
+    advance: f32 = FontAdvance(font, FontGlyph(font, 'a'))
+    // a quarter turn clockwise: the line that went right goes down
+    _, pen, _ := TextQuads(&atlas, "aaaa", {100, 100}, 10, vertices[:], {rotation = 1.5707964})
+    testing.expect(t, abs(pen.x - 100) < 0.01 && abs(pen.y - (100 + 4 * advance * 10)) < 0.01, "the pen moved down")
+    // a vertex of a glyph keeps its em coordinates, whatever the turn
+    plain: [64]TextVertex
+    TextQuads(&atlas, "a", {0, 0}, 10, plain[:])
+    turned: [64]TextVertex
+    TextQuads(&atlas, "a", {0, 0}, 10, turned[:], {rotation = 1.5707964})
+    for i in 0 ..< TEXT_VERTICES_PER_GLYPH {
+        testing.expect_value(t, turned[i].uv, plain[i].uv)
+        testing.expect(t, abs(turned[i].position.x + plain[i].position.y) < 0.001 && abs(turned[i].position.y - plain[i].position.x) < 0.001, "x and y turned a quarter")
+    }
+    // snapped: the baseline and the left edge of the quads are whole pixels away from a whole origin
+    TextQuads(&atlas, "ab", {10.4, 20.7}, 13, vertices[:], {snap_to_pixels = true})
+    for i in 0 ..< TEXT_VERTICES_PER_GLYPH {
+        em_y: f32 = vertices[i].uv.y
+        baseline: f32 = vertices[i].position.y + em_y * 13
+        testing.expect(t, abs(baseline - 21) < 0.001, "the baseline is on pixel 21")
+    }
+    // a color index goes into every vertex
+    TextQuads(&atlas, "a", {}, 10, vertices[:], {}, 5)
+    testing.expect_value(t, vertices[0].color, u8(5))
 }

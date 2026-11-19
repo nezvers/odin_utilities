@@ -3,9 +3,10 @@
 // MIT licensed, Copyright 2017 by Eric Lengyel, with the data read from one float texture.
 in vec2 fragEm;
 flat in int fragSlot;
+flat in int fragColor;
 out vec4 finalColor;
 uniform sampler2D glyphData;
-uniform vec4 textColor;
+uniform vec4 textParams;        // x: the exponent of the coverage (1: as it is, under 1: heavier text)
 
 vec4 texel(int index)
 {
@@ -118,7 +119,10 @@ float slugCoverage(int slot, vec2 renderCoord, vec2 pixelsPerEm)
 
 void main()
 {
-    vec2 pixelsPerEm = 1.0 / fwidth(fragEm);
-    float coverage = slugCoverage(fragSlot, fragEm, pixelsPerEm);
-    finalColor = vec4(textColor.rgb, textColor.a * coverage);
+    // the size of an em in pixels along each axis of the em square, from how fast the coordinates change on the screen (right for a rotated quad too)
+    vec2 emsPerPixel = vec2(length(vec2(dFdx(fragEm.x), dFdy(fragEm.x))), length(vec2(dFdx(fragEm.y), dFdy(fragEm.y))));
+    float coverage = slugCoverage(fragSlot, fragEm, 1.0 / emsPerPixel);
+    if (textParams.x != 1.0) coverage = pow(coverage, textParams.x);
+    vec4 paint = texel(4096 + fragColor);
+    finalColor = vec4(paint.rgb, paint.a * coverage);
 }

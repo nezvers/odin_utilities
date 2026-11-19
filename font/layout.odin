@@ -7,34 +7,31 @@ package font
 //     vertices: [4096]font.TextVertex
 //     count := font.TextQuads(&atlas, "Hello", {20, 100}, 32, vertices[:])         // the baseline starts at (20, 100), 32 pixels to the em
 
+import "core:math"
 import "core:unicode/utf8"
 
 TextVertex :: struct {
     position: Vec2,             // pixels, y down
     uv: Vec2,                   // em units, y up, from the origin of the glyph
     slot: u32,                  // the slot of the glyph in the atlas
+    color: u8,                  // the index of the color in the palette of the atlas (AtlasColor)
 }
 
 TEXT_VERTICES_PER_GLYPH :: 6
 QUAD_MARGIN_PIXELS :: f32(1)
 
-// The slot as four bytes (what a vertex color carries when a framework has no better place for it): the shaders read it back from the first two
-SlotColor :: proc(slot: u32) -> [4]u8 {
-    return {u8(slot & 255), u8((slot >> 8) & 255), 0, 255}
+// The slot and the palette index as four bytes (what a vertex color carries when a framework has no better place for it): the shaders read the slot back from the red and the green, the
+// color from the palette by the blue
+SlotColor :: proc(slot: u32, color: u8 = 0) -> [4]u8 {
+    return {u8(slot & 255), u8((slot >> 8) & 255), color, 255}
 }
 
 TextOptions :: struct {
     wrap_width: f32,            // pixels: lines are broken at spaces to fit (0: only at new lines)
     line_spacing: f32,          // a factor of the line height of the font (0 is 1)
     tab_columns: int,           // a tab moves to a multiple of this many spaces (0 is 4)
-}
-
-// The glyphs of a text one after the other: where each is (the pen position in em units of the line, the line) and its glyph number. `visit` gets every character that is drawn.
-@(private)
-LayoutStep :: struct {
-    glyph: int,
-    x: f32,             // em units from the start of the line
-    line: int,
+    rotation: f32,              // radians, clockwise on the screen, around the origin of the text
+    snap_to_pixels: bool,       // the baseline and each glyph start on a whole pixel (the outlines are not hinted: this keeps the stems of a line alike), not with a rotation
 }
 
 // A line break that fits: the width of the text from `from` to the next space or the end, in em units
@@ -95,9 +92,10 @@ TextMeasure :: proc(font: ^Font, text: string, pixels_per_em: f32, options: Text
     return {widest * pixels_per_em, (FontLineHeight(font) * spacing * f32(lines - 1) + font.ascent - font.descent) * pixels_per_em}
 }
 
-// The quads of a text into `out` (six vertices per glyph that has an outline), how many vertices, and the position of the pen after the last character. The glyphs are baked into the atlas
-// as they are met; when the atlas or `out` is full the text stops there and `complete` is false.
-TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32, out: []TextVertex, options: TextOptions = {}) -> (count: int, pen: Vec2, complete: bool) {
+// The quads of a text into `out` (six vertices per glyph that has an outline), how many vertices, and the position of the pen after the last character. `color` is the index of the color in
+// the palette of the atlas (AtlasColor). The glyphs are baked into the atlas as they are met (AtlasReserveText does it first, so that a full atlas is known before anything is drawn); when the
+// atlas or `out` is full the text stops there and `complete` is false.
+TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32, out: []TextVertex, options: TextOptions = {}, color: u8 = 0) -> (count: int, pen: Vec2, complete: bool) {
     font: ^Font = atlas.font
     margin: f32 = QUAD_MARGIN_PIXELS / pixels_per_em
     wrap: f32 = options.wrap_width / pixels_per_em if options.wrap_width > 0 else 0
@@ -109,6 +107,16 @@ TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32,
     line: int
     previous: int
     complete = true
+    cos_angle: f32 = 1
+    sin_angle: f32 = 0
+    if options.rotation != 0 {
+        cos_angle, sin_angle = math.cos(options.rotation), math.sin(options.rotation)
+    }
+    snap: bool = options.snap_to_pixels && options.rotation == 0
+    // a point of the text (pixels from the origin of the text, y down) on the screen
+    turn :: proc(local: Vec2, origin: Vec2, cos_angle: f32, sin_angle: f32) -> Vec2 {
+        return origin + Vec2{local.x * cos_angle - local.y * sin_angle, local.x * sin_angle + local.y * cos_angle}
+    }
     i: int
     for i < len(text) {
         character, size := utf8.decode_rune_in_string(text[i:])
@@ -142,16 +150,21 @@ TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32,
             if slot >= 0 {
                 corner_low: Vec2 = low - {margin, margin}
                 corner_high: Vec2 = high + {margin, margin}
-                baseline: f32 = origin.y + f32(line) * line_height * pixels_per_em
-                left: f32 = origin.x + x * pixels_per_em
-                // the corners: bottom left, bottom right, top right, top left (y goes up in the em square and down on the screen)
-                place :: proc(em: Vec2, left: f32, baseline: f32, pixels_per_em: f32, slot: u32) -> TextVertex {
-                    return {position = {left + em.x * pixels_per_em, baseline - em.y * pixels_per_em}, uv = em, slot = slot}
+                baseline: f32 = f32(line) * line_height * pixels_per_em
+                left: f32 = x * pixels_per_em
+                if snap {
+                    baseline = math.round(origin.y + baseline) - origin.y
+                    left = math.round(origin.x + left) - origin.x
                 }
-                a: TextVertex = place({corner_low.x, corner_low.y}, left, baseline, pixels_per_em, u32(slot))
-                b: TextVertex = place({corner_high.x, corner_low.y}, left, baseline, pixels_per_em, u32(slot))
-                c: TextVertex = place({corner_high.x, corner_high.y}, left, baseline, pixels_per_em, u32(slot))
-                d: TextVertex = place({corner_low.x, corner_high.y}, left, baseline, pixels_per_em, u32(slot))
+                // the corners: bottom left, bottom right, top right, top left (y goes up in the em square and down on the screen)
+                place :: proc(em: Vec2, left: f32, baseline: f32, pixels_per_em: f32, slot: u32, color: u8, origin: Vec2, cos_angle: f32, sin_angle: f32) -> TextVertex {
+                    local: Vec2 = {left + em.x * pixels_per_em, baseline - em.y * pixels_per_em}
+                    return {position = turn(local, origin, cos_angle, sin_angle), uv = em, slot = slot, color = color}
+                }
+                a: TextVertex = place({corner_low.x, corner_low.y}, left, baseline, pixels_per_em, u32(slot), color, origin, cos_angle, sin_angle)
+                b: TextVertex = place({corner_high.x, corner_low.y}, left, baseline, pixels_per_em, u32(slot), color, origin, cos_angle, sin_angle)
+                c: TextVertex = place({corner_high.x, corner_high.y}, left, baseline, pixels_per_em, u32(slot), color, origin, cos_angle, sin_angle)
+                d: TextVertex = place({corner_low.x, corner_high.y}, left, baseline, pixels_per_em, u32(slot), color, origin, cos_angle, sin_angle)
                 out[count + 0], out[count + 1], out[count + 2] = a, b, c
                 out[count + 3], out[count + 4], out[count + 5] = a, c, d
                 count += TEXT_VERTICES_PER_GLYPH
@@ -159,6 +172,6 @@ TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32,
         }
         x += FontAdvance(font, glyph)
     }
-    pen = {origin.x + x * pixels_per_em, origin.y + f32(line) * line_height * pixels_per_em}
+    pen = turn({x * pixels_per_em, f32(line) * line_height * pixels_per_em}, origin, cos_angle, sin_angle)
     return
 }

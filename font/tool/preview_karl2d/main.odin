@@ -4,6 +4,7 @@
 package main
 
 import "core:fmt"
+import "core:math"
 import "core:os"
 import k2 "../../../karl2d"
 import kit "../../../demo_kit"
@@ -37,7 +38,7 @@ main :: proc() {
     font.AtlasInit(&slug, &face, .SLUG, slug_texels, slug_slots)
     font.AtlasInit(&scanline, &face, .SCANLINE, scanline_texels, scanline_slots)
     slug_renderer, scanline_renderer: font_karl2d.Renderer
-    if !font_karl2d.RendererInit(&slug_renderer, &slug) || !font_karl2d.RendererInit(&scanline_renderer, &scanline) {
+    if !font_karl2d.RendererInit(&slug_renderer, &slug, make([]font.TextVertex, 6 * 2048)) || !font_karl2d.RendererInit(&scanline_renderer, &scanline, make([]font.TextVertex, 6 * 2048)) {
         fmt.eprintln("no shader")
         os.exit(1)
     }
@@ -58,7 +59,17 @@ main :: proc() {
             y += 14
             for size in sizes {
                 y += size * 1.05
-                font_karl2d.DrawText(renderer, SAMPLE, {10, y}, size, k2.WHITE)
+                font_karl2d.DrawText(renderer, SAMPLE, {10, y}, size, k2.WHITE, {snap_to_pixels = true})
+            }
+            // turned text, and a line with a color for every letter (one batch)
+            font_karl2d.DrawText(renderer, "rotated 20 degrees", {620, y - 40}, 26, k2.Color{255, 200, 120, 255}, {rotation = -0.35})
+            font_karl2d.DrawText(renderer, "rotated 90", {1040, y - 300}, 20, k2.Color{160, 255, 180, 255}, {rotation = 1.5707964})
+            rainbow: string = "many colors in one batch"
+            pen_x: f32 = 620
+            for letter, i in rainbow {
+                hue: f32 = f32(i) / f32(len(rainbow))
+                tint: k2.Color = {u8(127 + 127 * math.sin(hue * 6.28)), u8(127 + 127 * math.sin(hue * 6.28 + 2.1)), u8(127 + 127 * math.sin(hue * 6.28 + 4.2)), 255}
+                pen_x = font_karl2d.DrawText(renderer, fmt.tprintf("%c", letter), {pen_x, y + 50}, 30, tint).x
             }
         }
         k2.draw_current_batch()

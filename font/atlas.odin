@@ -11,15 +11,19 @@ package font
 //     slot, ok := font.AtlasGlyph(&atlas, glyph)             // a number that goes into the vertices of the glyph (a texel of the glyph table says the rest)
 //
 // Layout (texel index i is at column i mod ATLAS_WIDTH, row i / ATLAS_WIDTH):
-//   0 ..< 2 * max_glyphs      the glyph table: two texels per slot
+//   row 0                     the glyph table: two texels per slot
 //        first:  (data start, bands in x - 1, bands in y - 1, 0)
 //        second: (band scale x, band scale y, band offset x, band offset y): band index = floor(em coordinate * scale + offset)
-//   after it                  the data of the glyphs, one after the other (see slug.odin and scanline.odin)
+//   row 1                     the palette: ATLAS_PALETTE colors (r, g, b, a as 0 to 1) that the vertices name by an index, so a batch can have text of many colors
+//   after them                the data of the glyphs, one after the other (see slug.odin and scanline.odin)
 // A glyph with no outline gets no data: `AtlasGlyph` returns ok with the slot -1 and the layout draws nothing for it.
 
 ATLAS_WIDTH :: 4096
 ATLAS_LOG_WIDTH :: 12
 ATLAS_TABLE_SLOTS :: 2048           // glyphs one atlas can hold at most
+ATLAS_PALETTE :: 256                // colors a batch of text can use (a vertex has a byte for it)
+ATLAS_HEADER_TEXELS :: 2 * ATLAS_WIDTH
+ATLAS_PALETTE_START :: ATLAS_WIDTH
 ATLAS_MAX_CURVES :: 1024            // curves in one glyph (after cutting them into monotonic pieces)
 ATLAS_MAX_BANDS :: 24
 BAND_EPSILON :: f32(1.0 / 1024)     // bands overlap by this much (em units) so that a curve that touches a border is in both
@@ -34,16 +38,20 @@ Atlas :: struct {
     version: u32,               // grows when texels changed: a glue uploads again when it differs from what it uploaded
     dirty_from: int,            // the texels from here to `used` changed since the glue last took them (AtlasTakeDirty)
     table_dirty: bool,          // a slot of the glyph table was written
+    palette: [ATLAS_PALETTE][4]u8, // the colors in the palette (what AtlasColor was asked for)
+    palette_count: int,
+    palette_dirty: bool,
 }
 
 AtlasInit :: proc(atlas: ^Atlas, font: ^Font, method: Method, texels: []f32, slot_of_glyph: []i32) {
-    assert(len(texels) % 4 == 0 && len(texels) >= 4 * ATLAS_WIDTH, "room for at least one row")
+    assert(len(texels) % 4 == 0 && len(texels) >= 4 * ATLAS_WIDTH * 3, "room for the two header rows and one row of data")
     assert(len(slot_of_glyph) >= font.glyph_count)
     atlas^ = {font = font, method = method, texels = texels, slot_of_glyph = slot_of_glyph}
     for i in 0 ..< font.glyph_count { slot_of_glyph[i] = -1 }
-    atlas.used = 2 * ATLAS_TABLE_SLOTS
-    atlas.dirty_from = 0
+    atlas.used = ATLAS_HEADER_TEXELS
+    atlas.dirty_from = ATLAS_HEADER_TEXELS
     atlas.table_dirty = true
+    atlas.palette_dirty = true
     for i in 0 ..< atlas.used * 4 { texels[i] = 0 }
 }
 
@@ -61,20 +69,63 @@ RowRange :: struct {
     count: int,
 }
 
-// What changed since the last call, as ranges of whole rows of the texture (at most two: the glyph table, which is the first row, and the new data after it); a count of 0 is nothing. A glue
-// uploads these rows. Call AtlasRows for the size of the texture.
-AtlasTakeDirty :: proc(atlas: ^Atlas) -> (ranges: [2]RowRange) {
+// What changed since the last call, as ranges of whole rows of the texture (at most three: the glyph table, the palette and the new data after them); a count of 0 is nothing. A glue uploads
+// these rows. Call AtlasRows for the size of the texture.
+AtlasTakeDirty :: proc(atlas: ^Atlas) -> (ranges: [3]RowRange) {
     if atlas.table_dirty {
         ranges[0] = {0, 1}
         atlas.table_dirty = false
     }
+    if atlas.palette_dirty {
+        ranges[1] = {1, 1}
+        atlas.palette_dirty = false
+    }
     if atlas.dirty_from < atlas.used {
-        first: int = atlas.dirty_from / ATLAS_WIDTH
+        first: int = max(atlas.dirty_from / ATLAS_WIDTH, 2)
         last: int = (atlas.used + ATLAS_WIDTH - 1) / ATLAS_WIDTH
-        ranges[1] = {max(first, 1), max(last - max(first, 1), 0)}
+        ranges[2] = {first, max(last - first, 0)}
         atlas.dirty_from = atlas.used
     }
     return
+}
+
+// The index of a color in the palette (added when it is not there): what a vertex of this color carries. False when the palette is full: flush what is batched, AtlasClearColors and ask again.
+AtlasColor :: proc(atlas: ^Atlas, color: [4]u8) -> (index: u8, ok: bool) {
+    for i in 0 ..< atlas.palette_count {
+        if atlas.palette[i] == color { return u8(i), true }
+    }
+    if atlas.palette_count >= ATLAS_PALETTE { return 0, false }
+    i: int = atlas.palette_count
+    atlas.palette[i] = color
+    texel: []f32 = atlasTexel(atlas, ATLAS_PALETTE_START + i)
+    texel[0], texel[1], texel[2], texel[3] = f32(color.r) / 255, f32(color.g) / 255, f32(color.b) / 255, f32(color.a) / 255
+    atlas.palette_count += 1
+    atlas.palette_dirty = true
+    return u8(i), true
+}
+
+AtlasClearColors :: proc(atlas: ^Atlas) {
+    atlas.palette_count = 0
+}
+
+// Forgets every glyph that was baked (the memory is reused from the start) and the colors: for an atlas that is full. What is batched for the GPU refers to the old slots, so the glue draws it first.
+AtlasClear :: proc(atlas: ^Atlas) {
+    for i in 0 ..< atlas.font.glyph_count { atlas.slot_of_glyph[i] = -1 }
+    atlas.used = ATLAS_HEADER_TEXELS
+    atlas.dirty_from = ATLAS_HEADER_TEXELS
+    atlas.slots = 0
+    atlas.palette_count = 0
+    atlas.table_dirty = true
+    atlas.version += 1
+}
+
+// Bakes every glyph of a text. False when the atlas is full (clear it and ask again: a text of more different glyphs than an atlas holds cannot be drawn).
+AtlasReserveText :: proc(atlas: ^Atlas, text: string) -> bool {
+    for character in text {
+        glyph: int = FontGlyph(atlas.font, character)
+        if _, ok := AtlasGlyph(atlas, glyph); !ok { return false }
+    }
+    return true
 }
 
 @(private)

@@ -3,9 +3,10 @@
 // the coverage of the pixel is the signed area that the monotonic curves sweep to the right inside of it.
 in vec2 fragEm;
 flat in int fragSlot;
+flat in int fragColor;
 out vec4 finalColor;
 uniform sampler2D glyphData;
-uniform vec4 textColor;
+uniform vec4 textParams;        // x: the exponent of the coverage (1: as it is, under 1: heavier text)
 
 vec4 texel(int index)
 {
@@ -115,7 +116,9 @@ float scanlineCoverage(int slot, vec2 point, vec2 halfSize)
 
 void main()
 {
-    vec2 halfSize = 0.5 * fwidth(fragEm);
-    float coverage = scanlineCoverage(fragSlot, fragEm, halfSize);
-    finalColor = vec4(textColor.rgb, textColor.a * coverage);
+    vec2 emsPerPixel = vec2(length(vec2(dFdx(fragEm.x), dFdy(fragEm.x))), length(vec2(dFdx(fragEm.y), dFdy(fragEm.y))));
+    float coverage = scanlineCoverage(fragSlot, fragEm, 0.5 * emsPerPixel);
+    if (textParams.x != 1.0) coverage = pow(coverage, textParams.x);
+    vec4 paint = texel(4096 + fragColor);
+    finalColor = vec4(paint.rgb, paint.a * coverage);
 }

@@ -27,7 +27,7 @@ draw_text :: proc(ctx: ^kit.Context, face: ^font.Font, requests: []demo_common.T
             entry.texels = make([]f32, 4 * font.ATLAS_WIDTH * ATLAS_ROWS)
             entry.slots = make([]i32, face.glyph_count)
             font.AtlasInit(&entry.atlas, face, request.method, entry.texels, entry.slots)
-            if !font_raylib.RendererInit(&entry.renderer, &entry.atlas) { return }
+            if !font_raylib.RendererInit(&entry.renderer, &entry.atlas, make([]font.TextVertex, 6 * 2048)) { return }
             entry.ready = true
         }
         font_raylib.DrawText(&entry.renderer, request.text, {request.position.x, request.position.y}, request.size, rl.Color(request.color))

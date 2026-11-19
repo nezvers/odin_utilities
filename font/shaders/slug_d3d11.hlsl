@@ -2,7 +2,7 @@
 // pixel shader, which is MIT licensed, Copyright 2017 by Eric Lengyel, with the data read from one float texture.
 cbuffer constants : register(b0) {
 	float4x4 view_projection;
-	float4 text_color;
+	float4 text_params;          // x: the exponent of the coverage (1: as it is, under 1: heavier text)
 }
 
 struct vs_in {
@@ -140,9 +140,12 @@ float slug_coverage(int slot, float2 render_coord, float2 pixels_per_em)
 float4 ps_main(vs_out input) : SV_TARGET
 {
 	int slot = int(input.color.r * 255.0 + 0.5) + 256 * int(input.color.g * 255.0 + 0.5);
-	float2 pixels_per_em = 1.0 / fwidth(input.em);
-	float coverage = slug_coverage(slot, input.em, pixels_per_em);
+	int color_index = int(input.color.b * 255.0 + 0.5);
+	float2 ems_per_pixel = float2(length(float2(ddx(input.em.x), ddy(input.em.x))), length(float2(ddx(input.em.y), ddy(input.em.y))));
+	float coverage = slug_coverage(slot, input.em, 1.0 / ems_per_pixel);
 	// reading one texel through the sampler keeps it in the shader, which Karl2D looks for when it matches the texture with its sampler (the first texel of the glyph table is never negative, so this adds nothing, and the compiler cannot know it)
 	float keep = min(glyph_data.SampleLevel(glyph_sampler, float2(0.0, 0.0), 0).x, 0.0);
-	return float4(text_color.rgb, text_color.a * (coverage + keep));
+	if (text_params.x != 1.0) coverage = pow(coverage, text_params.x);
+	float4 paint = texel(4096 + color_index);
+	return float4(paint.rgb, paint.a * (coverage + keep));
 }
