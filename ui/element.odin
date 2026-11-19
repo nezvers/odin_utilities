@@ -385,6 +385,7 @@ WidgetState :: struct {
     last_cursor: int,               // a text area: where the cursor was when the column was taken
     shown_cursor: int,              // a text area: where the cursor was when the view last followed it
     anchor: int,                    // a text field: the other end of the selection (the cursor is one end; the same as the cursor: nothing is selected)
+    hsv: [3]f32,                    // a color picker: hue, saturation and value as the person set them (a gray has no hue in RGB: this keeps it)
     drag: Vec2,                     // where the pointer was in the last frame of a drag (a drag widget, a window title)
     press_time: f32,                // seconds the widget has been held (a button that repeats)
     anim: f32,                      // UiAnimate: a value that follows a target

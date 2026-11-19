@@ -4549,3 +4549,79 @@ test_undo_belongs_to_the_field_that_has_the_focus_and_a_full_pool_drops_the_olde
     testing.expect_value(t, undo.current, UI_TEXT_UNDO_STEPS - 1)
     testing.expect_value(t, string(textUndoText(undo, undo.current)), "state3")      // the newest is the last one pushed (73 % 10)
 }
+
+@(test)
+test_color_conversions_round_trip_and_hex_is_parsed_and_written :: proc(t: ^testing.T) {
+    for color in ([?][3]f32{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {0.2, 0.6, 0.9}, {0.9, 0.5, 0.1}, {0.5, 0.5, 0.5}, {1, 1, 1}}) {
+        h, s, v := ColorRgbToHsv(color)
+        back: [3]f32 = ColorHsvToRgb(h, s, v)
+        testing.expect(t, near(back.r, color.r) && near(back.g, color.g) && near(back.b, color.b), "hsv and back")
+    }
+    h, s, v := ColorRgbToHsv({0, 1, 0})
+    testing.expect(t, near(h, 1.0 / 3) && near(s, 1) && near(v, 1))
+    testing.expect_value(t, ColorHsvToRgb(1.25, 1, 1), ColorHsvToRgb(0.25, 1, 1))             // the hue wraps
+    buffer: [9]u8
+    testing.expect_value(t, ColorToHex({1, 0.5, 0}, 1, buffer[:]), "#ff8000")
+    testing.expect_value(t, ColorToHex({0, 0, 1}, 0.2, buffer[:], true), "#0000ff33")
+    rgb, alpha, ok := ColorFromHex("#336699")
+    testing.expect(t, ok && near(rgb.r, 0.2) && near(rgb.g, 0.4) && near(rgb.b, 0.6) && near(alpha, 1))
+    rgb, alpha, ok = ColorFromHex("F00")
+    testing.expect(t, ok && near(rgb.r, 1) && near(rgb.g, 0) && near(alpha, 1))
+    rgb, alpha, ok = ColorFromHex("#00000080")
+    testing.expect(t, ok && near(alpha, 128.0 / 255))
+    _, _, ok = ColorFromHex("#12345")
+    testing.expect(t, !ok)
+    _, _, ok = ColorFromHex("#gggggg")
+    testing.expect(t, !ok)
+}
+
+@(test)
+test_the_color_picker_is_dragged_and_keeps_the_hue_of_a_gray :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    color: [3]f32 = {1, 0, 0}
+    alpha: f32 = 1
+    picker :: proc(harness: ^Harness, color: ^[3]f32, alpha: ^f32, input: Input) -> bool {
+        frame(harness, input)
+        changed: bool = UiColorPicker(&harness.ctx, "Tint", color, alpha, 100)
+        UiEnd(&harness.ctx)
+        return changed
+    }
+    for _ in 0 ..< 3 { picker(harness, &color, &alpha, pointerAt({-50, -50})) }
+    field, _ := UiElementRect(&harness.ctx, UiIdPath("Tint", "field"))
+    testing.expect_value(t, field.z, 100)
+    // the corner at the top left is white (no saturation, full value), the bottom edge is black
+    inside :: proc(field: Rect, x: f32, y: f32) -> Vec2 { return {field.x + field.z * clamp(x, 0.005, 0.995), field.y + field.w * clamp(y, 0.005, 0.995)} }
+    start: Vec2 = inside(field, 1, 0.1)
+    picker(harness, &color, &alpha, pointerAt(start))
+    picker(harness, &color, &alpha, pointerAt(start, true, true))
+    testing.expect(t, color.r > 0.85 && color.g < 0.05, "the red edge stays red")
+    testing.expect(t, picker(harness, &color, &alpha, pointerAt(inside(field, 0, 0), true)), "a drag tells it changed")
+    testing.expect(t, color.r > 0.97 && color.g > 0.97 && color.b > 0.97, "no saturation at full value is white")
+    picker(harness, &color, &alpha, pointerAt(inside(field, 1, 1), true))
+    testing.expect(t, color.r < 0.03 && color.g < 0.03 && color.b < 0.03, "the bottom is black")
+    picker(harness, &color, &alpha, pointerAt(inside(field, 1, 0), true, false))
+    testing.expect(t, color.r > 0.97 && color.g < 0.03, "back to the corner: the hue was kept through the black")
+    picker(harness, &color, &alpha, pointerAt(inside(field, 1, 0), false, false, true))
+    // the hue bar: halfway down is cyan
+    hue, _ := UiElementRect(&harness.ctx, UiIdPath("Tint", "hue"))
+    middle: Vec2 = {hue.x + hue.z * 0.5, hue.y + hue.w * 0.5}
+    picker(harness, &color, &alpha, pointerAt(middle))
+    picker(harness, &color, &alpha, pointerAt(middle, true, true))
+    testing.expect(t, color.r < 0.02 && color.g > 0.95 && color.b > 0.95, "a half turn of the hue from red is cyan")
+    picker(harness, &color, &alpha, pointerAt(middle, false, false, true))
+    // the alpha bar: the top is opaque, the bottom clear
+    bar, _ := UiElementRect(&harness.ctx, UiIdPath("Tint", "alpha"))
+    bottom: Vec2 = {bar.x + bar.z * 0.5, bar.y + bar.w - 1}
+    picker(harness, &color, &alpha, pointerAt(bottom))
+    picker(harness, &color, &alpha, pointerAt(bottom, true, true))
+    testing.expect(t, alpha < 0.03, "the bottom of the bar is clear")
+    picker(harness, &color, &alpha, pointerAt(bottom, false, false, true))
+    // the program sets another color: the picker takes it
+    color = {0, 0, 1}
+    picker(harness, &color, &alpha, pointerAt({-50, -50}))
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("Tint"))
+    testing.expect(t, near(state.hsv[0], 2.0 / 3) && near(state.hsv[1], 1) && near(state.hsv[2], 1))
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}
