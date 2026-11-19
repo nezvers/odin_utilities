@@ -185,3 +185,97 @@ test_the_exact_coverage_matches_a_grid_of_points_on_the_flattened_curves :: proc
         testing.expectf(t, mean < 2.5, "%c: the mean difference to the grid is %v of 255", character, mean)
     }
 }
+
+// The data that is made for the GPU, read back by the CPU model of each shader, against the exact coverage of the outline
+@(private = "file")
+compareAtlas :: proc(font: ^Font, character: rune, method: Method, pixels_per_em: f32) -> (mean: f32, worst: int) {
+    texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 8)
+    slots: []i32 = make([]i32, font.glyph_count)
+    defer { delete(texels); delete(slots) }
+    atlas: Atlas
+    AtlasInit(&atlas, font, method, texels, slots)
+    glyph: int = FontGlyph(font, character)
+    slot, ok := AtlasGlyph(&atlas, glyph)
+    assert(ok && slot >= 0)
+    curves: [256]Curve
+    count, _ := FontGlyphCurves(font, glyph, curves[:])
+    pieces: [768]Curve
+    piece_count, _ := CurvesMonotonic(curves[:count], pieces[:])
+    width, height: int = 24, 32
+    origin: Vec2 = {3, 22}
+    exact: [24 * 32]u8
+    CurvesRasterize(pieces[:piece_count], pixels_per_em, origin, exact[:], width, height)
+    sum: int
+    for row in 0 ..< height {
+        for column in 0 ..< width {
+            center: Vec2 = {(f32(column) + 0.5 - origin.x) / pixels_per_em, (origin.y - (f32(row) + 0.5)) / pixels_per_em}
+            value: f32
+            switch method {
+            case .SLUG: value = SlugCoverage(&atlas, slot, center, {pixels_per_em, pixels_per_em})
+            case .SCANLINE: value = ScanlineCoverage(&atlas, slot, center, {0.5, 0.5} / pixels_per_em)
+            }
+            difference: int = abs(int(value * 255 + 0.5) - int(exact[row * width + column]))
+            sum += difference
+            worst = max(worst, difference)
+        }
+    }
+    return f32(sum) / f32(width * height), worst
+}
+
+@(test)
+test_the_slug_data_read_by_the_slug_model_matches_the_exact_coverage :: proc(t: ^testing.T) {
+    font: ^Font = loadFont()
+    defer free(font)
+    for character in ([?]rune{'H', 'o', 'g', 'e', '@', '8', 'S', 'R', 'W', 'a'}) {
+        mean, worst := compareAtlas(font, character, .SLUG, 28)
+        testing.expectf(t, mean < 4, "%c: the mean difference is %v of 255", character, mean)
+        testing.expectf(t, worst < 140, "%c: the worst pixel is off by %v", character, worst)
+    }
+}
+
+@(test)
+test_the_scanline_data_read_by_the_scanline_model_matches_the_exact_coverage :: proc(t: ^testing.T) {
+    font: ^Font = loadFont()
+    defer free(font)
+    for character in ([?]rune{'H', 'o', 'g', 'e', '@', '8', 'S', 'R', 'W', 'a'}) {
+        mean, worst := compareAtlas(font, character, .SCANLINE, 28)
+        testing.expectf(t, mean < 0.5, "%c: the mean difference is %v of 255", character, mean)
+        testing.expectf(t, worst < 6, "%c: the worst pixel is off by %v", character, worst)
+    }
+    // small text: a pixel reaches over the border of two stripes
+    for character in ([?]rune{'o', 'g', 'e', '@'}) {
+        mean, worst := compareAtlas(font, character, .SCANLINE, 7)
+        testing.expectf(t, mean < 0.5 && worst < 6, "%c at 7 pixels: %v, %v", character, mean, worst)
+    }
+}
+
+@(test)
+test_an_atlas_bakes_a_glyph_once_says_when_it_is_full_and_has_nothing_for_a_space :: proc(t: ^testing.T) {
+    font: ^Font = loadFont()
+    defer free(font)
+    texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 2)
+    slots: []i32 = make([]i32, font.glyph_count)
+    defer { delete(texels); delete(slots) }
+    atlas: Atlas
+    AtlasInit(&atlas, font, .SLUG, texels, slots)
+    a, ok := AtlasGlyph(&atlas, FontGlyph(font, 'a'))
+    testing.expect(t, ok && a == 0)
+    again, _ := AtlasGlyph(&atlas, FontGlyph(font, 'a'))
+    testing.expect_value(t, again, 0)
+    used: int = atlas.used
+    AtlasGlyph(&atlas, FontGlyph(font, 'a'))
+    testing.expect_value(t, atlas.used, used)                    // baked once
+    space, space_ok := AtlasGlyph(&atlas, FontGlyph(font, ' '))
+    testing.expect(t, space_ok && space == -1)
+    first, rows := AtlasTakeDirty(&atlas)
+    testing.expect(t, rows >= 1 && first == 0)
+    _, none := AtlasTakeDirty(&atlas)
+    testing.expect_value(t, none, 0)
+    // an atlas that is full: the glyphs that fit are in, the others are told
+    failed: bool
+    for glyph in 0 ..< 400 {
+        _, glyph_ok := AtlasGlyph(&atlas, glyph)
+        if !glyph_ok { failed = true; break }
+    }
+    testing.expect(t, failed, "two rows of texels cannot hold four hundred glyphs")
+}
