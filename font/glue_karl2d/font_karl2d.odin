@@ -186,3 +186,22 @@ DrawText :: proc(renderer: ^Renderer, text: string, position: k2.Vec2, size: f32
     if !renderer.deferred { RendererFlush(renderer) }
     return {pen.x, pen.y}
 }
+
+// Draws rich text (font.RichParse and font.RichLayout made it) at `position` (the top left corner of the text, pixels, y down) at `time` seconds: the quads go into the batch like those of
+// DrawText. A full palette or a full atlas is dealt with here: what was batched before is drawn, the palette or the atlas is cleared and the text is made again.
+DrawRich :: proc(renderer: ^Renderer, rich: ^font.RichText, position: k2.Vec2, time: f32, options: font.RichDrawOptions = {}) {
+    atlas: ^font.Atlas = renderer.atlas
+    for attempt in 0 ..< 3 {
+        start: int = renderer.count
+        result: font.RichDrawResult = font.RichDraw(atlas, rich, {position.x, position.y}, time, renderer.vertices[start:], options)
+        if result.complete || attempt == 2 {
+            renderer.count += result.count
+            break
+        }
+        // not whole: draw what was there before this text, then try again with the whole buffer, a clean palette or a clean atlas
+        RendererFlush(renderer)
+        if result.palette_full { font.AtlasClearColors(atlas) }
+        if result.atlas_full { font.AtlasClear(atlas) }
+    }
+    if !renderer.deferred { RendererFlush(renderer) }
+}

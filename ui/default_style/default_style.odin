@@ -55,6 +55,7 @@ THEME_DARK :: Theme{
 
 Painter :: struct {
     user: rawptr,                   // the glue's own data (the kit.Context of the frame, a font...)
+    flush: proc(painter: ^Painter),  // draws what the painter has collected (the text of the font library is batched: every draw of a shape calls PainterFlush first, so the order stays right); nil: nothing is collected
     vector_text: rawptr,            // the glue's text system when the text is drawn from outlines by the font library (the glue's PainterUseVectorText sets it and the text procs)
     theme: Theme,
     scale: f32,                     // UI scale (0 is 1): the layout and the styles work in logical units, the glue multiplies what it draws by this and divides the pointer by it
@@ -99,6 +100,11 @@ Zoom :: proc(ctx: ^ui.Context, origin: ui.Vec2, factor: f32, begin: bool) {
     }
 }
 
+// Draws what the painter collected so far (a glue's text batch). A glue calls it first in every proc that draws something else.
+PainterFlush :: proc(painter: ^Painter) {
+    if painter.flush != nil { painter.flush(painter) }
+}
+
 @(private)
 painterOf :: proc(ctx: ^ui.Context) -> ^Painter {
     return cast(^Painter)ctx.user
@@ -115,6 +121,7 @@ StyleMake :: proc() -> ui.Style {
     style: ui.Style = {
         metrics = ui.DEFAULT_METRICS,
         zoom = Zoom,
+        render_end = proc(ctx: ^ui.Context) { PainterFlush(painterOf(ctx)) },
         clip = proc(ctx: ^ui.Context, rect: ui.Rect, begin: bool) {
             painter: ^Painter = painterOf(ctx)
             if painter.clip != nil { painter.clip(painter, rect, begin) }

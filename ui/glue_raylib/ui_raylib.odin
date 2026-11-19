@@ -27,10 +27,12 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
         user = font,
         theme = ui_default.THEME_DARK,
         fill_rect = proc(painter: ^ui_default.Painter, rect: ui.Rect, color: ui.Color) {
+            ui_default.PainterFlush(painter)
             rl.DrawRectangleRec(transmute(rl.Rectangle)ui_default.PaintRect(painter, rect), rl.Color(color))
         },
         fill_polygon = fillPolygon,
         fill_rounded = proc(painter: ^ui_default.Painter, rect: ui.Rect, radius: f32, color: ui.Color) {
+            ui_default.PainterFlush(painter)
             // raylib's roundness is the radius as a part of half of the shortest side: the same as the rounding of the ui
             scale: f32 = ui_default.PainterScale(painter)
             roundness: f32 = radius / (min(rect.z, rect.w) * 0.5)
@@ -47,6 +49,7 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
             return rl.MeasureTextEx(fontOf(painter), cstringInto(&buffer, text), size * scale, size * scale / 10) / scale
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
+            ui_default.PainterFlush(painter)
             if begin {
                 physical: ui.Rect = ui_default.PaintRect(painter, rect)
                 rl.BeginScissorMode(i32(physical.x), i32(physical.y), i32(physical.z), i32(physical.w))
@@ -61,6 +64,11 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
 // layout does not change. The system (font_raylib.TextSystem) has to live as long as the painter and be made after the window exists.
 PainterUseVectorText :: proc(painter: ^ui_default.Painter, system: ^font_raylib.TextSystem) {
     painter.vector_text = system
+    // the text of a run of labels is one draw call: it is collected here and drawn when a shape comes, a clip changes or UiRender ends
+    system.renderer.deferred = true
+    painter.flush = proc(painter: ^ui_default.Painter) {
+        if painter.vector_text != nil { font_raylib.RendererFlush(&(cast(^font_raylib.TextSystem)painter.vector_text).renderer) }
+    }
     painter.draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
         scale: f32 = ui_default.PainterScale(painter)
         font_raylib.TextSystemDraw(cast(^font_raylib.TextSystem)painter.vector_text, text, ui_default.PaintPoint(painter, position), size * scale, rl.Color(color))
@@ -93,6 +101,7 @@ fontOf :: proc(painter: ^ui_default.Painter) -> rl.Font {
 // raylib wants the corners of a fan counter clockwise, the points of the ui go clockwise
 @(private)
 fillPolygon :: proc(painter: ^ui_default.Painter, points: []ui.Vec2, color: ui.Color) {
+    ui_default.PainterFlush(painter)
     buffer: ui.RoundedBuffer
     count: int = min(len(points), len(buffer))
     for i in 0 ..< count {

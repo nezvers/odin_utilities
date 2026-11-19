@@ -19,6 +19,7 @@ UiRenderRange :: proc(ctx: ^Context, from: int, to: int) {
     zoom_origin: Vec2
     zoom_factor: f32 = 1
     zoom_pushed: bool
+    defer { if style.render_end != nil { style.render_end(ctx) } }
     for i in from ..< min(to, ctx.command_count) {
         command: ^Command = &ctx.commands[i]
         switch command.kind {

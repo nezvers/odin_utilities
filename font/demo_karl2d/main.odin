@@ -7,5 +7,6 @@ import demo_common "../demo_common"
 // The text of the demos is drawn by the font library through text.odin; the demos in demo_common only fill a list of requests.
 main :: proc() {
 	demo_common.text_drawer = draw_text
+	demo_common.rich_drawer = draw_rich
 	kit_karl2d.Run("font", demo_common.demos[:])
 }

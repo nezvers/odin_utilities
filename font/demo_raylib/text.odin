@@ -33,3 +33,17 @@ draw_text :: proc(ctx: ^kit.Context, face: ^font.Font, requests: []demo_common.T
         font_raylib.DrawText(&entry.renderer, request.text, {request.position.x, request.position.y}, request.size, rl.Color(request.color))
     }
 }
+
+draw_rich :: proc(ctx: ^kit.Context, face: ^font.Font, requests: []demo_common.RichRequest) {
+    for request in requests {
+        entry: ^Method_Renderer = &renderers[request.method]
+        if !entry.ready {
+            entry.texels = make([]f32, 4 * font.ATLAS_WIDTH * ATLAS_ROWS)
+            entry.slots = make([]i32, font.FontSlotCount(face))
+            font.AtlasInit(&entry.atlas, face, request.method, entry.texels, entry.slots)
+            if !font_raylib.RendererInit(&entry.renderer, &entry.atlas, make([]font.TextVertex, 6 * 4096)) { return }
+            entry.ready = true
+        }
+        font_raylib.DrawRich(&entry.renderer, request.rich, {request.position.x, request.position.y}, request.time, request.options)
+    }
+}

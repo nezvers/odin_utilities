@@ -141,6 +141,8 @@ Style :: struct {
     clip: proc(ctx: ^Context, rect: Rect, begin: bool),
     // a zoomed container starts (begin = true: everything up to its end is in its logical space, scaled by `factor` around `origin`) or ends: the style moves its painter. nil: no zoom.
     zoom: proc(ctx: ^Context, origin: Vec2, factor: f32, begin: bool),
+    // called when UiRender has gone through its commands: a style that collects something (text for one draw call) draws it. nil: nothing to do.
+    render_end: proc(ctx: ^Context),
     metrics: Metrics,
     graph: GraphStyle,
     timeline: TimelineStyle,        // how the lanes, clips, ruler and playhead of a timeline are drawn (timeline_style.odin)              // routing, bounds, distance and drawing of the cables and ties of a node graph (graph_style.odin)

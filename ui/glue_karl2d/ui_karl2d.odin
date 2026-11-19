@@ -29,6 +29,11 @@ import font_karl2d "../../font/glue_karl2d"
 // layout does not change. The system (font_karl2d.TextSystem) has to live as long as the painter and be made after karl2d.init.
 PainterUseVectorText :: proc(painter: ^ui_default.Painter, system: ^font_karl2d.TextSystem) {
     painter.vector_text = system
+    // the text of a run of labels is one batch: it is collected here and drawn when a shape comes, a clip changes or UiRender ends
+    system.renderer.deferred = true
+    painter.flush = proc(painter: ^ui_default.Painter) {
+        if painter.vector_text != nil { font_karl2d.RendererFlush(&(cast(^font_karl2d.TextSystem)painter.vector_text).renderer) }
+    }
     painter.draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
         scale: f32 = ui_default.PainterScale(painter)
         font_karl2d.TextSystemDraw(cast(^font_karl2d.TextSystem)painter.vector_text, text, ui_default.PaintPoint(painter, position), size * scale, color)
@@ -45,9 +50,11 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^karl2d.Font = nil) {
         user = font,
         theme = ui_default.THEME_DARK,
         fill_rect = proc(painter: ^ui_default.Painter, rect: ui.Rect, color: ui.Color) {
+            ui_default.PainterFlush(painter)
             karl2d.draw_rect(transmute(karl2d.Rect)ui_default.PaintRect(painter, rect), color)
         },
         fill_polygon = proc(painter: ^ui_default.Painter, points: []ui.Vec2, color: ui.Color) {
+            ui_default.PainterFlush(painter)
             // the polygon is convex: a fan from its first point
             first: ui.Vec2 = ui_default.PaintPoint(painter, points[0])
             for i in 1 ..< len(points) - 1 {
@@ -63,6 +70,7 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^karl2d.Font = nil) {
             return karl2d.measure_text(text, size * scale, fontOf(painter)) / scale
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
+            ui_default.PainterFlush(painter)
             if begin {
                 karl2d.set_scissor_rect(transmute(karl2d.Rect)ui_default.PaintRect(painter, rect))
             } else {

@@ -5,4 +5,4 @@ package demo_common
 
 import kit "../../demo_kit"
 
-demos: []kit.Demo = {demo_font}
+demos: []kit.Demo = {demo_font, demo_rich}

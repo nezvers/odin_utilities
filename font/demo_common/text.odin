@@ -19,3 +19,15 @@ TextRequest :: struct {
 // Draws the requests with the face. Set by the demo of a framework before it runs the demos (nil: the demos draw without text, as in the headless test).
 TextDrawer :: proc(ctx: ^kit.Context, face: ^font.Font, requests: []TextRequest)
 text_drawer: TextDrawer
+
+// Rich text: markup that is parsed and laid out by the demo (font.RichParse, font.RichLayout) and drawn by the glue at a time. A request has the text and where it goes.
+RichRequest :: struct {
+    rich: ^font.RichText,
+    position: kit.Vec2,         // the top left corner of the text
+    time: f32,                  // seconds, the demo gives the frame counted in 1/60 so that a test sees the same picture each time
+    options: font.RichDrawOptions,
+    method: font.Method,
+}
+
+RichDrawer :: proc(ctx: ^kit.Context, face: ^font.Font, requests: []RichRequest)
+rich_drawer: RichDrawer
