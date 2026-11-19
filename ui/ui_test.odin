@@ -2,6 +2,7 @@
 package ui
 
 import hm "core:container/handle_map"
+import "core:strings"
 import "core:testing"
 
 // A font where every character is half as wide as it is high: no framework needed to test a layout
@@ -5061,4 +5062,72 @@ test_hover_and_press_are_told_by_id_and_a_value_follows_its_target_in_time :: pr
         UiEnd(ctx)
     }
     testing.expect(t, value < 0.001, "and gets there")
+}
+
+@(test)
+test_the_screen_is_described_by_roles_names_and_states :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    @(static) flag: bool
+    @(static) number: f32
+    @(static) choice: int
+    @(static) tab: int
+    @(static) text: [16]u8
+    @(static) text_length: int
+    flag = true
+    number = 0.5
+    text_length = copy(text[:], "hello")
+    options: []string = {"one", "two"}
+    build :: proc(ctx: ^Context, options: []string) {
+        UiLabel(ctx, "Settings")
+        UiButton(ctx, "Save")
+        UiToggle(ctx, "Mute", &flag)
+        UiSlider(ctx, "Volume", &number)
+        _, _ = UiTextField(ctx, "Name", text[:], &text_length)
+        UiDropdown(ctx, "Kind", options, &choice)
+        UiTabBar(ctx, "tabs", options, &tab)
+        UiSeparator(ctx)
+        UiSpacer(ctx)
+    }
+    for _ in 0 ..< 3 {
+        frame(harness)
+        build(&harness.ctx, options)
+        UiEnd(&harness.ctx)
+    }
+    nodes: [64]AccessNode
+    count: int = UiAccessNodes(&harness.ctx, nodes[:])
+    testing.expect_value(t, nodes[0].role, AccessRole.TEXT)
+    find :: proc(nodes: []AccessNode, name: string) -> (result: AccessNode, found: bool) {
+        for node in nodes { if node.name == name { return node, true } }
+        return
+    }
+    save, found := find(nodes[:count], "Save")
+    testing.expect(t, found && save.role == .BUTTON && save.focusable && !save.focused)
+    mute, _ := find(nodes[:count], "Mute")
+    testing.expect(t, mute.role == .CHECKBOX && mute.on)
+    volume, _ := find(nodes[:count], "Volume")
+    testing.expect(t, volume.role == .SLIDER && abs(volume.value - 0.5) < 0.001)
+    name, _ := find(nodes[:count], "Name")
+    testing.expect(t, name.role == .TEXT_FIELD && name.text == "hello")
+    kind, _ := find(nodes[:count], "Kind")
+    testing.expect(t, kind.role == .COMBO_BOX && kind.text == "one" && !kind.open)
+    // nothing that only decorates is listed
+    for node in nodes[:count] { testing.expect(t, node.role != .OTHER) }
+    // the focus is part of it
+    UiFocus(&harness.ctx, save.id)
+    frame(harness)
+    build(&harness.ctx, options)
+    UiEnd(&harness.ctx)
+    focused, has := UiAccessFocused(&harness.ctx)
+    testing.expect(t, has && focused.name == "Save")
+    buffer: [1024]u8
+    described: string = UiAccessDescribe(&harness.ctx, buffer[:])
+    testing.expect(t, strings.contains(described, "button \"Save\" [focused]\n"), described)
+    testing.expect(t, strings.contains(described, "checkbox \"Mute\" [on]\n"), described)
+    testing.expect(t, strings.contains(described, "textbox \"Name\" = \"hello\"\n"), described)
+    testing.expect(t, strings.has_prefix(described, "text \"Settings\"\n"), described)
+    tiny: [20]u8
+    cut: string = UiAccessDescribe(&harness.ctx, tiny[:])
+    testing.expect(t, len(cut) <= len(tiny), "a small buffer is never overrun")
 }
