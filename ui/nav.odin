@@ -38,6 +38,15 @@ UiNavigate :: proc(ctx: ^Context, direction: Direction) -> bool {
             ctx.focus = link
             return true
         }
+        if state.adjust_both {
+            switch direction {
+            case .LEFT: state.pending_adjust -= 1
+            case .RIGHT: state.pending_adjust += 1
+            case .UP: state.pending_adjust_y -= 1
+            case .DOWN: state.pending_adjust_y += 1
+            }
+            return true
+        }
         if state.adjustable && (direction == .LEFT || direction == .RIGHT) {
             state.pending_adjust += 1 if direction == .RIGHT else -1
             return true

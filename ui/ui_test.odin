@@ -24,6 +24,8 @@ Seen :: struct {
     last: [StyleKind]DrawInfo,
     clip_begin: int,
     clip_end: int,
+    focused: [64]Id,
+    focused_count: int,
 }
 
 @(private = "file", thread_local)
@@ -33,6 +35,10 @@ seen: Seen            // per test thread: the tests run in parallel
 testStyle :: proc(ctx: ^Context, info: ^DrawInfo) {
     seen.kinds[info.kind] += 1
     seen.last[info.kind] = info^
+    if .FOCUSED in info.flags && seen.focused_count < len(seen.focused) {
+        seen.focused[seen.focused_count] = info.id
+        seen.focused_count += 1
+    }
 }
 
 @(private = "file")
@@ -4705,4 +4711,106 @@ test_a_combo_box_narrows_its_options_by_typing_and_takes_enter_a_click_and_escap
     testing.expect(t, combo(harness, options, &selected, pointerAt(row, false, false, true)), "a click on a row takes it")
     testing.expect_value(t, options[selected], "Gamma")
     testing.expect_value(t, harness.ctx.problems, Problems{})
+}
+
+@(test)
+test_every_interactive_widget_is_reached_by_the_tab_key_and_draws_its_focus :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    @(static) flag: bool
+    @(static) number: f32
+    @(static) integer: int
+    @(static) choice: int
+    @(static) tab: int
+    @(static) color: [3]f32
+    @(static) knob: f32
+    @(static) text: [16]u8
+    @(static) text_length: int
+    options: []string = {"one", "two", "three"}
+    build :: proc(ctx: ^Context, options: []string) {
+        UiButton(ctx, "button")
+        UiToggle(ctx, "toggle", &flag)
+        UiSlider(ctx, "slider", &number)
+        _, _ = UiTextField(ctx, "field", text[:], &text_length)
+        UiDropdown(ctx, "dropdown", options, &choice)
+        UiRadio(ctx, "radio", &choice, 1)
+        UiSelectable(ctx, "selectable", false)
+        UiTabBar(ctx, "tabs", options, &tab)
+        UiArrowButton(ctx, "arrow", .UP)
+        UiDrag(ctx, "drag", &number)
+        UiSliderInt(ctx, "sliderint", &integer, 0, 10)
+        UiInputInt(ctx, "inputint", &integer)
+        UiKnob(ctx, "knob", &knob)
+        UiFader(ctx, "fader", &knob)
+        UiColorButton(ctx, "swatch", color)
+        UiColorPicker(ctx, "picker", &color)
+        UiCombo(ctx, "combo", options, &choice)
+        UiCollapsing(ctx, "collapsing")
+    }
+    for _ in 0 ..< 3 {
+        frame(harness, screen = {400, 1000})
+        build(&harness.ctx, options)
+        UiEnd(&harness.ctx)
+    }
+    visited: map[Id]StyleKind
+    defer delete(visited)
+    wanted: int
+    for i in 0 ..< harness.ctx.hit_count {
+        box: ^HitBox = &harness.ctx.hits[i]
+        if .INTERACTIVE in box.kinds && .NO_FOCUS not_in box.kinds && box.id != 0 { wanted += 1 }
+    }
+    for _ in 0 ..< 60 {
+        input: Input = pointerAt({-50, -50})
+        input.actions = {.FOCUS_NEXT}
+        frame(harness, input, {400, 1000})
+        build(&harness.ctx, options)
+        UiEnd(&harness.ctx)
+        UiRender(&harness.ctx)
+        for i in 0 ..< seen.focused_count {
+            if seen.focused[i] == harness.ctx.focus && harness.ctx.focus != 0 {
+                for j in 0 ..< harness.ctx.command_count {
+                    if harness.ctx.commands[j].info.id == harness.ctx.focus { visited[harness.ctx.focus] = harness.ctx.commands[j].info.kind }
+                }
+            }
+        }
+        seen.focused_count = 0
+        if harness.ctx.focus != 0 && harness.ctx.focus not_in visited { visited[harness.ctx.focus] = .NONE }   // reached, but nothing was drawn with the flag
+    }
+    testing.expect(t, wanted >= 25, "the screen has all the widgets")
+    reached: int
+    for _, kind in visited { if kind != .NONE { reached += 1 } }
+    testing.expect_value(t, len(visited), wanted)                       // the tab key reaches every widget that takes the pointer
+    testing.expect_value(t, reached, wanted)                            // and each one is drawn with the FOCUSED flag, so a style can show it
+}
+
+@(test)
+test_the_arrow_keys_move_the_focused_parts_of_the_color_picker :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    color: [3]f32 = {0.5, 0.25, 0.25}
+    alpha: f32 = 0.5
+    picker :: proc(harness: ^Harness, color: ^[3]f32, alpha: ^f32, actions: Actions = {}) {
+        input: Input = pointerAt({-50, -50})
+        input.actions = actions
+        frame(harness, input)
+        UiColorPicker(&harness.ctx, "Tint", color, alpha, 100)
+        UiEnd(&harness.ctx)
+    }
+    for _ in 0 ..< 3 { picker(harness, &color, &alpha) }
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("Tint"))
+    before: [3]f32 = state.hsv
+    UiFocus(&harness.ctx, UiIdPath("Tint", "field"))
+    picker(harness, &color, &alpha, {.RIGHT})
+    testing.expect(t, near(state.hsv[1], before[1] + COLOR_PICKER_STEP), "right: more saturation")
+    picker(harness, &color, &alpha, {.UP})
+    testing.expect(t, near(state.hsv[2], before[2] + COLOR_PICKER_STEP), "up: brighter")
+    testing.expect(t, near(state.hsv[0], before[0]), "the hue did not move")
+    UiFocus(&harness.ctx, UiIdPath("Tint", "hue"))
+    picker(harness, &color, &alpha, {.DOWN})
+    testing.expect(t, near(state.hsv[0], before[0] + COLOR_PICKER_STEP), "down: further along the hue")
+    UiFocus(&harness.ctx, UiIdPath("Tint", "alpha"))
+    picker(harness, &color, &alpha, {.DOWN})
+    testing.expect(t, near(alpha, 0.5 - COLOR_PICKER_STEP), "down: more transparent")
 }

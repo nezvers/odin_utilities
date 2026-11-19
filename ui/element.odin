@@ -377,6 +377,8 @@ WidgetState :: struct {
     nav: [Direction]Id,             // where navigation goes from here: 0 the nearest widget, NAV_BLOCK nowhere, else that widget
     adjustable: bool,               // a slider: left and right of the navigation change its value
     adjust_vertical: bool,          // a splitter between sections that are stacked: up and down change it
+    adjust_both: bool,              // a square that is moved on both axes (a color picker): left and right fill `pending_adjust`, up and down `pending_adjust_y`
+    pending_adjust_y: int,
     pending_adjust: int,            // steps asked by UiNavigate, taken by the widget in its next call
     editing: bool,                  // a text field that has the focus: it keeps left, right, home and end for the caret
     initialized: bool,              // the widget was declared before (a header that starts open sets its state once)

@@ -29,6 +29,7 @@ marker :: proc(painter: ^Painter, center: ui.Vec2, radius: f32) {
 DrawColorField :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     rect: ui.Rect = info.rect
+    FocusRing(painter, info, 0)
     cell_w: f32 = rect.z / COLOR_FIELD_CELLS
     cell_h: f32 = rect.w / COLOR_FIELD_CELLS
     for row in 0 ..< COLOR_FIELD_CELLS {
@@ -46,6 +47,7 @@ DrawColorField :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
 DrawColorStrip :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     rect: ui.Rect = info.rect
+    FocusRing(painter, info, 0)
     if info.actual < 0.5 {
         cell: f32 = rect.w / COLOR_STRIP_CELLS
         for row in 0 ..< COLOR_STRIP_CELLS {

@@ -4,7 +4,7 @@ import "core:math"
 
 // A color picker: a square for saturation and brightness, a bar for the hue, an optional bar for the alpha, a swatch of the result and the three channels as drag values. The program owns the
 // color (`[3]f32`, 0..1, and the alpha as a `f32`); the picker keeps the hue and the saturation that the person chose in its own state, because a gray or a black has none in RGB and
-// dragging down to black would lose the hue for good. A color that the program changes meanwhile is taken at once.
+// dragging down to black would lose the hue for good. A color that the program changes meanwhile is taken at once. Each part takes the keyboard: Tab reaches the square and the bars, the arrow keys move the focused one.
 //
 //     color: [3]f32 = {0.9, 0.4, 0.1}
 //     alpha: f32 = 1
@@ -13,6 +13,7 @@ import "core:math"
 // ColorHsvToRgb, ColorRgbToHsv, ColorToHex and ColorFromHex are plain helpers for a program that has its own hex field or its own palette.
 
 COLOR_PICKER_BAR :: f32(22)                 // the width of the hue and alpha bars
+COLOR_PICKER_STEP :: f32(0.02)              // what an arrow key moves a focused part of the picker
 
 // h, s and v are 0..1 (the hue wraps)
 ColorHsvToRgb :: proc(h: f32, s: f32, v: f32) -> [3]f32 {
@@ -122,21 +123,41 @@ UiColorPicker :: proc(ctx: ^Context, name: string, color: ^[3]f32, alpha: ^f32 =
     field_id: Id = IdFromString("field", id)
     hue_id: Id = IdFromString("hue", id)
     alpha_id: Id = IdFromString("alpha", id)
-    _ = stateGet(ctx, field_id)
+    field_state: ^WidgetState = stateGet(ctx, field_id)
     field: Interaction = widgetBehavior(ctx, field_id)
+    field_state.adjust_both = true
+    if field_state.pending_adjust != 0 || field_state.pending_adjust_y != 0 {
+        // the arrow keys of a focused square: right is more saturation, down is less brightness
+        state.hsv[1] = clamp(state.hsv[1] + f32(field_state.pending_adjust) * COLOR_PICKER_STEP, 0, 1)
+        state.hsv[2] = clamp(state.hsv[2] - f32(field_state.pending_adjust_y) * COLOR_PICKER_STEP, 0, 1)
+        field_state.pending_adjust, field_state.pending_adjust_y = 0, 0
+        changed = true
+    }
     if field.pressed && (ctx.input.mouse_down || ctx.input.mouse_released) && field.rect.z > 0 && field.rect.w > 0 {
         state.hsv[1] = clamp((ctx.input.mouse_position.x - field.rect.x) / field.rect.z, 0, 1)
         state.hsv[2] = 1 - clamp((ctx.input.mouse_position.y - field.rect.y) / field.rect.w, 0, 1)
         changed = true
     }
-    _ = stateGet(ctx, hue_id)
+    hue_state: ^WidgetState = stateGet(ctx, hue_id)
+    hue_state.adjust_vertical = true
+    if hue_state.pending_adjust != 0 {
+        state.hsv[0] = clamp(state.hsv[0] + f32(hue_state.pending_adjust) * COLOR_PICKER_STEP, 0, 0.9999)
+        hue_state.pending_adjust = 0
+        changed = true
+    }
     hue: Interaction = widgetBehavior(ctx, hue_id)
     if hue.pressed && (ctx.input.mouse_down || ctx.input.mouse_released) && hue.rect.w > 0 {
         state.hsv[0] = min(clamp((ctx.input.mouse_position.y - hue.rect.y) / hue.rect.w, 0, 1), 0.9999)
         changed = true
     }
     if alpha != nil {
-        _ = stateGet(ctx, alpha_id)
+        alpha_state: ^WidgetState = stateGet(ctx, alpha_id)
+        alpha_state.adjust_vertical = true
+        if alpha_state.pending_adjust != 0 {
+            alpha^ = clamp(alpha^ - f32(alpha_state.pending_adjust) * COLOR_PICKER_STEP, 0, 1)
+            alpha_state.pending_adjust = 0
+            changed = true
+        }
         bar: Interaction = widgetBehavior(ctx, alpha_id)
         if bar.pressed && (ctx.input.mouse_down || ctx.input.mouse_released) && bar.rect.w > 0 {
             alpha^ = 1 - clamp((ctx.input.mouse_position.y - bar.rect.y) / bar.rect.w, 0, 1)

@@ -59,5 +59,6 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Text field and text area: undo and redo (Ctrl + Z, Ctrl + Y) with a fixed pool, a word is one step
 - [x] Color picker (`UiColorPicker`: square, hue and alpha bars, hex helpers; style kinds `COLOR_FIELD`, `COLOR_STRIP`)
 - [x] Combo box with search (`UiCombo`, `UiMatchText`)
+- [x] Keyboard: a test that Tab reaches every interactive widget and that each is drawn with the FOCUSED flag; the color picker takes the focus ring and the arrow keys (`adjust_both`)
 - [x] `Decl.absolute`: a child out of the flow of its parent at an offset (no root, no limit but the storage); the graph nodes use it
 - [x] Node graph: nodes outside of the view are not declared (`GraphNodesByDepth` with a view)
