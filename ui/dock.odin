@@ -52,6 +52,9 @@ DockPanel :: struct {
     name: [GRAPH_NAME_MAX]u8,
     name_length: int,
     node: int,                          // the leaf it is in, -1 while it is closed
+    floating: bool,                     // in a window of its own over the dock (node is -1); DockPanelFloat
+    float_position: Vec2,
+    float_size: Vec2,
     closable: bool,                     // its tab has a button that closes it (DockPanelSetClosable)
     user: rawptr,                       // of the program (not meant to be saved)
 }
@@ -63,6 +66,8 @@ DockMove :: struct {
     zone: DockZone,
     index: int,                         // >= 0: the tab goes to this place among the tabs of the leaf
     close: bool,                        // the panel is closed instead
+    float: bool,                        // the panel becomes a window of its own at `position`
+    position: Vec2,
 }
 
 Dock :: struct {
@@ -85,7 +90,24 @@ DockPanelName :: proc(dock: ^Dock, panel: int) -> string {
 }
 
 DockPanelIsOpen :: proc(dock: ^Dock, panel: int) -> bool {
-    return panel >= 0 && panel < DOCK_PANELS && dock.panels[panel].used && dock.panels[panel].node >= 0
+    return panel >= 0 && panel < DOCK_PANELS && dock.panels[panel].used && (dock.panels[panel].node >= 0 || dock.panels[panel].floating)
+}
+
+DockPanelIsFloating :: proc(dock: ^Dock, panel: int) -> bool {
+    return panel >= 0 && panel < DOCK_PANELS && dock.panels[panel].used && dock.panels[panel].floating
+}
+
+// Takes a panel out of the tree into a window of its own at `position` (screen coordinates), `size` big. A floating panel is docked again with DockPanelDock or DockPanelInsert, or by dragging its title
+// onto a panel. Its place in the tree is gone with it (an empty leaf and the split above it go).
+DockPanelFloat :: proc(dock: ^Dock, panel: int, position: Vec2, size: Vec2 = {320, 240}) -> bool {
+    if panel < 0 || panel >= DOCK_PANELS || !dock.panels[panel].used { return false }
+    entry: ^DockPanel = &dock.panels[panel]
+    if entry.node >= 0 { dockDetach(dock, panel) }
+    entry.floating = true
+    entry.float_position = position
+    if entry.float_size.x <= 0 || size != {320, 240} { entry.float_size = size }
+    dock.serial += 1
+    return true
 }
 
 // The leaf a panel is in (-1 when it is closed or there is no such panel)
@@ -166,6 +188,7 @@ dockAttach :: proc(dock: ^Dock, panel: int, leaf_index: int) {
     leaf.active = leaf.panel_count
     leaf.panel_count += 1
     dock.panels[panel].node = leaf_index
+    dock.panels[panel].floating = false
 }
 
 // A panel with a name. It is docked as a tab in the first leaf (the dock gets its first leaf from the first panel), or left closed.
@@ -183,7 +206,7 @@ DockPanelAdd :: proc(dock: ^Dock, name: string, user: rawptr = nil, closed: bool
 
 // Shows a closed panel again: as a tab in the first leaf, or as the whole dock when it is empty
 DockPanelOpen :: proc(dock: ^Dock, panel: int) -> bool {
-    if panel < 0 || panel >= DOCK_PANELS || !dock.panels[panel].used || dock.panels[panel].node >= 0 { return false }
+    if panel < 0 || panel >= DOCK_PANELS || !dock.panels[panel].used || dock.panels[panel].node >= 0 || dock.panels[panel].floating { return false }
     leaf: int = DockFirstLeaf(dock)
     if leaf < 0 {
         leaf = dockNodeNew(dock, .LEAF)
@@ -201,6 +224,7 @@ DockPanelOpen :: proc(dock: ^Dock, panel: int) -> bool {
 DockPanelClose :: proc(dock: ^Dock, panel: int) -> bool {
     if !DockPanelIsOpen(dock, panel) { return false }
     dockDetach(dock, panel)
+    dock.panels[panel].floating = false
     dock.serial += 1
     return true
 }
@@ -211,6 +235,7 @@ DockPanelDock :: proc(dock: ^Dock, panel: int, target: int, zone: DockZone = .CE
     if panel < 0 || panel >= DOCK_PANELS || !dock.panels[panel].used { return false }
     if dock.root < 0 {
         // an empty dock: the panel is all of it
+        dock.panels[panel].floating = false
         return DockPanelOpen(dock, panel)
     }
     if target < 0 || target >= DOCK_NODES || !dock.nodes[target].used || dock.nodes[target].kind != .LEAF { return false }
@@ -269,6 +294,7 @@ DockPanelInsert :: proc(dock: ^Dock, panel: int, target: int, index: int) -> boo
     leaf.panel_count += 1
     leaf.active = place
     dock.panels[panel].node = target
+    dock.panels[panel].floating = false
     dock.serial += 1
     return true
 }
@@ -307,7 +333,7 @@ DockCheck :: proc(dock: ^Dock) -> bool {
         if node.used != reached[i] { return false }
     }
     for panel, i in dock.panels {
-        if panel.used && (seen[i] > 1 || (seen[i] == 0 && panel.node >= 0)) { return false }
+        if panel.used && (seen[i] > 1 || (seen[i] == 0 && panel.node >= 0) || (panel.floating && panel.node >= 0)) { return false }
     }
     return true
 }
@@ -352,13 +378,27 @@ UiDock :: proc(ctx: ^Context, name: string, dock: ^Dock, content: DockContentPro
         clip = {horizontal = true, vertical = true, cut = true},
     })
     if dock.root >= 0 { dockBuild(ctx, dock, dock.root, id, {Grow(), Grow()}, content, user) }
+    for panel in 0 ..< DOCK_PANELS {
+        if dock.panels[panel].used && dock.panels[panel].floating { dockFloating(ctx, dock, panel, id, content, user) }
+    }
     if source, active := UiDragging(ctx); active && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && source != 0 {
         UiDragPreview(ctx, DockPanelName(dock, (^int)(raw_data(UiDragPayload(ctx)))^))
     }
     ElementClose(ctx)
+    // a tab or a title that is let go where no panel takes it becomes a window of its own there
+    if _, dragging := UiDragging(ctx); dragging && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && ctx.input.mouse_released && dock.pending.panel < 0 {
+        panel: int = (^int)(raw_data(UiDragPayload(ctx)))^
+        grab: Vec2 = {24, 12}
+        if DockPanelIsFloating(dock, panel) { grab = ctx.press_position - dock.panels[panel].float_position }
+        position: Vec2 = ctx.input.mouse_position - grab
+        position.x = clamp(position.x, 0, max(ctx.screen.x - 60, 0))
+        position.y = clamp(position.y, 0, max(ctx.screen.y - 30, 0))
+        dock.pending = {panel = panel, index = -1, float = true, position = position}
+    }
     if dock.pending.panel >= 0 {
         move: DockMove = dock.pending
         switch {
+        case move.float: DockPanelFloat(dock, move.panel, move.position, dock.panels[move.panel].float_size if dock.panels[move.panel].float_size.x > 0 else {320, 240})
         case move.close: DockPanelClose(dock, move.panel)
         case move.index >= 0: DockPanelInsert(dock, move.panel, move.target, move.index)
         case: DockPanelDock(dock, move.panel, move.target, move.zone)
@@ -502,5 +542,55 @@ dockHandle :: proc(ctx: ^Context, dock: ^Dock, node: ^DockNode, node_id: Id, ext
         cursor = .RESIZE_HORIZONTAL if horizontal else .RESIZE_VERTICAL,
         draw = {kind = .SPLITTER, name = "dock", actual = f32(node.direction), flags = flags, font_size = ctx.style.metrics.font_size},
     })
+    ElementClose(ctx)
+}
+
+// A panel in a window of its own: the title is dragged like a tab (let go over a panel it docks there, let go anywhere else it moves the window), the body is the content of the panel.
+@(private)
+dockFloating :: proc(ctx: ^Context, dock: ^Dock, panel: int, dock_id: Id, content: DockContentProc, user: rawptr) {
+    entry: ^DockPanel = &dock.panels[panel]
+    metrics: ^Metrics = &ctx.style.metrics
+    size: Vec2 = entry.float_size if entry.float_size.x > 0 && entry.float_size.y > 0 else Vec2{320, 240}
+    window_id: Id = IdFromIndex(u32(panel), IdFromString("float", dock_id))
+    title_id: Id = IdFromString("title", window_id)
+    _ = stateGet(ctx, window_id)
+    _ = stateGet(ctx, title_id)
+    ElementOpen(ctx, {
+        id = window_id,
+        layout = {size = {Fixed(size.x), Fixed(size.y)}, direction = .TOP_TO_BOTTOM},
+        floating = {attach_to = .ROOT, parent_point = .LEFT_TOP, element_point = .LEFT_TOP, offset = entry.float_position, z_index = 300 + i16(panel), capture = true},
+        hit = {.BLOCKER},
+        draw = {kind = .PANEL, font_size = metrics.font_size},
+    })
+    interaction: Interaction = widgetBehavior(ctx, title_id)
+    _ = interaction
+    ElementOpen(ctx, {
+        id = title_id,
+        layout = {size = {Grow(), Fixed(metrics.control_height)}, direction = .LEFT_TO_RIGHT, align = {y = .CENTER}},
+        hit = {.INTERACTIVE, .NO_FOCUS},
+        draw = {kind = .WINDOW_TITLE, name = DockPanelName(dock, panel), font_size = metrics.font_size},
+    })
+    if entry.closable {
+        ElementOpen(ctx, {layout = {size = {Grow(), Fixed(1)}}})
+        ElementClose(ctx)
+        close_id: Id = IdFromIndex(u32(panel), IdFromString("close", dock_id))
+        _ = stateGet(ctx, close_id)
+        close: Interaction = widgetBehavior(ctx, close_id)
+        if close.clicked { dock.pending = {panel = panel, index = -1, close = true} }
+        ElementOpen(ctx, {
+            id = close_id,
+            layout = {size = {Fixed(metrics.control_height * 0.7), Fixed(metrics.control_height)}},
+            hit = {.INTERACTIVE},
+            draw = {kind = .BUTTON, name = "x", font_size = metrics.font_size},
+        })
+        ElementClose(ctx)
+    }
+    ElementClose(ctx)
+    moved: int = panel
+    ctx.last_id = title_id
+    UiDragSourceValue(ctx, DOCK_DRAG_KIND, &moved)
+    ElementOpen(ctx, {layout = {size = {Grow(), Grow()}, direction = .TOP_TO_BOTTOM, padding = PaddingXY(metrics.padding.x, metrics.padding.y)}, clip = {horizontal = true, vertical = true, cut = true}})
+    content(ctx, dock, panel, user)
+    ElementClose(ctx)
     ElementClose(ctx)
 }

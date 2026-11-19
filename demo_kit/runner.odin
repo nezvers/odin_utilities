@@ -37,12 +37,12 @@ Runner :: struct {
     fixed_delta: f32,           // 0: the time the backend measures. A test uses 1/60
     show_menu: bool,
     run_time: f64,
-    escape_exits: bool,         // escape closes a demo in a window
+    escape_exits: bool,         // escape closes a demo in a window (not in a scripted test, where Escape is input for the demo)
 }
 
 // `demos` has to live as long as the runner. With playing = false the devices drive the demo.
 RunnerInit :: proc(runner: ^Runner, demos: []Demo, backend: ^Backend, first: int = 0) {
-    runner^ = {demos = demos, backend = backend, current = first, show_menu = len(demos) > 1, escape_exits = true}
+    runner^ = {demos = demos, backend = backend, current = first, show_menu = len(demos) > 1, escape_exits = !DEMO_TEST}      // a test plays Escape itself (a dialog, a menu): it must not close the window
     runner.ctx.backend = backend
 }
 

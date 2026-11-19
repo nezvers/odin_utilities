@@ -2,7 +2,7 @@
 package demo_common
 
 // Docking: panels in tabs inside of splits, moved by dragging their tabs. The dock is plain data (ui.Dock); the demo only says what is in each panel.
-// The script drags a tab to the edge of another panel (it splits it), drags a handle and moves a tab into the middle of a panel (it becomes a tab there).
+// A tab let go outside of the dock becomes a window; its title docks it again. The script drags a tab to the edge of another panel (it splits it), drags a handle and moves a tab into the middle of a panel (it becomes a tab there).
 
 import ui ".."
 import kit "../../demo_kit"
@@ -103,5 +103,13 @@ script: []kit.Step = {
     kit.Click({454, 92}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !ui.DockPanelIsOpen(&dock, console) && ui.DockCheck(&dock) }, "the close button closed the panel"),
+    // the Assets tab (212..275, 78..106) let go outside of the dock: a window of its own
+    kit.MoveTo({243, 92}),
+    kit.Wait(3),
+    kit.Drag({243, 92}, {800, 300}, 12),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.DockPanelIsFloating(&dock, assets) && ui.DockCheck(&dock) }, "let go outside the dock the tab became a window"),
+    kit.Wait(3),
+    kit.Capture("dock_floating"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.ctx) == {} }, "the frames had no problems"),
 }

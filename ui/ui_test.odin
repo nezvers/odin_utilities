@@ -4867,3 +4867,54 @@ test_a_dock_tab_is_reordered_by_a_drop_on_the_bar_and_a_close_button_closes_it :
     testing.expect_value(t, leaf.panel_count, 2)
     testing.expect(t, DockCheck(dock))
 }
+
+@(test)
+test_a_dock_tab_let_go_outside_floats_and_its_title_docks_it_again :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    dock: ^Dock = new(Dock)
+    defer { free(harness); free(dock) }
+    harnessInit(harness)
+    DockInit(dock)
+    a, _ := DockPanelAdd(dock, "A")
+    b, _ := DockPanelAdd(dock, "B")
+    DockPanelDock(dock, a, DockLeafOf(dock, b), .LEFT)
+    @(static) shown_floating: int
+    shown_floating = 0
+    content :: proc(ctx: ^Context, dock: ^Dock, panel: int, user: rawptr) {
+        if DockPanelIsFloating(dock, panel) { shown_floating += 1 }
+    }
+    dock_id: Id
+    run :: proc(harness: ^Harness, dock: ^Dock, content: DockContentProc, id: ^Id, input: Input) {
+        frame(harness, input, {600, 500})
+        id^ = UiId(&harness.ctx, "dock")
+        UiDock(&harness.ctx, "dock", dock, content, size = {Fixed(300), Fixed(200)})
+        UiEnd(&harness.ctx)
+    }
+    drag :: proc(harness: ^Harness, dock: ^Dock, content: DockContentProc, id: ^Id, from: Vec2, to: Vec2) {
+        run(harness, dock, content, id, pointerAt(from))
+        run(harness, dock, content, id, pointerAt(from, true, true))
+        run(harness, dock, content, id, pointerAt(from + {10, 10}, true))
+        run(harness, dock, content, id, pointerAt(to, true))
+        run(harness, dock, content, id, pointerAt(to, false, false, true))
+        run(harness, dock, content, id, pointerAt(to))
+        run(harness, dock, content, id, pointerAt(to))
+    }
+    for _ in 0 ..< 3 { run(harness, dock, content, &dock_id, pointerAt({-50, -50})) }
+    tab: Rect
+    tab, _ = UiElementRect(&harness.ctx, IdFromIndex(u32(b), IdFromString("tab", dock_id)))
+    drag(harness, dock, content, &dock_id, RectCenter(tab), {450, 400})
+    testing.expect(t, DockPanelIsFloating(dock, b), "let go outside of the dock the tab became a window")
+    testing.expect(t, DockCheck(dock))
+    testing.expect(t, dock.panels[b].float_position.x > 300 && dock.panels[b].float_position.y > 300, "where the pointer let go")
+    testing.expect(t, shown_floating > 0, "its content is declared in the window")
+    testing.expect_value(t, dock.root, DockLeafOf(dock, a))
+    // the title of the window onto the middle of the remaining panel: docked as a tab
+    title, found := UiElementRect(&harness.ctx, IdFromString("title", IdFromIndex(u32(b), IdFromString("float", dock_id))))
+    testing.expect(t, found)
+    leaf, _ := UiElementRect(&harness.ctx, IdFromIndex(u32(DockLeafOf(dock, a)), dock_id))
+    drag(harness, dock, content, &dock_id, RectCenter(title), RectCenter(leaf))
+    testing.expect(t, !DockPanelIsFloating(dock, b), "docked again")
+    testing.expect_value(t, DockLeafOf(dock, b), DockLeafOf(dock, a))
+    testing.expect(t, DockCheck(dock))
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}

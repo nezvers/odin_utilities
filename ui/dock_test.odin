@@ -130,3 +130,31 @@ test_a_tab_is_inserted_among_the_tabs_of_a_leaf_or_moved_within_it :: proc(t: ^t
     testing.expect_value(t, dock.nodes[DockLeafOf(dock, a)].panels[1], i8(b))
     testing.expect_value(t, dock.root, DockLeafOf(dock, a))
 }
+
+@(test)
+test_a_panel_floats_and_is_docked_again_and_a_floating_panel_can_close :: proc(t: ^testing.T) {
+    dock: ^Dock = newDock()
+    defer free(dock)
+    a, _ := DockPanelAdd(dock, "A")
+    b, _ := DockPanelAdd(dock, "B")
+    testing.expect(t, DockPanelFloat(dock, b, {100, 50}, {200, 150}))
+    testing.expect(t, DockPanelIsFloating(dock, b) && DockPanelIsOpen(dock, b))
+    testing.expect_value(t, DockLeafOf(dock, b), -1)
+    testing.expect_value(t, dock.nodes[DockLeafOf(dock, a)].panel_count, 1)
+    testing.expect(t, DockCheck(dock))
+    testing.expect(t, !DockPanelOpen(dock, b), "it is open already")
+    testing.expect(t, DockPanelDock(dock, b, DockLeafOf(dock, a), .RIGHT))
+    testing.expect(t, !DockPanelIsFloating(dock, b))
+    testing.expect(t, DockCheck(dock))
+    // the last docked panel floats: the dock is empty, and a floating panel docks into an empty dock
+    testing.expect(t, DockPanelFloat(dock, a, {0, 0}))
+    testing.expect(t, DockPanelFloat(dock, b, {10, 10}))
+    testing.expect_value(t, dock.root, -1)
+    testing.expect(t, DockCheck(dock))
+    testing.expect(t, DockPanelDock(dock, a, -1, .CENTER))
+    testing.expect(t, DockPanelIsFloating(dock, b) && !DockPanelIsFloating(dock, a))
+    testing.expect(t, DockPanelClose(dock, b), "a floating panel closes")
+    testing.expect(t, !DockPanelIsOpen(dock, b) && !DockPanelIsFloating(dock, b))
+    testing.expect(t, DockPanelOpen(dock, b))
+    testing.expect(t, DockCheck(dock))
+}

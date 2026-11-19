@@ -86,3 +86,5 @@ The kit and `glue_karl2d` build for `js_wasm32` too (`capture_js.odin` and `exit
 A new framework is one more backend: fill the `Backend` table (see `glue_raylib/raylib.odin`; `capture` may stay nil).
 
 `odin test demo_kit -strict-style -vet`
+
+- In a scripted test (`-define:DEMO_TEST=true`) Escape does not close the window (`Runner.escape_exits` is off): a script can press Escape as input for the demo, like a dialog that closes with it. Outside of a test Escape ends the demo as before.
