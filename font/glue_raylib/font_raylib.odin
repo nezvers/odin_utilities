@@ -78,6 +78,30 @@ upload :: proc(renderer: ^Renderer) {
 // Draws what is batched
 RendererFlush :: proc(renderer: ^Renderer) {
     if renderer.count == 0 { return }
+    drawVertices(renderer, renderer.vertices[:renderer.count])
+    renderer.count = 0
+}
+
+// Starts a batch: DrawText only collects until RendererEnd, which draws it all in one go. Another batch inside is not needed: it is the same one.
+RendererBegin :: proc(renderer: ^Renderer) {
+    renderer.deferred = true
+}
+
+RendererEnd :: proc(renderer: ^Renderer) {
+    RendererFlush(renderer)
+    renderer.deferred = false
+}
+
+// Draws a list of vertices that the program made itself (TextQuads, the rich text, a list it kept from an earlier frame) with one draw call, after what is batched (the order stays). The list
+// may be of any length and need not be in the batch of the renderer: build it once, draw it as often as you like.
+RendererDraw :: proc(renderer: ^Renderer, vertices: []font.TextVertex) {
+    RendererFlush(renderer)
+    drawVertices(renderer, vertices)
+}
+
+@(private)
+drawVertices :: proc(renderer: ^Renderer, vertices: []font.TextVertex) {
+    if len(vertices) == 0 { return }
     upload(renderer)
     rl.BeginShaderMode(renderer.shader)
     params: [4]f32 = {renderer.weight, 0, 0, 0}
@@ -85,7 +109,7 @@ RendererFlush :: proc(renderer: ^Renderer) {
     rlgl.SetUniformSampler(renderer.location_data, renderer.texture_id)
     rlgl.SetTexture(rlgl.GetTextureIdDefault())
     rlgl.Begin(rlgl.TRIANGLES)
-    for vertex in renderer.vertices[:renderer.count] {
+    for vertex in vertices {
         slot: [4]u8 = font.SlotColor(vertex.slot, vertex.color, vertex.alpha)
         rlgl.Color4ub(slot.r, slot.g, slot.b, slot.a)
         rlgl.TexCoord2f(vertex.uv.x, vertex.uv.y)
@@ -93,7 +117,77 @@ RendererFlush :: proc(renderer: ^Renderer) {
     }
     rlgl.End()
     rl.EndShaderMode()
-    renderer.count = 0
+}
+
+// ------------------------------------------------------------------------------------------------------------------------
+// A mesh in a vertex buffer of the GPU: text that is built once and drawn many times (a label that does not change, a page of a book) costs one draw call and no work of the CPU per frame.
+
+VertexOnGpu :: struct #packed {
+    position: [2]f32,
+    em: [2]f32,
+    packed: [4]u8,              // the slot, the palette index and the fade, as in the vertex color of the batch
+}
+
+TextMesh :: struct {
+    vao: c.uint,
+    vbo: c.uint,
+    count: int,
+}
+
+// Makes a vertex buffer of the vertices (the renderer has to exist: the attributes are the ones of its shader). The palette indices and the slots of the vertices must stay valid (do not clear the
+// atlas or its palette while the mesh is in use; a mesh made before AtlasClear has to be made again).
+TextMeshCreate :: proc(renderer: ^Renderer, vertices: []font.TextVertex) -> (mesh: TextMesh) {
+    if len(vertices) == 0 { return }
+    data: []VertexOnGpu = make([]VertexOnGpu, len(vertices), context.temp_allocator)
+    for vertex, i in vertices {
+        data[i] = {vertex.position, vertex.uv, font.SlotColor(vertex.slot, vertex.color, vertex.alpha)}
+    }
+    mesh.count = len(vertices)
+    mesh.vao = rlgl.LoadVertexArray()
+    rlgl.EnableVertexArray(mesh.vao)
+    mesh.vbo = rlgl.LoadVertexBuffer(raw_data(data), c.int(len(data) * size_of(VertexOnGpu)), false)
+    stride: c.int = size_of(VertexOnGpu)
+    position: c.int = rl.GetShaderLocationAttrib(renderer.shader, "vertexPosition")
+    em: c.int = rl.GetShaderLocationAttrib(renderer.shader, "vertexTexCoord")
+    packed: c.int = rl.GetShaderLocationAttrib(renderer.shader, "vertexColor")
+    rlgl.SetVertexAttribute(c.uint(position), 2, rlgl.FLOAT, false, stride, 0)
+    rlgl.EnableVertexAttribute(c.uint(position))
+    rlgl.SetVertexAttribute(c.uint(em), 2, rlgl.FLOAT, false, stride, 8)
+    rlgl.EnableVertexAttribute(c.uint(em))
+    rlgl.SetVertexAttribute(c.uint(packed), 4, rlgl.UNSIGNED_BYTE, true, stride, 16)
+    rlgl.EnableVertexAttribute(c.uint(packed))
+    rlgl.DisableVertexArray()
+    return
+}
+
+TextMeshDestroy :: proc(mesh: ^TextMesh) {
+    if mesh.vao != 0 { rlgl.UnloadVertexArray(mesh.vao) }
+    if mesh.vbo != 0 { rlgl.UnloadVertexBuffer(mesh.vbo) }
+    mesh^ = {}
+}
+
+// Draws the mesh moved by `offset` pixels (one draw call)
+TextMeshDraw :: proc(renderer: ^Renderer, mesh: TextMesh, offset: rl.Vector2 = {}) {
+    if mesh.count == 0 { return }
+    RendererFlush(renderer)
+    upload(renderer)
+    rlgl.DrawRenderBatchActive()
+    rlgl.EnableShader(renderer.shader.id)
+    moved: rl.Matrix = rl.MatrixTranslate(offset.x, offset.y, 0)
+    mvp: rl.Matrix = rlgl.GetMatrixProjection() * (moved * rlgl.GetMatrixModelview())
+    rlgl.SetUniformMatrix(rl.GetShaderLocation(renderer.shader, "mvp"), mvp)
+    params: [4]f32 = {renderer.weight, 0, 0, 0}
+    rlgl.SetUniform(renderer.location_params, &params, c.int(rl.ShaderUniformDataType.VEC4), 1)
+    rlgl.ActiveTextureSlot(0)
+    rlgl.EnableTexture(renderer.texture_id)
+    slot: c.int = 0
+    rlgl.SetUniform(renderer.location_data, &slot, c.int(rl.ShaderUniformDataType.INT), 1)
+    if rlgl.EnableVertexArray(mesh.vao) {
+        rlgl.DrawVertexArray(0, c.int(mesh.count))
+        rlgl.DisableVertexArray()
+    }
+    rlgl.DisableTexture()
+    rlgl.DisableShader()
 }
 
 // Adds the text to the batch (and draws the batch unless `deferred`), with its baseline starting at `position` (pixels, y down), `size` pixels to the em. Returns where the pen is after the text.

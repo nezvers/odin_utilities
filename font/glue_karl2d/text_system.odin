@@ -36,6 +36,12 @@ TextSystemInit :: proc(system: ^TextSystem, bytes: []u8, method: font.Method, ro
     return RendererInit(&system.renderer, &system.atlas, system.vertices)
 }
 
+// Loads an atlas that was baked ahead (font.AtlasWrite, `odin run font/tool/bake`) so that the glyphs in it are not baked at run time. Call it before the first text; false when the bytes are not an
+// atlas of this font and method.
+TextSystemUsePrebaked :: proc(system: ^TextSystem, bytes: []u8) -> bool {
+    return font.AtlasRead(&system.atlas, bytes)
+}
+
 TextSystemDestroy :: proc(system: ^TextSystem) {
     RendererDestroy(&system.renderer)
     delete(system.texels, system.allocator)

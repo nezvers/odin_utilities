@@ -14,7 +14,6 @@ package font_karl2d
 // the text and RendererFlush draws it (a program that mixes text with other drawing flushes before it draws something else, so that everything stays in order). An atlas that is full is cleared
 // and filled again (what is batched is drawn first). The WebGL backend is not supported (the shaders need integer texel fetches of float textures).
 
-import "core:math"
 import "core:slice"
 import k2 "../../karl2d"
 import font ".."
@@ -104,28 +103,65 @@ upload :: proc(renderer: ^Renderer) {
 // Draws what is batched
 RendererFlush :: proc(renderer: ^Renderer) {
     if renderer.count == 0 { return }
+    drawVertices(renderer, renderer.vertices[:renderer.count], {})
+    renderer.count = 0
+}
+
+// Starts a batch: DrawText only collects until RendererEnd, which draws it all in one go.
+RendererBegin :: proc(renderer: ^Renderer) {
+    renderer.deferred = true
+}
+
+RendererEnd :: proc(renderer: ^Renderer) {
+    RendererFlush(renderer)
+    renderer.deferred = false
+}
+
+// Draws a list of vertices that the program made itself (TextQuads, the rich text, a list it kept from an earlier frame) in one batch of Karl2D, after what is batched (the order stays).
+RendererDraw :: proc(renderer: ^Renderer, vertices: []font.TextVertex) {
+    RendererFlush(renderer)
+    drawVertices(renderer, vertices, {})
+}
+
+@(private)
+drawVertices :: proc(renderer: ^Renderer, vertices: []font.TextVertex, offset: k2.Vec2) {
+    if len(vertices) == 0 { return }
     upload(renderer)
     params: [4]f32 = {renderer.weight, 0, 0, 0}
     k2.set_shader(renderer.shader)
     k2.set_shader_constant(renderer.shader, renderer.params_location, params)
     k2.set_shader_texture(renderer.shader, renderer.data_bindpoint, renderer.data)
-    for glyph in 0 ..< renderer.count / font.TEXT_VERTICES_PER_GLYPH {
+    // the vertices go to the batch of Karl2D as they are: the em coordinates are the texture coordinates (the one pixel texture is not read), so a slanted or turned quad is exact
+    blank: ^k2.Texture_Object = k2._get_texture_or_error(renderer.blank, "the blank texture of the font renderer %v", renderer.blank)
+    if blank == nil { return }
+    for glyph in 0 ..< len(vertices) / font.TEXT_VERTICES_PER_GLYPH {
         first: int = glyph * font.TEXT_VERTICES_PER_GLYPH
-        bottom_left: font.TextVertex = renderer.vertices[first]
-        bottom_right: font.TextVertex = renderer.vertices[first + 1]
-        top_right: font.TextVertex = renderer.vertices[first + 2]
-        top_left: font.TextVertex = renderer.vertices[first + 5]
-        slot: [4]u8 = font.SlotColor(bottom_left.slot, bottom_left.color, bottom_left.alpha)
-        // the quad is a rectangle that may be turned: its top left corner is where it turns, its sides give the size and the angle. The texture of one pixel is addressed in em units: the
-        // source is the box in the em square, upside down because y goes up there
-        across: k2.Vec2 = bottom_right.position - bottom_left.position
-        down: k2.Vec2 = bottom_left.position - top_left.position
-        source: k2.Rect = {bottom_left.uv.x, bottom_left.uv.y, top_right.uv.x - bottom_left.uv.x, -(top_right.uv.y - bottom_left.uv.y)}
-        destination: k2.Rect = {top_left.position.x, top_left.position.y, math.sqrt(across.x * across.x + across.y * across.y), math.sqrt(down.x * down.x + down.y * down.y)}
-        k2.draw_texture_fit(renderer.blank, source, destination, {}, math.atan2(across.y, across.x), slot)
+        if !k2._begin_textured_draw(blank, font.TEXT_VERTICES_PER_GLYPH) { return }
+        for vertex in vertices[first:first + font.TEXT_VERTICES_PER_GLYPH] {
+            k2.batch_vertex(vertex.position + offset, vertex.uv, font.SlotColor(vertex.slot, vertex.color, vertex.alpha))
+        }
     }
     k2.set_shader(nil)
-    renderer.count = 0
+}
+
+// A list of vertices that is kept and drawn again: Karl2D has no vertex buffer of its own to put it in, so a mesh here is the list itself (a slice of your memory, not a copy), and drawing it is
+// one batch of Karl2D. The same calls as the raylib glue have, so a program that is written for one runs on the other.
+TextMesh :: struct {
+    vertices: []font.TextVertex,
+}
+
+TextMeshCreate :: proc(renderer: ^Renderer, vertices: []font.TextVertex) -> TextMesh {
+    return {vertices}
+}
+
+TextMeshDestroy :: proc(mesh: ^TextMesh) {
+    mesh^ = {}
+}
+
+// Draws the mesh moved by `offset` pixels
+TextMeshDraw :: proc(renderer: ^Renderer, mesh: TextMesh, offset: k2.Vec2 = {}) {
+    RendererFlush(renderer)
+    drawVertices(renderer, mesh.vertices, offset)
 }
 
 // Adds the text to the batch (and draws the batch unless `deferred`), with its baseline starting at `position` (pixels, y down), `size` pixels to the em. Returns where the pen is after the text.
