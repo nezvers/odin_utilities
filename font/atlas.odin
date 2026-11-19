@@ -28,8 +28,12 @@ ATLAS_MAX_CURVES :: 1024            // curves in one glyph (after cutting them i
 ATLAS_MAX_BANDS :: 24
 BAND_EPSILON :: f32(1.0 / 1024)     // bands overlap by this much (em units) so that a curve that touches a border is in both
 
+ATLAS_FACES :: 4                    // fonts one atlas holds: regular, bold, italic, bold italic (a face is named by bit 0 = bold, bit 1 = italic)
+
 Atlas :: struct {
-    font: ^Font,
+    font: ^Font,                // face 0 (the regular one)
+    faces: [ATLAS_FACES]^Font,  // nil: the face is not there (rich text then makes it from the regular one: struck twice for bold, slanted for italic)
+    face_slots: [ATLAS_FACES][]i32,
     method: Method,
     texels: []f32,              // the caller's memory, 4 floats per texel
     slot_of_glyph: []i32,       // by glyph number: the slot, -1 not baked yet, -2 no outline (the caller's memory, FontSlotCount(font) long: the glyphs of the font and the two special ones)
@@ -47,12 +51,36 @@ AtlasInit :: proc(atlas: ^Atlas, font: ^Font, method: Method, texels: []f32, slo
     assert(len(texels) % 4 == 0 && len(texels) >= 4 * ATLAS_WIDTH * 3, "room for the two header rows and one row of data")
     assert(len(slot_of_glyph) >= FontSlotCount(font))
     atlas^ = {font = font, method = method, texels = texels, slot_of_glyph = slot_of_glyph}
+    atlas.faces[0] = font
+    atlas.face_slots[0] = slot_of_glyph
     for i in 0 ..< FontSlotCount(font) { slot_of_glyph[i] = -1 }
     atlas.used = ATLAS_HEADER_TEXELS
     atlas.dirty_from = ATLAS_HEADER_TEXELS
     atlas.table_dirty = true
     atlas.palette_dirty = true
     for i in 0 ..< atlas.used * 4 { texels[i] = 0 }
+}
+
+// The font of a face of a family (the regular one when the face is not there)
+FaceOf :: proc(faces: ^[ATLAS_FACES]^Font, face: int) -> ^Font {
+    if face > 0 && face < ATLAS_FACES && faces[face] != nil { return faces[face] }
+    return faces[0]
+}
+
+// Adds a face of the family: `index` 1 is the bold one, 2 the italic and 3 the bold italic (0 is the font of AtlasInit). `slots` is the table of its glyphs (FontSlotCount(font) long, the
+// caller's memory). All faces share the texture, the palette and the batch, so a text that mixes them is still one draw call.
+AtlasAddFace :: proc(atlas: ^Atlas, index: int, font: ^Font, slots: []i32) -> bool {
+    if index < 1 || index >= ATLAS_FACES || atlas.faces[index] != nil || len(slots) < FontSlotCount(font) { return false }
+    atlas.faces[index] = font
+    atlas.face_slots[index] = slots
+    for i in 0 ..< FontSlotCount(font) { slots[i] = -1 }
+    return true
+}
+
+// The font of a face (the regular one when the face is not there)
+AtlasFace :: proc(atlas: ^Atlas, face: int) -> ^Font {
+    if face > 0 && face < ATLAS_FACES && atlas.faces[face] != nil { return atlas.faces[face] }
+    return atlas.font
 }
 
 // How many rows of the texture are in use (the glue makes a texture this high, or taller)
@@ -110,7 +138,10 @@ AtlasClearColors :: proc(atlas: ^Atlas) {
 
 // Forgets every glyph that was baked (the memory is reused from the start) and the colors: for an atlas that is full. What is batched for the GPU refers to the old slots, so the glue draws it first.
 AtlasClear :: proc(atlas: ^Atlas) {
-    for i in 0 ..< FontSlotCount(atlas.font) { atlas.slot_of_glyph[i] = -1 }
+    for face in 0 ..< ATLAS_FACES {
+        if atlas.faces[face] == nil { continue }
+        for i in 0 ..< FontSlotCount(atlas.faces[face]) { atlas.face_slots[face][i] = -1 }
+    }
     atlas.used = ATLAS_HEADER_TEXELS
     atlas.dirty_from = ATLAS_HEADER_TEXELS
     atlas.slots = 0
@@ -120,10 +151,11 @@ AtlasClear :: proc(atlas: ^Atlas) {
 }
 
 // Bakes every glyph of a text. False when the atlas is full (clear it and ask again: a text of more different glyphs than an atlas holds cannot be drawn).
-AtlasReserveText :: proc(atlas: ^Atlas, text: string) -> bool {
+AtlasReserveText :: proc(atlas: ^Atlas, text: string, face: int = 0) -> bool {
+    font: ^Font = AtlasFace(atlas, face)
     for character in text {
-        glyph: int = FontResolve(atlas.font, character)
-        if _, ok := AtlasGlyph(atlas, glyph); !ok { return false }
+        glyph: int = FontResolve(font, character)
+        if _, ok := AtlasGlyph(atlas, glyph, face); !ok { return false }
     }
     return true
 }
@@ -134,17 +166,19 @@ atlasTexel :: proc(atlas: ^Atlas, index: int) -> []f32 {
 }
 
 // The slot of a glyph: baked now if it was not. -1: there is nothing to draw (a space). ok is false when the atlas is full or the glyph is too complex for a fixed buffer.
-AtlasGlyph :: proc(atlas: ^Atlas, glyph: int) -> (slot: int, ok: bool) {
-    if glyph < 0 || glyph >= FontSlotCount(atlas.font) { return -1, false }
-    known: i32 = atlas.slot_of_glyph[glyph]
+AtlasGlyph :: proc(atlas: ^Atlas, glyph: int, face: int = 0) -> (slot: int, ok: bool) {
+    font: ^Font = AtlasFace(atlas, face)
+    slots: []i32 = atlas.face_slots[face if face > 0 && face < ATLAS_FACES && atlas.faces[face] != nil else 0]
+    if glyph < 0 || glyph >= FontSlotCount(font) { return -1, false }
+    known: i32 = slots[glyph]
     if known >= 0 { return int(known), true }
     if known == -2 { return -1, true }
 
     curves: [ATLAS_MAX_CURVES]Curve
-    count, curves_ok := FontGlyphCurves(atlas.font, glyph, curves[:])
+    count, curves_ok := FontGlyphCurves(font, glyph, curves[:])
     if !curves_ok { return -1, false }
     if count == 0 {
-        atlas.slot_of_glyph[glyph] = -2
+        slots[glyph] = -2
         return -1, true
     }
     if atlas.slots >= ATLAS_TABLE_SLOTS { return -1, false }
@@ -158,7 +192,7 @@ AtlasGlyph :: proc(atlas: ^Atlas, glyph: int) -> (slot: int, ok: bool) {
     slot = atlas.slots
     atlas.slots += 1
     atlas.table_dirty = true
-    atlas.slot_of_glyph[glyph] = i32(slot)
+    slots[glyph] = i32(slot)
     atlas.version += 1
     return slot, true
 }

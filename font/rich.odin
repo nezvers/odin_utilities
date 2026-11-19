@@ -80,6 +80,9 @@ RichGlyph :: struct {
     character: rune,
     glyph: int,                 // the glyph of the font, or the missing one
     style: u16,
+    face: u8,                   // the face of the family that RichLayout chose (0 regular, 1 bold, 2 italic, 3 bold italic)
+    synth_bold: bool,           // the face is not in the family: the regular one is struck twice
+    synth_italic: bool,         // the same for the italic: the regular one is slanted
     // set by RichLayout
     x: f32,                     // pixels from the left of the text to the pen position (after the alignment)
     baseline: f32,              // pixels from the top of the text to the baseline of its line
@@ -431,9 +434,38 @@ richOpenTag :: proc(rich: ^RichText, current: ^RichStyle, tag: TagParams) -> boo
 // ------------------------------------------------------------------------------------------------------------------------
 // Layout
 
+// Chooses the face of every glyph from its style: the face of the family when the atlas has it, else the nearest one with the rest made synthetically (bold: struck twice, italic: slanted)
+@(private)
+richFaces :: proc(rich: ^RichText, faces: ^[ATLAS_FACES]^Font) {
+    for index in 0 ..< rich.glyph_count {
+        glyph: ^RichGlyph = &rich.glyphs[index]
+        style: ^RichStyle = &rich.styles[glyph.style]
+        want: int = (1 if style.bold else 0) | (2 if style.italic else 0)
+        face: int = want
+        synth_bold, synth_italic: bool
+        if faces[want] == nil {
+            face = 0
+            synth_bold, synth_italic = style.bold, style.italic
+            if want == 3 {
+                // bold italic: the bold or the italic face does part of it
+                if faces[1] != nil { face, synth_bold, synth_italic = 1, false, true } else if faces[2] != nil { face, synth_bold, synth_italic = 2, true, false }
+            }
+        }
+        // a character that the face lacks but the regular one has: the regular one draws it, in the style
+        character: rune = ' ' if glyph.character == '\t' || glyph.character == '\n' else glyph.character
+        if face != 0 && !FontHasGlyph(faces[face], character) && FontHasGlyph(faces[0], character) {
+            face = 0
+            synth_bold, synth_italic = style.bold, style.italic
+        }
+        glyph.face, glyph.synth_bold, glyph.synth_italic = u8(face), synth_bold, synth_italic
+    }
+}
+
 // Places the glyphs: `base_size` is the size (pixels to the em) of the glyphs that have none of their own, `wrap_width` breaks lines at spaces (0: only new lines), `line_spacing` is a factor of
 // the line height (0 is 1). Sets the size of the text. False when the lines do not fit.
-RichLayout :: proc(rich: ^RichText, font: ^Font, base_size: f32, wrap_width: f32 = 0, line_spacing: f32 = 0) -> bool {
+RichLayout :: proc(rich: ^RichText, faces: ^[ATLAS_FACES]^Font, base_size: f32, wrap_width: f32 = 0, line_spacing: f32 = 0) -> bool {
+    font: ^Font = faces[0]
+    richFaces(rich, faces)
     spacing: f32 = line_spacing if line_spacing > 0 else 1
     rich.line_count = 0
     rich.size = {}
@@ -447,22 +479,24 @@ RichLayout :: proc(rich: ^RichText, font: ^Font, base_size: f32, wrap_width: f32
         pen: f32
         previous: int
         previous_size: f32
+        previous_face: ^Font
         ascent, descent, gap: f32
         i: int = start
         for i < rich.glyph_count {
             glyph: ^RichGlyph = &rich.glyphs[i]
             style: ^RichStyle = &rich.styles[glyph.style]
             size: f32 = style.size if style.size > 0 else base_size
+            face: ^Font = FaceOf(faces, int(glyph.face))
             if glyph.character == '\n' {
                 glyph.glyph, glyph.size, glyph.advance, glyph.x = 0, size, 0, pen
-                ascent = max(ascent, font.ascent * size)
-                descent = max(descent, -font.descent * size)
+                ascent = max(ascent, face.ascent * size)
+                descent = max(descent, -face.descent * size)
                 i += 1
                 break
             }
             character: rune = ' ' if glyph.character == '\t' else glyph.character
-            resolved: int = FontResolve(font, character)
-            space_advance: f32 = FontAdvance(font, resolved) * size
+            resolved: int = FontResolve(face, character)
+            space_advance: f32 = FontAdvance(face, resolved) * size
             if character == ' ' && wrap_width > 0 && pen > 0 {
                 // a space in front of a word that does not fit: the line ends with the space
                 word: f32
@@ -470,24 +504,26 @@ RichLayout :: proc(rich: ^RichText, font: ^Font, base_size: f32, wrap_width: f32
                     next: ^RichGlyph = &rich.glyphs[k]
                     if next.character == ' ' || next.character == '\n' || next.character == '\t' { break }
                     next_style: ^RichStyle = &rich.styles[next.style]
-                    word += FontAdvance(font, FontResolve(font, next.character)) * (next_style.size if next_style.size > 0 else base_size)
+                    next_face: ^Font = FaceOf(faces, int(next.face))
+                    word += FontAdvance(next_face, FontResolve(next_face, next.character)) * (next_style.size if next_style.size > 0 else base_size)
                 }
                 if pen + space_advance + word > wrap_width {
                     glyph.glyph, glyph.size, glyph.advance, glyph.x = resolved, size, 0, pen
-                    ascent = max(ascent, font.ascent * size)
-                    descent = max(descent, -font.descent * size)
+                    ascent = max(ascent, face.ascent * size)
+                    descent = max(descent, -face.descent * size)
                     i += 1
                     break
                 }
             }
-            if previous != 0 && previous_size == size { pen += FontKerning(font, previous, resolved) * size }
+            if previous != 0 && previous_size == size && previous_face == face { pen += FontKerning(face, previous, resolved) * size }
             glyph.glyph, glyph.size, glyph.advance, glyph.x = resolved, size, space_advance, pen
-            if resolved == GlyphMissing(font) { rich.missing += 1 }
+            if resolved == GlyphMissing(face) { rich.missing += 1 }
+            previous_face = face
             pen += glyph.advance
             previous, previous_size = resolved, size
-            ascent = max(ascent, font.ascent * size)
-            descent = max(descent, -font.descent * size)
-            gap = max(gap, font.line_gap * size)
+            ascent = max(ascent, face.ascent * size)
+            descent = max(descent, -face.descent * size)
+            gap = max(gap, face.line_gap * size)
             i += 1
         }
         if ascent == 0 && descent == 0 { ascent, descent, gap = font.ascent * base_size, -font.descent * base_size, font.line_gap * base_size }
@@ -654,10 +690,10 @@ RichDraw :: proc(atlas: ^Atlas, rich: ^RichText, origin: Vec2, time: f32, out: [
         size: f32 = glyph.size * state.scale
         pivot: Vec2 = {glyph.advance * 0.5, -glyph.size * 0.3}
         if state.scale != 1 { position += pivot * (1 - state.scale) }
-        instance: GlyphInstance = {glyph = glyph.glyph, position = position, pixels_per_em = size, rotation = state.rotation, pivot = pivot, slant = 0.2 if style.italic else 0, alpha = alpha}
+        instance: GlyphInstance = {glyph = glyph.glyph, face = glyph.face, position = position, pixels_per_em = size, rotation = state.rotation, pivot = pivot, slant = 0.2 if glyph.synth_italic else 0, alpha = alpha}
         // a character that the font lacks is the box, in its own color
         main_color: [4]u8 = state.color
-        if glyph.glyph == GlyphMissing(atlas.font) { main_color = {255, 0, 255, 255} }
+        if glyph.glyph == GlyphMissing(AtlasFace(atlas, int(glyph.face))) { main_color = {255, 0, 255, 255} }
 
         if style.background.a > 0 {
             index_color, ok := color_of(atlas, style.background, &result)
@@ -687,7 +723,7 @@ RichDraw :: proc(atlas: ^Atlas, rich: ^RichText, origin: Vec2, time: f32, out: [
         if !color_ok { result.complete = false; break }
         instance.color = index_main
         if !emit_glyph(atlas, instance, turn, out, &result) { result.complete = false; break }
-        if style.bold {
+        if glyph.synth_bold {
             struck: GlyphInstance = instance
             struck.position.x += 0.035 * size
             if !emit_glyph(atlas, struck, turn, out, &result) { result.complete = false; break }

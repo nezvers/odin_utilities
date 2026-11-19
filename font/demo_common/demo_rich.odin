@@ -9,7 +9,10 @@ import "core:math"
 import kit "../../demo_kit"
 import font "../"
 
-FIRA :: #load("../../assets/fonts/FiraCode-Regular.ttf")
+JB_REGULAR :: #load("../../assets/fonts/jetbrains_mono/JetBrainsMono-Regular.ttf")
+JB_BOLD :: #load("../../assets/fonts/jetbrains_mono/JetBrainsMono-Bold.ttf")
+JB_ITALIC :: #load("../../assets/fonts/jetbrains_mono/JetBrainsMono-Italic.ttf")
+JB_BOLD_ITALIC :: #load("../../assets/fonts/jetbrains_mono/JetBrainsMono-BoldItalic.ttf")
 
 TITLE :: "[b]Rich[/b] [i]text[/i] [color=#ffb347]with[/color] [outline size=1 color=#000000][color=#8be9fd]effects[/color][/outline]"
 BODY :: "[u]underline[/u]  [s]strike[/s]  [bgcolor=#44558899]background[/bgcolor]  [shadow x=2 y=2]shadow[/shadow]\n" +
@@ -17,6 +20,7 @@ BODY :: "[u]underline[/u]  [s]strike[/s]  [bgcolor=#44558899]background[/bgcolor
     "[rainbow freq=0.5]rainbow colors go round[/rainbow]  [pulse freq=1 color=#ff3366ff]pulse[/pulse]\n" +
     "[fade start=2 length=10]this text fades out toward its end[/fade]\n" +
     "[size=30]big[/size] and [size=12]small[/size] on one line, [bounce a=6]a custom bounce[/bounce]\n" +
+    "[b]bold[/b] [i]italic[/i] [b][i]bold italic[/i][/b] regular (the faces of a family)\n" +
     "[center]centered[/center]\n" +
     "Missing: ᚠ ☃ (boxes with a cross)"
 TYPEWRITER :: "[color=#a6e22e]A typewriter shows one letter at a time, then the rest.[/color]"
@@ -38,7 +42,9 @@ demo_rich: kit.Demo = {
 }
 
 loaded: bool
-face: font.Font
+fonts: [font.ATLAS_FACES]font.Font
+family: [font.ATLAS_FACES]^font.Font
+face: ^font.Font
 title, body, typewriter: Block
 custom: [1]font.RichCustomEffect
 paused: bool
@@ -51,12 +57,18 @@ bounce :: proc(state: ^font.RichGlyphState, index: int, run_index: int, time: f3
 
 prepare :: proc(block: ^Block, markup: string, size: f32, wrap: f32) -> bool {
     font.RichInit(&block.rich, block.glyphs[:], block.styles[:], block.lines[:], custom[:])
-    return font.RichParse(&block.rich, markup) && font.RichLayout(&block.rich, &face, size, wrap)
+    return font.RichParse(&block.rich, markup) && font.RichLayout(&block.rich, &family, size, wrap)
 }
 
 init :: proc(ctx: ^kit.Context) {
     ctx.background = {24, 26, 32, 255}
-    loaded = font.FontInit(&face, FIRA)
+    sources: [font.ATLAS_FACES][]u8 = {JB_REGULAR, JB_BOLD, JB_ITALIC, JB_BOLD_ITALIC}
+    loaded = true
+    for i in 0 ..< font.ATLAS_FACES {
+        loaded = font.FontInit(&fonts[i], sources[i]) && loaded
+        family[i] = &fonts[i]
+    }
+    face = &fonts[0]
     custom = {{name = "bounce", apply = bounce}}
     paused = false
     clock = 0
@@ -84,12 +96,12 @@ draw :: proc(ctx: ^kit.Context) {
         requests[count] = {&typewriter.rich, {x, 400}, clock, {typewriter = true, visible_characters = int(clock * 14)}, method}
         count += 1
     }
-    if rich_drawer != nil { rich_drawer(ctx, &face, requests[:count]) }
+    if rich_drawer != nil { rich_drawer(ctx, &family, requests[:count]) }
 }
 
 script: []kit.Step = {
     kit.Wait(3),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return loaded && body.rich.unknown_tags == 0 && body.rich.line_count == 7 }, "the markup is parsed and laid out in seven lines"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return loaded && body.rich.unknown_tags == 0 && body.rich.line_count == 8 }, "the markup is parsed and laid out in eight lines"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return body.rich.missing == 2 }, "the two characters that the font lacks are counted"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return body.rich.size.x <= 590.01 && title.rich.size.x > 200 }, "the body wraps at its width"),
     kit.Check(proc(ctx: ^kit.Context) -> bool {

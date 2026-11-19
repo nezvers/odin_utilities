@@ -75,30 +75,30 @@ test_a_text_is_laid_out_in_lines_that_wrap_align_and_measure :: proc(t: ^testing
     defer freeRig(rig)
     advance: f32 = FontAdvance(&rig.font, FontGlyph(&rig.font, 'a'))
     RichParse(&rig.rich, "aaaa bbbb cc\nd")
-    testing.expect(t, RichLayout(&rig.rich, &rig.font, 10, 0))
+    testing.expect(t, RichLayout(&rig.rich, &rig.atlas.faces, 10, 0))
     testing.expect_value(t, rig.rich.line_count, 2)
     testing.expect(t, abs(rig.rich.size.x - 12 * advance * 10) < 0.01, "the widest line")
     testing.expect(t, rig.rich.size.y > 2 * 10, "two lines are taller than two ems")
     testing.expect(t, rig.glyphs[rig.rich.lines[1].first].baseline > rig.glyphs[0].baseline, "the second line is lower")
     // wrapped at 5.5 characters: three lines of words, and a fourth for the last line
-    RichLayout(&rig.rich, &rig.font, 10, 5.5 * advance * 10)
+    RichLayout(&rig.rich, &rig.atlas.faces, 10, 5.5 * advance * 10)
     testing.expect_value(t, rig.rich.line_count, 4)
     testing.expect(t, rig.rich.size.x <= 5.5 * advance * 10 + 0.01)
     // alignment: a centered line is in the middle of the room
     RichParse(&rig.rich, "[center]ab[/center]")
-    RichLayout(&rig.rich, &rig.font, 10, 100)
+    RichLayout(&rig.rich, &rig.atlas.faces, 10, 100)
     testing.expect(t, abs(rig.glyphs[0].x - (100 - 2 * advance * 10) * 0.5) < 0.01)
     RichParse(&rig.rich, "[right]ab[/right]")
-    RichLayout(&rig.rich, &rig.font, 10, 100)
+    RichLayout(&rig.rich, &rig.atlas.faces, 10, 100)
     testing.expect(t, abs(rig.glyphs[0].x - (100 - 2 * advance * 10)) < 0.01)
     // glyphs of another size sit on the same baseline and make the line taller
     RichParse(&rig.rich, "a[size=30]b[/size]c")
-    RichLayout(&rig.rich, &rig.font, 10)
+    RichLayout(&rig.rich, &rig.atlas.faces, 10)
     testing.expect_value(t, rig.glyphs[0].baseline, rig.glyphs[1].baseline)
     testing.expect(t, rig.rich.size.y > 30)
     // the characters that the font lacks are counted
     RichParse(&rig.rich, "aᚠb")
-    RichLayout(&rig.rich, &rig.font, 10)
+    RichLayout(&rig.rich, &rig.atlas.faces, 10)
     testing.expect_value(t, rig.rich.missing, 1)
 }
 
@@ -107,7 +107,7 @@ test_effects_move_and_color_glyphs_with_the_time :: proc(t: ^testing.T) {
     rig: ^Rig = makeRig()
     defer freeRig(rig)
     RichParse(&rig.rich, "ab[wave amp=10 freq=2]cdef[/wave][fade start=1 length=2]ghij[/fade][tornado radius=5 freq=1]k[/tornado]")
-    RichLayout(&rig.rich, &rig.font, 20)
+    RichLayout(&rig.rich, &rig.atlas.faces, 20)
     // wave: the offset follows a sine of the time, a little different for each glyph
     first: RichGlyphState = RichGlyphStateAt(&rig.rich, 2, 0)
     testing.expect(t, abs(first.offset.y) < 0.0001)
@@ -128,19 +128,19 @@ test_effects_move_and_color_glyphs_with_the_time :: proc(t: ^testing.T) {
     }
     // shake: the same at one time, another at the next tick
     RichParse(&rig.rich, "[shake rate=10 level=4]xyz[/shake]")
-    RichLayout(&rig.rich, &rig.font, 20)
+    RichLayout(&rig.rich, &rig.atlas.faces, 20)
     testing.expect_value(t, RichGlyphStateAt(&rig.rich, 1, 0.01).offset, RichGlyphStateAt(&rig.rich, 1, 0.05).offset)
     testing.expect(t, RichGlyphStateAt(&rig.rich, 1, 0.01).offset != RichGlyphStateAt(&rig.rich, 1, 0.15).offset)
     state: RichGlyphState = RichGlyphStateAt(&rig.rich, 2, 0.5)
     testing.expect(t, abs(state.offset.x) <= 4 && abs(state.offset.y) <= 4)
     // rainbow: a color that moves with the time, and only a few different ones
     RichParse(&rig.rich, "[rainbow freq=1]abcdefgh[/rainbow]")
-    RichLayout(&rig.rich, &rig.font, 20)
+    RichLayout(&rig.rich, &rig.atlas.faces, 20)
     testing.expect(t, RichGlyphStateAt(&rig.rich, 0, 0).color != RichGlyphStateAt(&rig.rich, 0, 0.3).color)
     testing.expect(t, RichGlyphStateAt(&rig.rich, 0, 0).color != RichGlyphStateAt(&rig.rich, 4, 0).color)
     // pulse: the color goes to the pulse color and back
     RichParse(&rig.rich, "[pulse freq=1 color=#000000ff]a[/pulse]")
-    RichLayout(&rig.rich, &rig.font, 20)
+    RichLayout(&rig.rich, &rig.atlas.faces, 20)
     testing.expect_value(t, RichGlyphStateAt(&rig.rich, 0, 0.25).color, [4]u8{0, 0, 0, 255})
     testing.expect_value(t, RichGlyphStateAt(&rig.rich, 0, 0.75).color, [4]u8{255, 255, 255, 255})
 }
@@ -159,7 +159,7 @@ test_a_custom_effect_is_called_with_the_run_and_the_numbers_of_its_tag :: proc(t
     rig: ^Rig = makeRig(custom[:])
     defer freeRig(rig)
     RichParse(&rig.rich, "a[bounce a=3]bc[/bounce]")
-    RichLayout(&rig.rich, &rig.font, 20)
+    RichLayout(&rig.rich, &rig.atlas.faces, 20)
     state: RichGlyphState = RichGlyphStateAt(&rig.rich, 2, 2)
     testing.expect_value(t, seen_run, 1)
     testing.expect_value(t, seen_param, 3)
@@ -172,7 +172,7 @@ test_rich_text_is_drawn_with_a_typewriter_decorations_outline_and_the_missing_bo
     defer freeRig(rig)
     count_for :: proc(rig: ^Rig, markup: string, options: RichDrawOptions = {}) -> RichDrawResult {
         RichParse(&rig.rich, markup)
-        RichLayout(&rig.rich, &rig.font, 20)
+        RichLayout(&rig.rich, &rig.atlas.faces, 20)
         return RichDraw(&rig.atlas, &rig.rich, {10, 10}, 0, rig.vertices[:], options)
     }
     plain := count_for(rig, "abc")
@@ -202,7 +202,7 @@ test_rich_text_is_drawn_with_a_typewriter_decorations_outline_and_the_missing_bo
     // not enough room: the glyphs that were drawn are whole and it says it is not complete
     small: [8]TextVertex
     RichParse(&rig.rich, "abcdefg")
-    RichLayout(&rig.rich, &rig.font, 20)
+    RichLayout(&rig.rich, &rig.atlas.faces, 20)
     cut := RichDraw(&rig.atlas, &rig.rich, {}, 0, small[:])
     testing.expect(t, !cut.complete)
 }
@@ -212,7 +212,7 @@ test_a_rainbow_uses_a_few_colors_of_the_palette_and_a_full_palette_is_told :: pr
     rig: ^Rig = makeRig()
     defer freeRig(rig)
     RichParse(&rig.rich, "[rainbow]abcdefghijklmnopqrstuvwxyzabcdefghijklmnop[/rainbow]")
-    RichLayout(&rig.rich, &rig.font, 20)
+    RichLayout(&rig.rich, &rig.atlas.faces, 20)
     for frame in 0 ..< 20 {
         result := RichDraw(&rig.atlas, &rig.rich, {}, f32(frame) * 0.07, rig.vertices[:])
         testing.expect(t, result.complete)
@@ -221,7 +221,7 @@ test_a_rainbow_uses_a_few_colors_of_the_palette_and_a_full_palette_is_told :: pr
     // a palette that is full: the draw stops and says why
     for i in 0 ..< ATLAS_PALETTE { AtlasColor(&rig.atlas, {u8(i), 9, 9, 9}) }
     RichParse(&rig.rich, "[color=#123456]abc")
-    RichLayout(&rig.rich, &rig.font, 20)
+    RichLayout(&rig.rich, &rig.atlas.faces, 20)
     result := RichDraw(&rig.atlas, &rig.rich, {}, 1.234, rig.vertices[:])
     testing.expect(t, !result.complete && result.palette_full)
 }

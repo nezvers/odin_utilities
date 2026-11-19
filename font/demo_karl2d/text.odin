@@ -15,10 +15,12 @@ Method_Renderer :: struct {
     texels: []f32,
     slots: []i32,
     atlas: font.Atlas,
+    face_slots: [font.ATLAS_FACES][]i32,
     renderer: font_karl2d.Renderer,
 }
 
 renderers: [font.Method]Method_Renderer
+rich_renderers: [font.Method]Method_Renderer     // the rich demo has another family of fonts: its own atlases
 
 draw_text :: proc(ctx: ^kit.Context, face: ^font.Font, requests: []demo_common.TextRequest) {
     for request in requests {
@@ -34,13 +36,18 @@ draw_text :: proc(ctx: ^kit.Context, face: ^font.Font, requests: []demo_common.T
     }
 }
 
-draw_rich :: proc(ctx: ^kit.Context, face: ^font.Font, requests: []demo_common.RichRequest) {
+draw_rich :: proc(ctx: ^kit.Context, family: ^[font.ATLAS_FACES]^font.Font, requests: []demo_common.RichRequest) {
     for request in requests {
-        entry: ^Method_Renderer = &renderers[request.method]
+        entry: ^Method_Renderer = &rich_renderers[request.method]
         if !entry.ready {
             entry.texels = make([]f32, 4 * font.ATLAS_WIDTH * ATLAS_ROWS)
-            entry.slots = make([]i32, font.FontSlotCount(face))
-            font.AtlasInit(&entry.atlas, face, request.method, entry.texels, entry.slots)
+            entry.slots = make([]i32, font.FontSlotCount(family[0]))
+            font.AtlasInit(&entry.atlas, family[0], request.method, entry.texels, entry.slots)
+            for face in 1 ..< font.ATLAS_FACES {
+                if family[face] == nil { continue }
+                entry.face_slots[face] = make([]i32, font.FontSlotCount(family[face]))
+                font.AtlasAddFace(&entry.atlas, face, family[face], entry.face_slots[face])
+            }
             if !font_karl2d.RendererInit(&entry.renderer, &entry.atlas, make([]font.TextVertex, 6 * 4096)) { return }
             entry.ready = true
         }

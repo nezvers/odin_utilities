@@ -8,6 +8,7 @@ import "core:math"
 // A quad of a glyph
 GlyphInstance :: struct {
     glyph: int,                 // a glyph of the font or a special one (FontResolve)
+    face: u8,                   // the face of the family that the glyph is of (0: the regular one)
     position: Vec2,             // where the origin of the glyph is (on its baseline, at its left): pixels from the origin of the text, y down
     pixels_per_em: f32,         // size
     rotation: f32,              // radians, clockwise, around `pivot`
@@ -37,9 +38,9 @@ TextTurnPoint :: proc(turn: TextTurn, local: Vec2) -> Vec2 {
 // The six vertices of a glyph (the quad is its box and a margin of QUAD_MARGIN_PIXELS), written to `out`. False when the atlas is full or `out` too small; a glyph with nothing to draw (a
 // space) writes nothing and is ok.
 EmitGlyph :: proc(atlas: ^Atlas, instance: GlyphInstance, turn: TextTurn, out: []TextVertex) -> (count: int, ok: bool) {
-    low, high, has_box := FontGlyphBox(atlas.font, instance.glyph)
+    low, high, has_box := FontGlyphBox(AtlasFace(atlas, int(instance.face)), instance.glyph)
     if !has_box { return 0, true }
-    slot, baked := AtlasGlyph(atlas, instance.glyph)
+    slot, baked := AtlasGlyph(atlas, instance.glyph, int(instance.face))
     if !baked || len(out) < TEXT_VERTICES_PER_GLYPH { return 0, false }
     if slot < 0 { return 0, true }
     margin: f32 = QUAD_MARGIN_PIXELS / instance.pixels_per_em

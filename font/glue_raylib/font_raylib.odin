@@ -193,11 +193,11 @@ TextMeshDraw :: proc(renderer: ^Renderer, mesh: TextMesh, offset: rl.Vector2 = {
 // Adds the text to the batch (and draws the batch unless `deferred`), with its baseline starting at `position` (pixels, y down), `size` pixels to the em. Returns where the pen is after the text.
 DrawText :: proc(renderer: ^Renderer, text: string, position: rl.Vector2, size: f32, color: rl.Color, options: font.TextOptions = {}) -> rl.Vector2 {
     atlas: ^font.Atlas = renderer.atlas
-    if !font.AtlasReserveText(atlas, text) {
+    if !font.AtlasReserveText(atlas, text, int(options.face)) {
         // full: what is batched refers to the glyphs that are about to go
         RendererFlush(renderer)
         font.AtlasClear(atlas)
-        if !font.AtlasReserveText(atlas, text) { return position }
+        if !font.AtlasReserveText(atlas, text, int(options.face)) { return position }
     }
     index, color_ok := font.AtlasColor(atlas, [4]u8{color.r, color.g, color.b, color.a})
     if !color_ok {

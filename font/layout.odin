@@ -33,6 +33,7 @@ TextOptions :: struct {
     tab_columns: int,           // a tab moves to a multiple of this many spaces (0 is 4)
     rotation: f32,              // radians, clockwise on the screen, around the origin of the text
     missing_color: [4]u8,       // the color of the box that a character the font does not have is drawn as (all zero: magenta); TextQuads gives it a palette color of its own
+    face: u8,                   // the face of the family of the atlas (1 bold, 2 italic, 3 bold italic; AtlasAddFace); a face that is not there is the regular one
     snap_to_pixels: bool,       // the baseline and each glyph start on a whole pixel (the outlines are not hinted: this keeps the stems of a line alike), not with a rotation
 }
 
@@ -99,7 +100,8 @@ TextMeasure :: proc(font: ^Font, text: string, pixels_per_em: f32, options: Text
 // the atlas (AtlasColor). The glyphs are baked into the atlas as they are met (AtlasReserveText does it first, so that a full atlas is known before anything is drawn); when the atlas or
 // `out` is full the text stops there and `complete` is false.
 TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32, out: []TextVertex, options: TextOptions = {}, color: u8 = 0) -> (count: int, pen: Vec2, complete: bool, missing: int) {
-    font: ^Font = atlas.font
+    face: int = int(options.face) if options.face < ATLAS_FACES && atlas.faces[options.face] != nil else 0
+    font: ^Font = AtlasFace(atlas, face)
     wrap: f32 = options.wrap_width / pixels_per_em if options.wrap_width > 0 else 0
     tab: int = options.tab_columns if options.tab_columns > 0 else 4
     spacing: f32 = options.line_spacing if options.line_spacing > 0 else 1
@@ -136,7 +138,7 @@ TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32,
         }
         if previous != 0 { x += FontKerning(font, previous, glyph) }
         previous = glyph
-        instance: GlyphInstance = {glyph = glyph, pixels_per_em = pixels_per_em, color = color, alpha = 255}
+        instance: GlyphInstance = {glyph = glyph, face = u8(face), pixels_per_em = pixels_per_em, color = color, alpha = 255}
         baseline: f32 = f32(line) * line_height * pixels_per_em
         left: f32 = x * pixels_per_em
         if snap {

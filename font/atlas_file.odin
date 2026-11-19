@@ -17,7 +17,7 @@ package font
 import "core:mem"
 
 ATLAS_FILE_MAGIC :: u32(0x4C544146)         // "FATL"
-ATLAS_FILE_VERSION :: u32(1)
+ATLAS_FILE_VERSION :: u32(2)
 
 @(private)
 AtlasFileHeader :: struct #packed {
@@ -29,27 +29,31 @@ AtlasFileHeader :: struct #packed {
     slots: u32,
     palette_count: u32,
     data_texels: u32,           // the texels after the two header rows
-    used_slot_entries: u32,     // how many entries of slot_of_glyph follow
+    used_slot_entries: u32,     // how many entries of slot_of_glyph follow (the regular face)
+    faces: u32,                 // bit n: the face n is in the atlas, its table of slots follows the one of the regular face
 }
 
 // Bakes the glyphs of the characters from `first` to `last` (those that the font has). Returns how many were baked and false when the atlas became full.
-AtlasBakeRange :: proc(atlas: ^Atlas, first: rune, last: rune) -> (baked: int, ok: bool) {
+AtlasBakeRange :: proc(atlas: ^Atlas, first: rune, last: rune, face: int = 0) -> (baked: int, ok: bool) {
+    font: ^Font = AtlasFace(atlas, face)
+    slots: []i32 = atlas.face_slots[face if face > 0 && face < ATLAS_FACES && atlas.faces[face] != nil else 0]
     for character in first ..= last {
-        if !FontHasGlyph(atlas.font, character) { continue }
-        glyph: int = FontGlyph(atlas.font, character)
-        before: i32 = atlas.slot_of_glyph[glyph]
-        if _, glyph_ok := AtlasGlyph(atlas, glyph); !glyph_ok { return baked, false }
+        if !FontHasGlyph(font, character) { continue }
+        glyph: int = FontGlyph(font, character)
+        before: i32 = slots[glyph]
+        if _, glyph_ok := AtlasGlyph(atlas, glyph, face); !glyph_ok { return baked, false }
         if before == -1 { baked += 1 }
     }
     return baked, true
 }
 
 // Bakes every glyph of the font that fits (and the two special ones). False when some did not fit.
-AtlasBakeAll :: proc(atlas: ^Atlas) -> (baked: int, ok: bool) {
+AtlasBakeAll :: proc(atlas: ^Atlas, face: int = 0) -> (baked: int, ok: bool) {
     ok = true
-    for glyph in 0 ..< FontSlotCount(atlas.font) {
-        before: i32 = atlas.slot_of_glyph[glyph]
-        if _, glyph_ok := AtlasGlyph(atlas, glyph); !glyph_ok {
+    slots: []i32 = atlas.face_slots[face if face > 0 && face < ATLAS_FACES && atlas.faces[face] != nil else 0]
+    for glyph in 0 ..< FontSlotCount(AtlasFace(atlas, face)) {
+        before: i32 = slots[glyph]
+        if _, glyph_ok := AtlasGlyph(atlas, glyph, face); !glyph_ok {
             ok = false
             continue
         }
@@ -60,7 +64,19 @@ AtlasBakeAll :: proc(atlas: ^Atlas) -> (baked: int, ok: bool) {
 
 // How many bytes AtlasWrite needs
 AtlasWriteSize :: proc(atlas: ^Atlas) -> int {
-    return size_of(AtlasFileHeader) + FontSlotCount(atlas.font) * size_of(i32) + atlas.palette_count * 4 + (2 * atlas.slots + (atlas.used - ATLAS_HEADER_TEXELS)) * 16
+    slots: int
+    for face in 0 ..< ATLAS_FACES {
+        if atlas.faces[face] != nil { slots += FontSlotCount(atlas.faces[face]) }
+    }
+    return size_of(AtlasFileHeader) + slots * size_of(i32) + atlas.palette_count * 4 + (2 * atlas.slots + (atlas.used - ATLAS_HEADER_TEXELS)) * 16
+}
+
+@(private)
+atlasFaceMask :: proc(atlas: ^Atlas) -> (mask: u32) {
+    for face in 0 ..< ATLAS_FACES {
+        if atlas.faces[face] != nil { mask |= 1 << u32(face) }
+    }
+    return
 }
 
 // The baked glyphs and the palette as bytes. False when `out` is too small (AtlasWriteSize).
@@ -69,13 +85,17 @@ AtlasWrite :: proc(atlas: ^Atlas, out: []u8) -> (written: int, ok: bool) {
     if len(out) < needed { return 0, false }
     header: AtlasFileHeader = {
         magic = ATLAS_FILE_MAGIC, version = ATLAS_FILE_VERSION, method = u32(atlas.method), glyph_count = u32(atlas.font.glyph_count), units_per_em = atlas.font.units_per_em,
-        slots = u32(atlas.slots), palette_count = u32(atlas.palette_count), data_texels = u32(atlas.used - ATLAS_HEADER_TEXELS), used_slot_entries = u32(FontSlotCount(atlas.font)),
+        slots = u32(atlas.slots), palette_count = u32(atlas.palette_count), data_texels = u32(atlas.used - ATLAS_HEADER_TEXELS), used_slot_entries = u32(FontSlotCount(atlas.font)), faces = atlasFaceMask(atlas),
     }
     at: int
     mem.copy(&out[at], &header, size_of(header))
     at += size_of(header)
-    mem.copy(&out[at], raw_data(atlas.slot_of_glyph), FontSlotCount(atlas.font) * size_of(i32))
-    at += FontSlotCount(atlas.font) * size_of(i32)
+    for face in 0 ..< ATLAS_FACES {
+        if atlas.faces[face] == nil { continue }
+        count: int = FontSlotCount(atlas.faces[face]) * size_of(i32)
+        mem.copy(&out[at], raw_data(atlas.face_slots[face]), count)
+        at += count
+    }
     mem.copy(&out[at], &atlas.palette[0], atlas.palette_count * 4)
     at += atlas.palette_count * 4
     table_bytes: int = 2 * atlas.slots * 16
@@ -96,13 +116,22 @@ AtlasRead :: proc(atlas: ^Atlas, data: []u8) -> bool {
     if header.magic != ATLAS_FILE_MAGIC || header.version != ATLAS_FILE_VERSION { return false }
     if Method(header.method) != atlas.method || int(header.glyph_count) != atlas.font.glyph_count || abs(header.units_per_em - atlas.font.units_per_em) > 0.01 { return false }
     if int(header.used_slot_entries) != FontSlotCount(atlas.font) || header.palette_count > ATLAS_PALETTE || header.slots > ATLAS_TABLE_SLOTS { return false }
+    if header.faces != atlasFaceMask(atlas) { return false }
     table_bytes: int = 2 * int(header.slots) * 16
     data_bytes: int = int(header.data_texels) * 16
-    needed: int = size_of(header) + FontSlotCount(atlas.font) * size_of(i32) + int(header.palette_count) * 4 + table_bytes + data_bytes
+    slot_bytes: int
+    for face in 0 ..< ATLAS_FACES {
+        if atlas.faces[face] != nil { slot_bytes += FontSlotCount(atlas.faces[face]) * size_of(i32) }
+    }
+    needed: int = size_of(header) + slot_bytes + int(header.palette_count) * 4 + table_bytes + data_bytes
     if len(data) < needed || ATLAS_HEADER_TEXELS + int(header.data_texels) > len(atlas.texels) / 4 { return false }
     at: int = size_of(header)
-    mem.copy(raw_data(atlas.slot_of_glyph), &data[at], FontSlotCount(atlas.font) * size_of(i32))
-    at += FontSlotCount(atlas.font) * size_of(i32)
+    for face in 0 ..< ATLAS_FACES {
+        if atlas.faces[face] == nil { continue }
+        count: int = FontSlotCount(atlas.faces[face]) * size_of(i32)
+        mem.copy(raw_data(atlas.face_slots[face]), &data[at], count)
+        at += count
+    }
     atlas.palette_count = int(header.palette_count)
     mem.copy(&atlas.palette[0], &data[at], atlas.palette_count * 4)
     at += atlas.palette_count * 4

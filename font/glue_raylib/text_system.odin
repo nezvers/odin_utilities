@@ -23,6 +23,8 @@ TextSystem :: struct {
     texels: []f32,
     slots: []i32,
     vertices: []font.TextVertex,
+    faces: [3]font.Font,        // the bold, the italic and the bold italic face (TextSystemAddFace)
+    face_slots: [3][]i32,
 }
 
 // `bytes` is the font file (it has to live as long as the system); the atlas is `rows` rows of 4096 texels (16 bytes each).
@@ -36,6 +38,16 @@ TextSystemInit :: proc(system: ^TextSystem, bytes: []u8, method: font.Method, ro
     return RendererInit(&system.renderer, &system.atlas, system.vertices)
 }
 
+// Adds a face of the family: `index` 1 bold, 2 italic, 3 bold italic. `bytes` is the font file (it has to live as long as the system). A rich text with [b] or [i] then uses the real face
+// instead of striking or slanting the regular one; plain text picks it with `TextOptions.face`.
+TextSystemAddFace :: proc(system: ^TextSystem, index: int, bytes: []u8) -> bool {
+    if index < 1 || index > 3 { return false }
+    face: ^font.Font = &system.faces[index - 1]
+    if !font.FontInit(face, bytes) { return false }
+    system.face_slots[index - 1] = make([]i32, font.FontSlotCount(face), system.allocator)
+    return font.AtlasAddFace(&system.atlas, index, face, system.face_slots[index - 1])
+}
+
 // Loads an atlas that was baked ahead (font.AtlasWrite, `odin run font/tool/bake`) so that the glyphs in it are not baked at run time. Call it before the first text; false when the bytes are not an
 // atlas of this font and method.
 TextSystemUsePrebaked :: proc(system: ^TextSystem, bytes: []u8) -> bool {
@@ -47,6 +59,7 @@ TextSystemDestroy :: proc(system: ^TextSystem) {
     delete(system.texels, system.allocator)
     delete(system.slots, system.allocator)
     delete(system.vertices, system.allocator)
+    for slots in system.face_slots { delete(slots, system.allocator) }
     system^ = {}
 }
 

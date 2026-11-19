@@ -29,5 +29,6 @@ RichRequest :: struct {
     method: font.Method,
 }
 
-RichDrawer :: proc(ctx: ^kit.Context, face: ^font.Font, requests: []RichRequest)
+// `family` has the fonts of the regular, bold, italic and bold italic faces (nil: the face is made from the regular one)
+RichDrawer :: proc(ctx: ^kit.Context, family: ^[font.ATLAS_FACES]^font.Font, requests: []RichRequest)
 rich_drawer: RichDrawer
