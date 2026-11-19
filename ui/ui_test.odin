@@ -4394,3 +4394,88 @@ test_the_graph_widget_commits_edits_as_steps_and_undoes_and_redoes_with_the_keys
     key(harness, graph, &view, {.REDO})
     testing.expect_value(t, GraphNodeCount(graph), 1)                           // without a history the keys do nothing
 }
+
+@(test)
+test_dragging_a_tab_to_the_edge_of_a_panel_splits_it_and_the_middle_makes_a_tab :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    dock: ^Dock = new(Dock)
+    defer { free(harness); free(dock) }
+    harnessInit(harness)
+    DockInit(dock)
+    a, _ := DockPanelAdd(dock, "A")
+    b, _ := DockPanelAdd(dock, "B")
+    c, _ := DockPanelAdd(dock, "C")
+    DockPanelDock(dock, a, DockLeafOf(dock, b), .LEFT)
+    @(static) shown: [3]int
+    shown = {}
+    content :: proc(ctx: ^Context, dock: ^Dock, panel: int, user: rawptr) {
+        shown[panel] += 1
+        UiLabel(ctx, "content")
+    }
+    dock_id: Id
+    frame_with :: proc(harness: ^Harness, dock: ^Dock, content: DockContentProc, id: ^Id, input: Input) {
+        frame(harness, input)
+        id^ = UiId(&harness.ctx, "dock")
+        UiDock(&harness.ctx, "dock", dock, content, size = {Fixed(380), Fixed(280)})
+        UiEnd(&harness.ctx)
+    }
+    for _ in 0 ..< 3 { frame_with(harness, dock, content, &dock_id, pointerAt({-50, -50})) }
+    testing.expect(t, shown[a] > 0 && shown[c] > 0, "the panel that is shown in each leaf got its content call")
+    testing.expect_value(t, shown[b], 0)                                                  // b is a tab behind c (the last one added is the shown one)
+    tab_of :: proc(ctx: ^Context, dock_id: Id, panel: int) -> Rect {
+        rect, _ := UiElementRect(ctx, IdFromIndex(u32(panel), IdFromString("tab", dock_id)))
+        return rect
+    }
+    leaf_b, _ := UiElementRect(&harness.ctx, IdFromIndex(u32(DockLeafOf(dock, b)), dock_id))
+    from: Vec2 = RectCenter(tab_of(&harness.ctx, dock_id, c))
+    drag :: proc(harness: ^Harness, dock: ^Dock, content: DockContentProc, id: ^Id, from: Vec2, to: Vec2) {
+        frame_with(harness, dock, content, id, pointerAt(from))
+        frame_with(harness, dock, content, id, pointerAt(from, down = true, pressed = true))
+        frame_with(harness, dock, content, id, pointerAt(from + {20, 0}, down = true))
+        frame_with(harness, dock, content, id, pointerAt(to, down = true))
+        frame_with(harness, dock, content, id, pointerAt(to, released = true))
+        frame_with(harness, dock, content, id, pointerAt(to))
+    }
+    // onto the bottom edge of the right panel: c gets a place below it
+    drag(harness, dock, content, &dock_id, from, {leaf_b.x + leaf_b.z * 0.5, leaf_b.y + leaf_b.w - 6})
+    testing.expect(t, DockCheck(dock))
+    testing.expect_value(t, dock.nodes[DockLeafOf(dock, c)].panel_count, 1)
+    testing.expect_value(t, dock.nodes[dock.nodes[DockLeafOf(dock, b)].parent].direction, SplitDirection.VERTICAL)
+    testing.expect(t, DockLeafOf(dock, c) != DockLeafOf(dock, b))
+    // back into the middle of the left panel as a tab
+    leaf_a, _ := UiElementRect(&harness.ctx, IdFromIndex(u32(DockLeafOf(dock, a)), dock_id))
+    drag(harness, dock, content, &dock_id, RectCenter(tab_of(&harness.ctx, dock_id, c)), RectCenter(leaf_a))
+    testing.expect(t, DockCheck(dock))
+    testing.expect_value(t, DockLeafOf(dock, c), DockLeafOf(dock, a))
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}
+
+@(test)
+test_the_handle_of_a_dock_split_moves_its_proportion :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    dock: ^Dock = new(Dock)
+    defer { free(harness); free(dock) }
+    harnessInit(harness)
+    DockInit(dock)
+    a, _ := DockPanelAdd(dock, "A")
+    b, _ := DockPanelAdd(dock, "B")
+    DockPanelDock(dock, a, DockLeafOf(dock, b), .LEFT)
+    content :: proc(ctx: ^Context, dock: ^Dock, panel: int, user: rawptr) {}
+    run :: proc(harness: ^Harness, dock: ^Dock, content: DockContentProc, input: Input) {
+        frame(harness, input)
+        UiDock(&harness.ctx, "dock", dock, content, size = {Fixed(400), Fixed(200)})
+        UiEnd(&harness.ctx)
+    }
+    for _ in 0 ..< 3 { run(harness, dock, content, pointerAt({-50, -50})) }
+    before: f32 = dock.nodes[dock.root].ratio
+    handle: Rect
+    handle, _ = UiElementRect(&harness.ctx, IdFromString("handle", IdFromIndex(u32(dock.root), UiIdPath("dock"))))
+    start: Vec2 = RectCenter(handle)
+    run(harness, dock, content, pointerAt(start))
+    run(harness, dock, content, pointerAt(start, down = true, pressed = true))
+    run(harness, dock, content, pointerAt(start + {80, 0}, down = true))
+    run(harness, dock, content, pointerAt(start + {80, 0}, released = true))
+    testing.expect(t, dock.nodes[dock.root].ratio > before + 0.1, "the first part grew by the drag")
+    run(harness, dock, content, pointerAt(start + {-3000, 0}, down = true))
+    testing.expect(t, DockCheck(dock))
+}

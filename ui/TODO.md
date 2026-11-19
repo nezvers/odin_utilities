@@ -55,5 +55,6 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Node graph: copy and paste of a selection (`GraphClipboard`, `GraphCopy`, `GraphPaste`, `GraphDuplicate`; Ctrl + C, X, V, D with `view.clipboard`)
 - [x] Node graph: reroute points on a cable (`GraphRerouteAdd`, a double click on a cable with `view.reroute_on_double_click`), labels on cables (`GraphLinkLabel`), a node that collapses to its title (`GraphNodeCollapse`, a double click on the title); demo with a screenshot
 - [x] Node graph: undo and redo (`GraphHistory`, snapshots, Ctrl + Z / Y with `view.history`) and automatic layout in columns (`GraphAutoLayout`)
+- [x] Docking (`Dock`, `UiDock`): panels as tabs in a tree of splits, moved by dragging a tab (middle: a tab, edge: a split), closing and opening, a layout that is plain data; demo with screenshots
 - [x] `Decl.absolute`: a child out of the flow of its parent at an offset (no root, no limit but the storage); the graph nodes use it
 - [x] Node graph: nodes outside of the view are not declared (`GraphNodesByDepth` with a view)
