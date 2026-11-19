@@ -28,6 +28,13 @@
             }
         },
         {
+            "label": "Build amsg with its commit (tool/build)",
+            "type": "shell",
+            "command": "odin run ai_messaging/tool/build",
+            "options": { "cwd": "${workspaceFolder}/.." },
+            "group": "build"
+        },
+        {
             "label": "Build Tests",
             "type": "shell",
             "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.exe -debug",

@@ -25,6 +25,7 @@
 //                                any member asks with its tools, a list = only those members
 //   --yes 3  --no 3              answer an offer           --cancel 3          stop a transfer
 //   --who  --code  --quit  --help   <a pasted code> joins or accepts a reply
+// amsg --version [--check]: the version and the commit this build was made from (tool/build records it); --check asks GitHub if it is the newest (exit code 0: up to date).
 // Only a line that starts with "--" and a letter is a tool command; everything else, "/" lines included, is a message (to the agent when
 // there is one). A line that must start with "--" is sent with a space in front of it.
 // The agent has no shell and no files, only the tools of the channel (say, tell, send from --agent-dir, inbox, who): what other members write
@@ -86,6 +87,17 @@ main :: proc() {
     // two helps: a person gets the commands of the keyboard, an agent only its tools (help.odin)
     for argument in os.args[1:] {
         switch argument {
+        case "--version":
+            // which build this is (and with --check whether it is the newest commit of the repository)
+            fmt.println(ai.VersionText())
+            for other in os.args[1:] {
+                if other == "--check" {
+                    up_to_date, text := ai.VersionCheck()
+                    fmt.println(text)
+                    os.exit(0 if up_to_date else 1)
+                }
+            }
+            return
         case "--help", "-h":
             fmt.print(ai.HelpFor())
             return
@@ -585,6 +597,8 @@ Command :: proc(m: ^ai.Messenger, raw: string, now: i64) {
     case line == "--close_group":
         message, _ := ai.SessionCloseGroup(session, now)
         Info(message)
+    case line == "--version":
+        Info(ai.VersionText())
     case line == "--help":
         for text in strings.split_lines(ai.HelpUser(), context.temp_allocator) {
             fmt.println(text)

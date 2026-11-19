@@ -8,13 +8,13 @@ tested, see section 11.
 
 ## 1. Setup
 - Needs the Odin compiler on your PATH (`odin version` prints something).
-- Build the tool once, from the `odin_utilities` folder:
-  - Windows: `odin build ai_messaging/tool/amsg -out:amsg.exe -o:speed`
-  - Linux / macOS: `odin build ai_messaging/tool/amsg -out:amsg -o:speed` (macOS is not tested yet)
+- Build the tool once, from the `odin_utilities` folder: `odin run ai_messaging/tool/build` (`amsg.exe` on Windows, `amsg` on Linux and macOS (not tested yet); `-- --out PATH` puts it somewhere else).
+  It records which commit of the repository the program was made from, so `amsg --version` can tell (section 13). The plain way works too: `odin build ai_messaging/tool/amsg -out:amsg.exe -o:speed`
+  (its version says `commit unknown`).
 - Put it on your PATH so any folder can call it:
   - Windows: copy `amsg.exe` into a folder that is on the PATH (or add its folder: Settings, Environment Variables, Path).
   - Linux / macOS: `cp amsg ~/.local/bin/`
-- Check: `amsg` with no arguments prints the usage line.
+- Check: `amsg --version` prints the version and the commit; `amsg --version --check` says whether that is the newest one on GitHub; `amsg --help` lists every command (section 12 is the complete reference).
 - Allow it through the firewall the first time (Windows asks). Same-computer use needs nothing else.
 - One executable does everything; there is nothing to install next to it.
 
@@ -32,6 +32,7 @@ tested, see section 11.
   `--host` (one member) and `--guest` (all others).
 
 ## 3. Commands you type
+(The short version; section 12 has every command and option in one table, section 14 has scenarios: team of agents, remote control of a PC, drop box, scripts.)
 - A line is a tool command only when it starts with `--` and a letter. Everything else is a message, including lines that start with `/`: to your agent when you have one (section 11),
   else to everybody.
 - Commands:
@@ -49,6 +50,9 @@ tested, see section 11.
   - `--yes 3` / `--no 3`: accept or decline the offer number 3.
   - `--cancel 3`: stop transfer number 3 (works for sending and receiving, the other side is told).
   - `--code`: show your code, for another network (see section 5).
+  - `--reconnect`: leave and join again. `--version`: which build this is. `--help`: the list.
+  - Agents and devices: `--spawn`, `--dismiss`, `--agents`, `--listen`, `--trust`, `--cmd`, `--subscribe_idle`, `--subscribe_spawned` (section 11); `--remote`, `--remote_disable`, `--run` (section 11 and scenario D);
+    only for the host: `--kick`, `--ban`, `--close_group`.
   - `--quit`: leave.
 - To send a message that really starts with `--` or looks like a command, put a space in front: ` --force is a flag name`.
 - A pasted session code (one long word) joins or accepts a reply, see section 5.
@@ -156,7 +160,7 @@ ai.MessengerCode(m, buffer[:])  /  ai.MessengerUseCode(m, text, p2p.LinkNow())  
 - Frames the host cannot pass on (receiver queue full) cancel that transfer instead of being lost silently (a lost frame would corrupt a file).
 
 ## 9. Tests
-- `odin test ai_messaging -strict-style -vet` (34 tests, about 9 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
+- `odin test ai_messaging -strict-style -vet` (36 tests, about 9 s, real loopback sockets; `P2P_LIVE=1` adds two tests over a real relay (a channel, and the two hosts race); delete the `ai_messaging.exe` it leaves behind):
   - frame codec, safe file names, folder stream in any chunking, hostile folder streams, discovery beacon
   - pasted codes + text + a 300 KB file both ways + an empty file
   - three members found by name, forwarding, unique names, a file between guests through the host, ask / answer, a refusal with its reason, a member leaving
@@ -281,3 +285,138 @@ Every `amsg` can have a **private AI agent**: a Claude Code process (`claude -p`
   files only from its folder, rate limit, `--listen all`, dismiss by request, an agent that dies, `allow_remote`). By hand with real Claude Code (haiku and sonnet): the agent
   started with the model asked for (also on request of a remote member), answered its person, said a word to the group through the tool, did not follow a request of another
   member without asking its person, and was dismissed on request. About $0.001 to $0.02 a turn. Not tried: an agent with `--agent-tools`, other providers' CLIs, macOS and Linux.
+
+## 12. Reference: everything amsg understands
+
+### On the command line
+`amsg <channel> [options]` (the channel name is the one argument without `--`), or `amsg --version [--check]`, `amsg --help`, `amsg --agent-help`.
+
+| Option | What it does |
+|---|---|
+| `--version` | print the version and the commit this build was made from, then exit. With `--check` it asks GitHub if that is the newest commit (exit code 0: up to date, 1: not, or it could not tell) |
+| `--help`, `-h` | the commands of the keyboard (inside an agent: the agent's tools only). `--agent-help` always prints the agent's |
+| `--name N` | your name in the channel (default: `USERNAME` or `USER`, else `member`). The host makes names unique (`bob`, `bob2`) |
+| `--password P` | the channel secret (or the environment variable `AMSG_PASSWORD`, which stays out of the process list); everybody must use the same. Needed for `--remote` |
+| `--host` / `--guest` | force the role (default: the first to start hosts, the others find it) |
+| `--dir DIR` | where received files and folders land (default `received`) |
+| `--auto-accept` | accept every offered file or folder without asking (only for members you trust) |
+| `--max-mb N` | the largest transfer you accept, in MB (default 1024; 0 means the default) |
+| `--exclude name` / `--include-git` / `--keep-exec` | what a folder you send leaves out (repeatable, `*.ext` works; `.git`, `node_modules`, `__pycache__`, `.DS_Store` by default), keep `.git`, restore executable bits of received files |
+| `--json` | one JSON object per line instead of text (section 6) |
+| `--no-lan` | do not look for the others by broadcast on this network |
+| `--stun` | put your public address in your code (for pasted codes over the internet) |
+| `--derp [N]` / `--derp-host name` / `--derp-only` | find the others through a free Tailscale relay (same number for everybody), a relay of your own, or send everything through the relay |
+| `--auto-reconnect` | when the host is lost, rejoin by itself (whoever searches first becomes the new host) |
+| `--agent [model]` | start your private agent with the session (`haiku`, `sonnet`, `opus` or a full model id) |
+| `--agent-model M` | the model a later `--spawn` without one uses |
+| `--agent-cmd path` | the `claude` program when it is not in the PATH |
+| `--agent-tools Read,Glob` | give the agent more built in Claude Code tools than its channel tools (on purpose; then set `--agent-dir`) |
+| `--agent-dir DIR` | the agent's working folder, and the only folder its `send` tool sends from (default `agent_files`) |
+| `--agent-trust ask|members|a,b` | how far the agent believes what other members write (section 11) |
+| `--listen mentions|all|none` | what the channel passes to the agent without being asked (default `mentions`) |
+| `--allow-remote-agent` | say yes to every request of another member (start or end your agent, run a slash command on it): it spends your Claude Code usage |
+| `--log DIR` | write the log of this instance (messages, typed lines, what the agent does, costs) into `DIR`, read it with `logview` (section 11) |
+| `--headless` | no keyboard: the standard input is not read, the program runs until it is closed (by `--close_group` of the host, or by killing it) |
+| `--remote name` | (repeatable) `name` controls this device whenever it joins; needs a password; see section 14, "An agent controls a PC remotely" |
+| `--remote-dir folder` / `--remote-timeout seconds` | the private folder remote commands run in / how long one may run (default 60) |
+
+Exit codes: 0 normal end, 1 the socket could not be opened (or `--version --check` says not up to date), 2 a wrong argument (the message says which).
+Environment: `AMSG_PASSWORD` (the password), `HTTPS_PROXY` / `ALL_PROXY` (the relay through a proxy), `AMSG_AGENT=1` (set by amsg for its agent's process: a program the agent starts gets the agent's help and cannot start a second member).
+
+### Lines you type in a session
+A line is a command only when it starts with `--` and a letter; a leading space makes any line a plain message. Everything else (`/` lines included) is text to your agent, or to everybody when you have none.
+
+| Command | What it does |
+|---|---|
+| `text` | to your agent, or to everybody without one |
+| `/compact`, `/clear`, `/context` ... | a slash command of Claude Code, to your own agent untouched |
+| `--group_msg text` (`--group`) | a message to everybody |
+| `--to bob text` | a private message |
+| `--send bob path` / `--send all path` | a file or a whole folder |
+| `--yes N` / `--no N` | accept or decline offer N; `--cancel N` stops transfer N |
+| `--yes agent` / `--no agent` | answer a request of another member about your agent |
+| `--who` | the members, how you reach each (LAN, direct, relay), who has an agent, who controls what |
+| `--code` | your code (pasted codes, section 5) |
+| `--reconnect` | leave and join again (a lost host is replaced) |
+| `--version` | the version and the commit of this build |
+| `--help` | this list, short |
+| `--quit` | leave |
+| `--spawn [model]` / `--dismiss` | start or end your agent |
+| `--spawn bob [model]` / `--dismiss bob` | ask bob to start or end bob's agent (bob decides) |
+| `--cmd bob /compact` (`--private`) | ask bob to run a slash command on bob's agent (bob decides) |
+| `--agents` | your agent and the ones of the others (model, working or waiting, cost) |
+| `--listen mentions|all|none` | what the channel passes to your agent |
+| `--trust ask|members|bob,carol` | how far your agent believes other members |
+| `--subscribe_idle bob` / `--unsubscribe_idle bob` | your agent is told, without spending tokens, when bob's agent finishes and goes idle, with its last message |
+| `--subscribe_spawned` / `--unsubscribe_spawned` | your agent is told whenever an agent starts or ends |
+| `--remote bob` / `--remote_disable [bob]` | bob may run commands on THIS device and give orders to its agent / take it back (from everybody without a name) |
+| `--run bob <command>` | run one command on bob's device, when bob gave you remote control |
+| `--kick bob` / `--ban bob` / `--close_group` | only the host: dismiss bob's agent / remove bob and keep the name out / end the group |
+
+### The programs
+- `amsg` (`ai_messaging/tool/amsg`): the member. Build it with `odin run ai_messaging/tool/build` (it records the commit, so `--version` can tell).
+- `logview` (`ai_messaging/tool/logview`): reads logs, `--trace`, `--cost`, `--kind`, `--ids`, `--raw` (section 11).
+- `fakeagent` (`ai_messaging/tool/fakeagent`): a stand in for Claude Code that the tests use; you never need it.
+
+## 13. Is my amsg up to date?
+- `amsg --version` prints the version of the program and the commit it was built from, for example `amsg 1.0, commit 52e3841, built 2026-11-19 11:17 UTC`. `(+ local changes)` means the folders of the program
+  (`ai_messaging`, `p2p`, `serial`) had changes that were not committed when it was built; `commit unknown` means it was built with a plain `odin build` instead of `tool/build`.
+- `amsg --version --check` asks GitHub (`curl` and a network; the unauthenticated API allows 60 asks an hour) for the newest commit that touched those three folders and compares. It prints
+  `up to date with the repository` (exit code 0) or `NOT the newest: the repository has 9f8e7d6 (2026-11-20): <what changed>` (exit code 1). Commits of your own that are not pushed yet make it say
+  "not the newest" too: the message says so.
+- Update: `git pull` in your `odin_utilities` folder, then `odin run ai_messaging/tool/build` again, then restart the running members (a running program keeps the build it started from).
+- The version number (`ai.VERSION`) is raised when the behaviour or the format between members changes; members of different builds still talk when the frames are compatible, the tool does not
+  check it at the connection. When something works for one member and not for another, compare their `--version` first.
+
+## 14. Scenarios (what to do, step by step)
+
+### A. Two people talk and swap files
+Section 2 and 4. One channel name, `amsg my-team --name alice` and `amsg my-team --name bob`, then `--send bob notes.txt`, `--yes 1`.
+
+### B. Different offices, no server (the internet)
+1. Both: `amsg my-team --name alice --derp 22 --password long-random-text` and the same with `--name carol` (use the same `--derp` number everybody; `odin run p2p/tool/derp` shows which answer fast).
+2. Start the first one before the others (or `--host` on one, `--guest` on the rest). `--who` shows `direct over the internet` or `through a relay`.
+3. If the host drops: `--reconnect` (or start everybody with `--auto-reconnect`).
+4. No relay allowed: the pasted codes of section 5.
+
+### C. Everybody has a private agent, one person manages
+1. Each person: `amsg team --name bob --agent haiku` (their own Claude Code usage; or later `--spawn haiku`).
+2. The manager's agent watches without polling: `--subscribe_idle bob`, `--subscribe_idle carol` (they agree with `--yes agent`), `--subscribe_spawned`. The manager's agent receives `[idle bob] ...` when bob's agent finishes.
+3. The manager gives work through their agent (`@bob-agent please run the tests and report`; mentions reach it by default) or asks others to start theirs: `--spawn carol sonnet`.
+4. Trust: the default (`--trust ask`) makes each agent ask its person before doing what another member wrote; `--trust members` for a team that trusts each other; `--trust bob,carol` for named ones.
+5. Costs afterwards: start everybody with `--log logs` and run `logview logs/*.amsglog.gz --cost`.
+
+### D. An agent controls a PC remotely
+The PC (the device) runs amsg without a keyboard; the person who controls it uses their own terminal and, usually, their own agent.
+1. Pick a channel name and a long password. The password is required: it is what stops a stranger from taking the name that is trusted.
+2. On the PC: `amsg home --name pc --headless --password "long random text" --remote me --derp 22 --log C:\amsg-logs`
+   - `--remote me` means: the member called `me` may control this PC whenever it joins (that is why the password is needed).
+   - Add `--agent haiku --agent-tools Read,Glob --agent-dir C:\work` if the PC should also have an agent that takes orders (`[remote me] ...` arrive with the authority of the person).
+   - Put it in a scheduled task or a service so it comes back after a restart, with `--auto-reconnect` so it rejoins when the host disappears.
+   - `--remote-dir folder` is where commands run (a private folder by default), `--remote-timeout 120` raises the limit of 60 s per command.
+3. On your laptop: `amsg home --name me --password "long random text" --derp 22 --agent sonnet`
+   - Type `--run pc dir` (or `--run pc echo hi`): the command is shown on the PC, runs with the rights of the user that started amsg there, and the end of its output (3800 bytes) comes back.
+   - Or ask your agent: `run "git status" on pc` and it uses its `run` tool; what comes back reaches it as `[run pc] exit 0: ...`.
+   - To work on files there: `--send pc my_project` puts a folder on the PC (it lands in the PC's `--dir`, accepted automatically only with `--auto-accept`: start the PC with it for that use).
+4. Taking it back: from the PC's keyboard `--remote_disable me` (a headless PC has none: stop the program, or be the host yourself and use `--close_group`: start your laptop first with `--host`, and the PC with `--guest`, then `--close_group` ends the PC's program).
+5. Safety: only the person who started the PC's amsg decides who controls it; every command is shown on the PC; one at a time, 60 s, 4 MB of output at most; output is cleaned of control characters. What it does not limit is what the command itself does:
+   give this only to someone you would give a shell, and keep the password secret. Not tried on Linux or macOS (section 11).
+6. Check afterwards: `logview C:\amsg-logs\*.amsglog.gz --kind c,n` shows the commands typed at the PC and what the program reported, remote commands that ran included.
+
+### E. A new machine or a new agent gets a whole project
+`--send carol my_project` (the folder arrives all or nothing, without `.git` unless `--include-git`), then `--spawn carol haiku` so carol's agent starts and can work in it (its folder is `--agent-dir`).
+Or the reverse: carol sends the results with `--send alice results`.
+
+### F. A drop box that accepts files by itself
+`amsg builds --name drop --auto-accept --dir /srv/drops --max-mb 200 --json --password P`: every member's file lands in `/srv/drops` (never overwritten: `name (1)`), and the `file_done` events on standard
+output say what arrived. Limit it to members you trust (the channel password) because it accepts everything.
+
+### G. From a script or a CI job
+Start `amsg ci --name runner --json --password P` as a child process: read one JSON object per line from its standard output (`text`, `file_offered`, `file_done`, `error`, ...) and write plain command lines to its
+standard input (`--send alice build.zip`, `--group_msg "tests green"`, `--quit`). `--version --check` in a script has the exit code 0 only when the build is current.
+
+### H. Keep a group in order (the host)
+The host (the first to open the channel) can `--kick bob` (dismiss bob's agent), `--ban bob` (close bob's program, cut the link, keep the name out while this host runs) and `--close_group` (every program and agent ends). Start the member you trust first.
+
+### I. Find out what happened
+`--log DIR` on every member, then `logview DIR/*.amsglog.gz` (one timeline), `--trace ID` (one message through every member and agent), `--cost` (what each agent cost). Logs hold private messages: for their owner only.

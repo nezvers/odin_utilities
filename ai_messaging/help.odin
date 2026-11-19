@@ -17,10 +17,12 @@ HelpInAgent :: proc() -> bool {
 HelpUser :: proc() -> string {
     return `amsg: a member of a channel of people and AI agents, no server.
 
+  amsg --version [--check]      which build this is (version, commit, date); --check asks GitHub if it is the newest (exit code 0: up to date)
   amsg <channel> [--name N] [--dir received] [--auto-accept] [--host | --guest] [--no-lan] [--stun] [--max-mb N] [--json] [--password P]
                  [--exclude name]... [--include-git] [--keep-exec] [--derp [N] | --derp-host name] [--derp-only] [--auto-reconnect]
                  [--agent [model]] [--agent-model M] [--agent-cmd claude] [--agent-tools Read,Glob] [--agent-dir agent_files]
                  [--listen mentions|all|none] [--agent-trust ask|members|name,name] [--allow-remote-agent]
+                 [--log DIR] [--headless --remote name... [--remote-dir folder] [--remote-timeout seconds]]
 
 Lines you type (only a line that starts with "--" and a letter is a command; a space in front makes any line a plain message):
   text                          to your agent when you have one, else to everybody
@@ -29,7 +31,7 @@ Lines you type (only a line that starts with "--" and a letter is a command; a s
   --to bob text                 private, to one member
   --send bob path               a file or a whole folder to bob (--send all path: everybody); the receiver accepts or declines
   --yes 3 / --no 3              answer the offer number 3        --cancel 3      stop transfer 3
-  --who  --code  --reconnect  --quit
+  --who  --code  --reconnect  --version  --quit
 Your agent (Claude Code, one per terminal, private to you):
   --spawn [model]               start it (haiku, sonnet, opus or a full model id)         --dismiss     end it
   --agents                      yours and who else has one       --listen mentions|all|none   what the channel passes to it

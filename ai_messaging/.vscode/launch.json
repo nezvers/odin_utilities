@@ -62,6 +62,26 @@
             }
         },
         {
+            "name": "Run amsg version",
+            "request": "launch",
+            "preLaunchTask": "Build Amsg",
+            "args": ["--version"],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_amsg.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_amsg.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_amsg.bin"
+            }
+        },
+        {
             "name": "Run logview help",
             "request": "launch",
             "preLaunchTask": "Build Logview",
