@@ -138,9 +138,9 @@ scanFile :: proc(package_found: ^Package, path: string) {
     bytes, err := os.read_entire_file(path, context.allocator)
     if err != nil { return }
     text: string = string(bytes)
-    if strings.contains(text, "@(test)") { package_found.has_tests = true }
     for line in strings.split_lines_iterator(&text) {
         trimmed: string = strings.trim_space(line)
+        if strings.has_prefix(line, "@(test)") { package_found.has_tests = true }     // at the start of a line: a mention in a string or a comment is not a test
         if !strings.has_prefix(trimmed, "import ") { continue }
         open: int = strings.index_byte(trimmed, '"')
         close: int = strings.last_index_byte(trimmed, '"')
