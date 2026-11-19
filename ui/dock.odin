@@ -56,6 +56,7 @@ DockPanel :: struct {
     floating: bool,                     // in a window of its own over the dock (node is -1); DockPanelFloat
     float_position: Vec2,
     float_size: Vec2,
+    float_z: int,                       // the later it was raised (clicked, or made floating) the higher it is
     closable: bool,                     // its tab has a button that closes it (DockPanelSetClosable)
     user: rawptr,                       // of the program (not meant to be saved)
 }
@@ -76,6 +77,8 @@ Dock :: struct {
     panels: [DOCK_PANELS]DockPanel,
     root: int,                          // -1: nothing is docked
     serial: u64,
+    float_counter: int,                 // counts the raises of floating windows
+    over_floating: bool,                // the pointer is over a floating window in this frame (a drop there is for nobody)
     pending: DockMove,                  // a drop that UiDock applies when the frame is built (panel -1: none)
 }
 
@@ -106,6 +109,8 @@ DockPanelFloat :: proc(dock: ^Dock, panel: int, position: Vec2, size: Vec2 = {32
     if entry.node >= 0 { dockDetach(dock, panel) }
     entry.floating = true
     entry.float_position = position
+    dock.float_counter += 1
+    entry.float_z = dock.float_counter
     if entry.float_size.x <= 0 || size != {320, 240} { entry.float_size = size }
     dock.serial += 1
     return true
@@ -373,12 +378,17 @@ DOCK_DRAG_KIND :: "dock_panel"
 UiDock :: proc(ctx: ^Context, name: string, dock: ^Dock, content: DockContentProc, user: rawptr = nil, size: Size = {}) {
     id: Id = UiId(ctx, name)
     dock.pending = {panel = -1, index = -1}
+    // the window that is dragged does not count: it follows the pointer
+    dragged: int = -1
+    if _, dragging := UiDragging(ctx); dragging && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) { dragged = (^int)(raw_data(UiDragPayload(ctx)))^ }
+    dock.over_floating = dockFloatingAt(ctx, dock, id, ctx.input.mouse_position, dragged) >= 0
     ElementOpen(ctx, {
         id = id,
         layout = {size = {growWhenUnset(size.width), growWhenUnset(size.height)}},
         clip = {horizontal = true, vertical = true, cut = true},
     })
     if dock.root >= 0 { dockBuild(ctx, dock, dock.root, id, {Grow(), Grow()}, content, user) }
+    dockRaiseFloating(ctx, dock, id)
     for panel in 0 ..< DOCK_PANELS {
         if dock.panels[panel].used && dock.panels[panel].floating { dockFloating(ctx, dock, panel, id, content, user) }
     }
@@ -387,7 +397,7 @@ UiDock :: proc(ctx: ^Context, name: string, dock: ^Dock, content: DockContentPro
     }
     ElementClose(ctx)
     // a tab or a title that is let go where no panel takes it becomes a window of its own there
-    if _, dragging := UiDragging(ctx); dragging && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && ctx.input.mouse_released && dock.pending.panel < 0 {
+    if _, dragging := UiDragging(ctx); dragging && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && ctx.input.mouse_released && dock.pending.panel < 0 && !dock.over_floating {
         panel: int = (^int)(raw_data(UiDragPayload(ctx)))^
         grab: Vec2 = {24, 12}
         if DockPanelIsFloating(dock, panel) { grab = ctx.press_position - dock.panels[panel].float_position }
@@ -475,7 +485,7 @@ dockBuild :: proc(ctx: ^Context, dock: ^Dock, node_index: int, dock_id: Id, size
     ElementClose(ctx)
     // a tab dragged over the bar: where among the tabs it would go (a line shows it)
     over_bar: bool
-    if _, dragging := UiDragging(ctx); dragging && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && RectContains(bar.rect, ctx.input.mouse_position) && node.panel_count > 0 {
+    if _, dragging := UiDragging(ctx); dragging && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && !dock.over_floating && RectContains(bar.rect, ctx.input.mouse_position) && node.panel_count > 0 {
         over_bar = true
         place: int = node.panel_count
         line: f32
@@ -499,7 +509,7 @@ dockBuild :: proc(ctx: ^Context, dock: ^Dock, node_index: int, dock_id: Id, size
     if node.panel_count > 0 { content(ctx, dock, int(node.panels[node.active]), user) }
     ElementClose(ctx)
     // a tab is over this place: show where it would go, and take the drop
-    if _, dragging := UiDragging(ctx); dragging && !over_bar && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && RectContains(state.rect, ctx.input.mouse_position) {
+    if _, dragging := UiDragging(ctx); dragging && !over_bar && !dock.over_floating && ctx.drag.kind == IdFromString(DOCK_DRAG_KIND) && RectContains(state.rect, ctx.input.mouse_position) {
         zone: DockZone = DockDropZone(state.rect, ctx.input.mouse_position)
         area: Rect = DockZoneRect(state.rect, zone)
         ElementOpen(ctx, {
@@ -559,6 +569,10 @@ dockFloating :: proc(ctx: ^Context, dock: ^Dock, panel: int, dock_id: Id, conten
     size: Vec2 = entry.float_size
     old_size: Vec2 = entry.float_size
     old_position: Vec2 = entry.float_position
+    rank: int
+    for other in 0 ..< DOCK_PANELS {
+        if dock.panels[other].used && dock.panels[other].floating && dock.panels[other].float_z < entry.float_z { rank += 1 }
+    }
     window_id: Id = IdFromIndex(u32(panel), IdFromString("float", dock_id))
     title_id: Id = IdFromString("title", window_id)
     _ = stateGet(ctx, window_id)
@@ -566,7 +580,7 @@ dockFloating :: proc(ctx: ^Context, dock: ^Dock, panel: int, dock_id: Id, conten
     ElementOpen(ctx, {
         id = window_id,
         layout = {size = {Fixed(size.x), Fixed(size.y)}, direction = .TOP_TO_BOTTOM},
-        floating = {attach_to = .ROOT, parent_point = .LEFT_TOP, element_point = .LEFT_TOP, offset = entry.float_position, z_index = 300 + i16(panel), capture = true},
+        floating = {attach_to = .ROOT, parent_point = .LEFT_TOP, element_point = .LEFT_TOP, offset = entry.float_position, z_index = 300 + i16(rank), capture = true},
         hit = {.BLOCKER},
         draw = {kind = .PANEL, font_size = metrics.font_size},
     })
@@ -602,4 +616,29 @@ dockFloating :: proc(ctx: ^Context, dock: ^Dock, panel: int, dock_id: Id, conten
     content(ctx, dock, panel, user)
     ElementClose(ctx)
     ElementClose(ctx)
+}
+
+// The floating window under a point (the one on top), -1 when there is none. Uses the places of the last frame.
+@(private)
+dockFloatingAt :: proc(ctx: ^Context, dock: ^Dock, dock_id: Id, point: Vec2, except: int = -1) -> int {
+    best: int = -1
+    for panel in 0 ..< DOCK_PANELS {
+        entry: ^DockPanel = &dock.panels[panel]
+        if !entry.used || !entry.floating || panel == except { continue }
+        window: ^WidgetState = stateFind(ctx, IdFromIndex(u32(panel), IdFromString("float", dock_id)))
+        if window == nil || !RectContains(window.rect, point) { continue }
+        if best < 0 || entry.float_z > dock.panels[best].float_z { best = panel }
+    }
+    return best
+}
+
+// A press on a floating window brings it to the front: the order of float_z is the order they are drawn in
+@(private)
+dockRaiseFloating :: proc(ctx: ^Context, dock: ^Dock, dock_id: Id) {
+    if ctx.input.mouse_pressed {
+        if hit: int = dockFloatingAt(ctx, dock, dock_id, ctx.input.mouse_position); hit >= 0 && dock.panels[hit].float_z != dock.float_counter {
+            dock.float_counter += 1
+            dock.panels[hit].float_z = dock.float_counter
+        }
+    }
 }

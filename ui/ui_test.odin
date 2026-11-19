@@ -4961,3 +4961,46 @@ test_a_floating_dock_window_is_resized_by_its_edges_and_corners_and_keeps_a_mini
     testing.expect(t, DockCheck(dock))
     testing.expect_value(t, harness.ctx.problems, Problems{})
 }
+
+@(test)
+test_a_press_raises_a_floating_dock_window_and_a_drop_on_a_window_is_for_nobody :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    dock: ^Dock = new(Dock)
+    defer { free(harness); free(dock) }
+    harnessInit(harness)
+    DockInit(dock)
+    a, _ := DockPanelAdd(dock, "A")
+    b, _ := DockPanelAdd(dock, "B")
+    c, _ := DockPanelAdd(dock, "C")
+    d, _ := DockPanelAdd(dock, "D")
+    DockPanelFloat(dock, b, {300, 100}, {200, 150})
+    DockPanelFloat(dock, c, {350, 150}, {200, 150})                    // over b, and later: on top
+    testing.expect(t, dock.panels[c].float_z > dock.panels[b].float_z)
+    content :: proc(ctx: ^Context, dock: ^Dock, panel: int, user: rawptr) {}
+    run :: proc(harness: ^Harness, dock: ^Dock, content: DockContentProc, input: Input) {
+        frame(harness, input, {700, 500})
+        UiDock(&harness.ctx, "dock", dock, content, size = {Fixed(250), Fixed(200)})
+        UiEnd(&harness.ctx)
+    }
+    for _ in 0 ..< 3 { run(harness, dock, content, pointerAt({-50, -50})) }
+    // a press on the part of b that c does not cover
+    point: Vec2 = {320, 130}
+    run(harness, dock, content, pointerAt(point))
+    run(harness, dock, content, pointerAt(point, true, true))
+    run(harness, dock, content, pointerAt(point, false, false, true))
+    testing.expect(t, dock.panels[b].float_z > dock.panels[c].float_z, "the pressed window is on top now")
+    // the tab of d (shown in the leaf of a) let go over the window b: nothing happens, the tab stays where it is
+    run(harness, dock, content, pointerAt({-50, -50}))
+    tab, _ := UiElementRect(&harness.ctx, IdFromIndex(u32(d), IdFromString("tab", UiIdPath("dock"))))
+    from: Vec2 = RectCenter(tab)
+    over: Vec2 = {400, 200}
+    run(harness, dock, content, pointerAt(from))
+    run(harness, dock, content, pointerAt(from, true, true))
+    run(harness, dock, content, pointerAt(from + {12, 12}, true))
+    run(harness, dock, content, pointerAt(over, true))
+    run(harness, dock, content, pointerAt(over, false, false, true))
+    run(harness, dock, content, pointerAt(over))
+    testing.expect(t, !DockPanelIsFloating(dock, d), "it did not become a window under another window")
+    testing.expect_value(t, DockLeafOf(dock, d), DockLeafOf(dock, a))
+    testing.expect(t, DockCheck(dock))
+}
