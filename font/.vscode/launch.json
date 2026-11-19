@@ -1,0 +1,124 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Debug",
+            "request": "launch",
+            "preLaunchTask": "Build Debug",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        },
+        {
+            "name": "Run Release",
+            "request": "launch",
+            "preLaunchTask": "Build Release",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        },
+        {
+            "name": "Run preview raylib (both methods)",
+            "request": "launch",
+            "preLaunchTask": "Build Preview raylib",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_preview.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_preview.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_preview.bin"
+            }
+        },
+        {
+            "name": "Run preview Karl2D (both methods)",
+            "request": "launch",
+            "preLaunchTask": "Build Preview Karl2D",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_preview_karl2d.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_preview_karl2d.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_preview_karl2d.bin"
+            }
+        },
+        {
+            "name": "Run Debug Karl2D",
+            "request": "launch",
+            "preLaunchTask": "Build Debug Karl2D",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        },
+        {
+            "name": "Run Release Karl2D",
+            "request": "launch",
+            "preLaunchTask": "Build Release Karl2D",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}.bin"
+            }
+        },
+        {
+            "name": "Debug Tests",
+            "request": "launch",
+            "preLaunchTask": "Build Tests",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_test.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_test.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_test.bin"
+            }
+        }
+    ]
+}
