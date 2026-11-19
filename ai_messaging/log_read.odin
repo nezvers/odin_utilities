@@ -39,7 +39,7 @@ LogDecode :: proc(data: []byte, allocator := context.allocator) -> (text: string
         }
         block: [dynamic]byte
         block.allocator = context.temp_allocator
-        if deflate.inflate_gzip_from_bytes(&block, data[position:position + total], allocator = context.temp_allocator) != nil {
+        if deflate.decompress_gzip_from_bytes(&block, data[position:position + total], allocator = context.temp_allocator) != nil {
             return "", false
         }
         append(&all, ..block[:])

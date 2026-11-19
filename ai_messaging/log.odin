@@ -256,7 +256,7 @@ LogFlush :: proc(l: ^Log) {
     }
     input: []byte = l.block[:l.block_length]
     clear(&l.packed)
-    if deflate.deflate_raw_to_dynamic(&l.packed, input, .Level_6) != nil {
+    if deflate.compress_raw_to_dynamic(&l.packed, input, .Level_6) != nil {
         l.block_length = 0                                  // cannot compress (memory): the block is lost, the log goes on
         return
     }
