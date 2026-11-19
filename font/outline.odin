@@ -1,11 +1,9 @@
 package font
 
 // The outline of a glyph as quadratic Bezier curves in em units. TrueType already is; the cubic curves of OpenType (CFF) are cut into quadratics, a line is a quadratic with its control point in
-// the middle. The caller gives the room for the curves (`out`), nothing grows. stb_truetype allocates the outline it reads for the length of one call.
+// the middle. The caller gives the room for the curves (`out`), nothing grows and nothing is allocated: the glyph is read straight into `out` (truetype.odin, cff.odin).
 
-import "core:c"
 import "core:math"
-import stbtt "vendor:stb/truetype"
 
 Curve :: struct {
     p0, p1, p2: Vec2,
@@ -17,50 +15,16 @@ CUBIC_MAX_DEPTH :: 4
 // The curves of a glyph, the contours one after the other and each contour closed. `ok` is false when `out` is too small (what fits is in `count`). A glyph without an outline has 0 curves.
 FontGlyphCurves :: proc(font: ^Font, glyph: int, out: []Curve) -> (count: int, ok: bool) {
     if glyph >= font.glyph_count { return specialCurves(font, glyph, out) }
-    vertices: [^]stbtt.vertex
-    vertex_count: c.int = stbtt.GetGlyphShape(&font.info, c.int(glyph), &vertices)
-    if vertex_count <= 0 { return 0, true }
-    defer stbtt.FreeShape(&font.info, vertices)
-
-    scale: f32 = 1 / font.units_per_em
-    start: Vec2
-    pen: Vec2
-    add :: proc(out: []Curve, count: ^int, curve: Curve) -> bool {
-        if count^ >= len(out) { return false }
-        out[count^] = curve
-        count^ += 1
-        return true
-    }
-    close :: proc(out: []Curve, count: ^int, pen: Vec2, start: Vec2) -> bool {
-        if pen == start { return true }
-        return add(out, count, {pen, (pen + start) * 0.5, start})
-    }
-    ok = true
-    for i in 0 ..< int(vertex_count) {
-        v: stbtt.vertex = vertices[i]
-        point: Vec2 = {f32(v.x), f32(v.y)} * scale
-        #partial switch stbtt.vmove(v.type) {
-        case .vmove:
-            ok = close(out, &count, pen, start) && ok
-            start, pen = point, point
-        case .vline:
-            ok = add(out, &count, {pen, (pen + point) * 0.5, point}) && ok
-            pen = point
-        case .vcurve:
-            ok = add(out, &count, {pen, Vec2{f32(v.cx), f32(v.cy)} * scale, point}) && ok
-            pen = point
-        case .vcubic:
-            ok = cubicToQuadratics(out, &count, pen, Vec2{f32(v.cx), f32(v.cy)} * scale, Vec2{f32(v.cx1), f32(v.cy1)} * scale, point, 0) && ok
-            pen = point
-        }
-    }
-    ok = close(out, &count, pen, start) && ok
-    return
+    sink: OutlineSink = {out = out, ok = true, scale = 1 / font.units_per_em}
+    read: bool = cffGlyphOutline(&font.cff, glyph, &sink) if font.is_cff else ttGlyphOutline(font, glyph, &sink, 0)
+    if !read { return 0, true }                 // a broken outline is no outline
+    sinkClose(&sink)
+    return sink.count, sink.ok
 }
 
 // A cubic as quadratics: one quadratic when it is close enough, else halves (de Casteljau)
 @(private)
-cubicToQuadratics :: proc(out: []Curve, count: ^int, p0: Vec2, c1: Vec2, c2: Vec2, p3: Vec2, depth: int) -> bool {
+cubicToQuadratics :: proc "contextless" (out: []Curve, count: ^int, p0: Vec2, c1: Vec2, c2: Vec2, p3: Vec2, depth: int) -> bool {
     // the distance between a cubic and the quadratic with the control point (3 c1 - p0 + 3 c2 - p3) / 4 is at most sqrt(3) / 36 of this vector
     third: Vec2 = p3 - 3 * c2 + 3 * c1 - p0
     error: f32 = math.sqrt(third.x * third.x + third.y * third.y) * 0.04811252

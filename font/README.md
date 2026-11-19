@@ -11,7 +11,10 @@ Neither needs a texture of glyph pictures: text is sharp at 8 pixels and at 800,
 
 ```
 font/
-├── font.odin          Font (stb_truetype in the bytes you give), metrics in em units, glyph advance and kerning, Method
+├── font.odin          Font (the file is read in the bytes you give, nothing is copied), metrics in em units, glyph advance and kerning, Method
+├── sfnt.odin          the font file: .ttf, .otf, .ttc collections, the character map, advances, kerning (kern and GPOS pairs)
+├── truetype.odin      TrueType outlines (glyf, composites), read straight into the curves of the caller
+├── cff.odin           PostScript outlines of OpenType (CFF, also CID keyed): the charstring interpreter on a fixed stack
 ├── outline.odin       the outline of a glyph as quadratic Bezier curves (cubics are cut, lines get a middle point), monotonic pieces
 ├── raster.odin        exact coverage of a pixel on the CPU: CurveSweepArea, CurvesCoverage, CurvesRasterize
 ├── atlas.odin         the glyph data for the GPU in one array of 4 float texels: baked when a glyph is first asked for, dirty rows for the upload
@@ -76,9 +79,9 @@ Tags: `[b] [i] [u] [s]`, `[color=#rrggbb|name]`, `[bgcolor=..]`, `[size=28]`, `[
 `font_raylib.TextSystem` / `font_karl2d.TextSystem` bundle the face, an atlas, a renderer and their memory (`TextSystemInit(&system, bytes, .SLUG)`, the allocator is yours) and place text by a **box**: `TextSystemDraw(&system, text, top_left, line_height, color)` and `TextSystemMeasure(&system, text, line_height)`, where the size is the height of the line (`font.TextBox` gives the pixels to the em and the baseline for it). The `ui` library uses it through `PainterUseVectorText`; `demo_kit` can run every demo with it (`-define:DEMO_VECTOR_TEXT=slug`).
 
 ## What is tested
-`odin test font` (28 tests): the outline against the bitmap of stb_truetype and against a grid of points on the flattened curves, the data of each method read back by its CPU model against the exact coverage (Slug: mean difference under 4 of 255; the Scanline Sweeper: under 0.5, also at 7 pixels where a pixel reaches over two stripes), the atlas (baked once, dirty rows, full), the layout. `odin test font/demo_common` plays the script of the demo headless; the screenshots of both frameworks are in `demo_common/captures` (`odin run demo_kit/tool/captures -- font`, `-- --karl2d font`).
+`odin test font` (31 tests): the parser against stb_truetype, which it is a port of (every glyph of the fonts in `assets/fonts` gives the same curves to the last bit, the same advance and box, every character the same glyph, the pairs the same kerning; `FONT_TEST_FILES=a.otf;b.ttc` compares more files, 38 fonts of 25 files were: CFF, CID keyed CFF, collections, symbol fonts), bytes that are not a font and cut or damaged files (nothing is read outside of the bytes), the outline against the bitmap of stb_truetype and against a grid of points on the flattened curves, the data of each method read back by its CPU model against the exact coverage (Slug: mean difference under 4 of 255; the Scanline Sweeper: under 0.5, also at 7 pixels where a pixel reaches over two stripes), the atlas (baked once, dirty rows, full), the layout. `odin test font/demo_common` plays the script of the demo headless; the screenshots of both frameworks are in `demo_common/captures` (`odin run demo_kit/tool/captures -- font`, `-- --karl2d font`).
 
 ## Credits and licenses
 - The Slug method: Eric Lengyel, *GPU-Centered Font Rendering Directly from Glyph Outlines*, JCGT 6(4), 2017. The patent is dedicated to the public domain; the reference shaders (https://github.com/EricLengyel/Slug) are MIT licensed, Copyright 2017 by Eric Lengyel, and the Slug shaders of this library are translations of them to this data layout: credit is given here and in the shader files.
 - The Scanline Sweeper: Scuff3D Rook, *The Scanline Sweeper: A Glyph Rendering Algorithm*, Rook & Possum, 2026. The shaders and the CPU code here are written from the description in the paper and do not copy its listings (which are under the Mozilla Public License 2.0); the Unreal plugin that uses it (https://github.com/nicholas477/ScanlineFontRenderer) is a reference checkout only.
-- Outlines are read by stb_truetype (public domain / MIT, `vendor:stb/truetype`).
+- The parser of the font file (`sfnt.odin`, `truetype.odin`, `cff.odin`) is a port of stb_truetype v1.28 (Sean Barrett / RAD Game Tools, public domain / MIT), made from the Odin port in Karl2D (`karl2d/opentype`, Karl Zylinski) and changed to write curves into a caller buffer with no allocation. The library itself needs no C code; `vendor:stb/truetype` is only the second opinion of the tests.

@@ -68,12 +68,16 @@ test_the_curves_of_a_glyph_are_closed_contours_and_monotonic_pieces_keep_the_sha
 @(private = "file")
 compare :: proc(font: ^Font, character: rune, pixels_per_em: f32) -> (mean: f32, worst: int) {
     glyph: int = FontGlyph(font, character)
-    scale: f32 = stbtt.ScaleForMappingEmToPixels(&font.info, pixels_per_em)
+    // stb_truetype reads the file on its own: it is the second opinion here, the library does not use it
+    padded: StbInfo                 // parser_test.odin: the struct of the binding is too short
+    info: ^stbtt.fontinfo = &padded.info
+    assert(bool(stbtt.InitFont(info, raw_data(font.data), 0)))
+    scale: f32 = stbtt.ScaleForMappingEmToPixels(info, pixels_per_em)
     x0, y0, x1, y1: c.int
-    stbtt.GetGlyphBitmapBox(&font.info, c.int(glyph), scale, scale, &x0, &y0, &x1, &y1)
+    stbtt.GetGlyphBitmapBox(info, c.int(glyph), scale, scale, &x0, &y0, &x1, &y1)
     width, height: int = int(x1 - x0), int(y1 - y0)
     reference: [64 * 64]u8
-    stbtt.MakeGlyphBitmap(&font.info, raw_data(reference[:]), c.int(width), c.int(height), c.int(width), scale, scale, c.int(glyph))
+    stbtt.MakeGlyphBitmap(info, raw_data(reference[:]), c.int(width), c.int(height), c.int(width), scale, scale, c.int(glyph))
     curves: [256]Curve
     count, _ := FontGlyphCurves(font, glyph, curves[:])
     pieces: [768]Curve
