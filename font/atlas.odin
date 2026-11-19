@@ -33,6 +33,7 @@ Atlas :: struct {
     slots: int,                 // slots handed out
     version: u32,               // grows when texels changed: a glue uploads again when it differs from what it uploaded
     dirty_from: int,            // the texels from here to `used` changed since the glue last took them (AtlasTakeDirty)
+    table_dirty: bool,          // a slot of the glyph table was written
 }
 
 AtlasInit :: proc(atlas: ^Atlas, font: ^Font, method: Method, texels: []f32, slot_of_glyph: []i32) {
@@ -42,6 +43,7 @@ AtlasInit :: proc(atlas: ^Atlas, font: ^Font, method: Method, texels: []f32, slo
     for i in 0 ..< font.glyph_count { slot_of_glyph[i] = -1 }
     atlas.used = 2 * ATLAS_TABLE_SLOTS
     atlas.dirty_from = 0
+    atlas.table_dirty = true
     for i in 0 ..< atlas.used * 4 { texels[i] = 0 }
 }
 
@@ -54,13 +56,25 @@ AtlasCapacityRows :: proc(atlas: ^Atlas) -> int {
     return len(atlas.texels) / 4 / ATLAS_WIDTH
 }
 
-// The texels that changed since the last call, as a range of whole rows (first row, how many), or none: for a glue that uploads what is new. Call AtlasRows for the size of the texture.
-AtlasTakeDirty :: proc(atlas: ^Atlas) -> (first_row: int, rows: int) {
-    if atlas.dirty_from >= atlas.used { return 0, 0 }
-    first: int = atlas.dirty_from / ATLAS_WIDTH
-    last: int = (atlas.used + ATLAS_WIDTH - 1) / ATLAS_WIDTH
-    atlas.dirty_from = atlas.used
-    return first, max(last - first, 0)
+RowRange :: struct {
+    first: int,
+    count: int,
+}
+
+// What changed since the last call, as ranges of whole rows of the texture (at most two: the glyph table, which is the first row, and the new data after it); a count of 0 is nothing. A glue
+// uploads these rows. Call AtlasRows for the size of the texture.
+AtlasTakeDirty :: proc(atlas: ^Atlas) -> (ranges: [2]RowRange) {
+    if atlas.table_dirty {
+        ranges[0] = {0, 1}
+        atlas.table_dirty = false
+    }
+    if atlas.dirty_from < atlas.used {
+        first: int = atlas.dirty_from / ATLAS_WIDTH
+        last: int = (atlas.used + ATLAS_WIDTH - 1) / ATLAS_WIDTH
+        ranges[1] = {max(first, 1), max(last - max(first, 1), 0)}
+        atlas.dirty_from = atlas.used
+    }
+    return
 }
 
 @(private)
@@ -92,6 +106,7 @@ AtlasGlyph :: proc(atlas: ^Atlas, glyph: int) -> (slot: int, ok: bool) {
     if !baked { return -1, false }
     slot = atlas.slots
     atlas.slots += 1
+    atlas.table_dirty = true
     atlas.slot_of_glyph[glyph] = i32(slot)
     atlas.version += 1
     return slot, true

@@ -267,10 +267,14 @@ test_an_atlas_bakes_a_glyph_once_says_when_it_is_full_and_has_nothing_for_a_spac
     testing.expect_value(t, atlas.used, used)                    // baked once
     space, space_ok := AtlasGlyph(&atlas, FontGlyph(font, ' '))
     testing.expect(t, space_ok && space == -1)
-    first, rows := AtlasTakeDirty(&atlas)
-    testing.expect(t, rows >= 1 && first == 0)
-    _, none := AtlasTakeDirty(&atlas)
-    testing.expect_value(t, none, 0)
+    dirty := AtlasTakeDirty(&atlas)
+    testing.expect(t, dirty[0] == RowRange{0, 1}, "the table")
+    testing.expect(t, dirty[1].first == 1 && dirty[1].count >= 1, "and the data")
+    none := AtlasTakeDirty(&atlas)
+    testing.expect(t, none[0].count == 0 && none[1].count == 0, "nothing changed since")
+    AtlasGlyph(&atlas, FontGlyph(font, 'b'))
+    later := AtlasTakeDirty(&atlas)
+    testing.expect(t, later[0].count == 1 && later[1].count >= 1, "a new glyph writes a slot of the table too")
     // an atlas that is full: the glyphs that fit are in, the others are told
     failed: bool
     for glyph in 0 ..< 400 {
