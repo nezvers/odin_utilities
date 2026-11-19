@@ -609,6 +609,11 @@ ISRG_X2_REAL_CRL :: #load("trust/isrg_x2_real.crl")
 @(private)
 revoke_test_serves: int
 
+// The hook, the cache and the counter are global and the test runner is multi threaded: every test that fetches a list takes this lock.
+// Without it CrlFetchTest got the list of the hook instead of asking its own server, whose thread then waited in accept forever.
+@(private)
+crl_test_lock: sync.Mutex
+
 @(private)
 RevokeTestServe :: proc(url: string) -> []byte {
     revoke_test_serves += 1
@@ -620,6 +625,7 @@ RevokeTestServe :: proc(url: string) -> []byte {
 // A list made with openssl for a small authority of our own (a good certificate and a revoked one), and the real list of ISRG Root X2.
 @(test)
 TlsRevocationTest :: proc(t: ^testing.T) {
+    sync.mutex_guard(&crl_test_lock)
     context.allocator = runtime.heap_allocator()
     pinned: time.Time = time.unix(1_795_000_000, 0)                   // 2026-11-18
     os.set_env("P2P_CACHE_DIR", "off")
@@ -751,6 +757,7 @@ CrlTestServe :: proc(data: rawptr) {
 // The HTTP side against a server on loopback: Content-Length, chunked, and a 404.
 @(test)
 CrlFetchTest :: proc(t: ^testing.T) {
+    sync.mutex_guard(&crl_test_lock)
     for variant in 0 ..< 3 {
         listener, listen_error := net.listen_tcp({address = net.IP4_Loopback, port = 0})
         testing.expect(t, listen_error == nil)

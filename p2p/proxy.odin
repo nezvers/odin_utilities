@@ -257,12 +257,16 @@ ProxyReadReply :: proc(io: ^ProxyIo, buffer: []byte) -> (head: string, status: i
         if length >= len(buffer) {
             return
         }
-        count: int = ProxyIoRecv(io, buffer[length:])
+        // one byte at a time: what follows the empty line of a 200 is already the tunnel (a server that speaks first) and must stay in
+        // the socket for the caller. A bigger read took it along when both came together. The head is a few hundred bytes, once per connection.
+        count: int = ProxyIoRecv(io, buffer[length:length + 1])
         if count < 0 {
             return
         }
         length += count
-        end = strings.index(string(buffer[:length]), "\r\n\r\n")
+        if length >= 4 && string(buffer[length - 4:length]) == "\r\n\r\n" {
+            end = length - 4
+        }
     }
     head = string(buffer[:end])
     status = DerpHttpStatus(buffer[:end + 4])
