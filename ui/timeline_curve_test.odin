@@ -181,3 +181,25 @@ test_the_hermite_cubic_has_the_slopes_it_is_given_and_stays_between_the_values :
     line := CurveSegmentPoints(.HERMITE, 0, {0, 0}, {100, 100}, out[:], {1, 1})
     testing.expect(t, len(line) >= 4 && near(line[len(line) / 2 - 1].y, line[len(line) / 2 - 1].x))
 }
+
+@(test)
+test_every_shape_goes_from_zero_to_one_and_the_counted_ones_are_told_apart :: proc(t: ^testing.T) {
+    for shape in CurveShape {
+        testing.expect_value(t, CurveIsCounted(shape), shape >= .STAIRS)
+        if shape == .HOLD { continue }                                        // a step stays at 0 until the next point
+        // a counted shape takes the number of repeats there, the others the bend
+        coefficients: [3]f32 = {1, 3, 8} if CurveIsCounted(shape) else {0, 0.3, 0.7}
+        for coefficient in coefficients {
+            low: f32 = CurveEvalCoefficient(shape, coefficient, 0)
+            high: f32 = CurveEvalCoefficient(shape, coefficient, 1)
+            if !CurveIsCounted(shape) || shape == .STAIRS || shape == .SMOOTH_STAIRS {
+                testing.expectf(t, abs(low) < 0.001, "%v starts at 0 (%v at %v)", shape, low, coefficient)
+                testing.expect(t, abs(high - 1) < 0.001, "and ends at 1")           // the pulse, the triangle and the wave return to where they started
+            }
+            middle: f32 = CurveEvalCoefficient(shape, coefficient, 0.5)
+            testing.expect(t, middle >= -1.01 && middle <= 2.01, "stays near the range")
+        }
+    }
+    testing.expect_value(t, CurveEvalCoefficient(.LINEAR, 0, 0.25), 0.25)
+    testing.expect_value(t, CurveEvalCoefficient(.HOLD, 0, 0.99), 0)
+}

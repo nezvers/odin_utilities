@@ -831,3 +831,40 @@ test_auto_layout_leaves_a_graph_with_a_loop_alone :: proc(t: ^testing.T) {
     }
     _ = b
 }
+
+@(test)
+test_a_path_of_links_is_found_and_the_content_bounds_fit_and_minimap_follow_the_nodes :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    defer free(graph)
+    a, _, a_out := makeNode(graph, "a", 0, 1, {0, 0})
+    b, b_in, b_out := makeNode(graph, "b", 1, 1, {300, 100})
+    c, c_in, _ := makeNode(graph, "c", 1, 0, {600, 300})
+    lonely, _, _ := makeNode(graph, "lonely", 0, 0, {-200, 500})
+    GraphConnect(graph, a_out[0], b_in[0])
+    GraphConnect(graph, b_out[0], c_in[0])
+    testing.expect(t, GraphReaches(graph, a, c), "through b")
+    testing.expect(t, !GraphReaches(graph, c, a), "links have a direction")
+    testing.expect(t, !GraphReaches(graph, a, lonely))
+    for handle in ([?]NodeHandle{a, b, c, lonely}) { GraphNode(graph, handle).size = {100, 50} }
+    bounds, any := GraphContentBounds(graph)
+    testing.expect(t, any)
+    testing.expect_value(t, bounds, Rect{-200, 0, 900, 550})
+    empty: ^Graph = newGraph()
+    defer free(empty)
+    _, any = GraphContentBounds(empty)
+    testing.expect(t, !any)
+    view: GraphView = {viewport = {400, 300}}
+    GraphViewFit(graph, &view)
+    testing.expect_value(t, view.origin, Vec2{250 - 200, 275 - 150})              // the middle of the content at the middle of the view
+    // the node that is left of the shown part is not visible, one in it is
+    view.origin = {0, 0}
+    testing.expect(t, GraphNodeVisible(&view, GraphNode(graph, a)))
+    testing.expect(t, !GraphNodeVisible(&view, GraphNode(graph, lonely)))
+    testing.expect(t, GraphNodeVisible(&view, GraphNode(graph, lonely), 1000), "a margin brings it in")
+    GraphNode(graph, lonely).size = {}
+    testing.expect(t, GraphNodeVisible(&view, GraphNode(graph, lonely)), "a node that was never drawn counts as visible")
+    // the minimap: the content fits the room and is centered
+    scale, offset := GraphMinimapTransform({0, 0, 400, 100}, {10, 20, 200, 100})
+    testing.expect(t, scale > 0 && scale * 400 <= 200)
+    testing.expect(t, abs(offset.x + 400 * scale * 0.5 - 110) < 0.01 && abs(offset.y + 100 * scale * 0.5 - 70) < 0.01)
+}

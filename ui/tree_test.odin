@@ -94,3 +94,24 @@ test_revealing_a_node_opens_the_nodes_above_it :: proc(t: ^testing.T) {
     _, added := TreeAdd(tree, TreeHandle{idx = 99, gen = 1}, "x")
     testing.expect(t, !added, "a parent that is not there")
 }
+
+@(test)
+test_a_node_is_above_its_descendants_and_marks_can_be_cleared :: proc(t: ^testing.T) {
+    tree: ^Tree = newTree()
+    defer free(tree)
+    src, _ := TreeAdd(tree, {}, "src", branch = true)
+    util, _ := TreeAdd(tree, src, "util", branch = true)
+    deep, _ := TreeAdd(tree, util, "deep")
+    other, _ := TreeAdd(tree, {}, "other")
+    testing.expect(t, TreeIsAbove(tree, src, deep))
+    testing.expect(t, TreeIsAbove(tree, util, deep))
+    testing.expect(t, TreeIsAbove(tree, deep, deep), "a node is above itself")
+    testing.expect(t, !TreeIsAbove(tree, deep, src))
+    testing.expect(t, !TreeIsAbove(tree, other, deep))
+    TreeGet(tree, src).marked = true
+    TreeGet(tree, other).marked = true
+    marked: [4]TreeHandle
+    testing.expect_value(t, TreeMarked(tree, marked[:]), 2)
+    TreeMarkClear(tree)
+    testing.expect_value(t, TreeMarked(tree, marked[:]), 0)
+}

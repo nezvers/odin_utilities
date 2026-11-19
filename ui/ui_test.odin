@@ -5004,3 +5004,61 @@ test_a_press_raises_a_floating_dock_window_and_a_drop_on_a_window_is_for_nobody 
     testing.expect_value(t, DockLeafOf(dock, d), DockLeafOf(dock, a))
     testing.expect(t, DockCheck(dock))
 }
+
+@(test)
+test_the_program_scrolls_a_table_sideways_and_reads_where_it_is :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    table: Table
+    TableInit(&table, {{name = "Name", width = 150}, {name = "Size", width = 150}})
+    for _ in 0 ..< 3 { wideTableFrame(harness, &table, pointerAt({-50, -50})) }
+    testing.expect_value(t, UiTableScrollX(&harness.ctx, &table), 0)
+    UiTableScrollSet(&harness.ctx, &table, 40)
+    wideTableFrame(harness, &table, pointerAt({-50, -50}))
+    testing.expect_value(t, UiTableScrollX(&harness.ctx, &table), 40)
+    UiTableScrollSet(&harness.ctx, &table, 5000)
+    wideTableFrame(harness, &table, pointerAt({-50, -50}))
+    testing.expect_value(t, UiTableScrollX(&harness.ctx, &table), 300 - 200)           // kept within the table: the content minus the room
+    UiTableScrollSet(&harness.ctx, &table, -20)
+    wideTableFrame(harness, &table, pointerAt({-50, -50}))
+    testing.expect_value(t, UiTableScrollX(&harness.ctx, &table), 0)
+}
+
+@(test)
+test_hover_and_press_are_told_by_id_and_a_value_follows_its_target_in_time :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    button :: proc(harness: ^Harness, input: Input) {
+        frame(harness, input)
+        UiButton(&harness.ctx, "Go", {Fixed(80), Fixed(30)})
+        UiEnd(&harness.ctx)
+    }
+    id: Id = UiIdPath("Go")
+    for _ in 0 ..< 3 { button(harness, pointerAt({-50, -50})) }
+    testing.expect(t, !UiIsHovered(&harness.ctx, id) && !UiIsPressed(&harness.ctx, id))
+    button(harness, pointerAt({20, 10}))
+    testing.expect(t, UiIsHovered(&harness.ctx, id))
+    button(harness, pointerAt({20, 10}, true, true))
+    testing.expect(t, UiIsPressed(&harness.ctx, id))
+    button(harness, pointerAt({20, 10}, false, false, true))
+    button(harness, pointerAt({20, 10}))
+    testing.expect(t, !UiIsPressed(&harness.ctx, id) && UiIsHovered(&harness.ctx, id))
+
+    ctx: ^Context = &harness.ctx
+    frame(harness)
+    first: f32 = UiAnimate(ctx, 777, 1)
+    testing.expect_value(t, first, 1)                                       // the first call starts at the target
+    UiEnd(ctx)
+    frame(harness)
+    value: f32 = UiAnimate(ctx, 777, 0)
+    testing.expect(t, value > 0 && value < 1, "it moves towards the new target, not all at once")
+    UiEnd(ctx)
+    for _ in 0 ..< 600 {
+        frame(harness)
+        value = UiAnimate(ctx, 777, 0)
+        UiEnd(ctx)
+    }
+    testing.expect(t, value < 0.001, "and gets there")
+}
