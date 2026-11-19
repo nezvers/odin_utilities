@@ -279,3 +279,71 @@ test_an_atlas_bakes_a_glyph_once_says_when_it_is_full_and_has_nothing_for_a_spac
     }
     testing.expect(t, failed, "two rows of texels cannot hold four hundred glyphs")
 }
+
+@(test)
+test_text_becomes_quads_that_sit_on_the_baseline_and_advance_by_the_font :: proc(t: ^testing.T) {
+    font: ^Font = loadFont()
+    defer free(font)
+    texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 8)
+    slots: []i32 = make([]i32, font.glyph_count)
+    defer { delete(texels); delete(slots) }
+    atlas: Atlas
+    AtlasInit(&atlas, font, .SLUG, texels, slots)
+    vertices: [256]TextVertex
+    count, pen, complete := TextQuads(&atlas, "Hi i", {100, 200}, 50, vertices[:])
+    testing.expect(t, complete)
+    testing.expect_value(t, count, 3 * TEXT_VERTICES_PER_GLYPH)                // the space has no outline
+    advance: f32 = FontAdvance(font, FontGlyph(font, 'H'))
+    testing.expect(t, abs(pen.x - (100 + 4 * advance * 50)) < 0.01, "four characters of a monospace font")
+    testing.expect_value(t, pen.y, 200)
+    // the top of an H is above the baseline (smaller y on the screen), the bottom is on it (a margin below)
+    top: f32 = 1e9
+    bottom: f32 = -1e9
+    for vertex in vertices[:TEXT_VERTICES_PER_GLYPH] {
+        top = min(top, vertex.position.y)
+        bottom = max(bottom, vertex.position.y)
+        testing.expect_value(t, vertex.slot, u32(0))
+    }
+    testing.expect(t, top < 200 - 0.5 * 50 && bottom > 200 && bottom < 202, "above the baseline, one pixel of margin under it")
+    // the em coordinates of the corners and the pixels agree: a point at the baseline is at em 0
+    for vertex in vertices[:TEXT_VERTICES_PER_GLYPH] {
+        testing.expect(t, abs((200 - vertex.position.y) / 50 - vertex.uv.y) < 0.0001)
+    }
+    // the second letter has its own slot, the third (an i after the space) is the third glyph
+    testing.expect_value(t, vertices[TEXT_VERTICES_PER_GLYPH].slot, u32(1))
+    // a new line moves the baseline down by a line height
+    _, pen_after, _ := TextQuads(&atlas, "a\nb", {0, 0}, 10, vertices[:])
+    testing.expect(t, abs(pen_after.y - FontLineHeight(font) * 10) < 0.001)
+    // not enough room: the text stops and says so
+    small: [TEXT_VERTICES_PER_GLYPH]TextVertex
+    _, _, fit := TextQuads(&atlas, "abc", {}, 10, small[:])
+    testing.expect(t, !fit)
+    testing.expect_value(t, SlotColor(0x0203), [4]u8{3, 2, 0, 255})
+}
+
+@(test)
+test_text_is_measured_and_wrapped_at_spaces :: proc(t: ^testing.T) {
+    font: ^Font = loadFont()
+    defer free(font)
+    advance: f32 = FontAdvance(font, FontGlyph(font, 'x'))
+    one: Vec2 = TextMeasure(font, "abcd", 10)
+    testing.expect(t, abs(one.x - 4 * advance * 10) < 0.01)
+    testing.expect(t, abs(one.y - (font.ascent - font.descent) * 10) < 0.01)
+    two: Vec2 = TextMeasure(font, "ab\ncdef", 10)
+    testing.expect(t, abs(two.x - 4 * advance * 10) < 0.01 && two.y > one.y, "the widest line, two lines")
+    // "aaaa bbbb cc" in 5.5 characters of room: the words are on lines of their own
+    room: f32 = 5.5 * advance * 10
+    wrapped: Vec2 = TextMeasure(font, "aaaa bbbb cc", 10, {wrap_width = room})
+    testing.expect(t, wrapped.x <= room + 0.01)
+    testing.expect(t, abs(wrapped.y - (FontLineHeight(font) * 2 + font.ascent - font.descent) * 10) < 0.01, "three lines")
+    texels: []f32 = make([]f32, 4 * ATLAS_WIDTH * 4)
+    slots: []i32 = make([]i32, font.glyph_count)
+    defer { delete(texels); delete(slots) }
+    atlas: Atlas
+    AtlasInit(&atlas, font, .SCANLINE, texels, slots)
+    vertices: [256]TextVertex
+    _, pen, _ := TextQuads(&atlas, "aaaa bbbb cc", {0, 0}, 10, vertices[:], {wrap_width = room})
+    testing.expect(t, abs(pen.y - FontLineHeight(font) * 2 * 10) < 0.001, "the same lines as the measure says")
+    tab: Vec2 = TextMeasure(font, "a\tb", 10)
+    testing.expect(t, abs(tab.x - 5 * advance * 10) < 0.01, "a tab goes to the next multiple of four columns")
+}
