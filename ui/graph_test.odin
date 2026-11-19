@@ -706,3 +706,128 @@ test_a_node_collapses_a_cable_has_a_label_and_a_reroute_point_splits_a_cable :: 
     testing.expect_value(t, GraphLinkCount(graph), 2)
     _ = b
 }
+
+@(test)
+test_a_graph_history_goes_back_and_forth_and_keeps_the_handles :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    defer free(graph)
+    states: []GraphState = make([]GraphState, 4)
+    defer delete(states)
+    history: GraphHistory
+    a, _, a_out := makeNode(graph, "a", 0, 1)
+    GraphHistoryInit(&history, states, graph)
+    testing.expect(t, !GraphHistoryCommit(&history, graph), "nothing changed: no step")
+    b, b_in, _ := makeNode(graph, "b", 1, 0)
+    link, _ := GraphConnect(graph, a_out[0], b_in[0])
+    testing.expect(t, GraphHistoryCommit(&history, graph))
+    GraphNodeRemove(graph, b)
+    testing.expect(t, GraphHistoryCommit(&history, graph))
+    testing.expect_value(t, GraphNodeCount(graph), 1)
+
+    testing.expect(t, GraphHistoryUndo(&history, graph))
+    testing.expect_value(t, GraphNodeCount(graph), 2)
+    testing.expect(t, GraphLink(graph, link) != nil, "the old handle of the link is valid again")
+    testing.expect(t, GraphNode(graph, b) != nil && GraphNode(graph, a) != nil)
+    testing.expect(t, GraphHistoryUndo(&history, graph))
+    testing.expect_value(t, GraphNodeCount(graph), 1)
+    testing.expect(t, !GraphHistoryUndo(&history, graph), "the oldest step")
+    testing.expect(t, GraphHistoryRedo(&history, graph) && GraphHistoryRedo(&history, graph))
+    testing.expect_value(t, GraphNodeCount(graph), 1)
+    testing.expect(t, !GraphHistoryRedo(&history, graph))
+
+    GraphHistoryUndo(&history, graph)
+    GraphNodeAdd(graph, "c", {})
+    testing.expect(t, GraphHistoryCommit(&history, graph))
+    testing.expect(t, !GraphHistoryCanRedo(&history), "a new edit drops what a redo would bring")
+    restored: bool
+    for {
+        event, has := GraphPollEvent(graph)
+        if !has { break }
+        if event.kind == .RESTORED { restored = true }
+    }
+    testing.expect(t, restored, "an undo tells RESTORED")
+}
+
+@(test)
+test_the_oldest_step_of_a_full_graph_history_is_dropped :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    defer free(graph)
+    states: []GraphState = make([]GraphState, 3)
+    defer delete(states)
+    history: GraphHistory
+    GraphHistoryInit(&history, states, graph)
+    for _ in 0 ..< 5 {
+        GraphNodeAdd(graph, "n", {})
+        GraphHistoryCommit(&history, graph)
+    }
+    testing.expect_value(t, history.count, 3)
+    GraphHistoryUndo(&history, graph)
+    GraphHistoryUndo(&history, graph)
+    testing.expect(t, !GraphHistoryUndo(&history, graph))
+    testing.expect_value(t, GraphNodeCount(graph), 3)
+}
+
+@(test)
+test_auto_layout_puts_nodes_in_columns_by_depth_without_overlap :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    defer free(graph)
+    a, _, a_out := makeNode(graph, "a", 0, 1)
+    b, _, b_out := makeNode(graph, "b", 0, 1)
+    c, c_in, c_out := makeNode(graph, "c", 2, 1)
+    d, d_in, _ := makeNode(graph, "d", 1, 0)
+    GraphConnect(graph, a_out[0], c_in[0])
+    GraphConnect(graph, b_out[0], c_in[1])
+    GraphConnect(graph, c_out[0], d_in[0])
+    for handle in ([?]NodeHandle{a, b, c, d}) { GraphNode(graph, handle).size = {100, 50} }
+    drain(graph)
+    testing.expect(t, GraphAutoLayout(graph, {10, 20}, {40, 10}))
+    na, nb, nc, nd := GraphNode(graph, a), GraphNode(graph, b), GraphNode(graph, c), GraphNode(graph, d)
+    testing.expect_value(t, na.position.x, 10)
+    testing.expect_value(t, nb.position.x, 10)
+    testing.expect_value(t, nc.position.x, 150)
+    testing.expect_value(t, nd.position.x, 290)
+    testing.expect(t, abs(na.position.y - nb.position.y) >= 60, "two nodes of a column do not overlap")
+    testing.expect(t, na.position.y < nb.position.y, "the order they were added in is kept when nothing says otherwise")
+    mid: f32 = (na.position.y + nb.position.y + 50) * 0.5
+    testing.expect(t, abs(nc.position.y + 25 - mid) < 0.01, "a column that is shorter is centered on the tallest")
+    moved: int
+    for {
+        event, has := GraphPollEvent(graph)
+        if !has { break }
+        if event.kind == .NODE_MOVED { moved += 1 }
+    }
+    testing.expect(t, moved >= 3, "moved nodes tell it")
+}
+
+@(test)
+test_auto_layout_orders_a_column_by_where_its_inputs_are :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    defer free(graph)
+    top, _, top_out := makeNode(graph, "top", 0, 1)
+    bottom, _, bottom_out := makeNode(graph, "bottom", 0, 1)
+    // added in the other order than their sources: the one fed by `bottom` comes first in the list
+    from_bottom, fb_in, _ := makeNode(graph, "fb", 1, 0)
+    from_top, ft_in, _ := makeNode(graph, "ft", 1, 0)
+    GraphConnect(graph, bottom_out[0], fb_in[0])
+    GraphConnect(graph, top_out[0], ft_in[0])
+    testing.expect(t, GraphAutoLayout(graph))
+    testing.expect(t, GraphNode(graph, from_top).position.y < GraphNode(graph, from_bottom).position.y, "no crossing: the node fed by the upper one is the upper one")
+    testing.expect(t, GraphNode(graph, top).position.y < GraphNode(graph, bottom).position.y)
+}
+
+@(test)
+test_auto_layout_leaves_a_graph_with_a_loop_alone :: proc(t: ^testing.T) {
+    graph: ^Graph = newGraph()
+    defer free(graph)
+    graph.rules.allow_cycles = true
+    a, a_in, a_out := makeNode(graph, "a", 1, 1, {5, 6})
+    b, b_in, b_out := makeNode(graph, "b", 1, 1, {7, 8})
+    GraphConnect(graph, a_out[0], b_in[0])
+    GraphConnect(graph, b_out[0], a_in[0])
+    before: Vec2 = GraphNode(graph, a).position
+    if GraphLinkCount(graph) == 2 {
+        testing.expect(t, !GraphAutoLayout(graph))
+        testing.expect_value(t, GraphNode(graph, a).position, before)
+    }
+    _ = b
+}

@@ -4355,3 +4355,42 @@ test_actions_move_the_focus_and_are_read_back :: proc(t: ^testing.T) {
     UiFocus(ctx, 0)
     testing.expect(t, !UiAction(ctx, .ACCEPT), "nothing focused: nothing to accept")
 }
+
+@(test)
+test_the_graph_widget_commits_edits_as_steps_and_undoes_and_redoes_with_the_keys :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    graph: ^Graph = new(Graph)
+    clipboard: ^GraphClipboard = new(GraphClipboard)
+    states: []GraphState = make([]GraphState, 4)
+    history: GraphHistory
+    defer { free(graph); free(clipboard); delete(states) }
+    GraphInit(graph)
+    view: GraphView
+    view.clipboard = clipboard
+    view.history = &history
+    one, _ := GraphNodeAdd(graph, "one", {20, 20})
+    GraphPortAdd(graph, one, "out", .OUTPUT, 1)
+    GraphHistoryInit(&history, states, graph)
+    for _ in 0 ..< 4 { coveredGraphFrame(harness, graph, &view, {}) }
+    key :: proc(harness: ^Harness, graph: ^Graph, view: ^GraphView, actions: Actions) {
+        input: Input = pointerAt({300, 250})
+        input.actions = actions
+        coveredGraphFrame(harness, graph, view, input)
+    }
+    GraphNodeSelect(graph, one)
+    key(harness, graph, &view, {.DUPLICATE})
+    testing.expect_value(t, GraphNodeCount(graph), 2)
+    testing.expect_value(t, history.count, 2)                                   // the duplicate became a step without anybody asking
+    key(harness, graph, &view, {.UNDO})
+    testing.expect_value(t, GraphNodeCount(graph), 1)
+    key(harness, graph, &view, {.REDO})
+    testing.expect_value(t, GraphNodeCount(graph), 2)
+    key(harness, graph, &view, {.UNDO})
+    key(harness, graph, &view, {.UNDO})
+    testing.expect_value(t, GraphNodeCount(graph), 1)
+    view.history = nil
+    key(harness, graph, &view, {.REDO})
+    testing.expect_value(t, GraphNodeCount(graph), 1)                           // without a history the keys do nothing
+}

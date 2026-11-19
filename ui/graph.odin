@@ -165,6 +165,7 @@ GraphEventKind :: enum u8 {
     TIE_CHANGED,        // moved, turned or scaled and let go
     NODE_COLLAPSED,     // a node was collapsed or opened: `node`, `collapsed`
     LINK_LABELED,       // the text on a cable changed: `link`
+    RESTORED,           // an undo or a redo replaced everything (graph_history.odin): read the graph again, the handles of things that came back are the old ones
     DROPPED_ON_EMPTY,   // a cable that was dragged from a port was let go over empty room at `position` (canvas coordinates): a program may offer a node to put there
 }
 
@@ -215,6 +216,7 @@ Graph :: struct {
     event_count: int,
     events_lost: int,                       // the oldest events that were thrown away because nobody polled
     z_counter: i16,
+    serial: u64,                            // counts the changes (every event), so a history knows when a step is due
     stamp: u32,                             // numbers the visits of the searches
     frame: u32,                             // numbers the frames of the widgets
 }
@@ -287,6 +289,7 @@ GraphTieCount :: proc(graph: ^Graph) -> int {
 graphEmit :: proc(graph: ^Graph, event: GraphEvent) {
     stored: GraphEvent = event
     stored.graph_user = graph.user
+    graph.serial += 1
     if graph.event_count == len(graph.events) {
         graph.event_head = (graph.event_head + 1) % len(graph.events)          // nobody polls: the oldest goes
         graph.event_count -= 1

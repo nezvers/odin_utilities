@@ -70,6 +70,7 @@ GraphView :: struct {
     drag_source: PortHandle,    // where the cable that is dragged starts
     drag_target: PortHandle,    // the pin under the pointer that it fits
     reroute_on_double_click: bool,  // a double click on a cable puts a reroute point there (GraphRerouteAdd)
+    history: ^GraphHistory,     // set: finished edits become steps and Ctrl + Z, Ctrl + Y go through them (graph_history.odin)
     clipboard: ^GraphClipboard, // set: Ctrl + C, X, V and D copy, cut, paste (at the pointer) and duplicate the selected nodes (graph_copy.odin)
 }
 
@@ -496,6 +497,12 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
         }
         if .DUPLICATE in actions { GraphDuplicate(graph, view.clipboard) }
     }
+    if view.history != nil && view.gesture == .NONE && view.moving == {} && (ctx.focus == 0 || ctx.focus == id) && ctx.disabled_depth == 0 {
+        restored: bool
+        if .UNDO in ctx.input.actions { restored = GraphHistoryUndo(view.history, graph) }
+        if .REDO in ctx.input.actions { restored = GraphHistoryRedo(view.history, graph) || restored }
+        if restored { view.selected_link, view.selected_tie, view.hover_link, view.hover_tie = {}, {}, {}, {} }
+    }
     // the delete key removes what is selected
     if .DELETE in ctx.input.keys || .BACKSPACE in ctx.input.keys {
         if ctx.focus == 0 || ctx.focus == id {
@@ -520,6 +527,8 @@ UiGraph :: proc(ctx: ^Context, name: string, graph: ^Graph, view: ^GraphView, si
             }
         }
     }
+    // an edit that is finished (no gesture is going on) is a step of the history
+    if view.history != nil && view.gesture == .NONE && view.moving == {} { GraphHistoryCommit(view.history, graph) }
     if GraphLink(graph, view.selected_link) == nil { view.selected_link = {} }
     if GraphTie(graph, view.selected_tie) == nil { view.selected_tie = {} }
 
