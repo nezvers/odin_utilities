@@ -162,7 +162,7 @@ RegisterFont :: proc(
     for glyph, i in glyphs {
         static_glyphs[i] = {
             value = glyph.value,
-            index = glyph.index,
+            index = auto_cast glyph.index,
             // Real glyph bitmap without padding
             rect = {rects[i].x + padding, rects[i].y + padding, f32(glyph.size.x), f32(glyph.size.y)},
             offset = glyph.offset,
