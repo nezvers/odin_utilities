@@ -220,7 +220,7 @@ runPackage :: proc(dir: string, verbose: bool) -> bool {
         if strings.has_prefix(line, "Finished ") { summary = strings.trim_space(line) }
     }
     // the runner can exit with 0 when a test failed: its summary line is the truth
-    if state.success && !strings.contains(summary, "failed") {
+    if state.success && summary != "" && !strings.contains(summary, "failed") {
         fmt.printfln("ok   %-28s %s (%.1f s)", dir, summary if summary != "" else "no summary", seconds)
         return true
     }

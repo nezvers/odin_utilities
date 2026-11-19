@@ -4625,3 +4625,84 @@ test_the_color_picker_is_dragged_and_keeps_the_hue_of_a_gray :: proc(t: ^testing
     testing.expect(t, near(state.hsv[0], 2.0 / 3) && near(state.hsv[1], 1) && near(state.hsv[2], 1))
     testing.expect_value(t, harness.ctx.problems, Problems{})
 }
+
+@(test)
+test_the_match_of_a_search_ignores_case_and_wants_the_whole_text :: proc(t: ^testing.T) {
+    testing.expect(t, UiMatchText("Fira Code", ""))
+    testing.expect(t, UiMatchText("Fira Code", "code"))
+    testing.expect(t, UiMatchText("Fira Code", "RA C"))
+    testing.expect(t, !UiMatchText("Fira Code", "codex"))
+    testing.expect(t, !UiMatchText("Fira Code", "fc"))
+    testing.expect(t, !UiMatchText("ab", "abc"))
+    testing.expect(t, UiMatchText("", ""))
+}
+
+@(test)
+test_a_combo_box_narrows_its_options_by_typing_and_takes_enter_a_click_and_escape :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    options: []string = {"Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta"}
+    selected: int = 0
+    combo :: proc(harness: ^Harness, options: []string, selected: ^int, input: Input) -> bool {
+        frame(harness, input)
+        changed: bool = UiCombo(&harness.ctx, "Greek", options, selected, {Fixed(150), {}}, 4)
+        UiEnd(&harness.ctx)
+        return changed
+    }
+    press :: proc(harness: ^Harness, options: []string, selected: ^int, keys: Keys = {}, actions: Actions = {}, text: string = "") -> bool {
+        input: Input = pointerAt({-50, -50})
+        input.keys, input.actions = keys, actions
+        copy(input.text[:], text)
+        input.text_count = u8(len(text))
+        return combo(harness, options, selected, input)
+    }
+    for _ in 0 ..< 3 { combo(harness, options, &selected, pointerAt({20, 10})) }
+    combo(harness, options, &selected, pointerAt({20, 10}, true, true))
+    combo(harness, options, &selected, pointerAt({20, 10}, false, false, true))
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("Greek"))
+    testing.expect(t, state.open, "a click opens the list")
+    count_items :: proc(ctx: ^Context) -> (items: int) {
+        for i in 0 ..< ctx.command_count {
+            if ctx.commands[i].info.kind == .DROPDOWN_ITEM { items += 1 }
+        }
+        return
+    }
+    combo(harness, options, &selected, pointerAt({-50, -50}))
+    testing.expect_value(t, count_items(&harness.ctx), 4)                    // six options, four rows
+    // typing "ta" leaves Beta, Delta and Zeta
+    press(harness, options, &selected, text = "ta")
+    press(harness, options, &selected)
+    testing.expect_value(t, count_items(&harness.ctx), 3)
+    testing.expect_value(t, state.cursor, 0)
+    press(harness, options, &selected, actions = {.DOWN})
+    testing.expect_value(t, state.cursor, 1)
+    press(harness, options, &selected, actions = {.DOWN})
+    press(harness, options, &selected, actions = {.DOWN})
+    testing.expect_value(t, state.cursor, 2)                                 // the last match: it stops there
+    testing.expect(t, press(harness, options, &selected, keys = {.ENTER}), "enter takes the highlighted match")
+    testing.expect_value(t, options[selected], "Zeta")
+    testing.expect(t, !state.open)
+    // open again: the text starts empty and escape closes without a change
+    combo(harness, options, &selected, pointerAt({20, 10}, true, true))
+    combo(harness, options, &selected, pointerAt({20, 10}, false, false, true))
+    testing.expect(t, state.open)
+    testing.expect_value(t, harness.ctx.combo_filter_length, 0)
+    cancel: Input = pointerAt({-50, -50})
+    cancel.actions = {.CANCEL}
+    combo(harness, options, &selected, cancel)
+    testing.expect(t, !state.open, "escape closes it")
+    testing.expect_value(t, options[selected], "Zeta")
+    // a click on an option: the list is open and shows the window around the chosen one (the last four: Gamma first)
+    combo(harness, options, &selected, pointerAt({20, 10}, true, true))
+    combo(harness, options, &selected, pointerAt({20, 10}, false, false, true))
+    combo(harness, options, &selected, pointerAt({-50, -50}))
+    first, found := UiElementRect(&harness.ctx, IdFromIndex(2, IdFromString("popup", UiIdPath("Greek"))))
+    testing.expect(t, found)
+    row: Vec2 = RectCenter(first)
+    combo(harness, options, &selected, pointerAt(row))
+    combo(harness, options, &selected, pointerAt(row, true, true))
+    testing.expect(t, combo(harness, options, &selected, pointerAt(row, false, false, true)), "a click on a row takes it")
+    testing.expect_value(t, options[selected], "Gamma")
+    testing.expect_value(t, harness.ctx.problems, Problems{})
+}

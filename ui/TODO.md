@@ -58,5 +58,6 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Docking (`Dock`, `UiDock`): panels as tabs in a tree of splits, moved by dragging a tab (middle: a tab, edge: a split), closing and opening, a layout that is plain data; demo with screenshots
 - [x] Text field and text area: undo and redo (Ctrl + Z, Ctrl + Y) with a fixed pool, a word is one step
 - [x] Color picker (`UiColorPicker`: square, hue and alpha bars, hex helpers; style kinds `COLOR_FIELD`, `COLOR_STRIP`)
+- [x] Combo box with search (`UiCombo`, `UiMatchText`)
 - [x] `Decl.absolute`: a child out of the flow of its parent at an offset (no root, no limit but the storage); the graph nodes use it
 - [x] Node graph: nodes outside of the view are not declared (`GraphNodesByDepth` with a view)

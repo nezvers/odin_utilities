@@ -77,6 +77,9 @@ Context :: struct {
     graph_minimaps: [UI_MAX_GRAPHS]GraphMinimapData,
     graph_minimap_count: int,
     clipboard: Clipboard,
+    combo_filter: [UI_COMBO_FILTER]u8,              // the text of the search field of the combo box that is open (widgets_combo.odin)
+    combo_filter_length: int,
+    combo_owner: Id,                                // the combo box that is open
     text_undo: TextUndo,                            // the history of the text field that has the focus (textundo.odin)
     inspector: Inspector,                           // the snapshot of the inspector panel (inspector.odin)
     timeline_frames: [UI_MAX_TIMELINES]TimelineFrame,   // the timelines of this frame (timeline_widgets.odin)
