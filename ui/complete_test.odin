@@ -155,3 +155,88 @@ test_a_completion_list_writes_the_item_in :: proc(t: ^testing.T) {
     testing.expect_value(t, test.length, before + 1)
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_a_completion_list_of_a_text_field_and_its_undo :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 2048),
+        ctx: Context,
+        style: Style,
+        text: [64]u8,
+        length: int,
+        field: Id,
+        other: Id,
+        submits: int,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    frame :: proc(test: ^Test, input: Input) {
+        names: [3]string = {"Ada", "Alan", "Grace"}
+        UiBegin(&test.ctx, input, 1.0 / 60, {800, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(500), {}}) {
+            test.other = UiId(&test.ctx, "Above")
+            UiButton(&test.ctx, "Above")
+            test.field = UiId(&test.ctx, "To")
+            UiComplete(&test.ctx, "To", test.text[:], &test.length, names[:])
+            _, submitted := UiTextField(&test.ctx, "To", test.text[:], &test.length, {Fixed(300), {}})
+            if submitted { test.submits += 1 }
+            UiButton(&test.ctx, "Below")
+        }
+        UiEnd(&test.ctx)
+    }
+    away: Input = {mouse_position = {-100, -100}}
+    type :: proc(test: ^Test, text: string) {
+        input: Input = {mouse_position = {-100, -100}}
+        input.text_count = u8(copy(input.text[:], text))
+        frame(test, input)
+        frame(test, {mouse_position = {-100, -100}})
+    }
+    selected :: proc(test: ^Test) -> (name: string, count: int, first: Rect) {
+        for command in UiCommands(&test.ctx) {
+            if command.kind != .DRAW || command.info.kind != .DROPDOWN_ITEM { continue }
+            if count == 0 { first = command.info.rect }
+            count += 1
+            if .SELECTED in command.info.flags { name = command.info.name }
+        }
+        return
+    }
+    frame(test, away)
+    UiFocus(&test.ctx, test.field)
+    frame(test, away)
+    type(test, "hi ")
+    type(test, "@a")
+    name, count, first := selected(test)
+    testing.expect_value(t, count, 3)                           // Ada, Alan, Grace: all have the letter
+    testing.expect_value(t, name, "Ada")
+    field, _ := UiElementRect(&test.ctx, test.field)
+    testing.expect(t, first.y >= field.y + field.w - 1 && first.x > field.x + DEFAULT_METRICS.font_size, "under the field, at the caret")
+    // down chooses in the list: the focus does not go to the button below
+    frame(test, {mouse_position = {-100, -100}, actions = {.DOWN}})
+    frame(test, away)
+    name, _, _ = selected(test)
+    testing.expect_value(t, name, "Alan")
+    testing.expect_value(t, UiFocused(&test.ctx), test.field)
+    // Enter writes the name in and does not submit the field
+    frame(test, {mouse_position = {-100, -100}, keys = {.ENTER}, actions = {.ACCEPT}})
+    testing.expect_value(t, string(test.text[:test.length]), "hi @Alan ")
+    testing.expect_value(t, test.submits, 0)
+    frame(test, away)
+    // undo gives the typed word back, redo the name
+    frame(test, {mouse_position = {-100, -100}, actions = {.UNDO}})
+    testing.expect_value(t, string(test.text[:test.length]), "hi @a")
+    frame(test, {mouse_position = {-100, -100}, actions = {.REDO}})
+    testing.expect_value(t, string(test.text[:test.length]), "hi @Alan ")
+    frame(test, away)
+    // the list is closed: Enter submits, and up moves the focus again
+    _, count, _ = selected(test)
+    testing.expect_value(t, count, 0)
+    frame(test, {mouse_position = {-100, -100}, keys = {.ENTER}})
+    testing.expect_value(t, test.submits, 1)
+    frame(test, away)
+    frame(test, {mouse_position = {-100, -100}, actions = {.UP}})
+    frame(test, away)
+    testing.expect_value(t, UiFocused(&test.ctx), test.other)
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

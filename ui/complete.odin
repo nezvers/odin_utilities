@@ -1,10 +1,10 @@
 package ui
 
-// A list of words to pick from while typing in a text area: after the trigger (`@` for the names of people or files, any character) at the start of a word, the
+// A list of words to pick from while typing in a text area or a text field: after the trigger (`@` for the names of people or files, any character) at the start of a word, the
 // items that contain what was typed since are offered under the caret; the arrows choose, Enter or a click writes the item in, Escape closes the list.
 //
 //     ui.UiComplete(&ctx, "Message", buffer[:], &length, files[:])        // before the area: it takes the keys of the list before the area sees them
-//     ui.UiTextArea(&ctx, "Message", buffer[:], &length)
+//     ui.UiTextArea(&ctx, "Message", buffer[:], &length)             // or ui.UiTextField
 //
 // Nothing is kept but the row that is chosen and where the list was closed; the items are the program's, looked through every frame the list is open (a list of
 // thousands wants a search of its own that gives the few that match).
@@ -53,7 +53,8 @@ CompleteQuery :: proc(text: string, cursor: int, trigger: u8) -> (query: string,
     return "", 0, false
 }
 
-// The completion of the text area `area_name` (declare it right before the area, in the same container, with the same name, buffer and length). `inserted` is true
+// The completion of the text area or the text field `area_name` (declare it right before that widget, in the same container, with the same name, buffer and
+// length). An inserted item is a step of the undo history of the widget. `inserted` is true
 // in the frame an item was written into the text: `item` is its place in `items`. The item replaces the typed word and a space follows it; the trigger stays.
 UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int, items: []string, trigger: u8 = '@') -> (inserted: bool, item: int) {
     area: Id = UiId(ctx, area_name)
@@ -61,6 +62,9 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
     own: ^WidgetState = stateGet(ctx, list)
     state: ^WidgetState = stateFind(ctx, area)
     if state == nil { return }
+    // while the list is open up and down are its own: the navigation does not take them from a text field (a text area keeps them anyway and says so after this)
+    open: bool
+    defer state.own_vertical = open
     if ctx.focus != area {
         // a press on a row of the list took the focus from the area: it comes back, the list is still its own
         on_row: bool
@@ -91,6 +95,7 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
     }
     if count == 0 { return }
     own.cursor = clamp(own.cursor, 0, count - 1)
+    open = true
     // the keys of the list are taken out of the input: the area after this does not move its caret, break the line or lose the focus by them
     input: ^Input = &ctx.input
     if .UP in input.actions { own.cursor = (own.cursor + count - 1) % count }
@@ -137,5 +142,16 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
     textInsert(state, buffer, length, items[item])
     textInsert(state, buffer, length, " ")
     own.cursor = 0
+    open = false
+    // a step of the history of the widget: undo gives the typed word back (without it the history would start again, the text changed outside of the widget)
+    undo: ^TextUndo = &ctx.text_undo
+    if undo.owner == area && undo.count > 0 {
+        if length^ * 2 <= len(undo.pool) {
+            textUndoPush(undo, buffer[:length^], state.cursor, state.anchor)
+        } else {
+            textUndoReset(undo)
+        }
+        undo.kind = .NONE
+    }
     return true, item
 }

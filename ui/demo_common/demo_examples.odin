@@ -429,6 +429,7 @@ CHAT_SEED: [7]string = {
     "The editor with syntax colors. A paragraph with **strong**, *italic*, `code` and [links](ui/README.md) is done, and it wraps inside of a bubble like this one.",
     "Send me a picture when it is in.",
 }
+CHAT_PEOPLE: [4]string = {"Ada", "Alan", "Grace", "Linus"}
 CHAT_REPLIES: [3]string = {"Noted.", "I will look at *that* tomorrow.", "**Done**, see [the list](ui/TODO.md)."}
 
 chat_add :: proc(text: string, mine: bool) {
@@ -470,6 +471,8 @@ chat :: proc(c: ^ui.Context) {
         }
         ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 8, align = {y = .CENTER}}})
         state.draft_id = ui.UiId(c, "Message##draft")
+        // an @ offers the people of the chat (before the field: Enter picks from the open list and does not send)
+        ui.UiComplete(c, "Message##draft", state.draft[:], &state.draft_length, CHAT_PEOPLE[:])
         _, submitted := ui.UiTextField(c, "Message##draft", state.draft[:], &state.draft_length, {ui.Grow(), {}})
         if ui.UiTagged(c, "primary") { submitted |= ui.UiButton(c, "Send", {}, state.draft_length == 0, ui_default.LucideIcon(.SEND)) }
         ui.ElementClose(c)
@@ -1267,6 +1270,13 @@ script: []kit.Step = {
     kit.Wait(5),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.message_count == len(CHAT_SEED) + 2 && state.draft_length == 0 }, "the message and its answer are added, the field is empty"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("it", "italic") && shown("Noted.", "") }, "both are in view: the list followed"),
+    // an @ in the field offers the people; Enter takes the first and sends nothing
+    kit.Type("@a"),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.DROPDOWN_ITEM, "Ada") && drawn(.DROPDOWN_ITEM, "Grace") && !drawn(.DROPDOWN_ITEM, "Linus") }, "the people with the letter are offered"),
+    kit.Tap(.ENTER),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.draft[:state.draft_length]) == "@Ada " && state.message_count == len(CHAT_SEED) + 2 }, "the name is in the field, nothing was sent"),
 
     // reading: the page has a theme of its own inside of the window; another paper and the next page
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(10) }, "the Reading tab is in the bar"),

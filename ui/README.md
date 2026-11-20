@@ -314,12 +314,13 @@ look like C or Odin by a `HighlightLanguage` (keywords, types, the marks of comm
 in Odin, a raw string) is carried from row to row in a `state` number: the area runs the highlighter over all rows once when the text changed and keeps the state of every
 row with its cached rows, so a frame only asks for the rows in view. A string in quotes ends with its row. Nothing is allocated; at most `AREA_SPANS` (96) spans a row.
 
-## Completion in a text area
+## Completion in a text area or field
 `complete.odin`: `inserted, item := ui.UiComplete(&ctx, "Message", buffer[:], &length, items[:])` right before the `ui.UiTextArea` of the same name: after a trigger
 (`@` by default) at the start of a word, the items that contain what was typed since are offered in a list under the caret (at most `COMPLETE_ROWS`, 8). The arrows
 choose, Enter or a click writes the item in place of the typed word with a space after it, Escape closes the list for that word. It is declared before the area because
 it takes the keys of the open list out of the input, so the area does not move its caret or break the line by them. The items are looked through every frame the list
-is open; `CompleteQuery` finds the word at the caret for a program that searches by itself. For the text area (the text field has no caret position to open at yet).
+is open; `CompleteQuery` finds the word at the caret for a program that searches by itself. It works the same before a `ui.UiTextField` (Enter then picks and does not
+submit, the arrows stay in the list). An inserted item is a step of the undo history of the widget.
 
 ## Shortcut field
 `shortcut.odin`: `changed, listening := ui.UiShortcutField(&ctx, name, &chord, pressed, key_name)` is a shortcut that is set by pressing it. A click or the confirm key makes it
