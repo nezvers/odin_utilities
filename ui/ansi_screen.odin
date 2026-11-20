@@ -23,7 +23,7 @@ import "core:unicode/utf8"
 // hidden cursor, the mouse) and every other sequence is skipped.
 //
 // Limits: a fixed grid (no resize: make another screen and write the output again), no origin or wrap modes, no tab stops that are set; a scroll region feeds no history unless it is the whole screen
-//     the width of a character is a table of the ranges that matter: ambiguous widths are 1, no grapheme clusters, no emoji sequences, no right-to-left text; a mark goes on the cell before it and one mark only
+//     the width of a character is a table of the ranges that matter (Unicode 15, written by hand: a rare script may be wrong), ambiguous widths are 1 unless `ambiguous_wide`, a cell keeps ANSI_EXTRA (4) characters besides its own so a longer emoji sequence loses its tail, a flag or a family is one cell group only when its parts arrive in order, no right-to-left text; marks go on the cell before it and one mark only
 //     the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; a selection is by cells (a press and a drag, one word or line at a time is not there: no double click selection), no mouse or paste modes, no cursor shapes or hiding
 //     it only draws: nothing reads the keyboard or talks to a process; a cell is as wide as the code face's M, and a wide letter takes two of them whatever the font does
 //
@@ -34,9 +34,12 @@ import "core:unicode/utf8"
 //
 // Baldr's terminal screen (examples/25_terminal) was the reason to have it; the code is written for this library.
 
+// How many characters a cell keeps besides its own
+ANSI_EXTRA :: 4
+
 AnsiCell :: struct {
     character: rune,            // 0: empty
-    mark: rune,                 // a combining mark that follows the character (0: none)
+    extra: [ANSI_EXTRA]rune,    // what is drawn with the character in this cell, in order: combining marks, a joiner and the emoji it joins, a skin tone, a flag's second letter (0: none)
     style: AnsiState,
     wide: bool,                 // the character takes this cell and the next one, which is its continuation
     continuation: bool,         // the second cell of a wide character (it has no character of its own)
@@ -70,6 +73,8 @@ AnsiScreen :: struct {
     alternate_style: AnsiState,
     margin_top: int,            // the scroll region: the first and the last row of it (the whole screen unless a program sets it)
     margin_bottom: int,
+    join_at: int,               // 1 + the cell number (row * columns + column) where a joiner was read last, so that the emoji after it joins even when the cell has no room to keep the joiner (0: none)
+    ambiguous_wide: bool,       // characters of ambiguous width (box drawing, Greek, Cyrillic, arrows ...) take two cells, as in a terminal of an East Asian locale
     pushed: int,                // the lines the whole screen scrolled up (down: fewer): `pushed + row` is the number of a live row that stays with its text, see AnsiScreenSelect
     select_active: bool,        // a selection of cells exists
     select_dragging: bool,      // the pointer holds it
@@ -100,7 +105,7 @@ AnsiScreenClear :: proc(screen: ^AnsiScreen) {
     screen.sequence_length, screen.letter_length = 0, 0
     screen.history_count, screen.history_head, screen.back = 0, 0, 0
     screen.alternate_active = false
-    screen.pushed, screen.select_active, screen.select_dragging = 0, false, false
+    screen.pushed, screen.select_active, screen.select_dragging, screen.join_at = 0, false, false, 0
     for &cell in screen.alternate { cell = {} }
     screen.margin_top, screen.margin_bottom = 0, screen.rows - 1
 }
@@ -165,20 +170,63 @@ screenLineFeed :: proc "contextless" (screen: ^AnsiScreen) {
     }
 }
 
-// How many cells a character takes on the screen: 0 for a combining mark (it goes on the cell before), 2 for a wide one (Hangul, Chinese and Japanese characters,
-// fullwidth forms, emoji), else 1. A table of the ranges that matter, not all of Unicode.
-AnsiRuneWidth :: proc "contextless" (character: rune) -> int {
-    if character < 0x300 { return 1 }
+// How many cells a character takes on the screen: 0 for what goes with the character before it (a combining mark, a joiner, a variation selector, the skin tone of an
+// emoji), 2 for a wide one (Hangul, Chinese and Japanese characters, fullwidth forms, emoji), else 1. A table of the ranges that matter (Unicode 15), not all of
+// Unicode. Characters of ambiguous width (UAX #11) are 1 unless `ambiguous_wide`.
+AnsiRuneWidth :: proc "contextless" (character: rune, ambiguous_wide: bool = false) -> int {
+    if character < 0x300 && !ambiguous_wide { return 1 }
     switch character {
-    case 0x300 ..= 0x36F, 0x483 ..= 0x489, 0x591 ..= 0x5BD, 0x610 ..= 0x61A, 0x64B ..= 0x65F, 0x1AB0 ..= 0x1AFF, 0x1DC0 ..= 0x1DFF, 0x200B ..= 0x200F, 0x20D0 ..= 0x20FF,
-         0xFE00 ..= 0xFE0F, 0xFE20 ..= 0xFE2F, 0xE0100 ..= 0xE01EF:
+    case 0x300 ..= 0x36F, 0x483 ..= 0x489, 0x591 ..= 0x5BD, 0x5BF, 0x5C1 ..= 0x5C2, 0x5C4 ..= 0x5C5, 0x5C7, 0x610 ..= 0x61A, 0x64B ..= 0x65F, 0x670, 0x6D6 ..= 0x6DC,
+         0x6DF ..= 0x6E4, 0x6E7 ..= 0x6E8, 0x6EA ..= 0x6ED, 0x711, 0x730 ..= 0x74A, 0x900 ..= 0x902, 0x93A, 0x93C, 0x941 ..= 0x948, 0x94D, 0x951 ..= 0x957, 0x962 ..= 0x963,
+         0xE31, 0xE34 ..= 0xE3A, 0xE47 ..= 0xE4E, 0xEB1, 0xEB4 ..= 0xEBC, 0x1160 ..= 0x11FF, 0x1AB0 ..= 0x1AFF, 0x1DC0 ..= 0x1DFF, 0x200B ..= 0x200F, 0x2028 ..= 0x202E,
+         0x2060 ..= 0x2064, 0x20D0 ..= 0x20FF, 0x3099 ..= 0x309A, 0xFE00 ..= 0xFE0F, 0xFE20 ..= 0xFE2F, 0xFEFF, 0x1F3FB ..= 0x1F3FF, 0xE0020 ..= 0xE007F, 0xE0100 ..= 0xE01EF:
         return 0
-    case 0x1100 ..= 0x115F, 0x2E80 ..= 0x303E, 0x3041 ..= 0x33FF, 0x3400 ..= 0x4DBF, 0x4E00 ..= 0x9FFF, 0xA000 ..= 0xA4CF, 0xA960 ..= 0xA97F, 0xAC00 ..= 0xD7A3,
-         0xF900 ..= 0xFAFF, 0xFE30 ..= 0xFE6F, 0xFF00 ..= 0xFF60, 0xFFE0 ..= 0xFFE6, 0x1F300 ..= 0x1F64F, 0x1F680 ..= 0x1F6FF, 0x1F900 ..= 0x1F9FF, 0x1FA70 ..= 0x1FAFF,
-         0x20000 ..= 0x3FFFD:
+    case 0x1100 ..= 0x115F, 0x231A ..= 0x231B, 0x2329 ..= 0x232A, 0x23E9 ..= 0x23EC, 0x23F0, 0x23F3, 0x25FD ..= 0x25FE, 0x2614 ..= 0x2615, 0x2648 ..= 0x2653, 0x267F,
+         0x2693, 0x26A1, 0x26AA ..= 0x26AB, 0x26BD ..= 0x26BE, 0x26C4 ..= 0x26C5, 0x26CE, 0x26D4, 0x26EA, 0x26F2 ..= 0x26F3, 0x26F5, 0x26FA, 0x26FD, 0x2705, 0x270A ..= 0x270B,
+         0x2728, 0x274C, 0x274E, 0x2753 ..= 0x2755, 0x2757, 0x2795 ..= 0x2797, 0x27B0, 0x27BF, 0x2B1B ..= 0x2B1C, 0x2B50, 0x2B55, 0x2E80 ..= 0x303E, 0x3041 ..= 0x33FF,
+         0x3400 ..= 0x4DBF, 0x4E00 ..= 0x9FFF, 0xA000 ..= 0xA4CF, 0xA960 ..= 0xA97F, 0xAC00 ..= 0xD7A3, 0xF900 ..= 0xFAFF, 0xFE30 ..= 0xFE6F, 0xFF00 ..= 0xFF60,
+         0xFFE0 ..= 0xFFE6, 0x16FE0 ..= 0x16FE4, 0x17000 ..= 0x18CFF, 0x1B000 ..= 0x1B2FF, 0x1F004, 0x1F0CF, 0x1F18E, 0x1F191 ..= 0x1F19A, 0x1F1E6 ..= 0x1F1FF,
+         0x1F200 ..= 0x1F251, 0x1F300 ..= 0x1F64F, 0x1F680 ..= 0x1F6FF, 0x1F7E0 ..= 0x1F7EB, 0x1F90C ..= 0x1F9FF, 0x1FA70 ..= 0x1FAFF, 0x20000 ..= 0x3FFFD:
         return 2
     }
+    if ambiguous_wide && ansiAmbiguous(character) { return 2 }
     return 1
+}
+
+// The characters of East Asian ambiguous width (UAX #11), the ranges that occur in text: Latin-1 and Latin Extended symbols, Greek, Cyrillic, punctuation, letterlike and
+// number forms, arrows, mathematics, enclosed alphanumerics, box drawing, blocks, geometric shapes, the private use areas. Written from the table, not generated from it.
+@(private)
+ansiAmbiguous :: proc "contextless" (character: rune) -> bool {
+    switch character {
+    case 0xA1, 0xA4, 0xA7 ..= 0xA8, 0xAA, 0xAD ..= 0xAE, 0xB0 ..= 0xB4, 0xB6 ..= 0xBA, 0xBC ..= 0xBF, 0xC6, 0xD0, 0xD7 ..= 0xD8, 0xDE ..= 0xE1, 0xE6, 0xE8 ..= 0xEA,
+         0xEC ..= 0xED, 0xF0, 0xF2 ..= 0xF3, 0xF7 ..= 0xFA, 0xFC, 0xFE, 0x101, 0x111, 0x113, 0x11B, 0x126 ..= 0x127, 0x12B, 0x131 ..= 0x133, 0x138, 0x13F ..= 0x142, 0x144,
+         0x148 ..= 0x14B, 0x14D, 0x152 ..= 0x153, 0x166 ..= 0x167, 0x16B, 0x1CE, 0x1D0, 0x1D2, 0x1D4, 0x1D6, 0x1D8, 0x1DA, 0x1DC, 0x251, 0x261, 0x2C4, 0x2C7, 0x2C9 ..= 0x2CB,
+         0x2CD, 0x2D0, 0x2D8 ..= 0x2DB, 0x2DD, 0x2DF, 0x391 ..= 0x3A1, 0x3A3 ..= 0x3A9, 0x3B1 ..= 0x3C1, 0x3C3 ..= 0x3C9, 0x401, 0x410 ..= 0x44F, 0x451,
+         0x2010, 0x2013 ..= 0x2016, 0x2018 ..= 0x2019, 0x201C ..= 0x201D, 0x2020 ..= 0x2022, 0x2024 ..= 0x2027, 0x2030, 0x2032 ..= 0x2033, 0x2035, 0x203B, 0x203E, 0x2074,
+         0x207F, 0x2081 ..= 0x2084, 0x20AC, 0x2103, 0x2105, 0x2109, 0x2113, 0x2116, 0x2121 ..= 0x2122, 0x2126, 0x212B, 0x2153 ..= 0x2154, 0x215B ..= 0x215E, 0x2160 ..= 0x216B,
+         0x2170 ..= 0x2179, 0x2189, 0x2190 ..= 0x2199, 0x21B8 ..= 0x21B9, 0x21D2, 0x21D4, 0x21E7, 0x2200, 0x2202 ..= 0x2203, 0x2207 ..= 0x2208, 0x220B, 0x220F, 0x2211, 0x2215,
+         0x221A, 0x221D ..= 0x2220, 0x2223, 0x2225, 0x2227 ..= 0x222C, 0x222E, 0x2234 ..= 0x2237, 0x223C ..= 0x223D, 0x2248, 0x224C, 0x2252, 0x2260 ..= 0x2261, 0x2264 ..= 0x2267,
+         0x226A ..= 0x226B, 0x226E ..= 0x226F, 0x2282 ..= 0x2283, 0x2286 ..= 0x2287, 0x2295, 0x2299, 0x22A5, 0x22BF, 0x2312, 0x2460 ..= 0x24E9, 0x24EB ..= 0x254B,
+         0x2550 ..= 0x2573, 0x2580 ..= 0x258F, 0x2592 ..= 0x2595, 0x25A0 ..= 0x25A1, 0x25A3 ..= 0x25A9, 0x25B2 ..= 0x25B3, 0x25B6 ..= 0x25B7, 0x25BC ..= 0x25BD,
+         0x25C0 ..= 0x25C1, 0x25C6 ..= 0x25C8, 0x25CB, 0x25CE ..= 0x25D1, 0x25E2 ..= 0x25E5, 0x25EF, 0x2605 ..= 0x2606, 0x2609, 0x260E ..= 0x260F, 0x261C, 0x261E, 0x2640,
+         0x2642, 0x2660 ..= 0x2661, 0x2663 ..= 0x2665, 0x2667 ..= 0x266A, 0x266C ..= 0x266D, 0x266F, 0x269E ..= 0x269F, 0x26BF, 0x26C6 ..= 0x26CD, 0x26CF ..= 0x26D3,
+         0x26D5 ..= 0x26E1, 0x26E3, 0x26E8 ..= 0x26E9, 0x26EB ..= 0x26F1, 0x26F4, 0x26F6 ..= 0x26F9, 0x26FB ..= 0x26FC, 0x26FE ..= 0x26FF, 0x273D, 0x2776 ..= 0x277F,
+         0x2B56 ..= 0x2B59, 0x3248 ..= 0x324F, 0xE000 ..= 0xF8FF, 0xFFFD, 0x1F100 ..= 0x1F10A, 0x1F110 ..= 0x1F12D, 0x1F130 ..= 0x1F169, 0x1F170 ..= 0x1F18D,
+         0x1F18F ..= 0x1F190, 0x1F19B ..= 0x1F1AC, 0xF0000 ..= 0xFFFFD, 0x100000 ..= 0x10FFFD:
+        return true
+    }
+    return false
+}
+
+// A narrow character that has an emoji look when a variation selector 16 follows it (a heart, a sun, a check mark ...): the selector makes it two cells wide
+@(private)
+ansiEmojiText :: proc "contextless" (character: rune) -> bool {
+    switch character {
+    case 0xA9, 0xAE, 0x203C, 0x2049, 0x2122, 0x2139, 0x2194 ..= 0x2199, 0x21A9 ..= 0x21AA, 0x24C2, 0x25AA ..= 0x25AB, 0x25B6, 0x25C0, 0x25FB ..= 0x25FE, 0x2600 ..= 0x27BF,
+         0x2934 ..= 0x2935, 0x2B05 ..= 0x2B07, 0x2B1B ..= 0x2B1C, 0x2B50, 0x2B55, 0x3030, 0x303D, 0x3297, 0x3299:
+        return true
+    }
+    return false
 }
 
 // A cell that is the half of a wide character, or has one, loses its other half when it is written over or cut
@@ -205,18 +253,51 @@ screenFixRow :: proc "contextless" (screen: ^AnsiScreen, row: int) {
     }
 }
 
+// The cell that the next character would join: the one before the cursor (the letter of a wide one)
+@(private)
+screenBefore :: proc "contextless" (screen: ^AnsiScreen) -> ^AnsiCell {
+    column: int = min(screen.column, screen.columns) - 1
+    if column < 0 { return nil }
+    cell: ^AnsiCell = screenCell(screen, column, screen.row)
+    if cell.continuation && column > 0 { cell = screenCell(screen, column - 1, screen.row) }
+    if cell.character == 0 { return nil }
+    return cell
+}
+
+@(private)
+cellAddExtra :: proc "contextless" (cell: ^AnsiCell, character: rune) {
+    for &slot in cell.extra {
+        if slot == 0 {
+            slot = character
+            return
+        }
+    }
+}
+
 @(private)
 screenPut :: proc "contextless" (screen: ^AnsiScreen, character: rune) {
-    width: int = AnsiRuneWidth(character)
-    if width == 0 {
-        // a combining mark: it goes on the letter before the cursor
-        column: int = min(screen.column, screen.columns) - 1
-        if column < 0 { return }
-        cell: ^AnsiCell = screenCell(screen, column, screen.row)
-        if cell.continuation && column > 0 { cell = screenCell(screen, column - 1, screen.row) }
-        if cell.character != 0 && cell.mark == 0 { cell.mark = character }
+    width: int = AnsiRuneWidth(character, screen.ambiguous_wide)
+    // what goes with the cell before it: a mark, a joiner and the emoji it joins (a family, a person with a profession), the second letter of a flag
+    before: ^AnsiCell = screenBefore(screen)
+    joins: bool = width == 0
+    if before != nil && !joins {
+        if screen.join_at == 1 + screen.row * screen.columns + screen.column && (width == 2 || ansiEmojiText(character)) { joins = true }
+        if before.character >= 0x1F1E6 && before.character <= 0x1F1FF && before.extra[0] == 0 && character >= 0x1F1E6 && character <= 0x1F1FF { joins = true }
+    }
+    if joins {
+        if before == nil { return }
+        // the variation selector 16 asks for the picture of an emoji: a narrow one takes the next cell
+        if character == 0xFE0F && !before.wide && ansiEmojiText(before.character) && before.extra[0] == 0 && screen.column < screen.columns {
+            before.wide = true
+            screenBreakPair(screen, screen.column, screen.row)
+            screenCell(screen, screen.column, screen.row)^ = {style = before.style, continuation = true}
+            screen.column += 1
+        }
+        cellAddExtra(before, character)
+        screen.join_at = (1 + screen.row * screen.columns + screen.column) if character == 0x200D || (screen.join_at == 1 + screen.row * screen.columns + screen.column && width != 0) else 0
         return
     }
+    screen.join_at = 0
     if screen.column + width > screen.columns {
         // the cursor stood after the last cell, or a wide letter does not fit in the one that is left (it stays empty): the letter starts the next line
         screen.column = 0
@@ -459,6 +540,27 @@ AnsiScreenWrite :: proc(screen: ^AnsiScreen, bytes: []u8) {
     }
 }
 
+// A cell as UTF-8 at `out[count^:]`: its character (`character`: a space for an empty cell) and what goes with it. False when it does not fit (nothing of it is written).
+@(private)
+cellEncode :: proc(cell: ^AnsiCell, character: rune, out: []u8, count: ^int) -> bool {
+    needed: int = utf8.rune_size(character)
+    for extra in cell.extra {
+        if extra == 0 { break }
+        needed += utf8.rune_size(extra)
+    }
+    if count^ + needed > len(out) { return false }
+    encoded, width := utf8.encode_rune(character)
+    copy(out[count^:], encoded[:width])
+    count^ += width
+    for extra in cell.extra {
+        if extra == 0 { break }
+        encoded, width = utf8.encode_rune(extra)
+        copy(out[count^:], encoded[:width])
+        count^ += width
+    }
+    return true
+}
+
 // The text of a row of the screen without the empty cells at its end (for a test or a copy)
 AnsiScreenRow :: proc(screen: ^AnsiScreen, row: int, out: []u8) -> string {
     count: int
@@ -471,16 +573,7 @@ AnsiScreenRow :: proc(screen: ^AnsiScreen, row: int, out: []u8) -> string {
         if cell.continuation { continue }                     // the second half of a wide letter
         character: rune = cell.character
         if character == 0 { character = ' ' }
-        encoded, width := utf8.encode_rune(character)
-        if count + width > len(out) { break }
-        copy(out[count:], encoded[:width])
-        count += width
-        if cell.mark != 0 {
-            encoded, width = utf8.encode_rune(cell.mark)
-            if count + width > len(out) { break }
-            copy(out[count:], encoded[:width])
-            count += width
-        }
+        if !cellEncode(&cell, character, out, &count) { break }
     }
     return string(out[:count])
 }
@@ -592,16 +685,7 @@ AnsiScreenSelected :: proc(screen: ^AnsiScreen, out: []u8) -> string {
             cell: ^AnsiCell = screenIdCell(screen, id, column)
             if cell == nil || cell.continuation { continue }
             character: rune = cell.character if cell.character != 0 else ' '
-            encoded, width := utf8.encode_rune(character)
-            if count + width > len(out) { return string(out[:count]) }
-            copy(out[count:], encoded[:width])
-            count += width
-            if cell.mark != 0 {
-                encoded, width = utf8.encode_rune(cell.mark)
-                if count + width > len(out) { return string(out[:count]) }
-                copy(out[count:], encoded[:width])
-                count += width
-            }
+            if !cellEncode(cell, character, out, &count) { return string(out[:count]) }
         }
     }
     return string(out[:count])
@@ -683,17 +767,9 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, na
                 if cell.continuation && at > column { continue }
                 character: rune = cell.character
                 if character == 0 { character = ' ' }
-                encoded, width := utf8.encode_rune(character)
-                extra, extra_width := utf8.encode_rune(cell.mark)
-                if ctx.text_used + width + (extra_width if cell.mark != 0 else 0) > len(ctx.text_buffer) {
+                if !cellEncode(&cell, character, ctx.text_buffer[:], &ctx.text_used) {
                     ctx.problems += {.TEXT_FULL}
                     break
-                }
-                copy(ctx.text_buffer[ctx.text_used:], encoded[:width])
-                ctx.text_used += width
-                if cell.mark != 0 {
-                    copy(ctx.text_buffer[ctx.text_used:], extra[:extra_width])
-                    ctx.text_used += extra_width
                 }
             }
             run: string = string(ctx.text_buffer[start:ctx.text_used])

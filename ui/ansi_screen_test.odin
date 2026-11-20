@@ -311,12 +311,12 @@ test_wide_letters_take_two_cells_and_marks_go_on_the_cell_before :: proc(t: ^tes
     AnsiScreenClear(&screen)
     write(&screen, "e\u0301x")
     testing.expect_value(t, screen.column, 2)
-    testing.expect(t, cells[0].character == 'e' && cells[0].mark == 0x301 && cells[1].character == 'x')
+    testing.expect(t, cells[0].character == 'e' && cells[0].extra[0] == 0x301 && cells[1].character == 'x')
     testing.expect_value(t, row(&screen, 0), "e\u0301x")
     // a mark of a wide letter goes on its first cell; a mark with nothing before it is dropped
     AnsiScreenClear(&screen)
     write(&screen, "\u0301\u6f22\u0301")
-    testing.expect(t, cells[0].mark == 0x301 && cells[0].wide)
+    testing.expect(t, cells[0].extra[0] == 0x301 && cells[0].wide)
     // a wide letter that does not fit in the last cell goes to the next line and leaves the cell empty
     AnsiScreenClear(&screen)
     write(&screen, "abcde\u6f22")
@@ -787,4 +787,93 @@ test_the_pointer_selects_cells_of_the_screen_and_copy_takes_them :: proc(t: ^tes
     frame(test, {mouse_position = at(area, cell, 5, 3), mouse_released = true})
     testing.expect_value(t, selected(&test.screen), "")
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}
+
+@(test)
+test_the_width_table_covers_marks_emoji_and_the_ambiguous_characters :: proc(t: ^testing.T) {
+    // more marks that go with the letter before them
+    testing.expect_value(t, AnsiRuneWidth('ิ'), 0)           // a Thai vowel above
+    testing.expect_value(t, AnsiRuneWidth('़'), 0)           // a Devanagari nukta
+    testing.expect_value(t, AnsiRuneWidth('ᅡ'), 0)           // a Hangul vowel jamo
+    testing.expect_value(t, AnsiRuneWidth('゙'), 0)           // a combining kana mark
+    testing.expect_value(t, AnsiRuneWidth('\U0001F3FD'), 0)       // the skin tone of an emoji
+    testing.expect_value(t, AnsiRuneWidth('️'), 0)           // the emoji variation selector
+    // emoji that the older table missed
+    testing.expect_value(t, AnsiRuneWidth('⌚'), 2)           // a watch
+    testing.expect_value(t, AnsiRuneWidth('✅'), 2)           // a check mark button
+    testing.expect_value(t, AnsiRuneWidth('⭐'), 2)           // a star
+    testing.expect_value(t, AnsiRuneWidth('\U0001F1E9'), 2)       // a regional indicator (half of a flag)
+    testing.expect_value(t, AnsiRuneWidth('\U0001F7E0'), 2)       // an orange circle
+    testing.expect_value(t, AnsiRuneWidth('❤'), 1)           // a heart needs the variation selector to be a picture
+    // ambiguous: narrow unless asked
+    testing.expect_value(t, AnsiRuneWidth('─'), 1)           // a box drawing line
+    testing.expect_value(t, AnsiRuneWidth('─', true), 2)
+    testing.expect_value(t, AnsiRuneWidth('α', true), 2)     // a Greek letter
+    testing.expect_value(t, AnsiRuneWidth('Ж', true), 2)     // a Cyrillic letter
+    testing.expect_value(t, AnsiRuneWidth('a', true), 1)
+    testing.expect_value(t, AnsiRuneWidth('ö', true), 1)     // ö is not ambiguous (é is)
+    testing.expect_value(t, AnsiRuneWidth('°', true), 2)     // the degree sign is
+    testing.expect_value(t, AnsiRuneWidth('漢', true), 2)     // wide stays wide
+}
+
+@(test)
+test_emoji_sequences_and_flags_are_one_group_of_cells :: proc(t: ^testing.T) {
+    cells: [12 * 3]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 12, 3)
+    // a family: four people joined by three joiners are one emoji, two cells wide
+    write(&screen, "a👨‍👩‍👧‍👦b")
+    testing.expect_value(t, [2]int{screen.column, screen.row}, [2]int{4, 0})
+    testing.expect(t, cells[1].wide && cells[1].character == '👨' && cells[2].continuation)
+    testing.expect_value(t, cells[1].extra, [ANSI_EXTRA]rune{0x200D, '👩', 0x200D, '👧'})   // what does not fit in a cell is dropped
+    testing.expect_value(t, cells[3].character, 'b')
+    // a flag: two regional indicators
+    AnsiScreenClear(&screen)
+    write(&screen, "x🇩🇪y")
+    testing.expect_value(t, [2]int{screen.column, screen.row}, [2]int{4, 0})
+    testing.expect(t, cells[1].wide && cells[1].extra[0] == '🇪')
+    testing.expect_value(t, cells[3].character, 'y')
+    // two flags next to each other are two groups: the third indicator starts a new cell
+    AnsiScreenClear(&screen)
+    write(&screen, "🇩🇪🇫🇷")
+    testing.expect_value(t, screen.column, 4)
+    testing.expect_value(t, cells[2].character, '🇫')
+    // a skin tone goes with its emoji; a joiner without an emoji after it does not make a group
+    AnsiScreenClear(&screen)
+    write(&screen, "👍\U0001F3FDz")
+    testing.expect_value(t, screen.column, 3)
+    testing.expect_value(t, cells[0].extra[0], '\U0001F3FD')
+    testing.expect_value(t, cells[2].character, 'z')
+    AnsiScreenClear(&screen)
+    write(&screen, "a‍z")
+    testing.expect_value(t, screen.column, 2)
+    testing.expect_value(t, cells[1].character, 'z')
+    // the variation selector 16 makes a narrow heart a picture of two cells; without room it only joins
+    AnsiScreenClear(&screen)
+    write(&screen, "❤️z")
+    testing.expect_value(t, screen.column, 3)
+    testing.expect(t, cells[0].wide && cells[1].continuation && cells[2].character == 'z')
+    AnsiScreenClear(&screen)
+    write(&screen, "ab")
+    write(&screen, "\x1b[12G❤️")                                                   // on the last column
+    testing.expect(t, !cells[11].wide && cells[11].character == '❤' && cells[11].extra[0] == 0xFE0F)
+    // the text of the row and of a selection has the whole group, in order
+    AnsiScreenClear(&screen)
+    write(&screen, "👨‍👩 ok")
+    testing.expect_value(t, row(&screen, 0), "👨‍👩 ok")
+    AnsiScreenSelect(&screen, 0, 0, 5, 0)
+    testing.expect_value(t, selected(&screen), "👨‍👩 ok")
+}
+
+@(test)
+test_ambiguous_characters_take_two_cells_when_the_screen_is_set_to_it :: proc(t: ^testing.T) {
+    cells: [10 * 2]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 10, 2)
+    write(&screen, "─α")
+    testing.expect_value(t, screen.column, 2)
+    screen.ambiguous_wide = true
+    write(&screen, "─α")
+    testing.expect_value(t, screen.column, 6)
+    testing.expect(t, cells[2].wide && cells[3].continuation && cells[4].wide)
+    write(&screen, "ab")
+    testing.expect_value(t, cells[6].character, 'a')
 }

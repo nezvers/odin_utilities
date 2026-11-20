@@ -57,7 +57,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Input glyphs (`UiGlyph`, `UiBindingField`, textures through `Painter.draw_texture`), gamepad input in the kit, the Rebind example as the first tab
 - [x] The raylib and Karl2D glues draw glyph textures (`TextureRegister`) and make their actions from a `KeyMap` (`KeyMapOf`, `ui.KeyMapFromCodes`) with pad buttons
 - [x] Screen of cells: selection of cells (a drag, Copy, stays with the text through scrolling)
-- [ ] (medium) Screen of cells: a width table that follows Unicode more closely (ambiguous widths, grapheme clusters, emoji sequences)
+- [x] Screen of cells: a width table that follows Unicode more closely (more marks and emoji, ambiguous widths by a setting, emoji sequences, flags and the variation selector in one cell)
 - [x] Editing commands for a text (`UiTextWrap`, `UiTextLinePrefix`) and Baldr's 08_rich as a toolbar over the Markdown source
 - [x] Dashed lines and paths for overlays (`default_style/lines.odin`) and Baldr's 28_lines
 - [x] Text that is read can be selected and copied (`TEXT_SELECTABLE`, select.odin) and Baldr's 27_conversation in the chat example
