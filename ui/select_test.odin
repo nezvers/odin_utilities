@@ -302,3 +302,61 @@ test_a_selection_is_extended_with_shift_and_takes_everything_with_select_all :: 
     text, _ = UiTextSelected(&test.ctx)
     testing.expect_value(t, text, "")
 }
+
+@(test)
+test_the_end_of_a_selection_moves_with_shift_and_the_arrows :: proc(t: ^testing.T) {
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 3 { frame(test, away) }
+    key :: proc(test: ^Test, action: Action, shift: bool = true) -> string {
+        frame(test, {mouse_position = {-100, -100}, actions = {action}, modifiers = {.SHIFT} if shift else {}})
+        frame(test, {mouse_position = {-100, -100}})
+        text, _ := UiTextSelected(&test.ctx)
+        return text
+    }
+    // "lo" of hello is selected: the end is after the o
+    drag(test, letter(test, "hello world", 3), letter(test, "hello world", 5))
+    text, _ := UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "lo")
+    testing.expect_value(t, key(test, .RIGHT), "lo ")
+    testing.expect_value(t, key(test, .RIGHT), "lo w")
+    testing.expect_value(t, key(test, .LEFT), "lo ")
+    // without Shift an arrow is not for the selection
+    testing.expect_value(t, key(test, .RIGHT, false), "lo ")
+    // the end of the line, then on: into the next text, over the new line between them, and back
+    testing.expect_value(t, key(test, .END), "lo world")
+    testing.expect_value(t, key(test, .RIGHT), "lo world\ns")
+    testing.expect_value(t, key(test, .LEFT), "lo world")
+    // down: the line below, at the same place sideways (10 letters in), and up again
+    testing.expect_value(t, key(test, .LEFT), "lo worl")
+    testing.expect_value(t, key(test, .DOWN), "lo world\nsecond lin")
+    testing.expect_value(t, key(test, .UP), "lo worl")
+    // the end goes before the start: the selection turns around
+    testing.expect_value(t, key(test, .HOME), "hel")
+    testing.expect_value(t, key(test, .LEFT), "hel")                // nothing before the first text
+    testing.expect_value(t, key(test, .UP), "hel")
+    // through the runs of a paragraph: a step from one run into the next is one letter, not a stop at the border
+    drag(test, letter(test, "plain ", 4), letter(test, "plain ", 5))
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "n")
+    testing.expect_value(t, key(test, .RIGHT), "n ")
+    testing.expect_value(t, key(test, .RIGHT), "n b")
+    testing.expect_value(t, key(test, .RIGHT), "n bo")
+    testing.expect_value(t, key(test, .LEFT), "n b")
+    testing.expect_value(t, key(test, .LEFT), "n ")
+    // down from the paragraph of one line into the paragraph of three lines, and through its lines
+    testing.expect_value(t, key(test, .DOWN), "n bold end\none tw")
+    testing.expect_value(t, key(test, .DOWN), "n bold end\none two three ")
+    testing.expect_value(t, key(test, .END), "n bold end\none two three four")
+    // the arrows with Shift did not move the focus, and a text field that is edited keeps them
+    testing.expect_value(t, UiFocused(&test.ctx), Id(0))
+    test.field_length = copy(test.field[:], "field")
+    UiFocus(&test.ctx, UiIdPath("window", "field"))
+    frame(test, away)
+    before, _ := UiTextSelected(&test.ctx)
+    testing.expect_value(t, key(test, .RIGHT), before)
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

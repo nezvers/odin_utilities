@@ -223,6 +223,7 @@ selectAfterLayout :: proc(ctx: ^Context) {
         select.active, select.dragging = false, false
         return
     }
+    if !select.dragging && selectKeysTaken(ctx, input^) != {} { selectKeys(ctx) }
     // copy, unless a text field that is edited has the keys
     if .COPY in input.actions && select.copied_length > 0 && !editing {
         UiClipboardSet(ctx, string(select.copied[:select.copied_length]))
@@ -270,4 +271,154 @@ UiTextSelected :: proc(ctx: ^Context) -> (text: string, whole: bool) {
 // Lets the selection go
 UiTextSelectionClear :: proc(ctx: ^Context) {
     ctx.select.active, ctx.select.dragging = false, false
+}
+
+// The keys that move the end of the selection in this frame: the arrows, Home and End while Shift is held, there is a selection and no text field is edited.
+// UiBegin leaves these to the selection (they do not move the focus).
+@(private)
+selectKeysTaken :: proc(ctx: ^Context, input: Input) -> Actions {
+    if !ctx.select.active || .SHIFT not_in input.modifiers { return {} }
+    focused: ^WidgetState = stateFind(ctx, ctx.focus)
+    if focused != nil && focused.editing { return {} }
+    return input.actions & {.LEFT, .RIGHT, .UP, .DOWN, .HOME, .END}
+}
+
+// The line of a selectable text a place is in, and where the place is on the screen
+@(private)
+selectLineOf :: proc(ctx: ^Context, place: SelectPoint) -> (line: TextLine, top: f32, x: f32, height: f32, found: bool) {
+    if place.element < 0 || place.element >= i32(ctx.element_count) { return }
+    element: ^Element = &ctx.elements[place.element]
+    if !element.is_text || !selectHasTag(&ctx.select, element) { return }
+    data: ^TextData = &element.text
+    height = data.config.line_height if data.config.line_height > 0 else data.preferred.y
+    for l in 0 ..< int(data.line_count) {
+        candidate: TextLine = ctx.lines[int(data.line_start) + l]
+        last: bool = l == int(data.line_count) - 1
+        // a place at the end of a line is of that line; at the start of the next one only when a new line stands between them
+        if place.offset < candidate.start || place.offset > candidate.start + candidate.length { continue }
+        if place.offset == candidate.start + candidate.length && !last {
+            next: TextLine = ctx.lines[int(data.line_start) + l + 1]
+            if next.start == place.offset { continue }
+        }
+        shift: f32 = element.rect.z - candidate.width
+        switch data.config.align {
+        case .LEFT: shift = 0
+        case .CENTER: shift *= 0.5
+        case .RIGHT:
+        }
+        outer_tags: [DRAW_TAGS]Id = ctx.measure_tags
+        ctx.measure_tags = element.decl.draw.tags
+        x = element.rect.x + shift + measureText(ctx, data.text[candidate.start:place.offset], data.config.font_size).x
+        ctx.measure_tags = outer_tags
+        return candidate, element.rect.y + f32(l) * height, x, height, true
+    }
+    return
+}
+
+// The place in the line above (-1) or below (1) the height `edge` that is the nearest to `x`
+@(private)
+selectLineStep :: proc(ctx: ^Context, x: f32, edge: f32, direction: int) -> (place: SelectPoint, found: bool) {
+    best_vertical, best_sideways: f32
+    best_element: i32
+    best_line: TextLine
+    best_x: f32
+    for index in 0 ..< i32(ctx.element_count) {
+        element: ^Element = &ctx.elements[index]
+        if !element.is_text || !selectHasTag(&ctx.select, element) { continue }
+        data: ^TextData = &element.text
+        rect: Rect = element.rect
+        height: f32 = data.config.line_height if data.config.line_height > 0 else data.preferred.y
+        for l in 0 ..< int(data.line_count) {
+            line: TextLine = ctx.lines[int(data.line_start) + l]
+            center: f32 = rect.y + (f32(l) + 0.5) * height
+            if (direction < 0 && center >= edge) || (direction > 0 && center <= edge) { continue }
+            shift: f32 = rect.z - line.width
+            switch data.config.align {
+            case .LEFT: shift = 0
+            case .CENTER: shift *= 0.5
+            case .RIGHT:
+            }
+            vertical: f32 = abs(center - edge)
+            sideways: f32 = max(rect.x + shift - x, x - (rect.x + shift + line.width), 0)
+            // rows of one height are one line (the runs of a paragraph): the nearest row first, then the run the place is over
+            closer: bool = !found || vertical < best_vertical - height * 0.25 || (abs(vertical - best_vertical) <= height * 0.25 && sideways < best_sideways)
+            if closer {
+                found = true
+                best_vertical, best_sideways, best_element, best_line, best_x = vertical, sideways, index, line, x - (rect.x + shift)
+            }
+        }
+    }
+    if !found { return }
+    return {best_element, best_line.start + selectOffsetAt(ctx, best_element, best_line, best_x)}, true
+}
+
+// The byte of a line whose end of a letter is the nearest to `x` (from the start of the line)
+@(private)
+selectOffsetAt :: proc(ctx: ^Context, index: i32, line: TextLine, x: f32) -> i32 {
+    element: ^Element = &ctx.elements[index]
+    text: string = element.text.text[line.start:line.start + line.length]
+    outer_tags: [DRAW_TAGS]Id = ctx.measure_tags
+    ctx.measure_tags = element.decl.draw.tags
+    offset: int
+    nearest: f32 = abs(x)
+    at: int
+    for at < len(text) {
+        _, width := utf8.decode_rune_in_string(text[at:])
+        at += width
+        distance: f32 = abs(x - measureText(ctx, text[:at], element.text.config.font_size).x)
+        if distance < nearest {
+            nearest = distance
+            offset = at
+        }
+    }
+    ctx.measure_tags = outer_tags
+    return i32(offset)
+}
+
+// Shift and an arrow, Home or End: the end of the selection moves by a letter, a line, to the start or the end of its line. The start stays.
+@(private)
+selectKeys :: proc(ctx: ^Context) {
+    select: ^TextSelect = &ctx.select
+    actions: Actions = ctx.input.actions
+    cursor: SelectPoint = select.cursor
+    line, top, x, height, found := selectLineOf(ctx, cursor)
+    if !found { return }
+    text: string = ctx.elements[cursor.element].text.text
+    if .LEFT in actions {
+        if cursor.offset > 0 {
+            _, width := utf8.decode_last_rune_in_string(text[:cursor.offset])
+            cursor.offset -= i32(width)
+        } else if previous := selectNeighbor(ctx, cursor.element, -1); previous >= 0 {
+            // into the text before, one letter in: its end is the same place on the screen when it stands in the same row, and the same selection
+            // when a line break is between them, and a press of a key should change what is selected
+            before: string = ctx.elements[previous].text.text
+            cursor = {previous, i32(len(before))}
+            if len(before) > 0 {
+                _, width := utf8.decode_last_rune_in_string(before)
+                cursor.offset -= i32(width)
+            }
+        }
+    }
+    if .RIGHT in actions {
+        if int(cursor.offset) < len(text) {
+            _, width := utf8.decode_rune_in_string(text[cursor.offset:])
+            cursor.offset += i32(width)
+        } else if next := selectNeighbor(ctx, cursor.element, 1); next >= 0 {
+            after: string = ctx.elements[next].text.text
+            cursor = {next, 0}
+            if len(after) > 0 {
+                _, width := utf8.decode_rune_in_string(after)
+                cursor.offset += i32(width)
+            }
+        }
+    }
+    if .HOME in actions { cursor.offset = line.start }
+    if .END in actions { cursor.offset = line.start + line.length }
+    if .UP in actions {
+        if place, above := selectLineStep(ctx, x, top + height * 0.25, -1); above { cursor = place }
+    }
+    if .DOWN in actions {
+        if place, below := selectLineStep(ctx, x, top + height * 0.75, 1); below { cursor = place }
+    }
+    select.cursor = cursor
 }

@@ -216,8 +216,10 @@ UiBegin :: proc(ctx: ^Context, input: Input, delta_time: f32, screen: Vec2, styl
 
     // the default actions of this frame move the focus before any widget is declared, so the widgets of this frame see it
     ctx.cancel_pending = .CANCEL in input.actions || .ESCAPE in input.keys
+    // with Shift the arrows, Home and End move the end of a selection of read text (select.odin) and not the focus
+    select_keys: Actions = selectKeysTaken(ctx, input)
     for action in Action {
-        if action in input.actions { UiAction(ctx, action) }
+        if action in input.actions && action not_in select_keys { UiAction(ctx, action) }
     }
 
     // the root covers the screen, every other element is inside of it
