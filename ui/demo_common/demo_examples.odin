@@ -94,7 +94,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 state: State
 
 EXAMPLES: [9]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown"}
-NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
+NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
 FRUIT: [5]string = {"Apple", "Banana", "Cherry", "Dragon fruit", "Elderberry"}
@@ -849,6 +849,7 @@ script: []kit.Step = {
     kit.MoveTo({640, 700}),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("Release notes", "title") && shown("write Markdown", "") && shown("ui.UiMarkdown(&ctx, source)", "mono") }, "the note is shown as a title, a list and code"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("Shown as", "strong") && shown("# Title", "mono") && shown("a table", "") }, "the table has its header and its cells"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("look", "strong") && shown("Baldr", "italic") && shown("the README", "link") }, "the marks inside of a paragraph are styles"),
     kit.Capture("examples_markdown"),
     kit.Wait(2),

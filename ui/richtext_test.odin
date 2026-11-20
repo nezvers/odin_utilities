@@ -178,3 +178,53 @@ test_a_link_of_a_rich_text_is_clicked :: proc(t: ^testing.T) {
     testing.expect_value(t, test.clicks, 3)
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_a_rich_text_breaks_again_when_its_room_changes :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 4096),
+        ctx: Context,
+        style: Style,
+        box: Id,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    frame :: proc(test: ^Test, width: f32) {
+        UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {1200, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(1000), {}}) {
+            test.box = UiId(&test.ctx, "box")
+            ElementOpen(&test.ctx, {id = test.box, layout = {size = {Fixed(width), Fit()}, direction = .TOP_TO_BOTTOM}})
+            UiRichText(&test.ctx, "text", "aaaa **bbbb** cccc dddd")
+            ElementClose(&test.ctx)
+        }
+        UiEnd(&test.ctx)
+    }
+    lines :: proc(test: ^Test) -> (count: int, widest: f32) {
+        last_y: f32 = -1
+        box, _ := UiElementRect(&test.ctx, test.box)
+        for command in UiCommands(&test.ctx) {
+            if command.kind != .DRAW || command.info.kind != .LABEL { continue }
+            if command.info.rect.y > last_y {
+                count += 1
+                last_y = command.info.rect.y
+            }
+            widest = max(widest, command.info.rect.x + command.info.rect.z - box.x)
+        }
+        return
+    }
+    size: f32 = DEFAULT_METRICS.font_size
+    for _ in 0 ..< 4 { frame(test, size * 20) }
+    count, widest := lines(test)
+    testing.expect_value(t, count, 1)
+    // narrower: after a frame or two the lines are broken for the new width
+    for _ in 0 ..< 4 { frame(test, size * 3.5) }
+    count, widest = lines(test)
+    testing.expect_value(t, count, 4)
+    testing.expect(t, widest <= size * 3.5 + 0.5, "inside of the narrow box")
+    // and wider again
+    for _ in 0 ..< 4 { frame(test, size * 20) }
+    count, _ = lines(test)
+    testing.expect_value(t, count, 1)
+}

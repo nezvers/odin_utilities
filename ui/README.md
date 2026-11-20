@@ -138,9 +138,9 @@ few options in one track), `UiBreadcrumbs` (the parts of a path, the index of th
 
 ## Markdown
 `markdown.odin`: `ui.UiMarkdown(&ctx, source)` shows a text written in Markdown as widgets: headings as titles, paragraphs that wrap, lists (bullets and numbers, nested by
-indent), quotes with a bar, fenced code in the code face in a well, rules. It reads the text again every frame, block by block (`MarkdownNext` is the reader, for a program
+indent), quotes with a bar, fenced code in the code face in a well, rules, tables (columns of the same width, a cell wraps and has its marks, the header is strong; `MarkdownTableCell` reads a cell). It reads the text again every frame, block by block (`MarkdownNext` is the reader, for a program
 that wants the blocks itself), with no tree and no memory of its own: a note that is edited is shown as it is typed. Inside of a paragraph, an entry of a list and a quote the marks are styles (rich text, below); a heading is one text in the
-strong face, its marks are taken away (`MarkdownInline`). No tables, no images. `ui.UiMarkdown(&ctx, source, name)`: two views in one container need two names.
+strong face, its marks are taken away (`MarkdownInline`). No images, no alignment of the columns of a table. `ui.UiMarkdown(&ctx, source, name)`: two views in one container need two names.
 
 ## Rich text
 `richtext.odin`: `ui.UiRichText(&ctx, name, "plain, **strong**, *italic*, `code` and a [link](address)")` is a paragraph that wraps at words with several styles in it. The

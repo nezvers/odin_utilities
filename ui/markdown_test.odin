@@ -145,3 +145,66 @@ test_markdown_becomes_titles_texts_bullets_and_a_code_block :: proc(t: ^testing.
     testing.expect_value(t, panels, 1)
     testing.expect_value(t, rules, 2)                       // the bar of the quote and the rule
 }
+
+@(test)
+test_markdown_reads_and_shows_a_table :: proc(t: ^testing.T) {
+    TABLE :: "before\n| Name | Size |\n|---|:--:|\n| **a** | 1 |\n| b \\| c |\n| [d](d.md) | 3 | extra |\nafter"
+    block, next, ok := MarkdownNext(TABLE, 0)
+    testing.expect(t, ok && block.kind == .PARAGRAPH && block.text == "before", "a table ends the paragraph over it")
+    block, next, ok = MarkdownNext(TABLE, next)
+    testing.expect(t, ok && block.kind == .TABLE && block.level == 2)
+    testing.expect_value(t, block.text, "| Name | Size |\n|---|:--:|\n| **a** | 1 |\n| b \\| c |\n| [d](d.md) | 3 | extra |")
+    block, _, ok = MarkdownNext(TABLE, next)
+    testing.expect(t, ok && block.kind == .PARAGRAPH && block.text == "after")
+    // a line with bars and no line of dashes under it is text
+    block, _, ok = MarkdownNext("| not | a table |\nmore", 0)
+    testing.expect(t, ok && block.kind == .PARAGRAPH)
+    cell, found := MarkdownTableCell("| Name | Size |", 0)
+    testing.expect(t, found && cell == "Name")
+    cell, found = MarkdownTableCell("| Name | Size |", 1)
+    testing.expect(t, found && cell == "Size")
+    _, found = MarkdownTableCell("| Name | Size |", 2)
+    testing.expect(t, !found)
+    cell, found = MarkdownTableCell("| b \\| c |", 0)
+    testing.expect(t, found && cell == "b \\| c", "an escaped bar is a part of the cell")
+    testing.expect_value(t, MarkdownTableColumns("| b \\| c |"), 1)
+    testing.expect_value(t, MarkdownTableColumns("a | b | c"), 3)
+    testing.expect_value(t, MarkdownTableColumns("||"), 1)
+
+    Test :: struct {
+        storage: Storage(128, 256, 64, 4096),
+        ctx: Context,
+        style: Style,
+        address: string,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    for _ in 0 ..< 3 {
+        UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 900}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(600), {}}) { UiMarkdown(&test.ctx, TABLE) }
+        UiEnd(&test.ctx)
+    }
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+    find :: proc(ctx: ^Context, text: string) -> (info: DrawInfo, found: bool) {
+        for command in UiCommands(ctx) {
+            if command.kind == .DRAW && command.info.kind == .LABEL && command.info.text == text { return command.info, true }
+        }
+        return
+    }
+    name, name_found := find(&test.ctx, "Name")
+    size, size_found := find(&test.ctx, "Size")
+    a, a_found := find(&test.ctx, "a")
+    one, one_found := find(&test.ctx, "1")
+    escaped, escaped_found := find(&test.ctx, "b | c")
+    link, link_found := find(&test.ctx, "d")
+    three, three_found := find(&test.ctx, "3")
+    _, extra_found := find(&test.ctx, "extra")
+    testing.expect(t, name_found && size_found && a_found && one_found && escaped_found && link_found && three_found, "the cells are drawn")
+    testing.expect(t, !extra_found, "a cell past the columns of the header is not shown")
+    testing.expect(t, DrawInfoHasTag(&name, "strong") && DrawInfoHasTag(&size, "strong") && DrawInfoHasTag(&a, "strong") && !DrawInfoHasTag(&one, "strong"), "the header is strong, a cell has its own marks")
+    testing.expect(t, DrawInfoHasTag(&link, "link"))
+    testing.expect(t, name.rect.x == a.rect.x && a.rect.x == escaped.rect.x && size.rect.x == one.rect.x && one.rect.x == three.rect.x && size.rect.x > name.rect.x, "the columns line up")
+    testing.expect(t, a.rect.y > name.rect.y && escaped.rect.y > a.rect.y && link.rect.y > escaped.rect.y, "a row under the other")
+}

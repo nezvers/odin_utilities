@@ -4,7 +4,7 @@ package ui
 // code blocks and rules. It is a reader, not an editor: the text is parsed every frame, block by block, straight into elements, with no tree and no memory of its own.
 //
 // What it reads: headings (`#` to `######`), paragraphs (lines up to an empty one), lists (`-`, `*`, `+` or `1.`, nested by two spaces of indent), quotes (`>`), fenced
-// code (three backticks, kept as it is, in the code face), rules (`---`). Inside of a paragraph, an entry of a list and a quote the marks are styles (richtext.odin):
+// code (three backticks, kept as it is, in the code face), rules (`---`), tables (`| a | b |` with a line of dashes under the header). Inside of a paragraph, an entry of a list and a quote the marks are styles (richtext.odin):
 // `**strong**`, `*italic*`, `` `code` `` and `[links](address)`. A heading is one text in the strong face: its marks are taken away.
 //
 // The Markdown view of Baldr (baldr/widget_markdown_view.odin) was the reason to have one; the code is written for this library.
@@ -17,6 +17,7 @@ MarkdownKind :: enum u8 {
     QUOTE,
     CODE,               // text: the lines between the fences, as they are
     RULE,
+    TABLE,              // text: its lines (the header, the line of dashes, the rows), level: the number of columns; MarkdownTableCell reads a cell
 }
 
 MarkdownBlock :: struct {
@@ -77,6 +78,53 @@ markdownLineKind :: proc(line: string) -> (kind: MarkdownKind, level: int, marke
     return .PARAGRAPH, 0, "", markdownTrim(line), false
 }
 
+// The line at `at` is the header of a table: it starts with a bar and the line under it is bars, dashes and colons
+@(private)
+markdownTableStarts :: proc(source: string, at: int) -> bool {
+    line, next := markdownLine(source, at)
+    header: string = markdownTrim(line)
+    if len(header) == 0 || header[0] != '|' || next >= len(source) { return false }
+    under, _ := markdownLine(source, next)
+    dashes: string = markdownTrim(under)
+    if len(dashes) == 0 || dashes[0] != '|' { return false }
+    any_dash: bool
+    for i in 0 ..< len(dashes) {
+        switch dashes[i] {
+        case '-':
+            any_dash = true
+        case '|', ':', ' ', '\t':
+        case:
+            return false
+        }
+    }
+    return any_dash
+}
+
+// The cell `index` of a line of a table (`| a | b |`), without the spaces around it. A bar after a backslash is a part of the cell. `ok` is false past the last cell.
+MarkdownTableCell :: proc(line: string, index: int) -> (cell: string, ok: bool) {
+    row: string = markdownTrim(line)
+    if len(row) > 0 && row[0] == '|' { row = row[1:] }
+    if len(row) > 0 && row[len(row) - 1] == '|' && (len(row) < 2 || row[len(row) - 2] != '\\') { row = row[:len(row) - 1] }
+    start: int
+    column: int
+    for i in 0 ..= len(row) {
+        if i < len(row) && (row[i] != '|' || (i > 0 && row[i - 1] == '\\')) { continue }
+        if column == index { return markdownTrim(row[start:i]), true }
+        column += 1
+        start = i + 1
+    }
+    return "", false
+}
+
+// How many cells a line of a table has
+MarkdownTableColumns :: proc(line: string) -> (count: int) {
+    for {
+        _, ok := MarkdownTableCell(line, count)
+        if !ok { return }
+        count += 1
+    }
+}
+
 // The next block of a Markdown text from `cursor` on, and where the one after it starts. `ok` is false at the end of the text.
 MarkdownNext :: proc(source: string, cursor: int) -> (block: MarkdownBlock, next: int, ok: bool) {
     at: int = cursor
@@ -112,6 +160,19 @@ MarkdownNext :: proc(source: string, cursor: int) -> (block: MarkdownBlock, next
         return {kind = .CODE, text = code}, scan, true
     }
     if kind != .PARAGRAPH && kind != .QUOTE { return {kind = kind, level = level, marker = marker, text = text}, line_end, true }
+    if kind == .PARAGRAPH && markdownTableStarts(source, at) {
+        // a table: the lines that start with a bar
+        end: int = at
+        scan: int = at
+        for scan < len(source) {
+            row, after := markdownLine(source, scan)
+            trimmed: string = markdownTrim(row)
+            if len(trimmed) == 0 || trimmed[0] != '|' { break }
+            end = scan + len(row)
+            scan = after
+        }
+        return {kind = .TABLE, level = MarkdownTableColumns(line), text = source[at:end]}, scan, true
+    }
     // a paragraph (or a quote) goes on over the next lines until an empty one or a line that starts something else
     start_of_text: int = at
     end_of_text: int = at + len(line)
@@ -121,6 +182,7 @@ MarkdownNext :: proc(source: string, cursor: int) -> (block: MarkdownBlock, next
         if markdownTrim(more) == "" { break }
         more_kind, _, _, _, more_fence := markdownLineKind(more)
         if more_fence || more_kind != kind { break }
+        if kind == .PARAGRAPH && markdownTableStarts(source, scan) { break }
         end_of_text = scan + len(more)
         scan = after
     }
@@ -292,6 +354,32 @@ UiMarkdown :: proc(ctx: ^Context, source: string, name: string = "markdown") -> 
             ElementClose(ctx)
         case .RULE:
             ElementOpen(ctx, {layout = {size = {Grow(), Fixed(1)}}, draw = {kind = .SEPARATOR}})
+            ElementClose(ctx)
+        case .TABLE:
+            // columns of the same width, a cell is a paragraph (it wraps, its marks are styles); the header is strong, a line under every row
+            columns: int = max(block.level, 1)
+            ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM, gap = metrics.gap * 0.5}})
+            line_at: int
+            row_index: int
+            for line_at < len(block.text) {
+                row, after := markdownLine(block.text, line_at)
+                line_at = after
+                row_index += 1
+                if row_index == 2 { continue }                      // the line of dashes
+                ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, gap = metrics.gap * 2}})
+                if row_index == 1 { UiPushTag(ctx, "strong") }
+                for column in 0 ..< columns {
+                    cell, _ := MarkdownTableCell(row, column)       // a row with fewer cells has empty ones
+                    ElementOpen(ctx, {layout = {size = {Percent(1 / f32(columns)), Fit()}}})
+                    cell_link, cell_clicked := richParagraph(ctx, IdFromIndex(u32(row_index * 64 + column), paragraph), cell, metrics.font_size)
+                    if cell_clicked { link, link_clicked = cell_link, true }
+                    ElementClose(ctx)
+                }
+                if row_index == 1 { UiPopTag(ctx) }
+                ElementClose(ctx)
+                ElementOpen(ctx, {layout = {size = {Grow(), Fixed(1)}}, draw = {kind = .SEPARATOR}})
+                ElementClose(ctx)
+            }
             ElementClose(ctx)
         }
     }
