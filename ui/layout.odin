@@ -237,7 +237,7 @@ TextOpen :: proc(ctx: ^Context, text: string, config: TextConfig = {}) {
         parent = parent_index,
         clip = elementClipTop(ctx),
         root = ctx.root_stack[ctx.root_stack_count - 1] if ctx.root_stack_count > 0 else 0,
-        text = {text = text, config = text_config},
+        text = {text = text, config = text_config, select_group = ctx.select.row_group, select_row = ctx.select.row_index},
     }
     // a text carries the tags that are pushed now, as every element does (a style draws a "title" or a "dim" text by them)
     for i in 0 ..< min(ctx.tag_count, DRAW_TAGS) {

@@ -1,6 +1,7 @@
 #+build !js
 package ui
 
+import "core:strings"
 import "core:testing"
 
 @(private = "file")
@@ -358,5 +359,165 @@ test_the_end_of_a_selection_moves_with_shift_and_the_arrows :: proc(t: ^testing.
     frame(test, away)
     before, _ := UiTextSelected(&test.ctx)
     testing.expect_value(t, key(test, .RIGHT), before)
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}
+
+// The rows of a list that declares only the rows in view: row 7 is "row 07 text"
+@(private = "file")
+ListTest :: struct {
+    storage: Storage(128, 256, 64, 2048),
+    ctx: Context,
+    style: Style,
+    first: int,                 // the first row in view; four rows are
+    shown: bool,                // the list is declared
+    lines: [20][16]u8,
+}
+
+@(private = "file")
+rowOf :: proc(test: ^ListTest, row: int) -> string {
+    line: ^[16]u8 = &test.lines[row]
+    copy(line[:], "row 00 text")
+    line[4], line[5] = u8('0' + row / 10), u8('0' + row % 10)
+    return string(line[:11])
+}
+
+@(private = "file")
+listRowText :: proc(user: rawptr, row: int) -> string {
+    return rowOf(cast(^ListTest)user, row)
+}
+
+@(private = "file")
+listFrame :: proc(test: ^ListTest, input: Input) {
+    UiBegin(&test.ctx, input, 1.0 / 60, {1000, 700}, &test.style)
+    if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(700), {}}) {
+        if UiTagged(&test.ctx, TEXT_SELECTABLE) {
+            UiLabel(&test.ctx, "before")
+            if test.shown {
+                group: Id = UiSelectRows(&test.ctx, "rows", 20, listRowText, test)
+                for row in test.first ..< test.first + 4 {
+                    if UiSelectRow(&test.ctx, group, row) { UiLabel(&test.ctx, rowOf(test, row)) }
+                }
+            }
+            UiLabel(&test.ctx, "after")
+        }
+    }
+    UiEnd(&test.ctx)
+}
+
+@(private = "file")
+listLetter :: proc(test: ^ListTest, text: string, offset: int) -> Vec2 {
+    for command in UiCommands(&test.ctx) {
+        info: DrawInfo = command.info
+        if command.kind == .DRAW && info.kind == .LABEL && info.text == text {
+            return {info.rect.x + f32(offset) * DEFAULT_METRICS.font_size * 0.5 + 1, info.rect.y + info.rect.w * 0.5}
+        }
+    }
+    return {-1, -1}
+}
+
+@(private = "file")
+listDrag :: proc(test: ^ListTest, from: Vec2, to: Vec2) {
+    for _ in 0 ..< 40 { listFrame(test, {mouse_position = {-100, -100}}) }         // a press at the same place right after another would be a double click
+    listFrame(test, {mouse_position = from})
+    listFrame(test, {mouse_position = from, mouse_down = true, mouse_pressed = true})
+    listFrame(test, {mouse_position = to, mouse_down = true})
+    listFrame(test, {mouse_position = to, mouse_down = true})
+    listFrame(test, {mouse_position = to, mouse_released = true})
+    listFrame(test, {mouse_position = {-100, -100}})
+}
+
+@(test)
+test_a_selection_in_a_list_that_declares_only_its_rows_in_view :: proc(t: ^testing.T) {
+    test: ^ListTest = new(ListTest)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    test.first, test.shown = 2, true
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 3 { listFrame(test, away) }
+    selection :: proc(test: ^ListTest) -> string {
+        text, _ := UiTextSelected(&test.ctx)
+        return text
+    }
+    joined :: proc(test: ^ListTest, from: int, to: int) -> string {
+        // the rows from..to as a copy has them: a new line between them
+        builder: strings.Builder
+        strings.builder_init(&builder, context.temp_allocator)
+        for row in from ..= to {
+            if row > from { strings.write_byte(&builder, '\n') }
+            strings.write_string(&builder, rowOf(test, row))
+        }
+        return strings.to_string(builder)
+    }
+    // from the middle of row 2 to the start of row 4: the end of the first, the whole row between them, the start of the last
+    listDrag(test, listLetter(test, "row 02 text", 4), listLetter(test, "row 04 text", 3))
+    text := selection(test)
+    testing.expect_value(t, text, "02 text\nrow 03 text\nrow")
+    rects: int
+    for command in UiCommands(&test.ctx) {
+        if command.kind == .DRAW && command.info.kind == .TEXT_SELECTION { rects += 1 }
+    }
+    testing.expect_value(t, rects, 3)
+
+    // the list scrolls away: the rows of the selection are not declared, the selection is as it was
+    test.first = 10
+    for _ in 0 ..< 3 { listFrame(test, away) }
+    testing.expect_value(t, selection(test), "02 text\nrow 03 text\nrow")
+    rects = 0
+    for command in UiCommands(&test.ctx) {
+        if command.kind == .DRAW && command.info.kind == .TEXT_SELECTION { rects += 1 }
+    }
+    testing.expect_value(t, rects, 0)
+    // Shift and a click in row 11: the end moves there, the start stays in row 2, the rows in between come from the program
+    for _ in 0 ..< 40 { listFrame(test, away) }
+    point: Vec2 = listLetter(test, "row 11 text", 5)
+    listFrame(test, {mouse_position = point, modifiers = {.SHIFT}})
+    listFrame(test, {mouse_position = point, mouse_down = true, mouse_pressed = true, modifiers = {.SHIFT}})
+    listFrame(test, {mouse_position = point, mouse_released = true, modifiers = {.SHIFT}})
+    listFrame(test, away)
+    text = selection(test)
+    testing.expect(t, len(text) > 0 && text[:7] == "02 text")
+    rest: string = text[7:]
+    testing.expect(t, len(rest) > 0 && rest[0] == '\n')
+    testing.expect_value(t, rest, strings.concatenate({"\n", joined(test, 3, 10), "\nrow 1"}, context.temp_allocator))
+    // the rows that are in view have their part drawn
+    rects = 0
+    for command in UiCommands(&test.ctx) {
+        if command.kind == .DRAW && command.info.kind == .TEXT_SELECTION { rects += 1 }
+    }
+    testing.expect_value(t, rects, 2)                           // rows 10 (all) and 11 (up to the click)
+
+    // the list between two texts: from "before" to "after" it is all of it, also what is out of view
+    test.first = 0
+    for _ in 0 ..< 3 { listFrame(test, away) }
+    listDrag(test, listLetter(test, "before", 2), listLetter(test, "after", 3))
+    text = selection(test)
+    testing.expect_value(t, text, strings.concatenate({"fore\n", joined(test, 0, 19), "\naft"}, context.temp_allocator))
+
+    // select all with the pointer over a text: the same, from the start of the first to the end of the last
+    test.first = 8
+    for _ in 0 ..< 3 { listFrame(test, away) }
+    UiTextSelectionClear(&test.ctx)
+    over: Vec2 = listLetter(test, "row 09 text", 2)
+    listFrame(test, {mouse_position = over})
+    listFrame(test, {mouse_position = over, actions = {.SELECT_ALL}})
+    listFrame(test, {mouse_position = over})
+    text = selection(test)
+    testing.expect_value(t, text, strings.concatenate({"before\n", joined(test, 0, 19), "\nafter"}, context.temp_allocator))
+    // the copy action takes it all
+    listFrame(test, {mouse_position = over, actions = {.COPY}})
+    testing.expect_value(t, test.ctx.clipboard.local_length, len(text))
+    // the ends are texts of their own: the list may go and the selection stays, as the two texts
+    test.shown = false
+    for _ in 0 ..< 3 { listFrame(test, away) }
+    testing.expect_value(t, selection(test), "before\nafter")
+    // a selection with an end in a list that is not there any more is gone
+    test.shown = true
+    for _ in 0 ..< 3 { listFrame(test, away) }
+    listDrag(test, listLetter(test, "row 09 text", 1), listLetter(test, "row 11 text", 4))
+    testing.expect_value(t, selection(test), "ow 09 text\nrow 10 text\nrow ")
+    test.shown = false
+    for _ in 0 ..< 3 { listFrame(test, away) }
+    testing.expect_value(t, selection(test), "")
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }

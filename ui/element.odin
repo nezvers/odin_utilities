@@ -227,6 +227,8 @@ TextData :: struct {
     contains_newlines: bool,
     line_start: i32,    // into Context.lines
     line_count: i32,
+    select_group: Id,   // a row of a list that declares only the rows in view (UiSelectRow): the list and the row, for the selection of read text (select.odin)
+    select_row: i32,
 }
 
 // ------------------------------------------------------------------------------------------------------------------------

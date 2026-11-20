@@ -112,7 +112,11 @@ State :: struct {
     command_length: int,
     command_id: ui.Id,
     term_follow: int,
-    term_mode: int,             // 0 the log, 1 the screen of cells
+    term_mode: int,             // 0 the log, 1 the screen of cells, 2 a big log in a virtual list
+    log_list: ui.VirtualList,
+    log_id: ui.Id,
+    log_ring: [64][80]u8,       // the text of the rows that the selection asks for (it copies each at once)
+    log_ring_at: int,
     screen_cells: [SCREEN_COLUMNS * SCREEN_ROWS]ui.AnsiCell,
     screen: ui.AnsiScreen,
     ticks: int,
@@ -177,6 +181,7 @@ init :: proc(ctx: ^kit.Context) {
     state.paper, state.page = 1, 0
     state.ratings = {3, 0}
     state.term_count, state.command_length, state.term_mode, state.ticks = 0, 0, 0, 0
+    state.log_list = {selected = ui.VIRTUAL_NONE, text = true}
     state.screen = ui.AnsiScreenMake(state.screen_cells[:], SCREEN_COLUMNS, SCREEN_ROWS)
     ui.AnsiScreenWrite(&state.screen, transmute([]u8)string(SCREEN_START))
     screen_progress()
@@ -916,7 +921,40 @@ TermLine :: struct {
     text: [112]u8,
     length: int,
 }
-TERM_MODES: [2]string = {"Log", "Screen"}
+TERM_MODES: [3]string = {"Log", "Screen", "Big log"}
+
+// A big log: 20 000 lines that are made from their number, in a virtual list that declares only the rows in view. The selection runs over all of them: rows that are
+// out of view are copied from log_row_text.
+LOG_LINES :: 20000
+LOG_LEVELS: [4]string = {"INFO ", "DEBUG", "INFO ", "WARN "}
+
+log_row_text :: proc(user: rawptr, row: int) -> string {
+    slot: ^[80]u8 = &state.log_ring[state.log_ring_at % len(state.log_ring)]
+    state.log_ring_at += 1
+    return fmt.bprintf(slot[:], "%06d %s request %d served in %d ms", row, LOG_LEVELS[row % 4], 1000 + row * 7 % 900, row * 13 % 97)
+}
+
+big_log :: proc(c: ^ui.Context) {
+    group: ui.Id = ui.UiSelectRows(c, "##biglog", LOG_LINES, log_row_text)
+    ui.UiPushTag(c, "flat")
+    ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, padding = ui.PaddingAll(10)}, draw = {kind = .PANEL, name = "code"}})
+    ui.UiPopTag(c)
+    state.log_id = ui.UiId(c, "##biglog list")
+    if ui.UiTagged(c, ui.TEXT_SELECTABLE) {
+        if ui.UiTagged(c, "mono") {
+            if ui.UiVirtual(c, "##biglog list", &state.log_list, LOG_LINES, 20, {ui.Grow(), ui.Grow()}) {
+                for row in state.log_list.first ..< state.log_list.last {
+                    if ui.UiVirtualRow(c, &state.log_list, row) {
+                        if ui.UiSelectRow(c, group, row) {
+                            ui.UiLabel(c, ui.UiFormat(c, "%06d %s request %d served in %d ms", row, LOG_LEVELS[row % 4], 1000 + row * 7 % 900, row * 13 % 97))
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ui.ElementClose(c)
+}
 TERM_SEED: [9]string = {
     "\x1b[2m$\x1b[0m odin test ui -strict-style -vet",
     "\x1b[1;32m   Compiling\x1b[0m ui (247 tests)",
@@ -982,6 +1020,10 @@ terminal :: proc(c: ^ui.Context) {
             }
         }
         ui.ElementClose(c)
+        if state.term_mode == 2 {
+            big_log(c)
+            return
+        }
         if state.term_mode == 1 {
             ui.UiPushTag(c, "flat")
             ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, padding = ui.PaddingAll(10)}, draw = {kind = .PANEL, name = "code"}})
@@ -1266,6 +1308,18 @@ draw :: proc(ctx: ^kit.Context) {
 
 // The script finds the widgets by where they were in the last frame: the pages are laid out by the widths of their texts
 target: ui.Vec2
+
+// The text of a row of the big log
+log_text :: proc(row: int) -> string {
+    return log_row_text(nil, row)
+}
+
+count_lines :: proc(text: string) -> (count: int) {
+    for character in transmute([]u8)text {
+        if character == '\n' { count += 1 }
+    }
+    return
+}
 
 // `target` is the middle of the element with an id
 ui_element_center :: proc(id: ui.Id) -> bool {
@@ -1908,6 +1962,51 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown(" building [##..................]  10%", "mono") }, "the progress line was drawn again in place"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { state.app.ctx.time = 0; return true }, "the cursor shows"),
     kit.Capture("examples_terminal_screen"),
+    kit.Wait(2),
+    // the big log: a drag over three rows, the list scrolls away, Shift + click extends the selection to a row that was not there: the rows between are copied
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.SEGMENT, "Big log") }, "the Big log segment"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown(log_text(0), "mono") }, "the first rows of the log are shown"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target(log_text(2), 0.2) }, "a row to start in"),
+    kit.MoveAt(&target),
+    kit.Wait(2),
+    kit.MouseDownStep(),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target(log_text(4), 0.6) }, "a row to end in"),
+    kit.MoveAt(&target),
+    kit.Wait(3),
+    kit.MouseUpStep(),
+    kit.Wait(2),
+    kit.MoveTo({640, 700}),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        text, _ := ui.UiTextSelected(&state.app.ctx)
+        return contains(text, log_text(3)) && count_lines(text) == 2
+    }, "three rows are selected"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        ui.UiScrollSet(&state.app.ctx, state.log_id, 30 * 20)       // row 30 at the top: the selected rows are out of the list
+        return true
+    }, "the list scrolls"),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        text, whole := ui.UiTextSelected(&state.app.ctx)
+        return whole && count_lines(text) == 2 && shown(log_text(30), "mono") && !shown(log_text(3), "mono")
+    }, "the selection is the same with its rows out of view"),
+    kit.KeyDownStep(.LEFT_SHIFT),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target(log_text(36), 0.5) }, "a row further on"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.KeyUpStep(.LEFT_SHIFT),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        text, whole := ui.UiTextSelected(&state.app.ctx)
+        // from the middle of row 2 to the middle of row 36: 34 line breaks, the rows between that were never in view with them
+        return whole && count_lines(text) == 34 && contains(text, log_text(20)) && contains(text, log_text(35)) && !contains(text, log_text(37))
+    }, "Shift + click took the rows between from the program's text"),
+    kit.MoveTo({640, 700}),
+    kit.Wait(2),
+    kit.Capture("examples_terminal_biglog"),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

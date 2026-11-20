@@ -32,6 +32,7 @@ VirtualList :: struct {
     count: int,
     chosen: []bool,             // the program says which rows are part of a selection of several (drawn like the selected one): by row, only the rows in view are asked
     marked: int,                // the program marks a row (the target of a drop) by its number plus one: 0 is none
+    text: bool,                 // the rows are read and not picked (a log): the list takes the wheel and the bar but not the pointer or the keys, so that the pointer is for the selection of text (UiSelectRows)
     row_width: f32,             // 0: a row is as wide as the list; else it is this wide and the list scrolls sideways when it is wider than the view (tables)
 }
 
@@ -118,7 +119,7 @@ virtualOpen :: proc(ctx: ^Context, id: Id, list: ^VirtualList, count: int, row_h
         id = id,
         layout = {size = {size.width if size.width != {} else Grow(), size.height if size.height != {} else Grow()}, direction = .TOP_TO_BOTTOM},
         clip = {horizontal = content_width > 0, vertical = true, offset = state.scroll},
-        hit = {.INTERACTIVE, .SCROLL},
+        hit = {.SCROLL} if list.text else {.INTERACTIVE, .SCROLL},
         draw = {kind = .SCROLL_AREA, font_size = metrics.font_size},
     })
     ElementOpen(ctx, {layout = {size = {Grow(), Fixed(f32(list.first) * height)}}})

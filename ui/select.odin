@@ -10,20 +10,52 @@ import "core:unicode/utf8"
 //     if ui.UiTagged(&ctx, ui.TEXT_SELECTABLE) { ui.UiMarkdown(&ctx, reply) }
 //
 // One selection for the whole ui, kept as two places: a text (by its place among the elements of the frame) and a byte in it. That is right as long as the texts
-// before it stay the same from frame to frame; a list that only declares its rows in view (UiVirtual) gives its texts other places when it scrolls. The texts are
-// found after the layout, so the selection follows the pointer one frame behind. Nothing is allocated: the copied text is in a buffer of the context
-// (UI_SELECT_BYTES, a longer selection is cut).
+// before it stay the same from frame to frame. The texts are found after the layout, so the selection follows the pointer one frame behind. Nothing is allocated:
+// the copied text is in a buffer of the context (UI_SELECT_BYTES, a longer selection is cut).
+//
+// A list that declares only the rows in view (UiVirtual, UiTable) gives its texts other places when it scrolls, and the rows out of view are no texts at all. Such a
+// list is told to the selection: `group := ui.UiSelectRows(&ctx, "log", count, row_text, user)` before it, and `if ui.UiSelectRow(&ctx, group, row) { ... }` around
+// the text of every row it declares. A place in a row is then the row and a byte of its text, so it stays right when the list scrolls, and the rows between the ends
+// of the selection are copied from `row_text(user, row)`, the text of any row as the program has it. A row is one text; the text of the row is the text that is declared.
 //
 // Baldr's selection scope (examples/27_conversation) was the reason to have it; the code is written for this library.
 
 TEXT_SELECTABLE :: "selectable"
 UI_SELECT_BYTES :: #config(UI_SELECT_BYTES, 4096)
 
+// The text of the row `row` of a list that was told to the selection: the bytes of the text that the row declares. It is called after the layout, for the rows
+// between the ends of the selection, in order, and has to give a string that stays valid until the end of the frame.
+SelectRowText :: proc(user: rawptr, row: int) -> string
+
+UI_SELECT_GROUPS :: #config(UI_SELECT_GROUPS, 8)
+
+@(private)
+SelectGroup :: struct {
+    id: Id,
+    base: i32,                  // the elements declared before the list: where the list is among the other texts
+    count: int,
+    row_text: SelectRowText,
+    user: rawptr,
+}
+
 // A place in the selectable text of a frame
 @(private)
 SelectPoint :: struct {
-    element: i32,               // which text: its index in the elements of the frame
+    group: Id,                  // 0: a text of its own; else the list it is a row of
+    element: i32,               // which text: its index in the elements of the frame, or its row in the list
     offset: i32,                // a byte of that text
+}
+
+// Where a place is among all the places: the position (a text counts twice its place plus one, a list twice its base, so that a list comes before a text that is
+// declared after it), the list, the row. Compared one after the other.
+@(private)
+SelectKey :: [3]i32
+
+@(private)
+selectKeyLess :: proc "contextless" (a: SelectKey, b: SelectKey) -> bool {
+    if a[0] != b[0] { return a[0] < b[0] }
+    if a[1] != b[1] { return a[1] < b[1] }
+    return a[2] < b[2]
 }
 
 @(private)
@@ -37,16 +69,76 @@ TextSelect :: struct {
     press_time: f64,            // the last press on a text and where it was: a press at the same place soon after is a double click
     press_place: SelectPoint,
     presses: int,
+    groups: [UI_SELECT_GROUPS]SelectGroup,
+    group_count: int,
+    row_group: Id,              // while a row is declared (UiSelectRow): the list and the row of the texts that are declared
+    row_index: i32,
     copied: [UI_SELECT_BYTES]u8,
     copied_length: int,
     whole: bool,                // the selection fit into `copied`
 }
 
 @(private)
-selectOrdered :: proc "contextless" (select: ^TextSelect) -> (low: SelectPoint, high: SelectPoint) {
-    low, high = select.anchor, select.cursor
-    if high.element < low.element || (high.element == low.element && high.offset < low.offset) { low, high = high, low }
-    return
+selectGroupSlot :: proc "contextless" (select: ^TextSelect, group: Id) -> int {
+    for i in 0 ..< select.group_count {
+        if select.groups[i].id == group { return i }
+    }
+    return -1
+}
+
+// Where a place is (false: it is a row of a list that is not declared in this frame)
+@(private)
+selectKeyOf :: proc "contextless" (select: ^TextSelect, point: SelectPoint) -> (key: SelectKey, ok: bool) {
+    if point.group == 0 { return {2 * point.element + 1, 0, 0}, true }
+    slot: int = selectGroupSlot(select, point.group)
+    if slot < 0 { return {}, false }
+    return {2 * select.groups[slot].base, i32(slot) + 1, point.element}, true
+}
+
+// Where a text of the frame is
+@(private)
+selectElementKey :: proc "contextless" (select: ^TextSelect, element: ^Element, index: i32) -> SelectKey {
+    if element.text.select_group != 0 {
+        if key, ok := selectKeyOf(select, {element.text.select_group, element.text.select_row, 0}); ok { return key }
+    }
+    return {2 * index + 1, 0, 0}
+}
+
+// The place of a letter of a text of the frame
+@(private)
+selectPointOf :: proc "contextless" (ctx: ^Context, index: i32, offset: i32) -> SelectPoint {
+    element: ^Element = &ctx.elements[index]
+    if element.text.select_group != 0 && selectGroupSlot(&ctx.select, element.text.select_group) >= 0 {
+        return {element.text.select_group, element.text.select_row, offset}
+    }
+    return {0, index, offset}
+}
+
+// The text of the frame a place is in (-1: it is not declared, a row of a list that is out of view)
+@(private)
+selectElementOf :: proc "contextless" (ctx: ^Context, point: SelectPoint) -> i32 {
+    if point.group == 0 {
+        if point.element < 0 || point.element >= i32(ctx.element_count) { return -1 }
+        return point.element
+    }
+    for index in 0 ..< i32(ctx.element_count) {
+        element: ^Element = &ctx.elements[index]
+        if element.is_text && element.text.select_group == point.group && element.text.select_row == point.element { return index }
+    }
+    return -1
+}
+
+// The ends of the selection in order: the places and where they are. False when one of them is a row of a list that is not there.
+@(private)
+selectOrdered :: proc "contextless" (select: ^TextSelect) -> (low: SelectPoint, high: SelectPoint, low_key: SelectKey, high_key: SelectKey, ok: bool) {
+    first, first_ok := selectKeyOf(select, select.anchor)
+    second, second_ok := selectKeyOf(select, select.cursor)
+    if !first_ok || !second_ok { return }
+    low, high, low_key, high_key = select.anchor, select.cursor, first, second
+    if selectKeyLess(second, first) || (second == first && select.cursor.offset < select.anchor.offset) {
+        low, high, low_key, high_key = select.cursor, select.anchor, second, first
+    }
+    return low, high, low_key, high_key, true
 }
 
 @(private)
@@ -59,13 +151,62 @@ selectHasTag :: proc "contextless" (select: ^TextSelect, element: ^Element) -> b
 
 // The part of a text element that is selected: bytes of its text
 @(private)
-selectRange :: proc "contextless" (select: ^TextSelect, index: i32, length: int) -> (from: int, to: int) {
+selectRange :: proc "contextless" (select: ^TextSelect, element: ^Element, index: i32, length: int) -> (from: int, to: int) {
     if !select.active { return 0, 0 }
-    low, high := selectOrdered(select)
-    if index < low.element || index > high.element { return 0, 0 }
-    from = int(low.offset) if index == low.element else 0
-    to = int(high.offset) if index == high.element else length
+    low, high, low_key, high_key, ok := selectOrdered(select)
+    if !ok { return 0, 0 }
+    key: SelectKey = selectElementKey(select, element, index)
+    if selectKeyLess(key, low_key) || selectKeyLess(high_key, key) { return 0, 0 }
+    from = int(low.offset) if key == low_key else 0
+    to = int(high.offset) if key == high_key else length
     return clamp(from, 0, length), clamp(to, 0, length)
+}
+
+// Tells the selection that the rows of a list are its texts: call it right before the list is declared. `count` rows, `row_text` gives the text of any of them (see
+// SelectRowText). Returns the list for UiSelectRow. When the lists of a frame are more than UI_SELECT_GROUPS the others are not selectable.
+UiSelectRows :: proc(ctx: ^Context, name: string, count: int, row_text: SelectRowText, user: rawptr = nil) -> Id {
+    id: Id = UiId(ctx, name)
+    select: ^TextSelect = &ctx.select
+    if select.group_count < len(select.groups) && selectGroupSlot(select, id) < 0 {
+        select.groups[select.group_count] = {id = id, base = i32(ctx.element_count), count = count, row_text = row_text, user = user}
+        select.group_count += 1
+    }
+    return id
+}
+
+// The text that is declared inside of this block is the row `row` of the list `group`: `if ui.UiSelectRow(&ctx, group, i) { ui.UiLabel(&ctx, line) }`
+@(deferred_in = UiSelectRowEnd)
+UiSelectRow :: proc(ctx: ^Context, group: Id, row: int) -> bool {
+    ctx.select.row_group, ctx.select.row_index = group, i32(row)
+    return true
+}
+
+UiSelectRowEnd :: proc(ctx: ^Context, group: Id, row: int) {
+    ctx.select.row_group, ctx.select.row_index = 0, 0
+}
+
+// The selected rows of a list for the copy: from the place `low` of the selection to the place `high`, as far as they are in this list
+@(private)
+selectCopyGroup :: proc(ctx: ^Context, slot: int, low: SelectPoint, high: SelectPoint, low_key: SelectKey, high_key: SelectKey) {
+    select: ^TextSelect = &ctx.select
+    group: ^SelectGroup = &select.groups[slot]
+    if group.count <= 0 || group.row_text == nil { return }
+    first: SelectKey = {2 * group.base, i32(slot) + 1, 0}
+    final: SelectKey = {2 * group.base, i32(slot) + 1, i32(group.count) - 1}
+    if selectKeyLess(final, low_key) || selectKeyLess(high_key, first) { return }
+    start_row, start_offset: int = 0, 0
+    if !selectKeyLess(low_key, first) { start_row, start_offset = int(low_key[2]), int(low.offset) }
+    end_row: int = group.count - 1
+    end_offset: int = -1                                    // the end of the text of the row
+    if !selectKeyLess(final, high_key) { end_row, end_offset = int(high_key[2]), int(high.offset) }
+    for row in start_row ..= end_row {
+        if !select.whole { return }
+        text: string = group.row_text(group.user, row)
+        from: int = clamp(start_offset if row == start_row else 0, 0, len(text))
+        to: int = clamp(end_offset if row == end_row && end_offset >= 0 else len(text), 0, len(text))
+        if select.copied_length > 0 { selectCopy(select, "\n") }
+        if to > from { selectCopy(select, text[from:to]) }
+    }
 }
 
 // From the pass that makes the draw commands, for a line of a text before its own command: the rectangle of the part of the line that is selected
@@ -75,7 +216,7 @@ selectLineCommand :: proc(ctx: ^Context, element: ^Element, line: TextLine, line
     if !select.active || select.tag == 0 || !selectHasTag(select, element) { return }
     text: string = element.text.text
     index: i32 = i32((uintptr(element) - uintptr(raw_data(ctx.elements))) / size_of(Element))
-    from, to := selectRange(select, index, len(text))
+    from, to := selectRange(select, element, index, len(text))
     from, to = max(from, int(line.start)), min(to, int(line.start + line.length))
     if to <= from { return }
     font_size: f32 = element.text.config.font_size
@@ -109,13 +250,25 @@ selectAfterLayout :: proc(ctx: ^Context) {
     select.whole = true
     last: i32 = -1
     first_text, last_text: i32 = -1, -1                   // the first and the last selectable text of the frame
-    for index in 0 ..< i32(ctx.element_count) {
+    // a selection that has an end in a list that is not declared in this frame (another page) is gone
+    low, high, low_key, high_key, ordered := selectOrdered(select)
+    if select.active && !ordered { select.active, select.dragging = false, false }
+    for index in 0 ..= i32(ctx.element_count) {
+        // the lists that stand here: the rows between the ends of the selection, from the program's own texts
+        if select.active {
+            for slot in 0 ..< select.group_count {
+                if select.groups[slot].base == index { selectCopyGroup(ctx, slot, low, high, low_key, high_key) }
+            }
+        }
+        if index == i32(ctx.element_count) { break }
         element: ^Element = &ctx.elements[index]
         if !element.is_text || !selectHasTag(select, element) { continue }
         data: ^TextData = &element.text
         rect: Rect = element.rect
-        if first_text < 0 { first_text = index }
-        last_text = index
+        if element.text.select_group == 0 || selectGroupSlot(select, element.text.select_group) < 0 {
+            if first_text < 0 { first_text = index }
+            last_text = index
+        }
         line_height: f32 = data.config.line_height if data.config.line_height > 0 else data.preferred.y
         for l in 0 ..< int(data.line_count) {
             line: TextLine = ctx.lines[int(data.line_start) + l]
@@ -134,11 +287,15 @@ selectAfterLayout :: proc(ctx: ^Context) {
                 best = {true, vertical == 0 && sideways == 0 && RectContains(element.clip_rect, mouse), vertical, sideways, index, line, mouse.x - (rect.x + shift)}
             }
         }
-        // the selected part of this text, for the copy: a new line between two texts unless they stand in one row (the runs of a paragraph)
-        from, to := selectRange(select, index, len(data.text))
+        // the selected part of this text, for the copy: a new line between two texts unless they stand in one row (the runs of a paragraph); the rows of a list
+        // are copied from the program's texts, where the list stands
+        if element.text.select_group != 0 && selectGroupSlot(select, element.text.select_group) >= 0 { continue }
+        from, to := selectRange(select, element, index, len(data.text))
         if to > from {
             if last >= 0 {
                 if !selectSameRow(ctx, last, index) { selectCopy(select, " " if data.config.continues else "\n") }
+            } else if select.copied_length > 0 {
+                selectCopy(select, "\n")
             }
             selectCopy(select, data.text[from:to])
             last = index
@@ -166,7 +323,7 @@ selectAfterLayout :: proc(ctx: ^Context) {
             }
         }
         ctx.measure_tags = outer_tags
-        place = {best.element, best.line.start + i32(offset)}
+        place = selectPointOf(ctx, best.element, best.line.start + i32(offset))
     }
     if input.mouse_pressed {
         // a press on a text that no widget took starts a selection, any other press lets the selection go
@@ -174,22 +331,22 @@ selectAfterLayout :: proc(ctx: ^Context) {
             // with Shift: from where the selection started to here
             select.cursor, select.dragging = place, true
         } else if best.found && best.direct && ctx.active == 0 {
-            again: bool = ctx.time - select.press_time <= DOUBLE_CLICK_SECONDS && select.press_place.element == place.element && abs(select.press_place.offset - place.offset) <= 1
+            again: bool = ctx.time - select.press_time <= DOUBLE_CLICK_SECONDS && select.press_place.group == place.group && select.press_place.element == place.element && abs(select.press_place.offset - place.offset) <= 1
             select.presses = select.presses + 1 if again else 1
             select.press_time, select.press_place = ctx.time, place
             select.active, select.dragging = true, true
             select.anchor, select.cursor = place, place
-            whole: string = ctx.elements[place.element].text.text
+            whole: string = ctx.elements[best.element].text.text
             switch select.presses {
             case 1:
             case 2:
                 // the word under the pointer
                 from, to := textWordAt(whole, int(place.offset))
-                select.anchor, select.cursor = {place.element, i32(from)}, {place.element, i32(to)}
+                select.anchor, select.cursor = selectPointOf(ctx, best.element, i32(from)), selectPointOf(ctx, best.element, i32(to))
                 select.dragging = false
             case:
                 // the whole paragraph: the texts before and after this one that stand in its row or go on from its line (the runs and lines of a rich text)
-                first, final: i32 = place.element, place.element
+                first, final: i32 = best.element, best.element
                 for {
                     previous: i32 = selectNeighbor(ctx, first, -1)
                     if previous < 0 || !(selectSameRow(ctx, previous, first) || ctx.elements[first].text.config.continues) { break }
@@ -200,7 +357,7 @@ selectAfterLayout :: proc(ctx: ^Context) {
                     if next < 0 || !(selectSameRow(ctx, final, next) || ctx.elements[next].text.config.continues) { break }
                     final = next
                 }
-                select.anchor, select.cursor = {first, 0}, {final, i32(len(ctx.elements[final].text.text))}
+                select.anchor, select.cursor = selectPointOf(ctx, first, 0), selectPointOf(ctx, final, i32(len(ctx.elements[final].text.text)))
                 select.dragging = false
             }
         } else {
@@ -213,10 +370,51 @@ selectAfterLayout :: proc(ctx: ^Context) {
     // select all, when the keys are not a text field's and the pointer is over the text or a part of it is selected: every selectable text of the frame
     focused: ^WidgetState = stateFind(ctx, ctx.focus)
     editing: bool = focused != nil && focused.editing
-    if .SELECT_ALL in input.actions && !editing && first_text >= 0 && (select.active || select.over) {
+    if .SELECT_ALL in input.actions && !editing && (first_text >= 0 || select.group_count > 0) && (select.active || select.over) {
+        // from the first place to the last of all: the texts of their own and the rows of the lists
+        start, finish: SelectPoint
+        start_key, finish_key: SelectKey
+        have: bool
+        consider :: proc(select: ^TextSelect, point: SelectPoint, end: bool, start, finish: ^SelectPoint, start_key, finish_key: ^SelectKey, have: ^bool) {
+            key, _ := selectKeyOf(select, point)
+            if !have^ || selectKeyLess(key, start_key^) { start^, start_key^ = point, key }
+            if !have^ || selectKeyLess(finish_key^, key) { finish^, finish_key^ = point, key }
+            have^ = true
+        }
+        if first_text >= 0 {
+            consider(select, {0, first_text, 0}, false, &start, &finish, &start_key, &finish_key, &have)
+            consider(select, {0, last_text, i32(len(ctx.elements[last_text].text.text))}, true, &start, &finish, &start_key, &finish_key, &have)
+        }
+        for slot in 0 ..< select.group_count {
+            group: ^SelectGroup = &select.groups[slot]
+            if group.count <= 0 || group.row_text == nil { continue }
+            consider(select, {group.id, 0, 0}, false, &start, &finish, &start_key, &finish_key, &have)
+            consider(select, {group.id, i32(group.count) - 1, i32(len(group.row_text(group.user, group.count - 1)))}, true, &start, &finish, &start_key, &finish_key, &have)
+        }
         select.active, select.dragging = true, false
-        select.anchor = {first_text, 0}
-        select.cursor = {last_text, i32(len(ctx.elements[last_text].text.text))}
+        select.anchor, select.cursor = start, finish
+        // the copy was made for the selection of before: make it again for this one
+        select.copied_length, select.whole = 0, true
+        low, high, low_key, high_key, ordered = selectOrdered(select)
+        for index in 0 ..= i32(ctx.element_count) {
+            for slot in 0 ..< select.group_count {
+                if select.groups[slot].base == index { selectCopyGroup(ctx, slot, low, high, low_key, high_key) }
+            }
+            if index == i32(ctx.element_count) { break }
+            element: ^Element = &ctx.elements[index]
+            if !element.is_text || !selectHasTag(select, element) { continue }
+            if element.text.select_group != 0 && selectGroupSlot(select, element.text.select_group) >= 0 { continue }
+            from, to := selectRange(select, element, index, len(element.text.text))
+            if to > from {
+                if last >= 0 {
+                    if !selectSameRow(ctx, last, index) { selectCopy(select, " " if element.text.config.continues else "\n") }
+                } else if select.copied_length > 0 {
+                    selectCopy(select, "\n")
+                }
+                selectCopy(select, element.text.text[from:to])
+                last = index
+            }
+        }
     }
     if !select.active { return }
     if ctx.cancel_pending {
@@ -286,8 +484,9 @@ selectKeysTaken :: proc(ctx: ^Context, input: Input) -> Actions {
 // The line of a selectable text a place is in, and where the place is on the screen
 @(private)
 selectLineOf :: proc(ctx: ^Context, place: SelectPoint) -> (line: TextLine, top: f32, x: f32, height: f32, found: bool) {
-    if place.element < 0 || place.element >= i32(ctx.element_count) { return }
-    element: ^Element = &ctx.elements[place.element]
+    index: i32 = selectElementOf(ctx, place)
+    if index < 0 { return }
+    element: ^Element = &ctx.elements[index]
     if !element.is_text || !selectHasTag(&ctx.select, element) { return }
     data: ^TextData = &element.text
     height = data.config.line_height if data.config.line_height > 0 else data.preferred.y
@@ -349,7 +548,7 @@ selectLineStep :: proc(ctx: ^Context, x: f32, edge: f32, direction: int) -> (pla
         }
     }
     if !found { return }
-    return {best_element, best_line.start + selectOffsetAt(ctx, best_element, best_line, best_x)}, true
+    return selectPointOf(ctx, best_element, best_line.start + selectOffsetAt(ctx, best_element, best_line, best_x)), true
 }
 
 // The byte of a line whose end of a letter is the nearest to `x` (from the start of the line)
@@ -383,16 +582,17 @@ selectKeys :: proc(ctx: ^Context) {
     cursor: SelectPoint = select.cursor
     line, top, x, height, found := selectLineOf(ctx, cursor)
     if !found { return }
-    text: string = ctx.elements[cursor.element].text.text
+    element: i32 = selectElementOf(ctx, cursor)               // a row that is in view: the text it is (the end of the selection may not move out of view)
+    text: string = ctx.elements[element].text.text
     if .LEFT in actions {
         if cursor.offset > 0 {
             _, width := utf8.decode_last_rune_in_string(text[:cursor.offset])
             cursor.offset -= i32(width)
-        } else if previous := selectNeighbor(ctx, cursor.element, -1); previous >= 0 {
+        } else if previous := selectNeighbor(ctx, element, -1); previous >= 0 {
             // into the text before, one letter in: its end is the same place on the screen when it stands in the same row, and the same selection
             // when a line break is between them, and a press of a key should change what is selected
             before: string = ctx.elements[previous].text.text
-            cursor = {previous, i32(len(before))}
+            cursor = selectPointOf(ctx, previous, i32(len(before)))
             if len(before) > 0 {
                 _, width := utf8.decode_last_rune_in_string(before)
                 cursor.offset -= i32(width)
@@ -403,9 +603,9 @@ selectKeys :: proc(ctx: ^Context) {
         if int(cursor.offset) < len(text) {
             _, width := utf8.decode_rune_in_string(text[cursor.offset:])
             cursor.offset += i32(width)
-        } else if next := selectNeighbor(ctx, cursor.element, 1); next >= 0 {
+        } else if next := selectNeighbor(ctx, element, 1); next >= 0 {
             after: string = ctx.elements[next].text.text
-            cursor = {next, 0}
+            cursor = selectPointOf(ctx, next, 0)
             if len(after) > 0 {
                 _, width := utf8.decode_rune_in_string(after)
                 cursor.offset += i32(width)
