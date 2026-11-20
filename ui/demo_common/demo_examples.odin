@@ -1,9 +1,9 @@
 #+private file
 package demo_common
 
-// Four examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Five examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
-// that a click takes away). The texts and the sample data are the ones of the originals. There a `view` builds a tree and an `update` answers messages; here the page is
+// that a click takes away) and 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page). The texts and the sample data are the ones of the originals. There a `view` builds a tree and an `update` answers messages; here the page is
 // declared every frame and a widget hands back what happened: the counter is `if ui.UiButton(...) { count += 1 }`.
 
 import ui ".."
@@ -36,11 +36,23 @@ State :: struct {
     pick_id: ui.Id,
     // 17_toasts
     toasts: [3]bool,
+    // 02_theme_lab
+    accent: ui.Color,
+    mode: int,                      // 0 dark, 1 light
+    hue: f32,
+    nudges: int,
+    search: [48]u8,
+    search_length: int,
+    lab_switch: bool,
+    swatch_ids: [len(ACCENTS)]ui.Id,        // for the script
 }
 
 state: State
 
-EXAMPLES: [4]string = {"Hello", "Controls", "Scroll", "Toasts"}
+EXAMPLES: [5]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab"}
+MODES: [2]string = {"Dark", "Light"}
+// the tiles of the original (red, amber, green, blue, violet, pink) and a grey, which gives a theme without a hue
+ACCENTS: [7]ui.Color = {{229, 72, 77, 255}, {242, 181, 68, 255}, {34, 197, 94, 255}, {59, 130, 246, 255}, {139, 92, 246, 255}, {236, 72, 153, 255}, {128, 128, 128, 255}}
 TOASTS: [3]string = {"Build finished", "Ada: Lunch at one?", "Backup complete"}
 MESSAGES :: 40
 
@@ -54,6 +66,9 @@ init :: proc(ctx: ^kit.Context) {
     ui_demo_init(&state.app)
     controlsReset()
     state.toasts = {true, true, true}
+    state.accent = ACCENTS[3]
+    _, _, state.hue = ui_default.ColorToOklch(state.accent)
+    state.lab_switch = true
     ctx.background = kit.Color(state.app.painter.theme.background)
 }
 
@@ -214,8 +229,82 @@ toasts :: proc(c: ^ui.Context, screen: ui.Vec2) {
     }
 }
 
+// 02_theme_lab: the accent is picked by a tile or by its hue, the theme of the page is made from it (ui_default.ThemeFromAccent); a side bar, a card with every kind of
+// button, chips, a field and a disabled button show what the theme does with them
+themeLab :: proc(c: ^ui.Context) {
+    theme: ^ui_default.Theme = &state.app.painter.theme
+    ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT}})
+    // the side bar: a well with the places of an app, the first one chosen
+    ui.ElementOpen(c, {layout = {size = {ui.Fixed(200), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(16), gap = 4}, draw = {kind = .MENU_BAR}})
+    ui.UiTitle(c, "Baldr", 1.25)
+    ui.UiSpacer(c, {ui.Grow(), ui.Fixed(12)})
+    places: [4]string = {"Overview", "Projects", "Activity", "Settings"}
+    for place, i in places { ui.UiSelectable(c, place, i == 0) }
+    ui.ElementClose(c)
+
+    ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(24), gap = 16}})
+    ui.UiTitle(c, "Good evening, Alex", 1.6)
+    ui.UiLabelDim(c, "Three builds finished while you were away. Everything is green.")
+    if ui.UiCard(c, "Accent") {
+        if row(c, 8) {
+            for accent, i in ACCENTS {
+                name: string = ui.UiFormat(c, "##accent%d", i)
+                state.swatch_ids[i] = ui.UiId(c, name)
+                if ui.UiColorButton(c, name, {f32(accent.r) / 255, f32(accent.g) / 255, f32(accent.b) / 255}, 32) {
+                    state.accent = accent
+                    _, _, state.hue = ui_default.ColorToOklch(accent)
+                }
+            }
+            ui.UiSpacer(c, {ui.Grow(), ui.Fixed(1)})
+            ui.UiSegmented(c, "##mode", MODES[:], &state.mode)
+        }
+        if row(c) {
+            ui.UiLabelDim(c, "Hue")
+            if ui.UiTagged(c, "thin") {
+                // any hue: the accent is a vivid color of that hue, the theme gives it the lightness of its mode
+                if ui.UiSlider(c, "##hue", &state.hue, 0, 360, {ui.Grow(), {}}) { state.accent = ui_default.ColorFromOklch(0.62, 0.19, state.hue) }
+            }
+            ui.ElementOpen(c, {layout = {size = {ui.Fixed(48), ui.Fit()}, direction = .LEFT_TO_RIGHT, align = {x = .RIGHT}}})
+            ui.UiLabelf(c, "%.0f", state.hue)
+            ui.ElementClose(c)
+        }
+    }
+    if ui.UiCard(c, "Project Baldr") {
+        ui.UiLabelDim(c, ui.UiFormat(c, "Retained-mode GUI for Odin. %d nudges so far.", state.nudges))
+        if row(c, 8) {
+            if ui.UiTagged(c, "primary") {
+                if ui.UiButton(c, "Continue") { state.nudges += 1 }
+            }
+            if ui.UiTagged(c, "secondary") { ui.UiButton(c, "Preview") }
+            if ui.UiTagged(c, "outline") { ui.UiButton(c, "Settings") }
+            if ui.UiTagged(c, "ghost") { ui.UiButton(c, "Skip") }
+            if ui.UiTagged(c, "danger") { ui.UiButton(c, "Delete project", disabled = true) }
+        }
+    }
+    if row(c, 8) {
+        ui.UiBadge(c, "Wayland")
+        ui.UiBadge(c, "Vulkan", .ACCENT)
+        ui.UiBadge(c, "Pure Odin", .SUCCESS)
+        ui.UiChip(c, "Chosen", true)
+        ui.UiChip(c, "Not chosen", false)
+    }
+    if row(c) {
+        ui.UiTextField(c, "Search projects##search", state.search[:], &state.search_length, {ui.Fixed(280), {}})
+        ui.UiSwitch(c, "##lab switch", &state.lab_switch)
+        ui.UiSpinner(c)
+        // what the generator made, to read off
+        ui.UiSpacer(c, {ui.Grow(), ui.Fixed(1)})
+        ui.UiPushTag(c, "mono")
+        ui.UiLabelf(c, "accent %d %d %d", theme.accent.r, theme.accent.g, theme.accent.b)
+        ui.UiPopTag(c)
+    }
+    ui.ElementClose(c)
+    ui.ElementClose(c)
+}
+
 draw :: proc(ctx: ^kit.Context) {
     state.app.painter.theme = ui_default.THEME_DARK if state.dark else ui_default.THEME_LIGHT
+    if state.example == 4 { state.app.painter.theme = ui_default.ThemeFromAccent(state.accent, state.mode == 0) }
     ctx.background = kit.Color(state.app.painter.theme.background)
     ui_demo_begin(&state.app, ctx)
     c: ^ui.Context = &state.app.ctx
@@ -237,6 +326,8 @@ draw :: proc(ctx: ^kit.Context) {
         scroll(c)
     case 3:
         toasts(c, ctx.screen)
+    case 4:
+        themeLab(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -340,5 +431,33 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.toasts == [3]bool{true, true, true} }, "the toasts are back"),
+
+    // theme lab: the page is in the blue of the style, a tile makes it green, the other mode makes it light
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(4) }, "the Theme lab tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.app.painter.theme.accent == ui_default.THEME_DARK.accent }, "the blue tile gives the dark theme of the style"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(state.swatch_ids[2]) }, "the green tile is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        accent: ui.Color = state.app.painter.theme.accent
+        _, _, hue := ui_default.ColorToOklch(accent)
+        return accent.g > accent.r && accent.g > accent.b && abs(hue - state.hue) < 12 && state.app.painter.theme.dark
+    }, "the green tile makes a green dark theme"),
+    kit.MoveTo({640, 700}),
+    kit.Wait(3),
+    kit.Capture("examples_theme_green"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.IdFromIndex(1, ui.UiIdPath("Accent", "##mode"))) }, "the Light segment is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !state.app.painter.theme.dark && state.app.painter.theme.panel.r > 240 }, "the other segment makes the theme light"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(state.swatch_ids[4]) }, "the violet tile is on the page"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Capture("examples_theme_violet_light"),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

@@ -114,6 +114,10 @@ No code of Baldr is in this library; the numbers come from its theme generator a
 - `ui_default.THEME_DARK` and `THEME_LIGHT` are plain data (`painter.theme = ui_default.THEME_LIGHT`): the window, cards one step lighter, wells for fields, a surface above the
   cards for popups, the accent as a fill and as a soft fill, a focus ring, danger / warning / success, a shadow (a light theme needs it), state washes of 8 and 14 percent. Controls
   have corners of 8 pixels, cards of 12.
+- `ui_default.ThemeFromAccent(color, dark)` makes a whole theme from one color (a brand color): the surfaces get a breath of its hue, the accent gets the lightness that reads in
+  the mode, and every text is moved away from what it lies on until it has the contrast text needs (4.5 to 1 for labels, 7 to 1 for body text). The two constants are this
+  generator run for a blue; a grey accent gives a grey theme that still warns in red. `ColorFromOklch`, `ColorToOklch` and `ColorContrast` are the color math under it. The
+  generator is a port of Baldr's (`theme_from_seed`, zlib License), credited and marked as altered in `default_style/theme_make.odin`.
 - Text is drawn in a `Face` of the painter: REGULAR, STRONG (the labels of controls, titles), ITALIC, MONO. The style sets the face, a glue draws it: `ui/kit` loads Inter and
   JetBrains Mono into the demo kit; a program on raylib or Karl2D calls `FontsLoad(&fonts)` and `PainterUseFonts(&painter, &fonts)` of the glue (or `PainterUseVectorFonts` when
   the text is drawn from outlines by the font library). A glue with one font draws every face in it.
@@ -139,9 +143,10 @@ widget for (a date and a time field, frosted glass) is left out. A second page s
 (`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
 
 ## Examples of Baldr, remade
-`demo_common/demo_examples.odin` has four of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
+`demo_common/demo_examples.odin` has five of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
 `update`), `04_controls` (check boxes, a switch and thin sliders that change the state of the program in place; the switch turns the page to the light theme), `03_scroll` (forty
-cards in a scrolling region, a ghost button on each) and `17_toasts` (raised cards at the top right that a click takes away: floating elements with `ui.UiInteract`). The texts
+cards in a scrolling region, a ghost button on each), `17_toasts` (raised cards at the top right that a click takes away: floating elements with `ui.UiInteract`) and
+`02_theme_lab` (a page to judge a theme by: here its accent is picked by a tile or a hue and the theme is made on the spot with `ThemeFromAccent`). The texts
 and the sample data are the originals'. Each has its part of the script and a stored picture.
 
 ## The demo of Dear ImGui, remade
