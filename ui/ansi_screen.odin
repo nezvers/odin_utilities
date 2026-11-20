@@ -16,12 +16,13 @@ import "core:unicode/utf8"
 //
 // What is read: the printable characters (UTF-8; a wide letter (Chinese, Japanese, Korean, emoji) takes two cells, a combining mark goes on the cell before it: see
 // `AnsiRuneWidth`), \r \n \b \t, the cursor moves (A B C D E F G H f d, s u, ESC 7 and
-// ESC 8), erasing (J, K, X, P, @), inserting and deleting lines (L, M), reverse index (ESC M), reset (ESC c), and the same SGR styles as UiAnsiText. The alternate
+// ESC 8), erasing (J, K, X, P, @), scroll regions (`ESC [ top ; bottom r`: a line feed, a reverse index, inserting and deleting lines and `S` / `T` work inside of the
+// region, so a header and a footer stay where they are), inserting and deleting lines (L, M), reverse index (ESC M), reset (ESC c), and the same SGR styles as UiAnsiText. The alternate
 // screen (`ESC [ ? 1049 h` and `l`, and the older 47 and 1047) is read when the caller gave room for it: a full screen program (an editor, a pager) draws on a clean
 // screen and the screen as it was comes back when it quits; while it is shown the history is not fed and the view cannot be scrolled back. Every other mode (the
 // hidden cursor, the mouse) and every other sequence is skipped.
 //
-// Limits: a fixed grid (no resize: make another screen and write the output again), no scroll regions (DECSTBM), no origin or wrap modes, no tab stops that are set
+// Limits: a fixed grid (no resize: make another screen and write the output again), no origin or wrap modes, no tab stops that are set; a scroll region feeds no history unless it is the whole screen
 //     the width of a character is a table of the ranges that matter: ambiguous widths are 1, no grapheme clusters, no emoji sequences, no right-to-left text; a mark goes on the cell before it and one mark only
 //     the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; no selection of cells, no mouse or paste modes, no cursor shapes or hiding
 //     it only draws: nothing reads the keyboard or talks to a process; a cell is as wide as the code face's M, and a wide letter takes two of them whatever the font does
@@ -62,6 +63,8 @@ AnsiScreen :: struct {
     alternate_column: int,      // the cursor of the screen it replaced (ESC [ ? 1049 h saves it, the `l` puts it back)
     alternate_row: int,
     alternate_style: AnsiState,
+    margin_top: int,            // the scroll region: the first and the last row of it (the whole screen unless a program sets it)
+    margin_bottom: int,
 }
 
 // A screen over `cells` (at least columns * rows of them), cleared. `history`: room for the lines that scroll off the top, as many rows as it has room for (nil: none).
@@ -86,6 +89,7 @@ AnsiScreenClear :: proc(screen: ^AnsiScreen) {
     screen.history_count, screen.history_head, screen.back = 0, 0, 0
     screen.alternate_active = false
     for &cell in screen.alternate { cell = {} }
+    screen.margin_top, screen.margin_bottom = 0, screen.rows - 1
 }
 
 @(private)
@@ -125,7 +129,8 @@ screenScroll :: proc "contextless" (screen: ^AnsiScreen, top: int, bottom: int, 
     }
 }
 
-// The lines that scroll off the top are kept (the oldest of a full history is lost); a view that is scrolled back stays on what it shows
+// The lines that scroll off the top are kept (the oldest of a full history is lost); a view that is scrolled back stays on what it shows. Only a scroll region that is
+// the whole screen feeds it.
 @(private)
 screenHistoryPush :: proc "contextless" (screen: ^AnsiScreen) {
     if screen.history_rows == 0 || screen.alternate_active { return }
@@ -138,10 +143,10 @@ screenHistoryPush :: proc "contextless" (screen: ^AnsiScreen) {
 
 @(private)
 screenLineFeed :: proc "contextless" (screen: ^AnsiScreen) {
-    if screen.row == screen.rows - 1 {
-        screenHistoryPush(screen)
-        screenScroll(screen, 0, screen.rows - 1, 1)
-    } else {
+    if screen.row == screen.margin_bottom {
+        if screen.margin_top == 0 && screen.margin_bottom == screen.rows - 1 { screenHistoryPush(screen) }
+        screenScroll(screen, screen.margin_top, screen.margin_bottom, 1)
+    } else if screen.row < screen.rows - 1 {
         screen.row += 1
     }
 }
@@ -229,10 +234,12 @@ screenAlternate :: proc "contextless" (screen: ^AnsiScreen, mode: int, enter: bo
         if mode == 1049 { for &cell in screen.cells { cell = {} } }
         screen.alternate_active = true
         screen.back = 0
+        screen.margin_top, screen.margin_bottom = 0, screen.rows - 1
     } else {
         if mode == 1047 || mode == 1049 { for &cell in screen.cells { cell = {} } }
         swap(screen)
         screen.alternate_active = false
+        screen.margin_top, screen.margin_bottom = 0, screen.rows - 1
         if mode == 1049 { screen.column, screen.row, screen.style = screen.alternate_column, screen.alternate_row, screen.alternate_style }
     }
 }
@@ -337,8 +344,21 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
         blank: AnsiCell = screenBlank(screen)
         for i in column ..< column + amount { row[i] = blank }
         screenFixRow(screen, screen.row)
-    case 'L': screenScroll(screen, screen.row, rows - 1, -screenParameter(parameters, 0, 1))
-    case 'M': screenScroll(screen, screen.row, rows - 1, screenParameter(parameters, 0, 1))
+    case 'L':
+        // insert lines at the cursor: the lines below it down to the bottom of the region move down; outside of the region nothing happens
+        if screen.row >= screen.margin_top && screen.row <= screen.margin_bottom { screenScroll(screen, screen.row, screen.margin_bottom, -screenParameter(parameters, 0, 1)) }
+    case 'M':
+        if screen.row >= screen.margin_top && screen.row <= screen.margin_bottom { screenScroll(screen, screen.row, screen.margin_bottom, screenParameter(parameters, 0, 1)) }
+    case 'S': screenScroll(screen, screen.margin_top, screen.margin_bottom, screenParameter(parameters, 0, 1))
+    case 'T': screenScroll(screen, screen.margin_top, screen.margin_bottom, -screenParameter(parameters, 0, 1))
+    case 'r':
+        // the scroll region (1 based, a missing number is the first and the last row); one that is not two rows at least is not taken. The cursor goes home.
+        top: int = screenParameter(parameters, 0, 1) - 1
+        bottom: int = screenParameter(parameters, 1, rows) - 1
+        if top >= 0 && bottom < rows && top < bottom {
+            screen.margin_top, screen.margin_bottom = top, bottom
+            screen.row, screen.column = 0, 0
+        }
     }
 }
 
@@ -361,7 +381,7 @@ AnsiScreenWrite :: proc(screen: ^AnsiScreen, bytes: []u8) {
                     screen.column, screen.row, screen.style = screen.saved_column, screen.saved_row, screen.saved_style
                     screen.sequence_length = 0
                 case 'M':
-                    if screen.row == 0 { screenScroll(screen, 0, screen.rows - 1, -1) } else { screen.row -= 1 }
+                    if screen.row == screen.margin_top { screenScroll(screen, screen.margin_top, screen.margin_bottom, -1) } else if screen.row > 0 { screen.row -= 1 }
                     screen.sequence_length = 0
                 case 'c':
                     AnsiScreenClear(screen)

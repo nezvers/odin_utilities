@@ -553,3 +553,104 @@ test_reverse_video_on_the_screen_splits_runs_and_survives_erasing :: proc(t: ^te
     testing.expect(t, grounds[0].a == 0, "the ground of the first reversed run is the theme's text color")
     testing.expect_value(t, grounds[1], dark[1])             // the red text became the ground
 }
+
+@(test)
+test_a_scroll_region_keeps_what_is_outside_of_it_where_it_is :: proc(t: ^testing.T) {
+    cells: [8 * 6]AnsiCell
+    history: [8 * 6]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 8, 6, history[:])
+    fill :: proc(screen: ^AnsiScreen) {
+        write(screen, "\x1b[2J\x1b[H")
+        for r in 0 ..< 6 {
+            write(screen, string([]u8{'\x1b', '[', u8('1' + r), ';', '1', 'H', u8('A' + r)}))
+        }
+    }
+    fill(&screen)
+    testing.expect_value(t, [2]int{screen.margin_top, screen.margin_bottom}, [2]int{0, 5})
+    // the region is the rows 2 to 5 (1 based): the cursor goes home
+    write(&screen, "\x1b[3;3H\x1b[2;5r")
+    testing.expect_value(t, [2]int{screen.margin_top, screen.margin_bottom}, [2]int{1, 4})
+    testing.expect_value(t, [2]int{screen.column, screen.row}, [2]int{0, 0})
+    // a line feed on the last row of the region scrolls the region: A and F stay, B goes
+    write(&screen, "\x1b[5;1H\n")
+    testing.expect_value(t, row(&screen, 0), "A")
+    testing.expect_value(t, row(&screen, 1), "C")
+    testing.expect_value(t, row(&screen, 3), "E")
+    testing.expect_value(t, row(&screen, 4), "")
+    testing.expect_value(t, row(&screen, 5), "F")
+    testing.expect_value(t, screen.row, 4)
+    testing.expect_value(t, AnsiScreenHistory(&screen), 0)                 // not the whole screen: no history
+    // above the region a line feed moves down, below it on the last row it does nothing
+    write(&screen, "\x1b[1;1H\n")
+    testing.expect_value(t, screen.row, 1)
+    write(&screen, "\x1b[6;1H\n\n")
+    testing.expect_value(t, screen.row, 5)
+    testing.expect_value(t, row(&screen, 5), "F")
+    // the reverse index at the top of the region scrolls the region down; above it the cursor moves up
+    write(&screen, "\x1b[2;1H\x1bM")
+    testing.expect_value(t, row(&screen, 1), "")
+    testing.expect_value(t, row(&screen, 2), "C")
+    testing.expect_value(t, row(&screen, 0), "A")
+    write(&screen, "\x1b[1;1H\x1bM")
+    testing.expect_value(t, screen.row, 0)
+    write(&screen, "\x1b[6;1H\x1bM")
+    testing.expect_value(t, screen.row, 4)                                  // below the region the cursor moves up like anywhere
+    // insert and delete lines work from the cursor to the bottom of the region, and not outside of it
+    fill(&screen)
+    write(&screen, "\x1b[2;5r\x1b[3;1H\x1b[L")
+    testing.expect_value(t, row(&screen, 1), "B")
+    testing.expect_value(t, row(&screen, 2), "")
+    testing.expect_value(t, row(&screen, 3), "C")
+    testing.expect_value(t, row(&screen, 4), "D")
+    testing.expect_value(t, row(&screen, 5), "F")                           // E fell out of the region, F did not move
+    write(&screen, "\x1b[2;1H\x1b[2M")
+    testing.expect_value(t, row(&screen, 1), "C")
+    testing.expect_value(t, row(&screen, 2), "D")
+    testing.expect_value(t, row(&screen, 3), "")
+    testing.expect_value(t, row(&screen, 5), "F")
+    write(&screen, "\x1b[6;1H\x1b[L\x1b[M\x1b[1;1H\x1b[L\x1b[M")        // outside of the region: nothing
+    testing.expect_value(t, row(&screen, 0), "A")
+    testing.expect_value(t, row(&screen, 5), "F")
+    // scroll up and down by lines, inside of the region
+    fill(&screen)
+    write(&screen, "\x1b[2;5r\x1b[S")
+    testing.expect_value(t, row(&screen, 0), "A")
+    testing.expect_value(t, row(&screen, 1), "C")
+    testing.expect_value(t, row(&screen, 4), "")
+    testing.expect_value(t, row(&screen, 5), "F")
+    write(&screen, "\x1b[2T")
+    testing.expect_value(t, row(&screen, 1), "")
+    testing.expect_value(t, row(&screen, 2), "")
+    testing.expect_value(t, row(&screen, 3), "C")
+    // the whole screen as the region feeds the history, and so does the default (no numbers)
+    fill(&screen)
+    write(&screen, "\x1b[r\x1b[6;1H\n")
+    testing.expect_value(t, AnsiScreenHistory(&screen), 1)
+    write(&screen, "\x1b[1;6r\x1b[6;1H\n")
+    testing.expect_value(t, AnsiScreenHistory(&screen), 2)
+    // a region of less than two rows, or out of the screen, is not taken; the cursor stays
+    write(&screen, "\x1b[3;3H\x1b[2;2r")
+    testing.expect_value(t, [2]int{screen.margin_top, screen.margin_bottom}, [2]int{0, 5})
+    testing.expect_value(t, [2]int{screen.column, screen.row}, [2]int{2, 2})
+    write(&screen, "\x1b[4;2r\x1b[2;9r")
+    testing.expect_value(t, [2]int{screen.margin_top, screen.margin_bottom}, [2]int{0, 5})
+    // the region is cut anywhere, and a reset and the clear take it back
+    for byte in transmute([]u8)string("\x1b[2;4r") { AnsiScreenWrite(&screen, {byte}) }
+    testing.expect_value(t, [2]int{screen.margin_top, screen.margin_bottom}, [2]int{1, 3})
+    write(&screen, "\x1bc")
+    testing.expect_value(t, [2]int{screen.margin_top, screen.margin_bottom}, [2]int{0, 5})
+    write(&screen, "\x1b[2;4r")
+    AnsiScreenClear(&screen)
+    testing.expect_value(t, [2]int{screen.margin_top, screen.margin_bottom}, [2]int{0, 5})
+}
+
+@(test)
+test_the_alternate_screen_starts_and_ends_with_the_whole_screen_as_its_region :: proc(t: ^testing.T) {
+    cells: [6 * 5]AnsiCell
+    alternate: [6 * 5]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 6, 5, nil, alternate[:])
+    write(&screen, "\x1b[2;3r\x1b[?1049h")
+    testing.expect_value(t, [2]int{screen.margin_top, screen.margin_bottom}, [2]int{0, 4})
+    write(&screen, "\x1b[3;5r\x1b[?1049l")
+    testing.expect_value(t, [2]int{screen.margin_top, screen.margin_bottom}, [2]int{0, 4})
+}

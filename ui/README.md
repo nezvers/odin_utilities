@@ -477,7 +477,7 @@ ticked off in `TODO.md`. Look here before relying on a widget for something it m
   - SGR only: bold, dim, italic, underline, reverse video, the 16, 256 and RGB colors and the ground; no blink, strike or hidden text, no hyperlinks
   - it is a log: the cursor moves and clears are skipped, and the text is read again every frame it is shown (declare only the lines in view for a long one)
 - **AnsiScreen** (`ansi_screen.odin`):
-  - a fixed grid (no resize: make another screen and write the output again), no scroll regions (DECSTBM), no origin or wrap modes, no tab stops that are set
+  - a fixed grid (no resize: make another screen and write the output again), no origin or wrap modes, no tab stops that are set; a scroll region feeds no history unless it is the whole screen
   - the width of a character is a table of the ranges that matter: ambiguous widths are 1, no grapheme clusters, no emoji sequences, no right-to-left text; a mark goes on the cell before it and one mark only
   - the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; no selection of cells, no mouse or paste modes, no cursor shapes or hiding
   - it only draws: nothing reads the keyboard or talks to a process; a cell is as wide as the code face's M, and a wide letter takes two of them whatever the font does

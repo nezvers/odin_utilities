@@ -120,6 +120,7 @@ State :: struct {
     screen_cells: [SCREEN_COLUMNS * SCREEN_ROWS]ui.AnsiCell,
     screen_alternate: [SCREEN_COLUMNS * SCREEN_ROWS]ui.AnsiCell,     // the other buffer of a full screen program
     pager_id: ui.Id,
+    paged: int,
     screen_history: [SCREEN_COLUMNS * 100]ui.AnsiCell,       // the lines that scroll off the top: a hundred of them
     logged: int,
     lines_id: ui.Id,
@@ -1015,8 +1016,19 @@ screen_lines :: proc() {
 }
 
 // A pager, as a full screen program starts and quits: it asks for the alternate screen, draws its page on it and, when it quits, gives the screen back as it was
-PAGER_ON :: "\x1b[?1049h\x1b[2J\x1b[H\x1b[1;97;45m pager: lines.txt\x1b[K\x1b[0m\r\n\r\nthe screen of a full screen program\r\ndraws on its own page, and the\r\npage before it comes back\r\nwhen it quits\x1b[11;1H\x1b[7m(END)\x1b[0m"
+PAGER_ON :: "\x1b[?1049h\x1b[2J\x1b[H\x1b[1;97;45m pager: lines.txt\x1b[K\x1b[0m\r\n\r\nthe screen of a full screen program\r\ndraws on its own page, and the\r\npage before it comes back\r\nwhen it quits\x1b[11;1H\x1b[7m(END)\x1b[0m\x1b[2;10r\x1b[10;1H"
 PAGER_OFF :: "\x1b[?1049l"
+
+// More text for the pager: its page is the scroll region (rows 2 to 10), so the lines go up inside of it and the header and the (END) of the pager stay where they are
+pager_more :: proc() {
+    bytes: [160]u8
+    count: int = copy(bytes[:], "\x1b[10;1H")
+    for _ in 0 ..< 3 {
+        state.paged += 1
+        count += len(fmt.bprintf(bytes[count:], "\r\npager line %d", state.paged))
+    }
+    ui.AnsiScreenWrite(&state.screen, bytes[:count])
+}
 
 // The progress line of the screen: put at the row of the bottom, the old one erased, `ticks` of 20 steps done
 screen_progress :: proc() {
@@ -1053,6 +1065,7 @@ terminal :: proc(c: ^ui.Context) {
                 if ui.UiButton(c, pager_name) {
                     ui.AnsiScreenWrite(&state.screen, transmute([]u8)string(PAGER_OFF if ui.AnsiScreenAlternate(&state.screen) else PAGER_ON))
                 }
+                if ui.AnsiScreenAlternate(&state.screen) && ui.UiButton(c, "More##screen") { pager_more() }
             }
         }
         ui.ElementClose(c)
@@ -2046,6 +2059,19 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.screen.back == 0 && !shown("logged line 6", "") }, "the wheel finds no history behind the alternate screen"),
     kit.Capture("examples_terminal_pager"),
     kit.Wait(2),
+    // More: the lines go up inside of the page (the scroll region, rows 2 to 10); the header and the (END) of the pager stay where they are
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.BUTTON, "More") }, "the More button"),
+    kit.ClickAt(&target),
+    kit.ClickAt(&target),
+    kit.ClickAt(&target),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        return state.paged == 12 && shown(" pager: lines.txt", "strong") && shown("(END)", "") && shown("pager line 12", "") && !shown("when it quits", "") && state.screen.history_count == 12
+    }, "the page scrolled between its header and its end, which stayed"),
+    kit.Capture("examples_terminal_pager_scrolled"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.BUTTON, "Quit pager") }, "the Quit pager button is still there"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.BUTTON, "Quit pager") }, "the button quits it now"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
