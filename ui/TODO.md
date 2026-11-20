@@ -43,7 +43,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Rich text: `UiRichText`, used by `UiMarkdown` (strong, italic, code, links)
 - [x] Tables in `UiMarkdown`
 - [x] Text that is read can be selected and copied (`TEXT_SELECTABLE`, select.odin) and Baldr's 27_conversation in the chat example
-- [ ] Selection of read text: a word by double click, a block by triple click, extending with Shift, the keyboard; a place that survives a virtual list
+- [x] Selection of read text: a word by double click, the text by a third click
+- [ ] Selection of read text: extending with Shift, the keyboard, a third click that takes the whole paragraph of a rich text; a place that survives a virtual list
 - [x] A drag that rests over a widget (`UiDragRest`) and Baldr's 35_spring
 - [x] Markdown that arrives (Baldr's 26_reply): shown at every length of the text, a test over every prefix
 - [x] A completion list in a text area (`UiComplete`) and Baldr's 34_mentions

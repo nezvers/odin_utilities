@@ -147,6 +147,8 @@ test_a_selection_is_let_go_and_leaves_widgets_alone :: proc(t: ^testing.T) {
     away: Input = {mouse_position = {-100, -100}}
     for _ in 0 ..< 3 { frame(test, away) }
     select :: proc(test: ^Test) -> string {
+        // some time since the press before: a press at the same place right after another is a double click
+        for _ in 0 ..< 40 { frame(test, {mouse_position = {-100, -100}}) }
         drag(test, letter(test, "hello world", 0), letter(test, "hello world", 5))
         text, _ := UiTextSelected(&test.ctx)
         return text
@@ -187,4 +189,52 @@ test_a_selection_is_let_go_and_leaves_widgets_alone :: proc(t: ^testing.T) {
     frame(test, {mouse_position = {-100, -100}, actions = {.COPY}})
     testing.expect_value(t, string(test.ctx.clipboard.local[:test.ctx.clipboard.local_length]), "field text")
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}
+
+@(test)
+test_a_double_click_selects_a_word_and_a_third_the_text :: proc(t: ^testing.T) {
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    for _ in 0 ..< 3 { frame(test, {mouse_position = {-100, -100}}) }
+    click :: proc(test: ^Test, point: Vec2) {
+        frame(test, {mouse_position = point, mouse_down = true, mouse_pressed = true})
+        frame(test, {mouse_position = point, mouse_released = true})
+        frame(test, {mouse_position = point})
+    }
+    point: Vec2 = letter(test, "second line here", 9)                   // in "line"
+    click(test, point)
+    text, _ := UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "")
+    click(test, point)
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "line")
+    click(test, point)
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "second line here")
+    // the pointer moves with the button up: the selection of the word stays
+    frame(test, {mouse_position = point + {40, 0}})
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "second line here")
+    // two clicks with a long time between them are two clicks
+    for _ in 0 ..< 60 { frame(test, {mouse_position = {-100, -100}}) }
+    click(test, point)
+    for _ in 0 ..< 60 { frame(test, {mouse_position = point}) }
+    click(test, point)
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "")
+    // two clicks at two places are two clicks
+    for _ in 0 ..< 60 { frame(test, {mouse_position = {-100, -100}}) }
+    click(test, point)
+    click(test, letter(test, "second line here", 2))
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "")
+    // a word of a run of a paragraph
+    for _ in 0 ..< 60 { frame(test, {mouse_position = {-100, -100}}) }
+    bold: Vec2 = letter(test, "bold", 2)
+    click(test, bold)
+    click(test, bold)
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "bold")
 }

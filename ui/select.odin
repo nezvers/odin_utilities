@@ -34,6 +34,9 @@ TextSelect :: struct {
     anchor: SelectPoint,        // where the press was
     cursor: SelectPoint,        // where the pointer is, or was when the button went up
     over: bool,                 // the pointer was over a selectable line in the last frame
+    press_time: f64,            // the last press on a text and where it was: a press at the same place soon after is a double click
+    press_place: SelectPoint,
+    presses: int,
     copied: [UI_SELECT_BYTES]u8,
     copied_length: int,
     whole: bool,                // the selection fit into `copied`
@@ -167,8 +170,23 @@ selectAfterLayout :: proc(ctx: ^Context) {
     if input.mouse_pressed {
         // a press on a text that no widget took starts a selection, any other press lets the selection go
         if best.found && best.direct && ctx.active == 0 {
+            again: bool = ctx.time - select.press_time <= DOUBLE_CLICK_SECONDS && select.press_place.element == place.element && abs(select.press_place.offset - place.offset) <= 1
+            select.presses = select.presses + 1 if again else 1
+            select.press_time, select.press_place = ctx.time, place
             select.active, select.dragging = true, true
             select.anchor, select.cursor = place, place
+            whole: string = ctx.elements[place.element].text.text
+            switch select.presses {
+            case 1:
+            case 2:
+                // the word under the pointer
+                from, to := textWordAt(whole, int(place.offset))
+                select.anchor, select.cursor = {place.element, i32(from)}, {place.element, i32(to)}
+                select.dragging = false
+            case:
+                select.anchor, select.cursor = {place.element, 0}, {place.element, i32(len(whole))}
+                select.dragging = false
+            }
         } else {
             select.active, select.dragging = false, false
         }
