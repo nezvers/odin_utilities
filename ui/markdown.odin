@@ -237,7 +237,8 @@ markdownQuoteText :: proc(ctx: ^Context, text: string) -> string {
 
 // Shows `source` as a column of blocks, as wide as its container. The texts are in the memory of the frame (the storage of the context needs room for the text).
 // `name` makes the id of the view: two views in one container need two names (a paragraph remembers its width by it).
-UiMarkdown :: proc(ctx: ^Context, source: string, name: string = "markdown") {
+// When a link is clicked `clicked` is true and `address` is the address of the link (a part of `source`).
+UiMarkdown :: proc(ctx: ^Context, source: string, name: string = "markdown") -> (address: string, clicked: bool) {
     metrics: ^Metrics = &ctx.style.metrics
     root: Id = UiId(ctx, name)
     ElementOpen(ctx, {id = root, layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM, gap = metrics.gap * 1.5}})
@@ -249,13 +250,16 @@ UiMarkdown :: proc(ctx: ^Context, source: string, name: string = "markdown") {
         cursor = next
         index += 1
         paragraph: Id = IdFromIndex(index, root)
+        link: string
+        link_clicked: bool
+        defer if link_clicked { address, clicked = link, true }
         switch block.kind {
         case .HEADING:
             UiPushTag(ctx, "title")
             TextOpen(ctx, markdownShown(ctx, block.text), {font_size = metrics.font_size * MARKDOWN_HEADING_SCALES[clamp(block.level, 1, 6) - 1], wrap = .WORDS})
             UiPopTag(ctx)
         case .PARAGRAPH:
-            richParagraph(ctx, paragraph, block.text, metrics.font_size)
+            link, link_clicked = richParagraph(ctx, paragraph, block.text, metrics.font_size)
         case .BULLET, .ORDERED:
             ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, gap = metrics.gap, padding = {left = f32(block.level) * metrics.font_size * 1.2}}})
             if block.kind == .BULLET {
@@ -266,7 +270,7 @@ UiMarkdown :: proc(ctx: ^Context, source: string, name: string = "markdown") {
                 TextOpen(ctx, block.marker)
                 UiPopTag(ctx)
             }
-            richParagraph(ctx, paragraph, block.text, metrics.font_size)
+            link, link_clicked = richParagraph(ctx, paragraph, block.text, metrics.font_size)
             ElementClose(ctx)
         case .QUOTE:
             // a bar on the left, the text dim
@@ -274,7 +278,7 @@ UiMarkdown :: proc(ctx: ^Context, source: string, name: string = "markdown") {
             ElementOpen(ctx, {layout = {size = {Fixed(3), Grow()}}, draw = {kind = .SEPARATOR}})
             ElementClose(ctx)
             UiPushTag(ctx, "dim")
-            richParagraph(ctx, paragraph, markdownQuoteText(ctx, block.text), metrics.font_size)
+            link, link_clicked = richParagraph(ctx, paragraph, markdownQuoteText(ctx, block.text), metrics.font_size)
             UiPopTag(ctx)
             ElementClose(ctx)
         case .CODE:
@@ -292,4 +296,5 @@ UiMarkdown :: proc(ctx: ^Context, source: string, name: string = "markdown") {
         }
     }
     ElementClose(ctx)
+    return
 }

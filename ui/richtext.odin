@@ -20,6 +20,7 @@ RichToken :: struct {
     text: string,               // a part of the source
     marks: RichMarks,
     space_before: bool,         // a space (or a line end) was between this piece and the one before
+    address: string,            // a piece of a link: what stands in the round brackets (a part of the source)
 }
 
 // Where RichNext is in a text
@@ -27,6 +28,7 @@ RichCursor :: struct {
     at: int,
     marks: RichMarks,
     link_end: int,              // inside of the text of a link: where its closing bracket is (0: not in a link)
+    link_address: string,
     pending_space: bool,
 }
 
@@ -56,6 +58,7 @@ RichNext :: proc "contextless" (source: string, cursor: ^RichCursor) -> (token: 
         if cursor.link_end != 0 && cursor.at == cursor.link_end {
             cursor.at = richLinkEnd(source, cursor.link_end) + 1
             cursor.link_end = 0
+            cursor.link_address = ""
             cursor.marks -= {.LINK}
             continue
         }
@@ -100,6 +103,7 @@ RichNext :: proc "contextless" (source: string, cursor: ^RichCursor) -> (token: 
                     }
                     if close > 0 && richLinkEnd(source, close) > 0 {
                         cursor.link_end = close
+                        cursor.link_address = source[close + 2:richLinkEnd(source, close)]
                         cursor.marks += {.LINK}
                         cursor.at += 1
                         continue
@@ -130,7 +134,7 @@ RichNext :: proc "contextless" (source: string, cursor: ^RichCursor) -> (token: 
             }
             cursor.at += 1
         }
-        token = {text = source[start:cursor.at], marks = cursor.marks, space_before = cursor.pending_space}
+        token = {text = source[start:cursor.at], marks = cursor.marks, space_before = cursor.pending_space, address = cursor.link_address}
         cursor.pending_space = false
         return token, true
     }
@@ -169,13 +173,67 @@ richWidth :: proc(ctx: ^Context, text: string, font_size: f32) -> f32 {
 }
 
 // A paragraph of `source` with its marks drawn as styles, as wide as its container. `name` makes its id (it remembers its width), `scale` is its size as a part of
-// the font size. The tags that are pushed around it reach every run (a "dim" paragraph is dim).
-UiRichText :: proc(ctx: ^Context, name: string, source: string, scale: f32 = 1) {
-    richParagraph(ctx, UiId(ctx, name), source, ctx.style.metrics.font_size * scale)
+// the font size. The tags that are pushed around it reach every run (a "dim" paragraph is dim). A link takes the pointer and the keyboard like a button: when one
+// is clicked `clicked` is true and `address` is what stands in its round brackets (a part of `source`); what to do with it is the program's.
+UiRichText :: proc(ctx: ^Context, name: string, source: string, scale: f32 = 1) -> (address: string, clicked: bool) {
+    return richParagraph(ctx, UiId(ctx, name), source, ctx.style.metrics.font_size * scale)
+}
+
+// The run that is built: the pieces of one style (and of one link) that follow each other on a line, at the end of the text memory of the frame
+@(private)
+RichRun :: struct {
+    marks: RichMarks,
+    address: string,
+    start: int,
+    open: bool,
+    links: u32,                 // the link runs of the paragraph so far: they make the ids
+    clicked: bool,
+    clicked_address: string,
 }
 
 @(private)
-richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32) {
+richRunFlush :: proc(ctx: ^Context, paragraph: Id, run: ^RichRun, font_size: f32) {
+    if !run.open { return }
+    run.open = false
+    text: string = string(ctx.text_buffer[run.start:ctx.text_used])
+    run.start = ctx.text_used
+    link: bool = .LINK in run.marks
+    hot: bool
+    if link {
+        // a link is a widget: an element around its text that takes the pointer. A link that goes over two lines is two of them.
+        run.links += 1
+        id: Id = IdFromIndex(run.links, paragraph)
+        interaction: Interaction = UiInteract(ctx, id)
+        if interaction.clicked {
+            run.clicked = true
+            run.clicked_address = run.address
+        }
+        hot = interaction.hovered || ctx.focus == id
+        ElementOpen(ctx, {id = id, hit = {.INTERACTIVE}, cursor = .HAND})
+    }
+    pushed: int = richPushTags(ctx, run.marks)
+    if hot {
+        UiPushTag(ctx, "hover")
+        pushed += 1
+    }
+    TextOpen(ctx, text, {font_size = font_size, wrap = .NONE})
+    for _ in 0 ..< pushed { UiPopTag(ctx) }
+    if link { ElementClose(ctx) }
+}
+
+@(private)
+richPut :: proc(ctx: ^Context, text: string) -> bool {
+    if ctx.text_used + len(text) > len(ctx.text_buffer) {
+        ctx.problems += {.TEXT_FULL}
+        return false
+    }
+    copy(ctx.text_buffer[ctx.text_used:], text)
+    ctx.text_used += len(text)
+    return true
+}
+
+@(private)
+richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32) -> (address: string, clicked: bool) {
     state: ^WidgetState = stateGet(ctx, id)
     width: f32 = state.rect.z
     ElementOpen(ctx, {id = id, layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM}})
@@ -188,30 +246,10 @@ richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32) {
         TextOpen(ctx, shown, {wrap = .WORDS, font_size = font_size})
         return
     }
-    // lines of runs: a run is the pieces of one style that follow each other on a line, built at the end of the text memory of the frame
     cursor: RichCursor
     line_width: f32
     line_open: bool
-    run_marks: RichMarks
-    run_start: int = ctx.text_used
-    run_open: bool
-    flushRun :: proc(ctx: ^Context, run_start: ^int, run_open: ^bool, marks: RichMarks, font_size: f32) {
-        if !run_open^ { return }
-        pushed: int = richPushTags(ctx, marks)
-        TextOpen(ctx, string(ctx.text_buffer[run_start^:ctx.text_used]), {font_size = font_size, wrap = .NONE})
-        for _ in 0 ..< pushed { UiPopTag(ctx) }
-        run_start^ = ctx.text_used
-        run_open^ = false
-    }
-    put :: proc(ctx: ^Context, text: string) -> bool {
-        if ctx.text_used + len(text) > len(ctx.text_buffer) {
-            ctx.problems += {.TEXT_FULL}
-            return false
-        }
-        copy(ctx.text_buffer[ctx.text_used:], text)
-        ctx.text_used += len(text)
-        return true
-    }
+    run: RichRun = {start = ctx.text_used}
     for {
         token, ok := RichNext(source, &cursor)
         if !ok { break }
@@ -221,7 +259,7 @@ richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32) {
         for _ in 0 ..< pushed { UiPopTag(ctx) }
         if line_open && line_width + space_width + token_width > width + LAYOUT_EPSILON {
             // the piece does not fit: the line ends, the piece starts the next one (without the space before it)
-            flushRun(ctx, &run_start, &run_open, run_marks, font_size)
+            richRunFlush(ctx, id, &run, font_size)
             ElementClose(ctx)
             line_open = false
             line_width, space_width = 0, 0
@@ -231,23 +269,26 @@ richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32) {
             line_open = true
         }
         space: bool = space_width > 0
-        if run_open && token.marks != run_marks {
+        same: bool = token.marks == run.marks && token.address == run.address
+        if run.open && !same {
             // the space between two styles is in the plainer one: a link is not underlined past its last word, a strong run does not end in a space
-            if space && run_marks & {.LINK, .CODE} == {} && token.marks != {} {
-                if !put(ctx, " ") { break }
+            if space && run.marks & {.LINK, .CODE} == {} && token.marks != {} {
+                if !richPut(ctx, " ") { break }
                 space = false
             }
-            flushRun(ctx, &run_start, &run_open, run_marks, font_size)
+            richRunFlush(ctx, id, &run, font_size)
         }
-        if !run_open {
-            run_marks = token.marks
-            run_start = ctx.text_used
-            run_open = true
+        if !run.open {
+            run.marks = token.marks
+            run.address = token.address
+            run.start = ctx.text_used
+            run.open = true
         }
-        if space && !put(ctx, " ") { break }
-        if !put(ctx, token.text) { break }
+        if space && !richPut(ctx, " ") { break }
+        if !richPut(ctx, token.text) { break }
         line_width += space_width + token_width
     }
-    flushRun(ctx, &run_start, &run_open, run_marks, font_size)
+    richRunFlush(ctx, id, &run, font_size)
     if line_open { ElementClose(ctx) }
+    return run.clicked_address, run.clicked
 }

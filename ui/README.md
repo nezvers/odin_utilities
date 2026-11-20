@@ -147,7 +147,8 @@ strong face, its marks are taken away (`MarkdownInline`). No tables, no images. 
 layout only knows texts of one style, so the widget breaks the lines itself for the width it had in the last frame (its first frame is a plain wrapped text) and declares a
 row of texts per line: one text per run of a style, with the tags "strong", "italic", "mono" and "link" for the style to draw (the default style: strong face, italic
 face, code face, accent with a line under it) and to measure in. `RichNext` reads a text piece by piece for a program that wants the pieces. A paragraph keeps one widget
-state (its width); a link is drawn as one, it is not clickable yet.
+state (its width) and one per link. A link takes the pointer (the hand cursor) and the keyboard focus; `address, clicked := ui.UiRichText(...)` (and `ui.UiMarkdown(...)`)
+give the address of a clicked link, a part of the source: opening it is the program's.
 
 ## Date and time
 `date.odin`: `ui.UiDateField(&ctx, name, &date)` shows a `Date` (day/month/year) and opens a month of days: arrows go a month back and on, a click on a day takes it. The

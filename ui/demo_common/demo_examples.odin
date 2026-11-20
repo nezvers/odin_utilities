@@ -75,6 +75,8 @@ State :: struct {
     note: [1024]u8,
     note_length: int,
     source_id: ui.Id,
+    opened: [64]u8,             // the address of the link that was clicked last
+    opened_length: int,
 }
 
 Download :: struct {
@@ -361,7 +363,10 @@ markdown :: proc(c: ^ui.Context) {
         // the source in the code face: its lines are measured in that face too, so they wrap where they are drawn
         if ui.UiTagged(c, "mono") { ui.UiTextArea(c, "Markdown source##note", state.note[:], &state.note_length, {ui.Percent(0.45), ui.Grow()}) }
         if ui.UiScroll(c, "##preview", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, padding = {0, 14, 0, 0}}) {
-            ui.UiMarkdown(c, string(state.note[:state.note_length]))
+            // a clicked link gives its address: a program opens it, here it is shown (it is a part of the note, so it is copied before the note changes)
+            address, clicked := ui.UiMarkdown(c, string(state.note[:state.note_length]))
+            if clicked { state.opened_length = copy(state.opened[:], address) }
+            if state.opened_length > 0 { ui.UiLabelDim(c, ui.UiFormat(c, "Link clicked: %s", string(state.opened[:state.opened_length]))) }
         }
         ui.ElementClose(c)
     }
@@ -858,5 +863,18 @@ script: []kit.Step = {
     kit.Type(" Typed."),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown(". Typed.", "") }, "what is typed into the source is read on the right"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        for command in ui.UiCommands(&state.app.ctx) {
+            info: ui.DrawInfo = command.info
+            if command.kind == .DRAW && info.kind == .LABEL && info.text == "the README" && ui.DrawInfoHasTag(&info, "link") {
+                target = {info.rect.x + info.rect.z * 0.5, info.rect.y + info.rect.w * 0.5}
+                return true
+            }
+        }
+        return false
+    }, "the link is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.opened[:state.opened_length]) == "ui/README.md" && shown("Link clicked: ui/README.md", "dim") }, "a clicked link gives its address"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

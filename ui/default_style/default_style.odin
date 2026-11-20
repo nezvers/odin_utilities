@@ -566,7 +566,8 @@ DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter.face = TagFace(ui.DrawInfoHasTag(info, "title") || ui.DrawInfoHasTag(info, "strong"), ui.DrawInfoHasTag(info, "mono"), ui.DrawInfoHasTag(info, "italic"))
     painter.draw_text(painter, info.text, {info.rect.x, info.rect.y}, info.font_size, color)
     painter.face = .REGULAR
-    if link { painter.fill_rect(painter, {info.rect.x, info.rect.y + info.rect.w - 1, info.rect.z, 1}, {color.r, color.g, color.b, 150}) }
+    // the line under a link is faint until the pointer or the focus is on it
+    if link { painter.fill_rect(painter, {info.rect.x, info.rect.y + info.rect.w - 1, info.rect.z, 1}, {color.r, color.g, color.b, 255 if ui.DrawInfoHasTag(info, "hover") else 150}) }
 }
 
 // The icon of a control and its label, centered together in the rect. An icon without a label is in the middle.

@@ -33,6 +33,15 @@ test_rich_text_is_read_piece_by_piece :: proc(t: ^testing.T) {
     // nothing is a mark inside of code
     check(t, "`a*b _c_` d", {{"a*b", {.CODE}, false}, {"_c_", {.CODE}, true}, {"d", {}, true}})
     check(t, "see [the docs](http://a_b/c) now", {{"see", {}, false}, {"the", {.LINK}, true}, {"docs", {.LINK}, true}, {"now", {}, true}})
+    {
+        cursor: RichCursor
+        _, _ = RichNext("see [the docs](http://a_b/c) now", &cursor)
+        token, _ := RichNext("see [the docs](http://a_b/c) now", &cursor)
+        testing.expect_value(t, token.address, "http://a_b/c")
+        _, _ = RichNext("see [the docs](http://a_b/c) now", &cursor)
+        token, _ = RichNext("see [the docs](http://a_b/c) now", &cursor)
+        testing.expect_value(t, token.address, "")
+    }
     check(t, "[**strong** link](x).", {{"strong", {.LINK, .STRONG}, false}, {"link", {.LINK}, true}, {".", {}, false}})
     check(t, "a [bracket] alone", {{"a", {}, false}, {"[bracket]", {}, true}, {"alone", {}, true}})
     check(t, "open [link(", {{"open", {}, false}, {"[link(", {}, true}})
@@ -100,4 +109,72 @@ test_rich_text_is_lines_of_runs_in_their_styles :: proc(t: ^testing.T) {
         last_y = info.rect.y
     }
     testing.expect(t, box.w >= DEFAULT_METRICS.font_size * 6, "the box grew to its six lines")
+}
+
+@(test)
+test_a_link_of_a_rich_text_is_clicked :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 4096),
+        ctx: Context,
+        style: Style,
+        address: string,
+        clicks: int,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    SOURCE :: "go to [the first](one.md) or [the second](two.md) or\n\n- an entry with [a third](three.md)"
+    frame :: proc(test: ^Test, input: Input) {
+        UiBegin(&test.ctx, input, 1.0 / 60, {1200, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(1000), {}}) {
+            address, clicked := UiMarkdown(&test.ctx, SOURCE)
+            if clicked {
+                test.address = address
+                test.clicks += 1
+            }
+        }
+        UiEnd(&test.ctx)
+    }
+    center :: proc(ctx: ^Context, text: string) -> (point: Vec2, hot: bool) {
+        for command in UiCommands(ctx) {
+            info: DrawInfo = command.info
+            if command.kind == .DRAW && info.kind == .LABEL && info.text == text && DrawInfoHasTag(&info, "link") {
+                return {info.rect.x + info.rect.z * 0.5, info.rect.y + info.rect.w * 0.5}, DrawInfoHasTag(&info, "hover")
+            }
+        }
+        return {-1, -1}, false
+    }
+    click :: proc(test: ^Test, text: string) {
+        point, _ := center(&test.ctx, text)
+        frame(test, {mouse_position = point})
+        frame(test, {mouse_position = point, mouse_down = true, mouse_pressed = true})
+        frame(test, {mouse_position = point, mouse_released = true})
+        frame(test, {mouse_position = {-100, -100}})
+    }
+    for _ in 0 ..< 3 { frame(test, {mouse_position = {-100, -100}}) }
+    testing.expect_value(t, test.clicks, 0)
+    // the pointer over a link: it is shown as hot and the cursor is the hand
+    point, hot := center(&test.ctx, "the second")
+    testing.expect(t, point.x > 0 && !hot)
+    frame(test, {mouse_position = point})
+    frame(test, {mouse_position = point})
+    _, hot = center(&test.ctx, "the second")
+    testing.expect(t, hot, "the link under the pointer is hot")
+    testing.expect_value(t, UiCursor(&test.ctx), Cursor.HAND)
+    _, hot = center(&test.ctx, "the first")
+    testing.expect(t, !hot, "the other one is not")
+    click(test, "the second")
+    testing.expect_value(t, test.clicks, 1)
+    testing.expect_value(t, test.address, "two.md")
+    click(test, "the first")
+    testing.expect_value(t, test.address, "one.md")
+    click(test, "a third")
+    testing.expect_value(t, test.address, "three.md")
+    testing.expect_value(t, test.clicks, 3)
+    // a click on plain text is no click
+    frame(test, {mouse_position = {40, 40}, mouse_down = true, mouse_pressed = true})
+    frame(test, {mouse_position = {40, 40}, mouse_released = true})
+    testing.expect_value(t, test.clicks, 3)
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
