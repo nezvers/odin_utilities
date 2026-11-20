@@ -22,9 +22,7 @@ Tasks; a task starts with `(high)`, `(medium)` (the default) or `(low)`; tick it
 ## From the reading of ghostty (`references/ghostty/src/simd`)
 - [x] `IndexOfByte` and `IndexOfAny` (see the text kernels above: 4 byte set, 16, 32 and 64 byte steps, move mask and count trailing zeros)
 - [x] `ScanText(bytes, stop)`: where `stop` is first and whether everything before it is ASCII, in one pass (SIMD at 16, 32, 64 bytes)
-- [ ] (medium) `RuneWidthRanges`: the width of a codepoint by range vectors (starts and ends in two aligned arrays of u16 and u32, the codepoint broadcast, a compare of a vector of ranges
-      per step, frequent classes first, a constant min and max per table to reject early), with the exhaustive test against a reference over every codepoint (run it with the table;
-      keep it in the test file under a `FULL` flag, not commented out). The tables come from the Unicode data files by a tool (see `font/TODO.md`).
+- [x] `RuneWidthRanges` is not needed: the width comes from the two stage table of `unicode_data` (two array reads; measured faster than the chain of ranges, and exact by construction from the Unicode files). The range vector kernel of ghostty would only pay for a table too big for the cache
 - [ ] (low) A `Lanes($T)` helper: twice the native vector length (the number of lanes for a hot loop at the level, `LevelLanes` / size of T times two) so the loops of one level are written once for
       the element type.
 - [x] The maximal subpart decoder as a library piece: `Utf8Next`, `Utf8TrimPartial`, `Utf8Clean` (`font`, `ui` and the cell screen move to it next)

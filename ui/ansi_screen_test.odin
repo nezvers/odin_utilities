@@ -797,7 +797,7 @@ test_the_width_table_covers_marks_emoji_and_the_ambiguous_characters :: proc(t: 
     testing.expect_value(t, AnsiRuneWidth('़'), 0)           // a Devanagari nukta
     testing.expect_value(t, AnsiRuneWidth('ᅡ'), 0)           // a Hangul vowel jamo
     testing.expect_value(t, AnsiRuneWidth('゙'), 0)           // a combining kana mark
-    testing.expect_value(t, AnsiRuneWidth('\U0001F3FD'), 0)       // the skin tone of an emoji
+    testing.expect_value(t, AnsiRuneWidth('\U0001F3FD'), 2)       // the skin tone of an emoji alone (it joins the emoji before it as a cluster)
     testing.expect_value(t, AnsiRuneWidth('️'), 0)           // the emoji variation selector
     // emoji that the older table missed
     testing.expect_value(t, AnsiRuneWidth('⌚'), 2)           // a watch
@@ -1070,39 +1070,31 @@ test_the_ascii_run_scan_stops_at_the_first_byte_that_is_not_printable_ascii :: p
     }
 }
 
-// The width function before it was ordered by frequency: the reference that the ordered one is compared with, over every code point
-@(private = "file")
-ansiRuneWidthInOrder :: proc "contextless" (character: rune, ambiguous_wide: bool = false) -> int {
-    if character < 0x300 && !ambiguous_wide { return 1 }
-    switch character {
-    case 0x300 ..= 0x36F, 0x483 ..= 0x489, 0x591 ..= 0x5BD, 0x5BF, 0x5C1 ..= 0x5C2, 0x5C4 ..= 0x5C5, 0x5C7, 0x610 ..= 0x61A, 0x64B ..= 0x65F, 0x670, 0x6D6 ..= 0x6DC,
-         0x6DF ..= 0x6E4, 0x6E7 ..= 0x6E8, 0x6EA ..= 0x6ED, 0x711, 0x730 ..= 0x74A, 0x900 ..= 0x902, 0x93A, 0x93C, 0x941 ..= 0x948, 0x94D, 0x951 ..= 0x957, 0x962 ..= 0x963,
-         0xE31, 0xE34 ..= 0xE3A, 0xE47 ..= 0xE4E, 0xEB1, 0xEB4 ..= 0xEBC, 0x1160 ..= 0x11FF, 0x1AB0 ..= 0x1AFF, 0x1DC0 ..= 0x1DFF, 0x200B ..= 0x200F, 0x2028 ..= 0x202E,
-         0x2060 ..= 0x2064, 0x20D0 ..= 0x20FF, 0x3099 ..= 0x309A, 0xFE00 ..= 0xFE0F, 0xFE20 ..= 0xFE2F, 0xFEFF, 0x1F3FB ..= 0x1F3FF, 0xE0020 ..= 0xE007F, 0xE0100 ..= 0xE01EF:
-        return 0
-    case 0x1100 ..= 0x115F, 0x231A ..= 0x231B, 0x2329 ..= 0x232A, 0x23E9 ..= 0x23EC, 0x23F0, 0x23F3, 0x25FD ..= 0x25FE, 0x2614 ..= 0x2615, 0x2648 ..= 0x2653, 0x267F,
-         0x2693, 0x26A1, 0x26AA ..= 0x26AB, 0x26BD ..= 0x26BE, 0x26C4 ..= 0x26C5, 0x26CE, 0x26D4, 0x26EA, 0x26F2 ..= 0x26F3, 0x26F5, 0x26FA, 0x26FD, 0x2705, 0x270A ..= 0x270B,
-         0x2728, 0x274C, 0x274E, 0x2753 ..= 0x2755, 0x2757, 0x2795 ..= 0x2797, 0x27B0, 0x27BF, 0x2B1B ..= 0x2B1C, 0x2B50, 0x2B55, 0x2E80 ..= 0x303E, 0x3041 ..= 0x33FF,
-         0x3400 ..= 0x4DBF, 0x4E00 ..= 0x9FFF, 0xA000 ..= 0xA4CF, 0xA960 ..= 0xA97F, 0xAC00 ..= 0xD7A3, 0xF900 ..= 0xFAFF, 0xFE30 ..= 0xFE6F, 0xFF00 ..= 0xFF60,
-         0xFFE0 ..= 0xFFE6, 0x16FE0 ..= 0x16FE4, 0x17000 ..= 0x18CFF, 0x1B000 ..= 0x1B2FF, 0x1F004, 0x1F0CF, 0x1F18E, 0x1F191 ..= 0x1F19A, 0x1F1E6 ..= 0x1F1FF,
-         0x1F200 ..= 0x1F251, 0x1F300 ..= 0x1F64F, 0x1F680 ..= 0x1F6FF, 0x1F7E0 ..= 0x1F7EB, 0x1F90C ..= 0x1F9FF, 0x1FA70 ..= 0x1FAFF, 0x20000 ..= 0x3FFFD:
-        return 2
-    }
-    if ambiguous_wide && ansiAmbiguous(character) { return 2 }
-    return 1
-}
-
+// Clusters by the rules of Unicode: what the old hand written rules did not know
 @(test)
-test_the_ordered_width_function_gives_the_width_of_the_plain_one_for_every_code_point :: proc(t: ^testing.T) {
-    for ambiguous in ([?]bool{false, true}) {
-        for code in 0 ..< 0x110000 {
-            character: rune = rune(code)
-            got: int = AnsiRuneWidth(character, ambiguous)
-            expected: int = ansiRuneWidthInOrder(character, ambiguous)
-            if got != expected {
-                testing.expectf(t, false, "U+%X (ambiguous %v): %d, expected %d", code, ambiguous, got, expected)
-                return
-            }
-        }
+test_the_cell_screen_follows_the_cluster_rules_of_unicode :: proc(t: ^testing.T) {
+    cells: [12 * 2]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 12, 2)
+    columnAfter :: proc(screen: ^AnsiScreen, text: string) -> int {
+        AnsiScreenClear(screen)
+        write(screen, text)
+        return screen.column
     }
+    testing.expect_value(t, columnAfter(&screen, "क्ष"), 1)                   // an Indic conjunct: ka, virama, ssa
+    testing.expect_value(t, columnAfter(&screen, "क्षz"), 2)
+    testing.expect_value(t, columnAfter(&screen, "한"), 2)                   // a Hangul syllable of three jamo: one wide cell
+    testing.expect_value(t, columnAfter(&screen, "é̂"), 1)                         // two marks on a letter
+    testing.expect_value(t, columnAfter(&screen, "\U0001F1E9\U0001F1EA\U0001F1EB"), 4)       // a flag, then half of one
+    testing.expect_value(t, columnAfter(&screen, "กิ่z"), 2)                  // Thai: a letter, a vowel and a tone, then a letter
+    testing.expect_value(t, columnAfter(&screen, "a‍b"), 2)
+    // a family is one wide cell with the first two of its parts after it, whatever follows is a new cluster
+    testing.expect_value(t, columnAfter(&screen, "\U0001F468‍\U0001F469‍\U0001F467z"), 3)
+    // a cursor move starts a new cluster: the mark after it has nothing to join and is not drawn
+    AnsiScreenClear(&screen)
+    write(&screen, "a\x1b[2;1H́b")
+    testing.expect_value(t, [2]int{screen.column, screen.row}, [2]int{1, 1})
+    testing.expect_value(t, screenCell(&screen, 0, 1).character, u32('b'))
+    // a control character is zero wide
+    testing.expect_value(t, AnsiRuneWidth(0x85), 0)
+    testing.expect_value(t, AnsiRuneWidth(0x7f), 0)
 }

@@ -40,16 +40,9 @@ user interface is almost all ASCII, and the ui measures text through here (`ui_d
       enough) so that `AnsiScreenWrite`, a log reader and the chat reader share one piece of code for text that arrives in pieces.
 
 ## From the reading of ghostty (`references/ghostty/src/simd/codepoint_width.cpp`, `src/terminal/stream.zig`)
-- [ ] (medium) The width and the class of a codepoint from the Unicode data, not by hand: a tool (`font/tool/unicode`, Odin) reads `EastAsianWidth.txt`, `DerivedGeneralCategory.txt`
-      (Mn, Me, Cf) and `emoji-data.txt`, writes the range tables (starts and ends, 16 bit and 32 bit, sorted, merged) as generated Odin, and a test compares `AnsiRuneWidth` with the
-      files over every codepoint. Ghostty keeps its tables in range vectors and checks them against a reference library over all 0x110000 codepoints; ours (`ui/ansi_screen.odin`, written by
-      hand from memory, a hole in the ambiguous table is possible) has no such check. The tables belong here (the `font` library measures text) and `ui` imports them.
-- [ ] (medium) Then the lookup: a binary search over the generated ranges is fine for the non-ASCII case; the `simd` library's range vector kernel (`simd/TODO.md`) is the next step only if
-      a text of mostly CJK or emoji is measured and the profile says the width is the cost. Below 0x100 the answer is 1 without a lookup (control characters are the caller's: the
-      stream removes them first).
-- [ ] (low) Grapheme clusters by the break classes of `GraphemeBreakProperty.txt` (generated the same way): ghostty clusters per codepoint pair with a state (`BreakState`) kept across the
-      codepoints of a slice, and only when the mode asks for it. Today the cell screen joins by a few hand written rules (a joiner, a regional indicator pair, VS16, marks): the data
-      driven rules give the exact answer for Indic conjuncts, Hangul syllables and the rest.
+- [x] The width and the class of a code point from the Unicode data, not by hand: the `unicode_data` library (`tool/gen` makes `tables.odin` from EastAsianWidth, DerivedGeneralCategory, emoji-data, GraphemeBreakProperty and DerivedCoreProperties of Unicode 18.0.0; `RuneWidth`, `RuneAmbiguous`, `RuneEmojiText`, `ClusterWidth`), the cell screen of the `ui` library uses it
+- [x] The lookup: a two stage table (74 KB, 129 distinct blocks of 256 code points), two array reads per code point, instead of a chain of ranges or range vectors (the vector range kernel of ghostty is not needed: the table is faster for every class and is exact by construction)
+- [x] Grapheme clusters by the break classes of GraphemeBreakProperty.txt, with GB9c, GB11, GB12 and GB13 (`unicode_data.GraphemeBreak`; the official GraphemeBreakTest.txt of Unicode, 1900 lines, passes: it showed that Unicode 18's GB9c needs no consonant before the linker). The cell screen joins clusters by it (Indic conjuncts, Hangul syllables, flags, families, Thai)
 
 ## Not taken from simdutf8
 - The `compat` flavor falls back to the standard library's `from_utf8` to find the error position: Odin's `core:unicode/utf8` `valid_string` can play that part for the exact position.
