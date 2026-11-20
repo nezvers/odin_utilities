@@ -426,7 +426,10 @@ markdown :: proc(c: ^ui.Context) {
         if ui.UiTagged(c, "mono") { ui.UiTextArea(c, "Markdown source##note", state.note[:], &state.note_length, {ui.Percent(0.45), ui.Grow()}) }
         if ui.UiScroll(c, "##preview", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, padding = {0, 14, 0, 0}}) {
             // a clicked link gives its address: a program opens it, here it is shown (it is a part of the note, so it is copied before the note changes)
+            // what is read can be selected and copied
+            ui.UiPushTag(c, ui.TEXT_SELECTABLE)
             address, clicked := ui.UiMarkdown(c, string(state.note[:state.arrived if state.arrived >= 0 else state.note_length]))
+            ui.UiPopTag(c)
             if clicked { state.opened_length = copy(state.opened[:], address) }
             if state.opened_length > 0 { ui.UiLabelDim(c, ui.UiFormat(c, "Link clicked: %s", string(state.opened[:state.opened_length]))) }
         }
@@ -479,6 +482,10 @@ chat :: proc(c: ^ui.Context) {
             ui.UiScrollSet(c, list, 1e9)
             state.chat_follow -= 1
         }
+        // 27_conversation: the messages are one text to the pointer. A drag from the middle of one message into another selects everything between, the copy
+        // action takes it with a new line between the messages.
+        ui.UiPushTag(c, ui.TEXT_SELECTABLE)
+        defer ui.UiPopTag(c)
         if ui.UiScroll(c, "##messages", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, gap = 8, padding = {0, 14, 0, 0}}) {
             for &message, i in state.messages[:state.message_count] {
                 ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, align = {x = .RIGHT if message.mine else .LEFT}}})
@@ -554,7 +561,7 @@ reading :: proc(c: ^ui.Context) {
             }
             ui.ElementClose(c)
             if ui.UiScroll(c, "##page", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, padding = {0, 14, 0, 0}}) {
-                ui.UiMarkdown(c, PAGES[state.page])
+                if ui.UiTagged(c, ui.TEXT_SELECTABLE) { ui.UiMarkdown(c, PAGES[state.page]) }
             }
             ui.ElementClose(c)
         }
@@ -1036,6 +1043,26 @@ chord_target :: proc(row: int) -> bool {
     return found
 }
 
+// `target` is a place in a line of text that was drawn in the last frame: `part` of its width from its start
+text_target :: proc(text: string, part: f32) -> bool {
+    for command in ui.UiCommands(&state.app.ctx) {
+        info: ui.DrawInfo = command.info
+        if command.kind == .DRAW && info.kind == .LABEL && info.text == text {
+            target = {info.rect.x + info.rect.z * part, info.rect.y + info.rect.w * 0.5}
+            return true
+        }
+    }
+    return false
+}
+
+contains :: proc(text: string, part: string) -> bool {
+    if len(part) > len(text) { return false }
+    for start in 0 ..= len(text) - len(part) {
+        if text[start:start + len(part)] == part { return true }
+    }
+    return false
+}
+
 // Something of a kind with a name was drawn in the last frame: `target` is its middle
 drawn :: proc(kind: ui.StyleKind, name: string) -> bool {
     for command in ui.UiCommands(&state.app.ctx) {
@@ -1347,6 +1374,32 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiScrollGet(&state.app.ctx, state.chat_list) > 0 }, "the list is at its end"),
     kit.Capture("examples_chat"),
     kit.Wait(2),
+    // a drag from one message into another selects the text between, over the bubbles
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target("Nice. What is left?", 0.3) }, "a message to start in"),
+    kit.MoveAt(&target),
+    kit.Wait(2),
+    kit.MouseDownStep(),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target("Send me a picture when it is in.", 0.6) }, "a message to end in"),
+    kit.MoveAt(&target),
+    kit.Wait(3),
+    kit.Capture("examples_chat_selected"),
+    kit.Wait(2),
+    kit.MouseUpStep(),
+    kit.Wait(2),
+    kit.MoveTo({640, 700}),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        text, whole := ui.UiTextSelected(&state.app.ctx)
+        // the end of the first message, the whole one between with its styles as plain text, the start of the last
+        return whole && len(text) > 100 && text[len(text) - 9:] != "it is in." && contains(text, "is left?\nThe editor with syntax colors.") && contains(text, "strong, italic, code and links is done") && contains(text, "one.\nSend me a pic")
+    }, "the selection runs from the first message into the last, a new line between the messages"),
+    kit.Click({640, 700}),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        text, _ := ui.UiTextSelected(&state.app.ctx)
+        return text == ""
+    }, "a press somewhere else lets the selection go"),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         rect, found := ui.UiElementRect(&state.app.ctx, state.draft_id)
         target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
@@ -1481,6 +1534,10 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.DROPDOWN_ITEM, "render.odin") && drawn(.DROPDOWN_ITEM, "README.md") && !drawn(.DROPDOWN_ITEM, "layout.odin") }, "the files with the letter are offered"),
     kit.Tap(.DOWN),
     kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        state.app.ctx.time = 0                              // the caret blinks by the time: it is shown in the picture on every machine
+        return true
+    }, "the caret is shown"),
     kit.Capture("examples_mentions"),
     kit.Wait(2),
     kit.Tap(.ENTER),

@@ -77,6 +77,7 @@ Context :: struct {
     graph_minimaps: [UI_MAX_GRAPHS]GraphMinimapData,
     graph_minimap_count: int,
     clipboard: Clipboard,
+    select: TextSelect,             // the selection of the text that is read (select.odin)
     combo_filter: [UI_COMBO_FILTER]u8,              // the text of the search field of the combo box that is open (widgets_combo.odin)
     combo_filter_length: int,
     combo_owner: Id,                                // the combo box that is open
@@ -241,6 +242,7 @@ UiEnd :: proc(ctx: ^Context) {
     usageRecord(ctx)
     if !ctx.overflow {
         LayoutCalculate(ctx)
+        selectAfterLayout(ctx)
     } else {
         ctx.command_count = 0
     }

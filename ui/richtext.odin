@@ -190,6 +190,8 @@ RichRun :: struct {
     start: int,
     open: bool,
     links: u32,                 // the link runs of the paragraph so far: they make the ids
+    lines: int,                 // the lines of the paragraph so far
+    continues: bool,            // the run is the first of a line after the first line: it goes on the text of the line before
     clicked: bool,
     clicked_address: string,
 }
@@ -219,7 +221,8 @@ richRunFlush :: proc(ctx: ^Context, paragraph: Id, run: ^RichRun, font_size: f32
         UiPushTag(ctx, "hover")
         pushed += 1
     }
-    TextOpen(ctx, text, {font_size = font_size, wrap = .NONE})
+    TextOpen(ctx, text, {font_size = font_size, wrap = .NONE, continues = run.continues})
+    run.continues = false
     for _ in 0 ..< pushed { UiPopTag(ctx) }
     if link { ElementClose(ctx) }
 }
@@ -263,8 +266,21 @@ richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32, max
         token_width: f32 = richWidth(ctx, token.text, font_size)
         space_width: f32 = richWidth(ctx, " ", font_size) if token.space_before && line_open else 0
         for _ in 0 ..< pushed { UiPopTag(ctx) }
-        if line_open && line_width + space_width + token_width > width + LAYOUT_EPSILON {
-            // the piece does not fit: the line ends, the piece starts the next one (without the space before it)
+        // a line is only broken at a space: the pieces that follow this one without a space (the comma after a strong word, the end of a word that is half
+        // italic) are one word with it, and the word has to fit
+        word_width: f32 = token_width
+        if token.space_before {
+            ahead: RichCursor = cursor
+            for {
+                next, more := RichNext(source, &ahead)
+                if !more || next.space_before { break }
+                next_pushed: int = richPushTags(ctx, next.marks)
+                word_width += richWidth(ctx, next.text, font_size)
+                for _ in 0 ..< next_pushed { UiPopTag(ctx) }
+            }
+        }
+        if line_open && token.space_before && line_width + space_width + word_width > width + LAYOUT_EPSILON {
+            // the word does not fit: the line ends, the word starts the next one (without the space before it)
             richRunFlush(ctx, id, &run, font_size)
             ElementClose(ctx)
             line_open = false
@@ -273,6 +289,8 @@ richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32, max
         if !line_open {
             ElementOpen(ctx, {layout = {size = {line_width_sizing, Fit()}, direction = .LEFT_TO_RIGHT, align = {y = .BOTTOM}}})
             line_open = true
+            run.continues = run.lines > 0
+            run.lines += 1
         }
         space: bool = space_width > 0
         same: bool = token.marks == run.marks && token.address == run.address

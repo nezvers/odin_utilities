@@ -42,6 +42,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] A text is measured with the tags it is drawn with (a title in the strong face, code in the code face): `ctx.measure_tags`, `UiMeasureHasTag`
 - [x] Rich text: `UiRichText`, used by `UiMarkdown` (strong, italic, code, links)
 - [x] Tables in `UiMarkdown`
+- [x] Text that is read can be selected and copied (`TEXT_SELECTABLE`, select.odin) and Baldr's 27_conversation in the chat example
+- [ ] Selection of read text: a word by double click, a block by triple click, extending with Shift, the keyboard; a place that survives a virtual list
 - [x] A drag that rests over a widget (`UiDragRest`) and Baldr's 35_spring
 - [x] Markdown that arrives (Baldr's 26_reply): shown at every length of the text, a test over every prefix
 - [x] A completion list in a text area (`UiComplete`) and Baldr's 34_mentions
@@ -52,7 +54,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] A part of the ui in a theme of its own (`ThemeAreaSet`, `Style.before_draw`) and Baldr's 33_reading
 - [x] Links of a rich text can be clicked (`address, clicked := UiRichText(...)`, the same from `UiMarkdown`)
 - [x] (was) Runs of several styles in one wrapped text (bold, italic, code and links inside of a paragraph: the measure proc needs the face, the wrap has to break between runs); `UiMarkdown` would then draw emphasis instead of only taking its marks away
-- [ ] Baldr examples that are still to be remade with this library (references/Baldr/examples): 08_rich (a rich text editor), 27_conversation (one selection over several messages); the desktop shell ones (taskbar, dock, applets, tray) need a window system and are out of scope
+- [ ] Baldr examples that are still to be remade with this library (references/Baldr/examples): 08_rich (a rich text editor),  the desktop shell ones (taskbar, dock, applets, tray) need a window system and are out of scope
 - [ ] (later) Timeline: SIMD for the block renderer (ramps and fills with 8 or 16 lanes; the compiler may vectorize the loops already: check the assembly), a plan that several tracks share the cursor search of
 - [ ] (low priority) Right-to-left text (needs a font with the script and shaping for Arabic: measuring, wrapping, caret and selection all change)
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot

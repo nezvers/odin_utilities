@@ -1127,6 +1127,8 @@ textCommands :: proc(ctx: ^Context, element: ^Element, rect: Rect, clip_rect: Re
             text = UiFormat(ctx, "%s...", text)
             flags += {.TRUNCATED}
         }
+        // the selected part of the line is drawn under it
+        selectLineCommand(ctx, element, line, {rect.x + offset, rect.y + y, line.width, natural_height})
         layoutCommand(ctx, {kind = .DRAW, info = {
             kind = config.kind,
             rect = {rect.x + offset, rect.y + y, line.width, natural_height},

@@ -205,6 +205,7 @@ TextConfig :: struct {
     kind: StyleKind,    // .LABEL when left as it is
     color: Color,       // alpha 0: the color of the style
     user: rawptr,
+    continues: bool,    // this text goes on the text before it after a break of the line (a paragraph made of several texts): a copy of a selection joins them with a space
 }
 
 // How a text measures with a font of the framework: the width and the height of one line

@@ -180,7 +180,8 @@ same numbers as a line, an area, bars and a scatter with `ui.UiChart`) and `09_j
 runs each on a thread that posts messages, here a download is a number that grows with the time of the frame) and `19_markdown` (a text in Markdown and how it reads, side
 by side, with `ui.UiTextArea` and `ui.UiMarkdown`; the original is an editor that shows the styles while one types; its Stream button is `26_reply`: the note shown
 as it arrives, some characters a frame) and `32_chat` with the bubbles of `29_styled_text`
-(bubbles as wide as their text with styles inside, a list that stays at its newest message, a field that sends; the panel tags "bubble" and "mine" of the default style) and `33_reading` (a page in Paper, Sepia, Dusk or Night with its
+(bubbles as wide as their text with styles inside, a list that stays at its newest message, a field that sends; the messages are one selectable text, which is
+`27_conversation`; the panel tags "bubble" and "mine" of the default style) and `33_reading` (a page in Paper, Sepia, Dusk or Night with its
 controls in the same colors, inside of a window that keeps its theme: a theme area) `20_shortcuts` (shortcuts that are set by pressing them) `07_code` (the text area with a highlighter for Odin) and `37_custom` (a star rating made in the demo: the pattern for a widget of one's own, with
 `ui.UiInteract`, an element of the kind CUSTOM whose draw proc uses `ui_default.PainterOf(ctx)`, and `ui.UiNavBlock` for the arrows it takes itself) `34_mentions` (a text whose `@` offers the files of a project) and `35_spring` (folders that open under a file that is dragged and held over them:
 `ui.UiDragRest(&ctx, kind, seconds)` after a widget is true once when a drag has stood still over it). The texts
@@ -315,6 +316,14 @@ default style has the colors of the tags `ui.SYNTAX_KEYWORD`, `_TYPE`, `_STRING`
 look like C or Odin by a `HighlightLanguage` (keywords, types, the marks of comments, the quote of raw strings). What goes over several lines (a block comment, nested
 in Odin, a raw string) is carried from row to row in a `state` number: the area runs the highlighter over all rows once when the text changed and keeps the state of every
 row with its cached rows, so a frame only asks for the rows in view. A string in quotes ends with its row. Nothing is allocated; at most `AREA_SPANS` (96) spans a row.
+
+## Selecting text that is read
+`select.odin`: everything declared inside of `ui.UiTagged(&ctx, ui.TEXT_SELECTABLE)` (labels, wrapped texts, the paragraphs of rich text and Markdown) is one text to the
+pointer: a press on it and a drag select from letter to letter, over lines and from one text into the next (the messages of a chat, the blocks of a page). The copy
+action puts the selection on the clipboard (a new line between two texts, none between the runs of one paragraph), a press somewhere else or the cancel action lets it
+go; `ui.UiTextSelected(&ctx)` gives the text, `ui.UiTextSelectionClear` lets it go. A press on a widget (a button, a link) stays the widget's. One selection for the
+whole ui, kept as a text (its place among the elements of the frame) and a byte in it: right while the texts before it stay the same, so not across a list that only
+declares its rows in view. The selection follows the pointer one frame behind. No words by double click yet, no selecting by the keyboard.
 
 ## Completion in a text area or field
 `complete.odin`: `inserted, item := ui.UiComplete(&ctx, "Message", buffer[:], &length, items[:])` right before the `ui.UiTextArea` of the same name: after a trigger

@@ -259,3 +259,47 @@ test_a_rich_text_with_a_width_limit_is_as_wide_as_its_text :: proc(t: ^testing.T
     testing.expect_value(t, long.w, size * 3)
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_a_rich_text_breaks_its_lines_only_at_spaces :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 4096),
+        ctx: Context,
+        style: Style,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    size: f32 = DEFAULT_METRICS.font_size
+    for _ in 0 ..< 3 {
+        UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {1200, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(1000), {}}) {
+            // nine and a half letters fit: "aaaa bbbb" would, the comma after it would not
+            ElementOpen(&test.ctx, {layout = {size = {Fixed(size * 4.75), Fit()}, direction = .TOP_TO_BOTTOM}})
+            UiRichText(&test.ctx, "text", "aaaa **bbbb**, cccc re*lat*ly")
+            ElementClose(&test.ctx)
+        }
+        UiEnd(&test.ctx)
+    }
+    find :: proc(ctx: ^Context, text: string) -> (info: DrawInfo, found: bool) {
+        for command in UiCommands(ctx) {
+            if command.kind == .DRAW && command.info.kind == .LABEL && command.info.text == text { return command.info, true }
+        }
+        return
+    }
+    first, first_found := find(&test.ctx, "aaaa")
+    strong, strong_found := find(&test.ctx, "bbbb")
+    comma, comma_found := find(&test.ctx, ",")
+    last, last_found := find(&test.ctx, "cccc")
+    testing.expect(t, first_found && strong_found && comma_found && last_found, "the pieces are drawn")
+    testing.expect(t, strong.rect.y > first.rect.y, "the strong word went to the next line with its comma")
+    testing.expect(t, comma.rect.y == strong.rect.y && comma.rect.x >= strong.rect.x + strong.rect.z - 0.5, "the comma stands after its word")
+    testing.expect(t, last.rect.y > comma.rect.y)
+    // a word with a style change inside of it is one word
+    head, head_found := find(&test.ctx, "re")
+    middle, middle_found := find(&test.ctx, "lat")
+    tail, tail_found := find(&test.ctx, "ly")
+    testing.expect(t, head_found && middle_found && tail_found)
+    testing.expect(t, head.rect.y == middle.rect.y && middle.rect.y == tail.rect.y && head.rect.y > last.rect.y, "the three pieces of the word are on one line")
+}
