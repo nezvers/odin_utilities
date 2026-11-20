@@ -333,7 +333,7 @@ demo_common/    widgets, layout, styles demos with scripted input          demo_
 Run: `odin test ui`, `odin test ui/demo_common` (the scripts click real widgets), `odin run ui/demo_raylib`, `odin run ui/demo_karl2d`.
 
 ## Testing the look
-Three levels: `odin test ui` (layout and behavior with a fake font), `odin test ui/demo_common` (scripted clicks on real widgets, headless) and screen captures:
+Three levels: `odin test ui` (layout and behavior with a fake font) and `odin test ui/default_style` (the default style draws a frame of every widget into a painter that only counts: both themes, with and without icons), `odin test ui/demo_common` (scripted clicks on real widgets, headless) and screen captures:
 The ui demos draw with Inter, JetBrains Mono and the Lucide icons (`ui/kit` loads them with `kit.FontLoad`; with `-define:DEMO_VECTOR_TEXT=slug` they are faces of the text system of the kit). The other demos of the repository draw with Fira Code, the font of every text of `demo_kit` that asks for no other.
 `odin run ui/demo_raylib -define:DEMO_TEST=true -define:DEMO_CAPTURE=true` compares frames with `demo_common/captures/<backend>/*.png`
 (see `demo_kit/README.md`). `UiCommands(&ctx)` is the third way: assert on what the style would be asked to draw, without pixels.
