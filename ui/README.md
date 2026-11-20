@@ -136,6 +136,15 @@ in a pill, with a check mark when it is on), `UiTag` (a pill with a cross: it te
 few options in one track), `UiBreadcrumbs` (the parts of a path, the index of the one that was clicked), `UiSpinner`, `UiTitle`, `UiLabelDim`, `UiCard` (a panel with a title), and
 `UiInteract` (the pointer and the keyboard for an element the program declares itself: a row of an icon and texts that can be clicked).
 
+## Charts
+`chart.odin`: `ui.UiChart(&ctx, name, &view, series, kind, x_labels, size)` draws one or more series of points as a LINE, an AREA, BARs or a SCATTER. The axes pick round
+numbers (`ChartStep`: 1, 2 or 5 times a power of ten), bars and areas stand on 0. The pointer finds the nearest point (a bar: the one under it), a click picks it, the arrows
+of the navigation walk the points of the picked series; `hit, picked := ui.UiChart(...)` tells the program. The `ChartView` is the program's (what is picked) and is what
+the style draws from, so **the series and the labels have to live until the frame is drawn** (keep them in the state of the program, not in a local array of the proc that
+declares the frame: the compiler warns about that). The default style draws the lines across with their numbers, the names of the x values, a legend for two series or
+more, a ring around the hovered and the picked point with its value, in a palette of eight colors that people who do not see every color can tell apart (Baldr's, credited
+in `default_style/chart.odin`). A style of your own draws with `ChartPlotRect`, `ChartPosition` and `ChartBarRect`.
+
 ## The gallery of Baldr, remade
 `demo_common/demo_gallery.odin` is the first page of Baldr's gallery (`examples/00_gallery`) with this library: the same cards (Buttons, Inputs, Menus, Choices, Project, Badges,
 Files), the same sample data, dark and light. Baldr is retained (a view builds a tree, messages change a state); here the page is declared every frame. What this library has no
@@ -143,11 +152,12 @@ widget for (a date and a time field, frosted glass) is left out. A second page s
 (`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
 
 ## Examples of Baldr, remade
-`demo_common/demo_examples.odin` has six of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
+`demo_common/demo_examples.odin` has seven of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
 `update`), `04_controls` (check boxes, a switch and thin sliders that change the state of the program in place; the switch turns the page to the light theme), `03_scroll` (forty
 cards in a scrolling region, a ghost button on each), `17_toasts` (raised cards at the top right that a click takes away: floating elements with `ui.UiInteract`) and
 `02_theme_lab` (a page to judge a theme by: here its accent is picked by a tile or a hue and the theme is made on the spot with `ThemeFromAccent`) and `05_overlays` (a select,
-a menu that opens from a button: `ui.UiMenu` inside of a button tag, tooltips, a card that takes a click while the cross in it keeps its own, a dialog). The texts
+a menu that opens from a button: `ui.UiMenu` inside of a button tag, tooltips, a card that takes a click while the cross in it keeps its own, a dialog) and `21_charts` (the
+same numbers as a line, an area, bars and a scatter with `ui.UiChart`). The texts
 and the sample data are the originals'. Each has its part of the script and a stored picture.
 
 ## The demo of Dear ImGui, remade

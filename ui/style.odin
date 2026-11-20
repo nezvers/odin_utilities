@@ -73,6 +73,7 @@ StyleKind :: enum u8 {
     SEGMENT,            // one option in it: name, SELECTED flag
     BREADCRUMB,         // a part of a path: name, SELECTED flag for the last one (where the user is)
     SPINNER,            // something is going on: value is the time in seconds
+    CHART,              // a chart: user is the ^ChartView (the series, the range of the axes, the hovered and the picked point); the style draws with ChartPlotRect, ChartPosition, ChartBarRect
     CUSTOM,             // DrawInfo.custom is called instead of a table entry
 }
 

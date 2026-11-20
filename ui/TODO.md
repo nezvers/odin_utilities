@@ -35,7 +35,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Baldr examples remade as the demo `examples`: 01_hello, 04_controls, 03_scroll, 17_toasts (a tab each, with a script and pictures)
 - [x] A theme from an accent color (`ui_default.ThemeFromAccent`: Baldr's OKLCH generator ported, contrast by construction), the theme lab example with it
 - [x] Baldr's 05_overlays remade (a menu from a button, tooltips, a clickable card, a dialog)
-- [ ] Baldr examples that are still to be remade with this library (references/Baldr/examples): 21_charts (bars, lines, pie), 19_markdown, 07_code (an editor with syntax colors), date and time fields; the desktop shell ones (taskbar, dock, applets, tray) need a window system and are out of scope
+- [x] Charts (`UiChart`: line, area, bars, scatter; picking by pointer and keys) and Baldr's 21_charts remade
+- [ ] Baldr examples that are still to be remade with this library (references/Baldr/examples): 19_markdown, 07_code (an editor with syntax colors), date and time fields; the desktop shell ones (taskbar, dock, applets, tray) need a window system and are out of scope
 - [ ] (later) Timeline: SIMD for the block renderer (ramps and fills with 8 or 16 lanes; the compiler may vectorize the loops already: check the assembly), a plan that several tracks share the cursor search of
 - [ ] (low priority) Right-to-left text (needs a font with the script and shaping for Arabic: measuring, wrapping, caret and selection all change)
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot

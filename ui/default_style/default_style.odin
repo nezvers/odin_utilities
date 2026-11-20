@@ -298,6 +298,7 @@ StyleMake :: proc() -> ui.Style {
     ColorStyleInstall(&style)
     TimelineStyleInstall(&style)
     ExtraStyleInstall(&style)
+    ChartStyleInstall(&style)
     return style
 }
 

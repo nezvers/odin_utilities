@@ -1,12 +1,14 @@
 #+private file
 package demo_common
 
-// Six examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Seven examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
-// that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) and 05_overlays (a select,
-// a menu that opens from a button, tooltips, a card that takes a click, a dialog). The texts and the sample data are the ones of the originals. There a `view` builds a tree and an `update` answers messages; here the page is
+// that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
+// a menu that opens from a button, tooltips, a card that takes a click, a dialog) and 21_charts (the same numbers as a line, an area, bars and a scatter). The texts and the sample data are the ones of the originals. There a `view` builds a tree and an `update` answers messages; here the page is
 // declared every frame and a widget hands back what happened: the counter is `if ui.UiButton(...) { count += 1 }`.
 
+import "core:fmt"
+import "core:math"
 import ui ".."
 import ui_default "../default_style"
 import kit "../../demo_kit"
@@ -54,11 +56,23 @@ State :: struct {
     duplicate_id: ui.Id,            // for the script: the entry of the menu and the cross of the card, as they were declared
     dismiss_id: ui.Id,
     note_id: ui.Id,
+    // 21_charts
+    chart: ui.ChartView,
+    chart_kind: ui.ChartKind,
+    sales: [12]ui.ChartPoint,
+    costs: [12]ui.ChartPoint,
+    cloud: [40]ui.ChartPoint,
+    chart_series: [2]ui.ChartSeries,        // kept here: the chart draws from them after the frame was declared
+    chart_picked: [64]u8,
+    chart_picked_length: int,
+    chart_id: ui.Id,
 }
 
 state: State
 
-EXAMPLES: [6]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays"}
+EXAMPLES: [7]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts"}
+MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
 FRUIT: [5]string = {"Apple", "Banana", "Cherry", "Dragon fruit", "Elderberry"}
 MODES: [2]string = {"Dark", "Light"}
 // the tiles of the original (red, amber, green, blue, violet, pink) and a grey, which gives a theme without a hue
@@ -80,6 +94,15 @@ init :: proc(ctx: ^kit.Context) {
     _, _, state.hue = ui_default.ColorToOklch(state.accent)
     state.lab_switch = true
     state.fruit = 2
+    ui.ChartViewInit(&state.chart)
+    // the numbers of the original
+    for i in 0 ..< 12 {
+        state.sales[i] = {f32(i), 40 + 30 * math.sin(f32(i) * 0.55) + f32(i) * 2.5}
+        state.costs[i] = {f32(i), 28 + 12 * math.cos(f32(i) * 0.8) + f32(i) * 1.2}
+    }
+    for i in 0 ..< 40 {
+        state.cloud[i] = {f32(i % 12), 20 + 55 * math.sin(f32(i) * 1.7) * math.cos(f32(i) * 0.3)}
+    }
     ctx.background = kit.Color(state.app.painter.theme.background)
 }
 
@@ -237,6 +260,40 @@ toasts :: proc(c: ^ui.Context, screen: ui.Vec2) {
         ui.UiLabelDim(c, "Click to dismiss")
         ui.ElementClose(c)
         y += 80
+    }
+}
+
+// 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
+charts :: proc(c: ^ui.Context) {
+    if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
+        ui.UiTitle(c, "Charts", 1.25)
+        if row(c, 8) {
+            for name, i in CHART_KINDS {
+                ui.UiPushTag(c, "primary" if int(state.chart_kind) == i else "outline")
+                if ui.UiButton(c, name) {
+                    state.chart_kind = ui.ChartKind(i)
+                    state.chart.picked.series = ui.CHART_NONE
+                    state.chart_picked_length = 0
+                }
+                ui.UiPopTag(c)
+            }
+        }
+        count: int = 2
+        state.chart_series = {{name = "Sales", points = state.sales[:]}, {name = "Costs", points = state.costs[:]}}
+        if state.chart_kind == .SCATTER {
+            state.chart_series[0] = {name = "Orders", points = state.cloud[:]}
+            count = 1
+        }
+        ui.UiPushTag(c, "flat")
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, padding = ui.PaddingAll(12)}, draw = {kind = .PANEL}})
+        ui.UiPopTag(c)
+        state.chart_id = ui.UiId(c, "Sales and costs by month")
+        if hit, picked := ui.UiChart(c, "Sales and costs by month", &state.chart, state.chart_series[:count], state.chart_kind, MONTHS[:], {ui.Grow(), ui.Fixed(300)}); picked {
+            text: string = fmt.bprintf(state.chart_picked[:], "%s: %.1f at %s", state.chart_series[hit.series].name, hit.value.y, MONTHS[int(hit.value.x) % 12])
+            state.chart_picked_length = len(text)
+        }
+        ui.ElementClose(c)
+        ui.UiLabelDim(c, string(state.chart_picked[:state.chart_picked_length]) if state.chart_picked_length > 0 else "Click a point, or focus the chart and use the arrow keys.")
     }
 }
 
@@ -415,6 +472,8 @@ draw :: proc(ctx: ^kit.Context) {
         themeLab(c)
     case 5:
         overlays(c)
+    case 6:
+        charts(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -593,5 +652,35 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !state.confirm && state.deleted == 1 }, "Delete in the dialog deletes and closes it"),
+
+    // charts: a point of the line is picked by a click and the arrows walk on, then the bars
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(6) }, "the Charts tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        rect, found := ui.UiElementRect(&state.app.ctx, state.chart_id)
+        plot: ui.Rect = ui.ChartPlotRect(&state.chart, rect, state.app.ctx.style.metrics.font_size)
+        target = ui.ChartPosition(&state.chart, plot, state.sales[5])
+        return found && rect.w == 300
+    }, "the chart is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        return state.chart.picked.series == 0 && state.chart.picked.point == 5 && string(state.chart_picked[:state.chart_picked_length]) == fmt.tprintf("Sales: %.1f at Jun", state.sales[5].y)
+    }, "a click on the June point of Sales picks it and its value is read out"),
+    kit.Tap(.RIGHT),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.chart.picked.point == 6 }, "the right arrow walks to July"),
+    kit.MoveTo({640, 700}),
+    kit.Wait(3),
+    kit.Capture("examples_charts_line"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("charts", "Bar")) }, "the Bar button is on the page"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.chart_kind == .BAR && state.chart.low.y == 0 }, "the bars stand on 0"),
+    kit.Capture("examples_charts_bar"),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
