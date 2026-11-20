@@ -230,13 +230,26 @@ test_a_double_click_selects_a_word_and_a_third_the_text :: proc(t: ^testing.T) {
     click(test, letter(test, "second line here", 2))
     text, _ = UiTextSelected(&test.ctx)
     testing.expect_value(t, text, "")
-    // a word of a run of a paragraph
+    // a word of a run of a paragraph, and with a third click the paragraph: all of its runs
     for _ in 0 ..< 60 { frame(test, {mouse_position = {-100, -100}}) }
     bold: Vec2 = letter(test, "bold", 2)
     click(test, bold)
     click(test, bold)
     text, _ = UiTextSelected(&test.ctx)
     testing.expect_value(t, text, "bold")
+    click(test, bold)
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "plain bold end")
+    // a paragraph of three lines: all of its lines, from a click in the middle one, and nothing of the texts around it
+    for _ in 0 ..< 60 { frame(test, {mouse_position = {-100, -100}}) }
+    middle: Vec2 = letter(test, "three four", 7)
+    click(test, middle)
+    click(test, middle)
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "four")
+    click(test, middle)
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "one two three four five six")
 }
 
 @(test)

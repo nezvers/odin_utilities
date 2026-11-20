@@ -138,9 +138,7 @@ selectAfterLayout :: proc(ctx: ^Context) {
         from, to := selectRange(select, index, len(data.text))
         if to > from {
             if last >= 0 {
-                before: Rect = ctx.elements[last].rect
-                same_row: bool = abs((before.y + before.w) - (rect.y + rect.w)) < max(rect.w, 1) * 0.5 && rect.x >= before.x
-                if !same_row { selectCopy(select, " " if data.config.continues else "\n") }
+                if !selectSameRow(ctx, last, index) { selectCopy(select, " " if data.config.continues else "\n") }
             }
             selectCopy(select, data.text[from:to])
             last = index
@@ -190,7 +188,19 @@ selectAfterLayout :: proc(ctx: ^Context) {
                 select.anchor, select.cursor = {place.element, i32(from)}, {place.element, i32(to)}
                 select.dragging = false
             case:
-                select.anchor, select.cursor = {place.element, 0}, {place.element, i32(len(whole))}
+                // the whole paragraph: the texts before and after this one that stand in its row or go on from its line (the runs and lines of a rich text)
+                first, final: i32 = place.element, place.element
+                for {
+                    previous: i32 = selectNeighbor(ctx, first, -1)
+                    if previous < 0 || !(selectSameRow(ctx, previous, first) || ctx.elements[first].text.config.continues) { break }
+                    first = previous
+                }
+                for {
+                    next: i32 = selectNeighbor(ctx, final, 1)
+                    if next < 0 || !(selectSameRow(ctx, final, next) || ctx.elements[next].text.config.continues) { break }
+                    final = next
+                }
+                select.anchor, select.cursor = {first, 0}, {final, i32(len(ctx.elements[final].text.text))}
                 select.dragging = false
             }
         } else {
@@ -217,6 +227,26 @@ selectAfterLayout :: proc(ctx: ^Context) {
     if .COPY in input.actions && select.copied_length > 0 && !editing {
         UiClipboardSet(ctx, string(select.copied[:select.copied_length]))
     }
+}
+
+// Two selectable texts, the second after the first, stand in one row (the runs of a line of a paragraph)
+@(private)
+selectSameRow :: proc(ctx: ^Context, first: i32, second: i32) -> bool {
+    before: Rect = ctx.elements[first].rect
+    rect: Rect = ctx.elements[second].rect
+    return abs((before.y + before.w) - (rect.y + rect.w)) < max(rect.w, 1) * 0.5 && rect.x >= before.x
+}
+
+// The selectable text before (-1) or after (1) the text `index` among the elements of the frame, -1 when there is none
+@(private)
+selectNeighbor :: proc(ctx: ^Context, index: i32, step: i32) -> i32 {
+    at: i32 = index + step
+    for at >= 0 && at < i32(ctx.element_count) {
+        element: ^Element = &ctx.elements[at]
+        if element.is_text && selectHasTag(&ctx.select, element) { return at }
+        at += step
+    }
+    return -1
 }
 
 @(private)
