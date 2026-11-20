@@ -187,6 +187,10 @@ Painter :: struct {
     flush: proc(painter: ^Painter),  // draws what the painter has collected (the text of the font library is batched: every draw of a shape calls PainterFlush first, so the order stays right); nil: nothing is collected
     vector_text: rawptr,            // the glue's text system when the text is drawn from outlines by the font library (the glue's PainterUseVectorText sets it and the text procs)
     theme: Theme,
+    areas: [THEME_AREAS]Theme,      // themes of parts of the ui (ThemeAreaSet): what is declared inside of the tag of an area is drawn in its theme
+    area_ids: [THEME_AREAS]ui.Id,   // the tags of the areas that are set (0: not set)
+    area_now: int,                  // while rendering: the area whose theme is in `theme` (0: none, else its number + 1)
+    area_saved: Theme,              // the theme of the painter while an area has its own in `theme`
     scale: f32,                     // UI scale (0 is 1): the layout and the styles work in logical units, the glue multiplies what it draws by this and divides the pointer by it
     offset: ui.Vec2,              // where the logical origin is on the screen: a zoomed container moves it (Style.zoom); the glue draws a point p at p * scale + offset
     saved_scale: f32,               // what a zoomed container found, put back when it ends
@@ -262,12 +266,64 @@ Measure :: proc(ctx: ^ui.Context, text: string, font_size: f32) -> ui.Vec2 {
     return size
 }
 
+// A part of the ui in a theme of its own (a page in sepia inside of a dark window, a preview of another theme): give the painter the theme of an area and declare
+// the part inside of the tag of that area:
+//     ui_default.ThemeAreaSet(&painter, 0, sepia)
+//     if ui.UiTagged(&ctx, ui_default.ThemeAreaTag(0)) { ... }
+// Everything declared there is drawn with that theme, the controls and a popup that is declared there too. A draw command carries the innermost ui.DRAW_TAGS tags:
+// deeper than that inside of other tags the area is not seen.
+THEME_AREAS :: 4
+THEME_AREA_TAGS: [THEME_AREAS]string = {"theme area 0", "theme area 1", "theme area 2", "theme area 3"}
+
+ThemeAreaTag :: proc(area: int) -> string {
+    return THEME_AREA_TAGS[area]
+}
+
+ThemeAreaSet :: proc(painter: ^Painter, area: int, theme: Theme) {
+    painter.areas[area] = theme
+    painter.area_ids[area] = ui.IdFromString(THEME_AREA_TAGS[area])
+}
+
+// The area is drawn in the theme of the painter again
+ThemeAreaClear :: proc(painter: ^Painter, area: int) {
+    painter.area_ids[area] = 0
+}
+
+// Style.before_draw: the theme of the painter is the one of the area the command was declared in
+@(private)
+themeAreaBefore :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    wanted: int
+    for tag in info.tags {
+        if tag == 0 { continue }
+        for id, i in painter.area_ids {
+            if id == tag { wanted = i + 1 }
+        }
+    }
+    if wanted == painter.area_now { return }
+    if painter.area_now == 0 { painter.area_saved = painter.theme }
+    painter.theme = painter.area_saved if wanted == 0 else painter.areas[wanted - 1]
+    painter.area_now = wanted
+}
+
+@(private)
+themeAreaLeave :: proc(painter: ^Painter) {
+    if painter.area_now == 0 { return }
+    painter.theme = painter.area_saved
+    painter.area_now = 0
+}
+
 // The style: the table of procs below with the metrics of the theme
 StyleMake :: proc() -> ui.Style {
     style: ui.Style = {
         metrics = ui.DEFAULT_METRICS,
         zoom = Zoom,
-        render_end = proc(ctx: ^ui.Context) { PainterFlush(painterOf(ctx)) },
+        render_end = proc(ctx: ^ui.Context) {
+            painter: ^Painter = painterOf(ctx)
+            PainterFlush(painter)
+            themeAreaLeave(painter)
+        },
+        before_draw = themeAreaBefore,
         clip = proc(ctx: ^ui.Context, rect: ui.Rect, begin: bool) {
             painter: ^Painter = painterOf(ctx)
             if painter.clip != nil { painter.clip(painter, rect, begin) }

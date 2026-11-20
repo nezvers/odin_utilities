@@ -154,6 +154,9 @@ Style :: struct {
     zoom: proc(ctx: ^Context, origin: Vec2, factor: f32, begin: bool),
     // called when UiRender has gone through its commands: a style that collects something (text for one draw call) draws it. nil: nothing to do.
     render_end: proc(ctx: ^Context),
+    // called before every draw command (the procs of the table and custom draws): a style that draws by the tags of a command sets itself up here (the default style:
+    // the theme of an area). nil: nothing to do.
+    before_draw: proc(ctx: ^Context, info: ^DrawInfo),
     metrics: Metrics,
     graph: GraphStyle,
     timeline: TimelineStyle,        // how the lanes, clips, ruler and playhead of a timeline are drawn (timeline_style.odin)              // routing, bounds, distance and drawing of the cables and ties of a node graph (graph_style.odin)

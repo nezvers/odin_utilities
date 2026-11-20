@@ -21,6 +21,7 @@ Recorder :: struct {
     seen_text: [16]string,          // the texts that were looked for (wanted) and found
     wanted: [16]string,
     found: [16]bool,
+    colors: [16]ui.Color,           // the color a wanted text was drawn in
     seen_icons: [icons.Icon]int,
     bad_rect: bool,                 // something was drawn with a size that is not a number or is negative
 }
@@ -62,7 +63,10 @@ recorderPainter :: proc(painter: ^Painter, recorder: ^Recorder, theme: Theme, wi
             if painter.face == .STRONG { recorder.strong_texts += 1 }
             if painter.face == .MONO { recorder.mono_texts += 1 }
             for wanted, i in recorder.wanted {
-                if wanted != "" && wanted == text { recorder.found[i] = true }
+                if wanted != "" && wanted == text {
+                    recorder.found[i] = true
+                    recorder.colors[i] = color
+                }
             }
             if size <= 0 || position.x != position.x || position.y != position.y { recorder.bad_rect = true }
         },
@@ -328,4 +332,58 @@ test_icons_of_the_ui_have_their_lucide_pictures :: proc(t: ^testing.T) {
         }
         testing.expect_value(t, ChartColor(&theme, 8), ChartColor(&theme, 0))
     }
+}
+
+@(test)
+test_an_area_is_drawn_in_its_own_theme :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: ui.Storage(128, 256, 64, 2048),
+        ctx: ui.Context,
+        style: ui.Style,
+        painter: Painter,
+        recorder: Recorder,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    recorderPainter(&test.painter, &test.recorder, THEME_DARK, false)
+    test.style = StyleMake()
+    ui.UiInit(&test.ctx, &test.storage, Measure, &test.painter)
+    frame :: proc(test: ^Test) {
+        test.recorder = {wanted = {0 = "before", 1 = "inside", 2 = "deeper", 3 = "after", 4 = "other"}}
+        ui.UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 600}, &test.style)
+        if ui.UiWindow(&test.ctx, "window", {0, 0}, {ui.Fixed(400), {}}) {
+            ui.UiLabel(&test.ctx, "before")
+            if ui.UiTagged(&test.ctx, ThemeAreaTag(0)) {
+                ui.UiLabel(&test.ctx, "inside")
+                if ui.UiTagged(&test.ctx, "flat") {
+                    if ui.UiPanel(&test.ctx, "panel") { ui.UiLabel(&test.ctx, "deeper") }
+                }
+            }
+            ui.UiLabel(&test.ctx, "after")
+            if ui.UiTagged(&test.ctx, ThemeAreaTag(2)) { ui.UiLabelDim(&test.ctx, "other") }
+        }
+        ui.UiEnd(&test.ctx)
+        ui.UiRender(&test.ctx)
+    }
+    // no area is set: the tags mean nothing
+    for _ in 0 ..< 2 { frame(test) }
+    for i in 0 ..< 4 { testing.expect_value(t, test.recorder.colors[i], THEME_DARK.text) }
+    sepia: Theme = THEME_LIGHT
+    sepia.text, sepia.text_dim = {91, 70, 54, 255}, {140, 120, 100, 255}
+    ThemeAreaSet(&test.painter, 0, sepia)
+    ThemeAreaSet(&test.painter, 2, THEME_LIGHT)
+    frame(test)
+    testing.expect_value(t, test.recorder.colors[0], THEME_DARK.text)
+    testing.expect_value(t, test.recorder.colors[1], sepia.text)
+    testing.expect_value(t, test.recorder.colors[2], sepia.text)
+    testing.expect_value(t, test.recorder.colors[3], THEME_DARK.text)
+    testing.expect_value(t, test.recorder.colors[4], THEME_LIGHT.text_dim)
+    // after the frame the painter has its own theme again
+    testing.expect_value(t, test.painter.theme.text, THEME_DARK.text)
+    testing.expect_value(t, test.painter.area_now, 0)
+    ThemeAreaClear(&test.painter, 0)
+    frame(test)
+    testing.expect_value(t, test.recorder.colors[1], THEME_DARK.text)
+    testing.expect_value(t, test.recorder.colors[4], THEME_LIGHT.text_dim)
+    testing.expect_value(t, ui.UiProblems(&test.ctx), ui.Problems{})
 }

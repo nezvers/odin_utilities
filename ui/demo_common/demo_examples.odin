@@ -1,7 +1,7 @@
 #+private file
 package demo_common
 
-// Ten examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Eleven examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
 // a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
@@ -86,6 +86,9 @@ State :: struct {
     chat_list: ui.Id,
     chat_follow: int,           // frames the list is still moved to its end (a new message is laid out in the next frame)
     replies: int,
+    // 33_reading
+    paper: int,
+    page: int,
 }
 
 Download :: struct {
@@ -102,7 +105,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [10]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat"}
+EXAMPLES: [11]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading"}
 NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
@@ -128,6 +131,7 @@ init :: proc(ctx: ^kit.Context) {
     state.lab_switch = true
     state.fruit = 2
     state.note_length = copy(state.note[:], NOTE)
+    state.paper, state.page = 1, 0
     state.message_count = 0
     state.replies = 0
     for seed, i in CHAT_SEED { chat_add(seed, i % 2 == 1) }
@@ -456,6 +460,58 @@ chat :: proc(c: ^ui.Context) {
     }
 }
 
+// 33_reading: a page in colors of its own, its controls included. The window keeps its theme; the bar, the text and the buttons of the page are declared inside of
+// a theme area (ui_default.ThemeAreaSet), so a button of the page hovers in the colors of the page.
+PAPERS: [4]string = {"Paper", "Sepia", "Dusk", "Night"}
+PAGES: [2]string = {
+    "# On margins\n\nA page is read by its **edges** as much as by its words. The eye comes back to the left side of a line some thousands of times in an hour, and every time it has to find the next line; a margin is what it finds it by.\n\n> Sixty to seventy letters in a line: fewer and the eye turns too often, more and it loses the line.\n\nThe color of the paper is a part of it. *Sepia* takes the glare from a white page, a dark page at night keeps the room dark.",
+    "# On type\n\nA text face is made to be forgotten. Its letters are a little wider and more open than the ones of a title, because at a small size the eye needs the room *inside* of the letters.\n\n- the size: what is read at an arm's length\n- the line: one and a half times the size\n- the measure: see the page before\n\nCode keeps its own face, `like this`, so that a name is seen as a name.",
+}
+
+reading_theme :: proc(paper: int) -> ui_default.Theme {
+    theme: ui_default.Theme
+    switch paper {
+    case 0:
+        theme = ui_default.ThemeFromAccent({37, 99, 235, 255}, false)
+        theme.panel = {252, 252, 250, 255}
+    case 1:
+        theme = ui_default.ThemeFromAccent({176, 108, 44, 255}, false)
+        theme.panel, theme.text, theme.text_dim = {244, 236, 216, 255}, {91, 70, 54, 255}, {138, 116, 96, 255}
+    case 2:
+        theme = ui_default.ThemeFromAccent({129, 140, 248, 255}, true)
+        theme.panel, theme.text, theme.text_dim = {38, 40, 58, 255}, {214, 216, 236, 255}, {150, 154, 186, 255}
+    case:
+        theme = ui_default.ThemeFromAccent({217, 119, 6, 255}, true)
+        theme.panel, theme.text, theme.text_dim = {6, 6, 8, 255}, {168, 168, 168, 255}, {110, 110, 110, 255}
+    }
+    return theme
+}
+
+reading :: proc(c: ^ui.Context) {
+    if stage(c, "reading", {620, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(20)}) {
+        ui.UiTitle(c, "Reading", 1.25)
+        if ui.UiTagged(c, ui_default.ThemeAreaTag(0)) {
+            ui.UiPushTag(c, "flat")
+            ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, direction = .TOP_TO_BOTTOM, gap = 14, padding = {28, 28, 18, 18}}, draw = {kind = .PANEL}})
+            ui.UiPopTag(c)
+            ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 8, align = {y = .CENTER}}})
+            ui.UiSegmented(c, "##paper", PAPERS[:], &state.paper)
+            ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}}})
+            ui.ElementClose(c)
+            ui.UiLabelDim(c, ui.UiFormat(c, "Page %d of %d", state.page + 1, len(PAGES)))
+            if ui.UiTagged(c, "ghost") {
+                if ui.UiButton(c, "Previous", {}, state.page == 0) { state.page -= 1 }
+                if ui.UiButton(c, "Next", {}, state.page == len(PAGES) - 1) { state.page += 1 }
+            }
+            ui.ElementClose(c)
+            if ui.UiScroll(c, "##page", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, padding = {0, 14, 0, 0}}) {
+                ui.UiMarkdown(c, PAGES[state.page])
+            }
+            ui.ElementClose(c)
+        }
+    }
+}
+
 // 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
 charts :: proc(c: ^ui.Context) {
     if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
@@ -640,6 +696,7 @@ themeLab :: proc(c: ^ui.Context) {
 draw :: proc(ctx: ^kit.Context) {
     state.app.painter.theme = ui_default.THEME_DARK if state.dark else ui_default.THEME_LIGHT
     if state.example == 4 { state.app.painter.theme = ui_default.ThemeFromAccent(state.accent, state.mode == 0) }
+    ui_default.ThemeAreaSet(&state.app.painter, 0, reading_theme(state.paper))
     ctx.background = kit.Color(state.app.painter.theme.background)
     ui_demo_begin(&state.app, ctx)
     c: ^ui.Context = &state.app.ctx
@@ -673,6 +730,8 @@ draw :: proc(ctx: ^kit.Context) {
         markdown(c)
     case 9:
         chat(c)
+    case 10:
+        reading(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -680,6 +739,18 @@ draw :: proc(ctx: ^kit.Context) {
 
 // The script finds the widgets by where they were in the last frame: the pages are laid out by the widths of their texts
 target: ui.Vec2
+
+// Something of a kind with a name was drawn in the last frame: `target` is its middle
+drawn :: proc(kind: ui.StyleKind, name: string) -> bool {
+    for command in ui.UiCommands(&state.app.ctx) {
+        info: ui.DrawInfo = command.info
+        if command.kind == .DRAW && info.kind == kind && (info.name == name || info.text == name) {
+            target = {info.rect.x + info.rect.z * 0.5, info.rect.y + info.rect.w * 0.5}
+            return true
+        }
+    }
+    return false
+}
 
 // A line of text was drawn in the last frame, with a tag ("" for any)
 shown :: proc(text: string, tag: string) -> bool {
@@ -985,5 +1056,24 @@ script: []kit.Step = {
     kit.Wait(5),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.message_count == len(CHAT_SEED) + 2 && state.draft_length == 0 }, "the message and its answer are added, the field is empty"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("it", "italic") && shown("Noted.", "") }, "both are in view: the list followed"),
+
+    // reading: the page has a theme of its own inside of the window; another paper and the next page
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(10) }, "the Reading tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("On margins", "title") && shown("Page 1 of 2", "dim") }, "the first page is shown"),
+    kit.Capture("examples_reading"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.SEGMENT, "Night") }, "the papers are in the bar of the page"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.paper == 3 && state.app.painter.areas[0].panel.r < 20 && !state.app.painter.theme.dark == !state.dark }, "the page is dark, the window kept its theme"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.BUTTON, "Next") }, "the buttons of the page"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.page == 1 && shown("On type", "title") && shown("like this", "mono") }, "the next page is shown"),
+    kit.Capture("examples_reading_night"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

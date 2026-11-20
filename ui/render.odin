@@ -24,6 +24,7 @@ UiRenderRange :: proc(ctx: ^Context, from: int, to: int) {
         command: ^Command = &ctx.commands[i]
         switch command.kind {
         case .DRAW:
+            if style.before_draw != nil { style.before_draw(ctx, &command.info) }
             if command.info.kind == .CUSTOM {
                 if command.info.custom != nil {
                     command.info.custom(ctx, &command.info)
