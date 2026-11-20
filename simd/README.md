@@ -94,6 +94,34 @@ From `odin_plug/docs/SIMD_LEVELS.md`, `FFT_TECHNIQUES.md` and the benchmarks of 
   down are a screen: another cache and load port layout).
 - **The level is chosen when a plan or a state is made and stored in it**, never per call: no branch in the loop, no kernel changing in the middle of a block.
 
+## What ghostty's SIMD code teaches (`references/ghostty/src/simd`, `src/terminal/stream.zig`, `Terminal.zig`; MIT; read, nothing copied)
+
+A terminal emulator is a program whose hot loop is text: bytes in, cells out. Its SIMD layer is small (index of a byte, UTF-8 decode up to an escape, the width of a codepoint, base64)
+and its rules are worth keeping:
+
+- **One pass answers two questions.** `DecodeUTF8UntilControlSeq` scans 16, 32 or 64 bytes at a time for "an ESC, or a byte of 0x80 or more" (one compare, one signed compare, an OR, a
+  find-first-set) and hands back a flag `ascii`: when everything before the stop is ASCII nothing is decoded or written, the caller reads the input bytes. Only a non-ASCII byte
+  starts the real decoder. The consumers are generic over the element type (`u8` for ASCII, `u32` for decoded text) so the ASCII case is never widened.
+- **The error path is separate and cold.** The common case decodes and validates in one call; on an error it decodes the valid prefix, writes ONE U+FFFD for the *maximal subpart* of the
+  bad sequence (Unicode table 3-7: the longest start of a well formed sequence, else one byte), and finds the next error with the read-only validator, "several times cheaper" than a
+  second decode, so every valid run is decoded once. An incomplete sequence at the end is trimmed only when it is valid so far (a partial sequence that the next chunk can finish):
+  an invalid start byte (C0, C1, F5 to FF) is an error now, not a carry.
+- **Width by range vectors.** `codepoint_width.cpp` keeps every class (wide, zero width, combining marks) as two aligned arrays of range starts and range ends (16 bit and 32 bit
+  tables: twice the lanes for the common BMP case), broadcasts the codepoint and compares it with a whole vector of ranges at a time. Order is by frequency: below 0x100 is width 1 with
+  no lookup, the few big blocks (CJK) are checked first, each table has a constant minimum and maximum that rejects most codepoints before any compare. It is checked against a
+  reference over every codepoint (a slow test, commented out in debug builds with a capital letter note to run it whenever the table changes).
+- **Twice the native width.** `lanes(T)` is two registers per iteration "for instruction level parallelism": the same lesson as four accumulators.
+- **A scalar fallback that is still fast.** With SIMD off (wasm without simd128) the same API runs a scalar path that batches: it decodes in bulk and hands printable runs to the handler,
+  "much faster than per byte dispatch". The batching, not the vector width, is most of the win. Early exit search loops are not auto vectorized by LLVM: write the vector scan by hand.
+- **Check once per slice, not per character.** `printSlice` tests the modes that need per character handling (insert mode, no wraparound, single shifts) once, then runs a loop that fills a
+  row; ASCII reaches it as bytes (`printSliceAscii`) and is never classified again; the hyperlink case is a compile time variant. C0 and C1 controls are told from text with one AND
+  (`(cp & ~0x9F) == 0`).
+- **Chunking and carry.** Input is cut into pieces that fit a 4096 codepoint buffer; a scalar decoder keeps a partial sequence across calls so a split character never breaks.
+- **Memory shape.** A cell is one 64 bit word (codepoint, style id, wide flag); the style is a reference counted table entry, graphemes beyond one codepoint live in a side table. Ours
+  is 36 bytes with 16 of them for extra characters that almost no cell uses.
+- **Benchmark discipline** (`src/benchmark/AGENTS.md`): generate the data first and benchmark it later (never pipe the generator into the benchmark), reuse the exact files across
+  revisions, fixed seeds, medians of several runs after warm ups, never two benchmarks at once on a machine, release mode only.
+
 ## Limits
 
 x86 and x86-64 are detected completely (CPUID leaves 0, 1, 7, 0x80000002 to 4, XGETBV); arm64 is NEON by definition, the web is SIMD128 when the build says so, nothing else

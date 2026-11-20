@@ -83,6 +83,19 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] (was) Runs of several styles in one wrapped text (bold, italic, code and links inside of a paragraph: the measure proc needs the face, the wrap has to break between runs); `UiMarkdown` would then draw emphasis instead of only taking its marks away
 - [x] The desktop shell examples of Baldr (15_control_centre, 16_launcher, 18_dock, 13_taskbar, 24_desktop, 12_applet) remade as the `shell` demo: the windows, workspaces and applets are plain data, not a compositor
 - [x] 31_emoji remade as the `emoji` demo: the picker in a popover, recents, skin tone, `UiTextInsert`, every emoji drawn from shapes (no color emoji font)
+- [ ] (high) The cell screen writes 45 MB/s of plain ASCII lines and 29 MB/s with colors (22 and 35 ns per byte, `AnsiScreenWrite`, 200 x 50, 9950X, `-o:speed`; measured 2026-11-21);
+      ghostty does ASCII at memory speed. Where it goes: a state machine step per byte, `screenPut` per character (the width call, the join test, `screenBreakPair` on every cell, a 36 byte
+      struct written per cell). Ghostty's shape, in order: (1) a run scan: from the ground state find the printable ASCII run up to the next control or ESC (the `simd` library's
+      `ScanText`, a table or SWAR scan before it exists) and hand the whole run to `screenPutRun`; (2) `screenPutRun` checks the modes once and fills a row with a tight loop (no width
+      call below 0x100, no break check when the cells under it are plain), wrapping at the margin; (3) a control character or a non ASCII byte goes back to the per character path.
+      Keep the output identical: the tests of `ansi_screen_test.odin` plus a test that writes the same random text through both paths and compares the cells.
+- [ ] (medium) Shrink `AnsiCell` (36 bytes; ghostty's is 8): the four extra characters (16 bytes) are used by almost no cell: keep them in a small side table of the screen (a caller owned
+      array of `(cell number, characters)` entries, a free list) and leave a flag and an index in the cell; the style (13 bytes) becomes an index into a table of the styles in use. A
+      scroll copies cells, so size is speed. Measure the scroll and the write before and after; the history ring grows by the same factor.
+- [ ] (medium) Invalid UTF-8 in `AnsiScreenWrite`: one U+FFFD per maximal subpart and a partial sequence at the end of a write carried only when it is valid so far (an invalid start byte is an
+      error at once). See `font/TODO.md` for the shared decoder.
+- [ ] (low) Print by slices in the demo and the pager: a program that writes a line at a time can call `AnsiScreenWrite` once per chunk (it is already how the demo does it): document
+      that the cost is per byte and per control sequence, not per call.
 - [ ] Baldr examples that are not remade: 14_bar_applets (an applet slot of a compositor), 23_chrome and 38_windows (several windows of one program: the kit has one window)
 - [ ] (later) Timeline: SIMD for the block renderer (ramps and fills with 8 or 16 lanes; the compiler may vectorize the loops already: check the assembly), a plan that several tracks share the cursor search of
 - [ ] (low priority) Right-to-left text (needs a font with the script and shaping for Arabic: measuring, wrapping, caret and selection all change)
