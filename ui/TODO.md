@@ -43,7 +43,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Rich text: `UiRichText`, used by `UiMarkdown` (strong, italic, code, links)
 - [x] Tables in `UiMarkdown`
 - [x] The output of a program in its ANSI colors (`UiAnsiText`, `UiAnsiLine`, `AnsiNext`) and Baldr's 25_terminal as a log with a prompt
-- [ ] ANSI output: background colors, underline, a screen of cells for programs that move the cursor
+- [x] ANSI output: background colors, underline
+- [ ] ANSI output: a screen of cells for programs that move the cursor
 - [x] Editing commands for a text (`UiTextWrap`, `UiTextLinePrefix`) and Baldr's 08_rich as a toolbar over the Markdown source
 - [x] Dashed lines and paths for overlays (`default_style/lines.odin`) and Baldr's 28_lines
 - [x] Text that is read can be selected and copied (`TEXT_SELECTABLE`, select.odin) and Baldr's 27_conversation in the chat example

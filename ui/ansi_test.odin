@@ -32,16 +32,17 @@ test_escape_sequences_set_the_style_of_the_runs :: proc(t: ^testing.T) {
     check(t, "\x1b[1;31merror\x1b[22m: \x1b[39mtext", {{"error", {color = red, bold = true}, false}, {": ", {color = red}, false}, {"text", {}, false}})
     check(t, "\x1b[2mdim\x1b[3m both\x1b[23;22m none", {{"dim", {dim = true}, false}, {" both", {dim = true, italic = true}, false}, {" none", {}, false}})
     check(t, "\x1b[94mbright\x1b[m", {{"bright", {color = bright_blue}, false}})
-    // the 256 colors and a color by its parts; a background is read and not kept
+    // the 256 colors and a color by its parts, for the text and for its ground
     check(t, "\x1b[38;5;2ma\x1b[38;5;196mb\x1b[38;5;244mc", {{"a", {color = green}, false}, {"b", {color = {255, 0, 0, 255}}, false}, {"c", {color = {128, 128, 128, 255}}, false}})
-    check(t, "\x1b[38;2;10;20;30mx\x1b[48;5;1my\x1b[48;2;1;2;3;1mz", {{"x", {color = {10, 20, 30, 255}}, false}, {"y", {color = {10, 20, 30, 255}}, false}, {"z", {color = {10, 20, 30, 255}, bold = true}, false}})
+    check(t, "\x1b[38;2;10;20;30mx\x1b[48;5;1my\x1b[48;2;1;2;3;1mz", {{"x", {color = {10, 20, 30, 255}}, false}, {"y", {color = {10, 20, 30, 255}, background = red}, false}, {"z", {color = {10, 20, 30, 255}, background = {1, 2, 3, 255}, bold = true}, false}})
+    check(t, "\x1b[41;4mhot\x1b[49mplain\x1b[24;102mbright\x1b[0m", {{"hot", {background = red, underline = true}, false}, {"plain", {underline = true}, false}, {"bright", {background = dark[10]}, false}})
     // lines: a new line ends a run and is not a part of it, the style goes on; a carriage return before it is dropped
     last: AnsiState = check(t, "one\x1b[31m\ntwo\r\nthree", {{"one", {}, false}, {"", {color = red}, true}, {"two", {color = red}, true}, {"three", {color = red}, false}})
     testing.expect_value(t, last, AnsiState{color = red})
     // other sequences are skipped: clearing a line, moving the cursor, a private mode, an escape that is no sequence
     check(t, "a\x1b[2Kb\x1b[10;5Hc\x1b[?25ld\x1b7e", {{"a", {}, false}, {"b", {}, false}, {"c", {}, false}, {"d", {}, false}, {"e", {}, false}})
     // numbers that mean nothing here change nothing; too many numbers do no harm
-    check(t, "\x1b[4;5;7;999mx", {{"x", {}, false}})
+    check(t, "\x1b[5;7;8;999mx", {{"x", {}, false}})
     check(t, "\x1b[1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;31mx", {{"x", {bold = true}, false}})
     // a sequence that is not whole (the output still arrives): what is before it is shown, nothing of it
     check(t, "shown\x1b[3", {{"shown", {}, false}})
@@ -69,7 +70,7 @@ test_output_is_shown_in_its_colors :: proc(t: ^testing.T) {
     defer free(test)
     test.style = {metrics = DEFAULT_METRICS}
     UiInit(&test.ctx, &test.storage, measure)
-    OUTPUT :: "\x1b[1;32m   Compiling\x1b[0m ui v0.1\n\x1b[33mwarning\x1b[0m: unused \x1b[3mvalue\x1b[0m\n\n\x1b[31mfailed"
+    OUTPUT :: "\x1b[1;32m   Compiling\x1b[0m ui v0.1\n\x1b[33mwarning\x1b[0m: unused \x1b[3mvalue\x1b[0m \x1b[4;41mmarked\x1b[0m\n\n\x1b[31mfailed"
     for _ in 0 ..< 2 {
         UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 600}, &test.style)
         if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(600), {}}) { test.end = UiAnsiText(&test.ctx, OUTPUT) }
@@ -92,6 +93,17 @@ test_output_is_shown_in_its_colors :: proc(t: ^testing.T) {
     testing.expect(t, compiling.color == dark[2] && DrawInfoHasTag(&compiling, "strong") && DrawInfoHasTag(&compiling, "mono"))
     testing.expect(t, name.color.a == 0 && !DrawInfoHasTag(&name, "strong") && DrawInfoHasTag(&name, "mono"))
     testing.expect(t, warning.color == dark[3] && DrawInfoHasTag(&value, "italic") && failed.color == dark[1])
+    // a ground is a rectangle behind its run, in its color; underlined text has the tag
+    marked, marked_found := find(&test.ctx, "marked")
+    testing.expect(t, marked_found && DrawInfoHasTag(&marked, "underline"))
+    grounds: int
+    for command in UiCommands(&test.ctx) {
+        if command.kind != .DRAW || command.info.kind != .FILL { continue }
+        grounds += 1
+        testing.expect_value(t, command.info.color, dark[1])
+        testing.expect(t, command.info.rect.x == marked.rect.x && command.info.rect.z == marked.rect.z && command.info.rect.y <= marked.rect.y)
+    }
+    testing.expect_value(t, grounds, 1)
     // a run after another on its line; a line under the other, an empty line takes its room
     testing.expect(t, name.rect.y == compiling.rect.y && name.rect.x >= compiling.rect.x + compiling.rect.z - 0.5)
     testing.expect(t, warning.rect.y > compiling.rect.y)

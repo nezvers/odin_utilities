@@ -76,6 +76,7 @@ StyleKind :: enum u8 {
     DATE_CELL,          // a day of the month a date field shows: name the number, SELECTED flag for the day of the date
     CHART,              // a chart: user is the ^ChartView (the series, the range of the axes, the hovered and the picked point); the style draws with ChartPlotRect, ChartPosition, ChartBarRect
     CUSTOM,             // DrawInfo.custom is called instead of a table entry
+    FILL,               // a plain rectangle in `color` (the ground of a piece of text)
 }
 
 Flag :: enum u8 {

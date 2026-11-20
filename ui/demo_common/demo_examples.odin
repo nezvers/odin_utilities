@@ -912,11 +912,11 @@ TERM_SEED: [9]string = {
     "\x1b[2m$\x1b[0m odin test ui -strict-style -vet",
     "\x1b[1;32m   Compiling\x1b[0m ui (247 tests)",
     "\x1b[33mwarning\x1b[0m: \x1b[3mtext_storage\x1b[0m may be kept after the procedure returns",
-    "  \x1b[2m--> ui/shortcut.odin:76:5\x1b[0m",
+    "  \x1b[2m--> \x1b[4mui/shortcut.odin:76:5\x1b[0m",
     "\x1b[36m[INFO ]\x1b[0m starting test runner with \x1b[1m12\x1b[0m threads",
     "\x1b[32mok\x1b[0m   test_markdown_is_read_block_by_block \x1b[2m(0.4 ms)\x1b[0m",
     "\x1b[32mok\x1b[0m   test_a_link_of_a_rich_text_is_clicked \x1b[2m(0.9 ms)\x1b[0m",
-    "\x1b[1;31mFAIL\x1b[0m test_a_completion_list_writes_the_item_in: expected \x1b[38;5;214m2\x1b[0m, got \x1b[38;5;214m1\x1b[0m",
+    "\x1b[1;97;41m FAIL \x1b[0m test_a_completion_list_writes_the_item_in: expected \x1b[38;5;214m2\x1b[0m, got \x1b[38;5;214m1\x1b[0m",
     "Finished 247 tests in \x1b[1m51 ms\x1b[0m. \x1b[31m1 test failed.\x1b[0m",
 }
 
@@ -1810,7 +1810,7 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
     kit.Wait(5),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("   Compiling", "strong") && shown("text_storage", "italic") && shown("FAIL", "strong") && shown("1 test failed.", "mono") }, "the output has its styles"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("   Compiling", "strong") && shown("text_storage", "italic") && shown(" FAIL ", "strong") && shown("ui/shortcut.odin:76:5", "underline") && drawn(.FILL, "") && shown("1 test failed.", "mono") }, "the output has its styles"),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         for command in ui.UiCommands(&state.app.ctx) {
             info: ui.DrawInfo = command.info

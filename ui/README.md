@@ -324,7 +324,7 @@ row with its cached rows, so a frame only asks for the rows in view. A string in
 italic, the 16 colors (`ANSI_COLORS_DARK` / `ANSI_COLORS_LIGHT`, or a palette of the program), the 256 colors and a color by its parts. `ui.UiAnsiLine` draws one line and
 carries the style to the next (`AnsiState`): for a long log declare only the lines in view with it. `AnsiNext` is the reader, run by run, for a program that wants the
 runs. The text is read every frame it is shown, nothing is kept or allocated. Bold is the tag "strong" on a text in the code face: the default style draws it in its strong code face (JetBrains Mono Bold; `Face.MONO_STRONG`). Italic
-code has no face of its own and looks like the rest. A background color is not drawn and every other escape sequence (moving the cursor,
+code has no face of its own and looks like the rest. A ground behind a run is a rectangle of the kind FILL, underline the tag "underline". Every other escape sequence (moving the cursor,
 clearing) is skipped: it shows a log, it is not a screen of cells.
 
 ## Editing commands for a text

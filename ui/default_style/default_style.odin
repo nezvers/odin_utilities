@@ -373,6 +373,7 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.BACKDROP] = DrawBackdrop
     style.procs[.TEXT_AREA] = DrawTextArea
     style.procs[.HIGHLIGHT] = DrawHighlight
+    style.procs[.FILL] = DrawFill
     style.procs[.ICON] = DrawIcon
     style.procs[.TEXT_SELECTION] = DrawTextSelection
     style.procs[.TEXT_CARET] = DrawTextCaret
@@ -660,7 +661,7 @@ SyntaxColor :: proc(theme: ^Theme, info: ^ui.DrawInfo) -> (color: ui.Color, foun
 }
 
 // A text. With the tag "title" or "strong" it is in the strong face, with "italic" in the italic one, with "mono" in the code face,
-// with "dim" in the dim color, with "link" in the accent with a line under it.
+// with "dim" in the dim color, with "link" in the accent with a line under it, with "underline" with a line under it in its own color.
 DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
@@ -671,7 +672,11 @@ DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter.draw_text(painter, info.text, {info.rect.x, info.rect.y}, info.font_size, color)
     painter.face = .REGULAR
     // the line under a link is faint until the pointer or the focus is on it
-    if link { painter.fill_rect(painter, {info.rect.x, info.rect.y + info.rect.w - 1, info.rect.z, 1}, {color.r, color.g, color.b, 255 if ui.DrawInfoHasTag(info, "hover") else 150}) }
+    if link {
+        painter.fill_rect(painter, {info.rect.x, info.rect.y + info.rect.w - 1, info.rect.z, 1}, {color.r, color.g, color.b, 255 if ui.DrawInfoHasTag(info, "hover") else 150})
+    } else if ui.DrawInfoHasTag(info, "underline") {
+        painter.fill_rect(painter, {info.rect.x, info.rect.y + info.rect.w - 1, info.rect.z, 1}, color)
+    }
 }
 
 // The icon of a control and its label, centered together in the rect. An icon without a label is in the middle.
@@ -1123,6 +1128,12 @@ DrawTextCaret :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     if math.mod(ctx.time, 1.0) < 0.5 {
         painter.fill_rect(painter, info.rect, painter.theme.text)
     }
+}
+
+// A plain rectangle in the color of the element
+DrawFill :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    painter.fill_rect(painter, info.rect, info.color)
 }
 
 DrawHighlight :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {

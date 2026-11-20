@@ -6,15 +6,17 @@ package ui
 // before.
 //
 // What is read: SGR (the sequences that end in `m`): reset, bold, dim, italic and their ends, the 8 colors and the 8 bright ones, the 256 colors (38;5;n), a
-// color by its parts (38;2;r;g;b), the default color. A background color is read and not drawn. Every other escape sequence (moving the cursor, clearing) is
-// skipped: this shows a log, it is not a screen.
+// color by its parts (38;2;r;g;b), the default color, the same for the ground behind the text (40 to 47, 100 to 107, 48;..., 49), underline. Every other
+// escape sequence (moving the cursor, clearing) is skipped: this shows a log, it is not a screen.
 //
 // Baldr's terminal screen (examples/25_terminal) was the reason to have it; the code is written for this library.
 
 // The style of the text at a place of the output
 AnsiState :: struct {
     color: Color,               // alpha 0: the color of the style
+    background: Color,          // alpha 0: none
     bold: bool,
+    underline: bool,
     dim: bool,
     italic: bool,
 }
@@ -56,13 +58,18 @@ ansiApply :: proc(state: ^AnsiState, numbers: []int, palette: ^[16]Color) {
         case number == 1: state.bold = true
         case number == 2: state.dim = true
         case number == 3: state.italic = true
+        case number == 4: state.underline = true
+        case number == 24: state.underline = false
+        case number >= 40 && number <= 47: state.background = palette[number - 40]
+        case number >= 100 && number <= 107: state.background = palette[number - 100 + 8]
+        case number == 49: state.background = {}
         case number == 22: state.bold, state.dim = false, false
         case number == 23: state.italic = false
         case number >= 30 && number <= 37: state.color = palette[number - 30]
         case number >= 90 && number <= 97: state.color = palette[number - 90 + 8]
         case number == 39: state.color = {}
         case number == 38 || number == 48:
-            // a color by its number or by its parts; of a background (48) it is read and left
+            // a color by its number or by its parts, of the text or of its ground
             color: Color
             if i + 2 < len(numbers) && numbers[i + 1] == 5 {
                 color = AnsiColor256(numbers[i + 2], palette)
@@ -73,7 +80,9 @@ ansiApply :: proc(state: ^AnsiState, numbers: []int, palette: ^[16]Color) {
             } else {
                 i = len(numbers)
             }
-            if number == 38 && color.a != 0 { state.color = color }
+            if color.a != 0 {
+                if number == 38 { state.color = color } else { state.background = color }
+            }
         }
         i += 1
     }
@@ -154,7 +163,15 @@ UiAnsiLine :: proc(ctx: ^Context, line: string, state: ^AnsiState, palette: ^[16
             UiPushTag(ctx, "dim")
             pushed += 1
         }
+        if state.underline {
+            UiPushTag(ctx, "underline")
+            pushed += 1
+        }
+        // a ground behind the run: an element around its text
+        grounded: bool = state.background.a != 0
+        if grounded { ElementOpen(ctx, {draw = {kind = .FILL, color = state.background}}) }
         TextOpen(ctx, run, {wrap = .NONE, color = state.color})
+        if grounded { ElementClose(ctx) }
         for _ in 0 ..< pushed { UiPopTag(ctx) }
     }
     UiPopTag(ctx)
