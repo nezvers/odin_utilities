@@ -134,12 +134,21 @@ Face :: enum u8 {
     STRONG,             // the labels of controls, titles (Inter SemiBold)
     ITALIC,
     MONO,               // code, numbers that line up
-    MONO_STRONG,        // code that is strong (JetBrains Mono Bold): a glue without a font for it draws it in MONO (FaceFallback)
+    MONO_STRONG,        // code that is strong (JetBrains Mono Bold)
+    STRONG_ITALIC,      // Inter SemiBold Italic
+    MONO_ITALIC,        // JetBrains Mono Italic
+    MONO_STRONG_ITALIC, // JetBrains Mono Bold Italic
 }
 
-// The face a glue draws in when it has no font for a face
+// The face a glue draws in when it has no font for a face: the nearest one it has by taking away the italic, then the strength
 FaceFallback :: proc(face: Face) -> Face {
-    return .MONO if face == .MONO_STRONG else .REGULAR
+    switch face {
+    case .MONO_STRONG_ITALIC: return .MONO_STRONG
+    case .MONO_STRONG, .MONO_ITALIC: return .MONO
+    case .STRONG_ITALIC: return .STRONG
+    case .REGULAR, .STRONG, .ITALIC, .MONO: return .REGULAR
+    }
+    return .REGULAR
 }
 
 // The first number of the Lucide icons among the icons of the ui (ui.Icon): LucideIcon(.SAVE) is an icon for ui.UiIcon, a button, a tree node
@@ -263,11 +272,15 @@ painterOf :: proc(ctx: ^ui.Context) -> ^Painter {
     return cast(^Painter)ctx.user
 }
 
-// The face a text with the tags of the style is drawn in: "title" and "strong" strong, "mono" the code face (strong code has a face of its own), "italic"
-// italic, else regular
+// The face a text with the tags of the style is drawn in: "title" and "strong" strong, "mono" the code face, "italic" italic, each of them together with the
+// others (strong code, italic code, strong italic text), else regular
 TagFace :: proc(strong: bool, mono: bool, italic: bool = false) -> Face {
-    if mono { return .MONO_STRONG if strong else .MONO }
-    return .STRONG if strong else (.ITALIC if italic else .REGULAR)
+    if mono {
+        if strong { return .MONO_STRONG_ITALIC if italic else .MONO_STRONG }
+        return .MONO_ITALIC if italic else .MONO
+    }
+    if strong { return .STRONG_ITALIC if italic else .STRONG }
+    return .ITALIC if italic else .REGULAR
 }
 
 // The measure proc for ui.UiInit when the painter is the user pointer. A text is measured in the face DrawLabel draws it in (by the tags it was declared with), so a title

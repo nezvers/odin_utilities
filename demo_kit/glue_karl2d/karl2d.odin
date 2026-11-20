@@ -16,7 +16,7 @@ _ :: font           // only used with -define:DEMO_VECTOR_TEXT
 
 MAX_TEXTURES :: 64
 MAX_SOUNDS :: 64
-MAX_FONTS :: 8
+MAX_FONTS :: 16
 
 State :: struct {
     textures: [MAX_TEXTURES]karl2d.Texture,

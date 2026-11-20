@@ -54,7 +54,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Selection of read text: a third click takes the whole paragraph of a rich text
 - [x] Selection of read text: its end moved by Shift + arrows, Home, End
 - [ ] Selection of read text: a place that survives a virtual list (the program would have to give the order of its rows and the text of the rows that are not declared)
-- [ ] A strong italic and an italic code face (the atlas of the vector text has 8 faces: the standalone glues are full)
+- [x] Strong italic text and italic code faces (`ATLAS_FACES` 16, Inter SemiBold Italic made from Inter Variable Italic)
 - [x] A drag that rests over a widget (`UiDragRest`) and Baldr's 35_spring
 - [x] Markdown that arrives (Baldr's 26_reply): shown at every length of the text, a test over every prefix
 - [x] A completion list in a text area (`UiComplete`) and Baldr's 34_mentions

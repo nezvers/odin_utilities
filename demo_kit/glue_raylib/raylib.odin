@@ -17,7 +17,7 @@ _ :: font           // only used with -define:DEMO_VECTOR_TEXT
 
 MAX_TEXTURES :: 64
 MAX_SOUNDS :: 64
-MAX_FONTS :: 8                  // one less than the faces of a text system has room for the fonts after the default one
+MAX_FONTS :: 16                 // one less than the faces of a text system has room for the fonts after the default one
 
 State :: struct {
     textures: [MAX_TEXTURES]rl.Texture2D,

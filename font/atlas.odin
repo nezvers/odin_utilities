@@ -28,7 +28,7 @@ ATLAS_MAX_CURVES :: 1024            // curves in one glyph (after cutting them i
 ATLAS_MAX_BANDS :: 24
 BAND_EPSILON :: f32(1.0 / 1024)     // bands overlap by this much (em units) so that a curve that touches a border is in both
 
-ATLAS_FACES :: 8                    // fonts one atlas holds: regular, bold, italic, bold italic (a face is named by bit 0 = bold, bit 1 = italic), and four more that a program names itself (another weight, a code face, an icon font)
+ATLAS_FACES :: 16                   // fonts one atlas holds: regular, bold, italic, bold italic (a face is named by bit 0 = bold, bit 1 = italic), and four more that a program names itself (another weight, a code face, an icon font)
 
 Atlas :: struct {
     font: ^Font,                // face 0 (the regular one)

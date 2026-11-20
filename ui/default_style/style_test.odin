@@ -62,7 +62,7 @@ recorderPainter :: proc(painter: ^Painter, recorder: ^Recorder, theme: Theme, wi
             recorder: ^Recorder = recorderOf(painter)
             recorder.texts += 1
             if painter.face == .STRONG { recorder.strong_texts += 1 }
-            if painter.face == .MONO || painter.face == .MONO_STRONG { recorder.mono_texts += 1 }
+            if painter.face == .MONO || painter.face == .MONO_STRONG || painter.face == .MONO_ITALIC || painter.face == .MONO_STRONG_ITALIC { recorder.mono_texts += 1 }
             for wanted, i in recorder.wanted {
                 if wanted != "" && wanted == text {
                     recorder.found[i] = true
@@ -73,7 +73,7 @@ recorderPainter :: proc(painter: ^Painter, recorder: ^Recorder, theme: Theme, wi
         },
         measure_text = proc(painter: ^Painter, text: string, size: f32) -> ui.Vec2 {
             // the strong face is a little wider, as a real one is
-            return {f32(len(text)) * size * (0.55 if painter.face == .STRONG || painter.face == .MONO_STRONG else 0.5), size}
+            return {f32(len(text)) * size * (0.55 if painter.face == .STRONG || painter.face == .MONO_STRONG || painter.face == .STRONG_ITALIC || painter.face == .MONO_STRONG_ITALIC else 0.5), size}
         },
         clip = proc(painter: ^Painter, rect: ui.Rect, begin: bool) {
             recorderOf(painter).clips += 1
