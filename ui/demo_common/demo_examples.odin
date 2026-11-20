@@ -1,10 +1,11 @@
 #+private file
 package demo_common
 
-// Seven examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Eight examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
-// a menu that opens from a button, tooltips, a card that takes a click, a dialog) and 21_charts (the same numbers as a line, an area, bars and a scatter). The texts and the sample data are the ones of the originals. There a `view` builds a tree and an `update` answers messages; here the page is
+// a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
+// a thread that posts messages, here a download is a number that grows with the time of the frame). The texts and the sample data are the ones of the originals. There a `view` builds a tree and an `update` answers messages; here the page is
 // declared every frame and a widget hands back what happened: the counter is `if ui.UiButton(...) { count += 1 }`.
 
 import "core:fmt"
@@ -66,11 +67,26 @@ State :: struct {
     chart_picked: [64]u8,
     chart_picked_length: int,
     chart_id: ui.Id,
+    // 09_jobs
+    downloads: [3]Download,
+    bumps: int,
 }
+
+Download :: struct {
+    name: string,
+    size: f32,                      // bytes
+    got: f32,
+    running: bool,
+    cancelled: bool,
+    seconds: f32,                   // how long it has been running, or how long it took
+}
+
+// what a download gets per second: the 96 KB every 20 ms of the original
+DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [7]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts"}
+EXAMPLES: [8]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs"}
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
 FRUIT: [5]string = {"Apple", "Banana", "Cherry", "Dragon fruit", "Elderberry"}
@@ -94,6 +110,7 @@ init :: proc(ctx: ^kit.Context) {
     _, _, state.hue = ui_default.ColorToOklch(state.accent)
     state.lab_switch = true
     state.fruit = 2
+    state.downloads = {{name = "odin-nightly.tar.gz", size = 24_000_000}, {name = "fonts.zip", size = 9_500_000}, {name = "changelog.md", size = 400_000}}
     ui.ChartViewInit(&state.chart)
     // the numbers of the original
     for i in 0 ..< 12 {
@@ -260,6 +277,71 @@ toasts :: proc(c: ^ui.Context, screen: ui.Vec2) {
         ui.UiLabelDim(c, "Click to dismiss")
         ui.ElementClose(c)
         y += 80
+    }
+}
+
+downloadStart :: proc(download: ^Download) {
+    if download.running { return }
+    download.got, download.seconds, download.cancelled, download.running = 0, 0, false, true
+}
+
+downloadStatus :: proc(c: ^ui.Context, download: Download) -> string {
+    megabytes: f32 = download.size / 1e6
+    switch {
+    case download.running:
+        return ui.UiFormat(c, "%.1f of %.1f MB, %.1f MB/s", download.got / 1e6, megabytes, download.got / 1e6 / max(download.seconds, 0.001))
+    case download.cancelled:
+        return ui.UiFormat(c, "Cancelled at %.1f of %.1f MB", download.got / 1e6, megabytes)
+    case download.got == download.size && download.size > 0:
+        return ui.UiFormat(c, "Done in %.1f s", download.seconds)
+    }
+    return ui.UiFormat(c, "%.1f MB", megabytes)
+}
+
+// 09_jobs: three downloads. The work goes on while the page is drawn and used: a button counts clicks to show it.
+jobs :: proc(c: ^ui.Context, delta_time: f32) {
+    for &download in state.downloads {
+        if !download.running { continue }
+        download.seconds += delta_time
+        download.got = min(download.got + DOWNLOAD_RATE * delta_time, download.size)
+        if download.got >= download.size { download.running = false }
+    }
+    if stage(c, "jobs", {560, 460}, {direction = .TOP_TO_BOTTOM, gap = 14, padding = ui.PaddingAll(24)}) {
+        ui.UiTitle(c, "Downloads", 1.6)
+        ui.UiLabelDim(c, "Each transfer goes on while the page is drawn; the page never waits.", .WORDS)
+        if ui.UiTagged(c, "flat") {
+            for &download, i in state.downloads {
+                ui.ElementOpen(c, {
+                    id = ui.IdFromIndex(u32(i), ui.UiId(c, "download")),
+                    layout = {size = {ui.Grow(), ui.Fit()}, direction = .TOP_TO_BOTTOM, gap = 8, padding = ui.PaddingAll(12)},
+                    draw = {kind = .PANEL},
+                })
+                if row(c) {
+                    ui.UiTitle(c, download.name, 1.05)
+                    ui.UiSpacer(c, {ui.Grow(), ui.Fixed(1)})
+                    ui.UiLabelDim(c, downloadStatus(c, download), scale = 0.9)
+                    if download.running {
+                        if ui.UiTagged(c, "outline") {
+                            if ui.UiButton(c, ui.UiFormat(c, "Cancel##%d", i)) { download.running, download.cancelled = false, true }
+                        }
+                    } else if ui.UiTagged(c, "secondary") {
+                        if ui.UiButton(c, ui.UiFormat(c, "%s##%d", "Download" if download.got == 0 else "Again", i)) { downloadStart(&download) }
+                    }
+                }
+                if ui.UiTagged(c, "thin") { ui.UiProgress(c, ui.UiFormat(c, "##progress%d", i), download.got, 0, download.size, {ui.Grow(), {}}) }
+                ui.ElementClose(c)
+            }
+        }
+        if row(c) {
+            if ui.UiTagged(c, "primary") {
+                if ui.UiButton(c, "Download all") {
+                    for &download in state.downloads { downloadStart(&download) }
+                }
+            }
+            if ui.UiTagged(c, "outline") {
+                if ui.UiButton(c, ui.UiFormat(c, "Clicked %d times: still responsive##bump", state.bumps)) { state.bumps += 1 }
+            }
+        }
     }
 }
 
@@ -474,6 +556,8 @@ draw :: proc(ctx: ^kit.Context) {
         overlays(c)
     case 6:
         charts(c)
+    case 7:
+        jobs(c, ctx.delta_time)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -681,6 +765,44 @@ script: []kit.Step = {
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.chart_kind == .BAR && state.chart.low.y == 0 }, "the bars stand on 0"),
     kit.Capture("examples_charts_bar"),
+    kit.Wait(2),
+
+    // jobs: all three start, the small one is done at once, the page takes clicks meanwhile, the big one is cancelled
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(7) }, "the Jobs tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("jobs", "Download all")) }, "the Download all button is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.downloads[0].running && state.downloads[1].running }, "the downloads are running"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("jobs", "Clicked 0 times: still responsive##bump")) }, "the counting button is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(8),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        small: Download = state.downloads[2]
+        return state.bumps == 1 && !small.running && small.got == small.size && state.downloads[0].got > 0
+    }, "the page took a click while the downloads went on, and the small file is done"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        // the Cancel button of the first download, found by its place in the last frame
+        return aim(ui.IdFromString("Cancel##0", ui.IdFromIndex(0, ui.IdFromString("download", ui.UiIdPath("jobs")))))
+    }, "the first download has a Cancel button while it runs"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        first: Download = state.downloads[0]
+        return !first.running && first.cancelled && first.got > 0 && first.got < first.size
+    }, "Cancel stops the first download where it was"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        // the pictures are taken with the same numbers on every machine: the second download is put at a half
+        state.downloads[1].got, state.downloads[1].seconds, state.downloads[1].running = 4_750_000, 1, false
+        state.downloads[1].cancelled = true
+        state.downloads[0].got = 6_000_000
+        state.downloads[2].seconds = 0.1          // how long the small file took depends on the frames of the machine
+        return true
+    }, "fixed numbers for the picture"),
+    kit.MoveTo({640, 700}),
+    kit.Wait(3),
+    kit.Capture("examples_jobs"),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
