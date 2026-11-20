@@ -4,6 +4,7 @@ package demo_kit
 
 import "core:os"
 import "core:slice"
+import "core:sync"
 import "core:testing"
 
 @(private="file")
@@ -22,6 +23,8 @@ Toy :: struct {
 }
 @(private="file")
 toy: Toy
+// The tests that use the toy take this: the test runner runs tests on several threads, and they would count in the same toy
+toy_lock: sync.Mutex
 
 @(private="file")
 toy_init :: proc(ctx: ^Context) {
@@ -85,6 +88,7 @@ toy_demo :: proc() -> Demo {
 
 @(test)
 test_a_script_plays_into_the_input_and_checks_pass :: proc(t: ^testing.T) {
+    sync.mutex_guard(&toy_lock)
     state: HeadlessState
     backend: Backend
     HeadlessInit(&backend, &state)
@@ -118,6 +122,7 @@ test_a_failing_check_is_reported_with_its_message :: proc(t: ^testing.T) {
 
 @(test)
 test_a_demo_without_a_script_is_a_smoke_test :: proc(t: ^testing.T) {
+    sync.mutex_guard(&toy_lock)
     state: HeadlessState
     backend: Backend
     HeadlessInit(&backend, &state)
@@ -139,6 +144,7 @@ test_a_script_that_never_ends_is_stopped :: proc(t: ^testing.T) {
 
 @(test)
 test_the_menu_switches_demos_by_click :: proc(t: ^testing.T) {
+    sync.mutex_guard(&toy_lock)
     state: HeadlessState
     backend: Backend
     HeadlessInit(&backend, &state)
