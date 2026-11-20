@@ -493,7 +493,10 @@ selectKeysTaken :: proc(ctx: ^Context, input: Input) -> Actions {
     if !ctx.select.active || .SHIFT not_in input.modifiers { return {} }
     focused: ^WidgetState = stateFind(ctx, ctx.focus)
     if focused != nil && focused.editing { return {} }
-    return input.actions & {.LEFT, .RIGHT, .UP, .DOWN, .HOME, .END}
+    taken: Actions = input.actions & {.LEFT, .RIGHT, .UP, .DOWN, .HOME, .END}
+    // a page is a number of rows of a list: when the end is not in a list the keys are the focus's
+    if ctx.select.cursor.group != 0 { taken += input.actions & {.PAGE_UP, .PAGE_DOWN} }
+    return taken
 }
 
 // The line of a selectable text a place is in, and where the place is on the screen
@@ -597,16 +600,19 @@ selectKeys :: proc(ctx: ^Context) {
     cursor: SelectPoint = select.cursor
     line, top, x, height, found := selectLineOf(ctx, cursor)
     if !found {
-        // the end is a row of a list that is out of view (the list was scrolled away): up and down still move it by rows, and bring it back into view
+        // the end is a row of a list that is out of view (the list was scrolled away): the keys move it by letters, rows and pages, and bring it back into view
         if cursor.group != 0 {
-            if .UP in actions { if place, moved := selectGroupStep(ctx, cursor, -1); moved { select.cursor = place } }
-            if .DOWN in actions { if place, moved := selectGroupStep(ctx, select.cursor, 1); moved { select.cursor = place } }
+            cursor = selectGroupMove(ctx, cursor, actions)
+            if .UP in actions { if place, moved := selectGroupStep(ctx, cursor, -1); moved { cursor = place } }
+            if .DOWN in actions { if place, moved := selectGroupStep(ctx, cursor, 1); moved { cursor = place } }
+            select.cursor = cursor
         }
         return
     }
-    element: i32 = selectElementOf(ctx, cursor)               // a row that is in view: the text it is (the end of the selection may not move out of view)
+    if cursor.group != 0 { cursor = selectGroupMove(ctx, cursor, actions) }
+    element: i32 = selectElementOf(ctx, select.cursor)             // a row that is in view: the text it is (the end of the selection may not move out of view)
     text: string = ctx.elements[element].text.text
-    if .LEFT in actions {
+    if .LEFT in actions && cursor.group == 0 {
         if cursor.offset > 0 {
             _, width := utf8.decode_last_rune_in_string(text[:cursor.offset])
             cursor.offset -= i32(width)
@@ -621,7 +627,7 @@ selectKeys :: proc(ctx: ^Context) {
             }
         }
     }
-    if .RIGHT in actions {
+    if .RIGHT in actions && cursor.group == 0 {
         if int(cursor.offset) < len(text) {
             _, width := utf8.decode_rune_in_string(text[cursor.offset:])
             cursor.offset += i32(width)
@@ -681,4 +687,59 @@ selectReveal :: proc(ctx: ^Context, place: SelectPoint) {
     } else if top + group.row_height > state.rect.w {
         state.scroll.y -= top + group.row_height - state.rect.w
     }
+}
+
+// Left, right, page up and page down for an end that is a place in a list: by a letter (over the border of a cell into the next cell, and of a row into the next
+// row), by a page of its rows. Done on the texts the program gives, so it works for rows that are out of view; the list scrolls to show where it ended.
+@(private)
+selectGroupMove :: proc(ctx: ^Context, cursor_in: SelectPoint, actions: Actions) -> SelectPoint {
+    cursor: SelectPoint = cursor_in
+    slot: int = selectGroupSlot(&ctx.select, cursor.group)
+    if slot < 0 { return cursor }
+    group: ^SelectGroup = &ctx.select.groups[slot]
+    if group.row_text == nil || group.count <= 0 { return cursor }
+    row, cell, offset: int = int(cursor.element), int(cursor.cell), int(cursor.offset)
+    text :: proc(group: ^SelectGroup, row: int, cell: int) -> string {
+        return group.row_text(group.user, row, cell)
+    }
+    if .LEFT in actions {
+        current: string = text(group, row, cell)
+        if offset > 0 {
+            _, width := utf8.decode_last_rune_in_string(current[:min(offset, len(current))])
+            offset = max(min(offset, len(current)) - width, 0)
+        } else if cell > 0 || row > 0 {
+            // into the end of the cell before, one letter in (a press of a key has to change what is selected)
+            if cell > 0 { cell -= 1 } else { row, cell = row - 1, group.cells - 1 }
+            before: string = text(group, row, cell)
+            offset = len(before)
+            if offset > 0 {
+                _, width := utf8.decode_last_rune_in_string(before)
+                offset -= width
+            }
+        }
+    }
+    if .RIGHT in actions {
+        current: string = text(group, row, cell)
+        if offset < len(current) {
+            _, width := utf8.decode_rune_in_string(current[offset:])
+            offset += width
+        } else if cell < group.cells - 1 || row < group.count - 1 {
+            if cell < group.cells - 1 { cell += 1 } else { row, cell = row + 1, 0 }
+            after: string = text(group, row, cell)
+            offset = 0
+            if len(after) > 0 {
+                _, width := utf8.decode_rune_in_string(after)
+                offset = width
+            }
+        }
+    }
+    if .PAGE_UP in actions || .PAGE_DOWN in actions {
+        page: int = 10
+        if state := stateFind(ctx, group.scroll); state != nil && group.row_height > 0 && state.rect.w > 0 { page = max(int(state.rect.w / group.row_height) - 1, 1) }
+        row = clamp(row + page if .PAGE_DOWN in actions else row - page, 0, group.count - 1)
+        offset = min(offset, len(text(group, row, cell)))
+    }
+    moved: SelectPoint = {group = cursor.group, element = i32(row), offset = i32(offset), cell = i32(cell)}
+    if moved != cursor_in { selectReveal(ctx, moved) }
+    return moved
 }

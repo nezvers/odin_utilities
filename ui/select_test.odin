@@ -766,3 +766,63 @@ test_the_end_of_a_selection_moves_out_of_view_and_the_list_follows :: proc(t: ^t
     testing.expect_value(t, selected, "row ")                // the end is in the first row again, at the fourth letter, and went no further up
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_letters_and_pages_move_the_end_of_a_selection_through_the_rows_of_a_list :: proc(t: ^testing.T) {
+    test: ^RevealTest = new(RevealTest)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    test.list = {selected = VIRTUAL_NONE, text = true}
+    UiInit(&test.ctx, &test.storage, measure)
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 4 { revealFrame(test, away) }
+    point: Vec2
+    for command in UiCommands(&test.ctx) {
+        info: DrawInfo = command.info
+        if command.kind == .DRAW && info.kind == .LABEL && info.text == "row 000 text" { point = {info.rect.x + 1, info.rect.y + info.rect.w * 0.5} }
+    }
+    to: Vec2 = point + {4 * DEFAULT_METRICS.font_size * 0.5, 0}
+    revealFrame(test, {mouse_position = point})
+    revealFrame(test, {mouse_position = point, mouse_down = true, mouse_pressed = true})
+    revealFrame(test, {mouse_position = to, mouse_down = true})
+    revealFrame(test, {mouse_position = to, mouse_released = true})
+    revealFrame(test, away)
+    key :: proc(test: ^RevealTest, action: Action) -> string {
+        revealFrame(test, {mouse_position = {-100, -100}, actions = {action}, modifiers = {.SHIFT}})
+        revealFrame(test, {mouse_position = {-100, -100}})
+        revealFrame(test, {mouse_position = {-100, -100}})
+        text, _ := UiTextSelected(&test.ctx)
+        return text
+    }
+    testing.expect_value(t, key(test, .RIGHT), "row 0")
+    for _ in 0 ..< 7 { key(test, .RIGHT) }                  // the end of the row: 12 letters
+    testing.expect_value(t, key(test, .RIGHT), "row 000 text\nr")   // over the border into the next row, one letter in
+    testing.expect_value(t, key(test, .LEFT), "row 000 text\n")
+    testing.expect_value(t, key(test, .LEFT), "row 000 tex")        // back over the border: one letter in from the end of the row before
+    // a page: a view of five rows is four rows, from where the end is
+    testing.expect_value(t, key(test, .PAGE_DOWN), "row 000 text\nrow 001 text\nrow 002 text\nrow 003 text\nrow 004 tex")
+    for _ in 0 ..< 5 { key(test, .PAGE_DOWN) }
+    selected, _ := UiTextSelected(&test.ctx)
+    lines: int
+    for character in transmute([]u8)selected {
+        if character == '\n' { lines += 1 }
+    }
+    testing.expect_value(t, lines, 24)
+    testing.expect(t, UiScrollGet(&test.ctx, test.list_id) >= 20 * 20 - 0.5, "the list followed the end down the pages")
+    // out of view: the keys still move the end
+    UiScrollSet(&test.ctx, test.list_id, 0)
+    for _ in 0 ..< 4 { revealFrame(test, away) }
+    testing.expect_value(t, test.list.first, 0)
+    selected, _ = UiTextSelected(&test.ctx)
+    before: int = len(selected)
+    selected = key(test, .LEFT)
+    testing.expect_value(t, len(selected), before - 1)
+    testing.expect(t, test.list.first > 15, "and the list came back")
+    for _ in 0 ..< 10 { key(test, .PAGE_UP) }
+    selected, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, selected, "row 000 te")         // the first row again (a letter less: the Left of before), and no further
+    testing.expect_value(t, test.list.first, 0)
+    // when the end is not in a list a page is the focus's
+    UiTextSelectionClear(&test.ctx)
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}
