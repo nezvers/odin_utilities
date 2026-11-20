@@ -16,6 +16,7 @@ package ui_raylib
 //     ui.UiRender(&ctx)           // draws into the batch of raylib that is open: same one as the game
 //     rl.EndDrawing()
 
+import "core:math"
 import rl "vendor:raylib"
 import ui ".."
 import ui_default "../default_style"
@@ -29,6 +30,21 @@ import icons "../../icons"
 Fonts :: struct {
     faces: [ui_default.Face]rl.Font,
     icons: rl.Font,
+    // for the text: the file of each face (the embedded ones below), parsed for its exact advances, and the glyphs of the sizes that were drawn (see drawText)
+    sources: [ui_default.Face]font.Font,
+    source_ok: [ui_default.Face]bool,
+    source_bytes: [ui_default.Face][]u8,
+    sized: [ui_default.Face][SIZED_FONTS]SizedFont,
+    sized_count: [ui_default.Face]int,
+    glyph_count: int,
+}
+
+SIZED_FONTS :: 12                // the sizes of one face that text was drawn at
+
+// The glyphs of a face made at one size
+SizedFont :: struct {
+    pixels: i32,
+    font: rl.Font,
 }
 
 INTER_REGULAR :: #load("../../assets/fonts/inter/Inter-Regular.ttf")
@@ -57,6 +73,15 @@ FontsLoad :: proc(fonts: ^Fonts, size: i32 = 32, glyph_count: int = 1280) {
     fonts.faces[.STRONG_ITALIC] = load(INTER_SEMIBOLD_ITALIC, size, codepoints[:glyph_count])
     fonts.faces[.MONO_ITALIC] = load(JETBRAINS_MONO_ITALIC, size, codepoints[:glyph_count])
     fonts.faces[.MONO_STRONG_ITALIC] = load(JETBRAINS_MONO_BOLD_ITALIC, size, codepoints[:glyph_count])
+    sources: [ui_default.Face][]u8 = {
+        .REGULAR = INTER_REGULAR, .STRONG = INTER_SEMIBOLD, .ITALIC = INTER_ITALIC, .MONO = JETBRAINS_MONO, .MONO_STRONG = JETBRAINS_MONO_BOLD,
+        .STRONG_ITALIC = INTER_SEMIBOLD_ITALIC, .MONO_ITALIC = JETBRAINS_MONO_ITALIC, .MONO_STRONG_ITALIC = JETBRAINS_MONO_BOLD_ITALIC,
+    }
+    fonts.glyph_count = glyph_count
+    for face in ui_default.Face {
+        fonts.source_bytes[face] = sources[face]
+        fonts.source_ok[face] = font.FontInit(&fonts.sources[face], sources[face])
+    }
     // the icons without NONE, which has no glyph
     for i in 0 ..< len(icons.Icon) - 1 { codepoints[i] = icons.ICON_FIRST_CHARACTER + rune(i) }
     fonts.icons = load(icons.LUCIDE_FONT, size, codepoints[:len(icons.Icon) - 1])
@@ -64,6 +89,9 @@ FontsLoad :: proc(fonts: ^Fonts, size: i32 = 32, glyph_count: int = 1280) {
 
 FontsUnload :: proc(fonts: ^Fonts) {
     for face in fonts.faces { rl.UnloadFont(face) }
+    for face in ui_default.Face {
+        for i in 0 ..< fonts.sized_count[face] { rl.UnloadFont(fonts.sized[face][i].font) }
+    }
     rl.UnloadFont(fonts.icons)
     fonts^ = {}
 }
@@ -122,11 +150,15 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
             buffer: [TEXT_BUFFER_SIZE]u8
             scale: f32 = ui_default.PainterScale(painter)
+            if painter.fonts != nil && drawText(cast(^Fonts)painter.fonts, painter.face, text, ui_default.PaintPoint(painter, position), size * scale, color) { return }
             rl.DrawTextEx(fontOf(painter), cstringInto(&buffer, text), ui_default.PaintPoint(painter, position), size * scale, spacingOf(painter, size * scale), rl.Color(color))
         },
         measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
             buffer: [TEXT_BUFFER_SIZE]u8
             scale: f32 = ui_default.PainterScale(painter)
+            if painter.fonts != nil {
+                if width, ok := measureText(cast(^Fonts)painter.fonts, painter.face, text, size * scale); ok { return {width, size * scale} / scale }
+            }
             return rl.MeasureTextEx(fontOf(painter), cstringInto(&buffer, text), size * scale, spacingOf(painter, size * scale)) / scale
         },
         draw_texture = proc(painter: ^ui_default.Painter, texture: u32, source: ui.Rect, destination: ui.Rect, tint: ui.Color) {
@@ -179,6 +211,68 @@ cstringInto :: proc(buffer: ^[TEXT_BUFFER_SIZE]u8, text: string) -> cstring {
     copy(buffer[:count], text[:count])
     buffer[count] = 0
     return cstring(raw_data(buffer[:]))
+}
+
+// ---- text ---------------------------------------------------------------------------------------------------------------------------------------------------
+// raylib makes one bitmap of a font at the size it is loaded in and scales it: smaller text is a blurred copy, and its advances are whole pixels of the loading size, so
+// the letters crowd or drift apart. Karl2D makes the glyphs at the size they are drawn at and moves the pen by the exact advance. The same here (as in demo_kit's raylib
+// glue): the glyphs of a size are made once from the file of the face (a cache of SIZED_FONTS sizes per face), each is drawn on a whole pixel and the pen moves by the
+// advance of the file in em units, so a text measures the same at every size and the layout agrees with Karl2D's. Kerning pairs are not applied (measure and draw agree).
+
+// The glyphs of `face` for text of `size` pixels. False when the file is not known or the cache is full: the atlas of the loading size is used then.
+@(private)
+sizedFace :: proc(fonts: ^Fonts, face: ui_default.Face, size: f32) -> (result: rl.Font, ok: bool) {
+    if !fonts.source_ok[face] { return {}, false }
+    pixels: i32 = clamp(i32(size + 0.5), 4, 256)
+    for i in 0 ..< fonts.sized_count[face] {
+        if fonts.sized[face][i].pixels == pixels { return fonts.sized[face][i].font, true }
+    }
+    if fonts.sized_count[face] >= SIZED_FONTS { return {}, false }
+    codepoints: [dynamic]rune
+    defer delete(codepoints)
+    for i in 0 ..< fonts.glyph_count { append(&codepoints, rune(i)) }
+    bytes: []u8 = fonts.source_bytes[face]
+    loaded: rl.Font = rl.LoadFontFromMemory(".ttf", raw_data(bytes), i32(len(bytes)), pixels, raw_data(codepoints), i32(len(codepoints)))
+    if loaded.texture.id == 0 { return {}, false }
+    fonts.sized[face][fonts.sized_count[face]] = {pixels, loaded}
+    fonts.sized_count[face] += 1
+    return loaded, true
+}
+
+// The size of an em in pixels when the text is `size` pixels high (raylib's size runs from the ascent to the descent)
+@(private)
+emPixels :: proc(source: ^font.Font, size: f32) -> f32 {
+    height: f32 = source.ascent - source.descent
+    return size / height if height > 0 else size
+}
+
+@(private)
+measureText :: proc(fonts: ^Fonts, face: ui_default.Face, text: string, size: f32) -> (width: f32, ok: bool) {
+    if !fonts.source_ok[face] { return 0, false }
+    source: ^font.Font = &fonts.sources[face]
+    em: f32 = emPixels(source, size)
+    for character in text {
+        if character < 32 { continue }
+        width += font.FontAdvance(source, font.FontGlyph(source, character)) * em
+    }
+    return width, true
+}
+
+// False when the exact path cannot draw it (the caller draws with the atlas of the loading size)
+@(private)
+drawText :: proc(fonts: ^Fonts, face: ui_default.Face, text: string, position: ui.Vec2, size: f32, color: ui.Color) -> bool {
+    sized, ok := sizedFace(fonts, face, size)
+    if !ok { return false }
+    source: ^font.Font = &fonts.sources[face]
+    em: f32 = emPixels(source, size)
+    x: f32 = position.x
+    for character in text {
+        if character < 32 { continue }
+        // a whole pixel for the glyph, the exact advance for the pen: the glyph is sharp and the spacing does not drift
+        rl.DrawTextCodepoint(sized, character, {math.round(x), math.round(position.y)}, size, rl.Color(color))
+        x += font.FontAdvance(source, font.FontGlyph(source, character)) * em
+    }
+    return true
 }
 
 // The font of the face the painter is set to: of its set of fonts (PainterUseFonts), else the one font it was made with, else the font of raylib
