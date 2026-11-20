@@ -110,6 +110,7 @@ CpuForce :: proc "contextless" (level: Level) {
     cpu: ^Cpu = CpuGet()
     cpu.forced = LevelClamp(level, cpu.level)
     cpu.was_forced = cpu.forced != cpu.level
+    if text_ready { textSelect() }            // the text kernels follow
 }
 
 CpuBrand :: proc "contextless" (cpu: ^Cpu) -> string {

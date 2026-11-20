@@ -3,12 +3,13 @@
 Tasks; a task starts with `(high)`, `(medium)` (the default) or `(low)`; tick it when it is done, verified and committed.
 
 ## From the reading of simdutf8 (`references/simdutf8`)
-- [ ] (medium) Text kernels as the second example of the library, and for `font` and `ui` (see `font/TODO.md`): `AsciiPrefix(bytes) -> int` (the length of the ASCII start: SCALAR 8
-      bytes at a time with a mask, SSE2 and NEON a 16 byte move mask, AVX2 32, AVX-512 64), `RuneCount(bytes) -> int` (the bytes that are not continuation bytes: a vector compare
-      and a population count) and `Utf8Valid(bytes) -> bool`, each a `Table` with a kernel per level and a test against the portable one at every length (0, 1, 15, 16, 17, 63, 64, 65
-      and the tails) and on unaligned slices. `Utf8Valid` is the three lookup method (nibble tables for `pshufb` / `vpshufb` / NEON `tbl` / SIMD128 swizzle, an incomplete-sequence
-      carry between blocks, a check of the last block with a padded copy): SSSE3 is the first level that has it, the SCALAR level is a state machine or `core:unicode/utf8`. Use the
-      test inputs of simdutf8 (`tests/tests.rs`: overlong forms, surrogates, above U+10FFFF, cuts at the end of a block) as cases, written out again here.
+- [x] Text kernels (`text.odin`, `text_vector.odin`, `text_vector_x86.odin`; GB/s on 1 MB, 9950X, `odin run simd/tool/info -o:speed -- --bench`, SSE2 / SSSE3 / AVX2 / AVX-512 / scalar):
+      `AsciiPrefix` 70 / 71 / 131 / 173 / 39, `IndexOfByte` 66 / 65 / 127 / 174 / 22, `RuneCount` 40 / 40 / 79 / 150 / 8, `Utf8Valid` on ASCII 40 / 74 / 75 / 75 / 40 and on mixed text with
+      accents and CJK 5.7 / 21.9 / 25.3 / 25.3 / 5.7 (the lookup method with a byte shuffle: SSSE3, NEON and SIMD128 have it). `AsciiRun`, `IndexOfAny`, `ScanText`, `Utf8ValidUpTo`,
+      `Utf8Next` (the maximal subpart rule), `Utf8TrimPartial`, `Utf8Clean`. Tests: every kernel of every level against the scalar one on 6000 random texts with damage (stray and cut
+      bytes, the edges of the ranges), the standard library as the judge of validity, every length and position of the byte that ends a run, the examples of Unicode table 3-8, cuts of a
+      stream, and everything again at `-o:none`, `-o:minimal`, `-o:speed`. The pitfall of the research showed up as written: a `load32` helper without the target feature lost the upper
+      half of a 256 bit value at `-o:none`; every wide kernel loads inline now. Not done: the 32 byte ASCII skip inside the validator (AVX2 on ASCII is 75, the same as SSSE3).
 - [ ] (medium) The AVX-512 throttling rule: simdutf8 selects its 512 bit kernel only on CPUs with VBMI2 (Ice Lake and later) because the earlier ones lower the clock of the core while
       they run 512 bit instructions. Add `Feature.AVX512VBMI2` (CPUID 7, ECX bit 6) and, for the manager, a way to say "wide, but only where it does not throttle": a `Policy` field
       `wide_needs: Features` (default `{.AVX512VBMI2}` when the vendor is Intel, nothing on AMD Zen 4 and later, which does not throttle) so that on a Skylake-X the AVX-512 level goes to
@@ -19,19 +20,14 @@ Tasks; a task starts with `(high)`, `(medium)` (the default) or `(low)`; tick it
       selection is off in that case. For the table this means a kernel of the build's level needs no `enable_target_feature` and no run time check.
 
 ## From the reading of ghostty (`references/ghostty/src/simd`)
-- [ ] (high) `IndexOfByte(bytes, needle)` and `IndexOfAny(bytes, set of up to 4)` kernels (SCALAR with a word at a time, SSE2 and NEON 16 bytes, AVX2 32, AVX-512 64; compare, move
-      mask, count trailing zeros), as `Table`s: the base of every "find the next ESC / newline / space" loop in `ui` (cell screen, text wrap) and `font` (wordWidth). Tests at every
-      length, at the first and the last byte, in the tail, with the needle not there, on unaligned slices.
-- [ ] (medium) The stop-at-control kernel: `ScanText(bytes, stop) -> (length, ascii: bool)`: the length up to the first byte that is `stop` (ESC) or 0x80 and above, and whether the whole
-      scanned part is ASCII, in one pass (compare, signed compare, OR, find first set). A consumer generic over `u8` and `u32` runs so ASCII is never widened (ghostty's
-      `DecodeUTF8UntilControlSeq`). Used by `AnsiScreenWrite` (see `ui/TODO.md`).
+- [x] `IndexOfByte` and `IndexOfAny` (see the text kernels above: 4 byte set, 16, 32 and 64 byte steps, move mask and count trailing zeros)
+- [x] `ScanText(bytes, stop)`: where `stop` is first and whether everything before it is ASCII, in one pass (SIMD at 16, 32, 64 bytes)
 - [ ] (medium) `RuneWidthRanges`: the width of a codepoint by range vectors (starts and ends in two aligned arrays of u16 and u32, the codepoint broadcast, a compare of a vector of ranges
       per step, frequent classes first, a constant min and max per table to reject early), with the exhaustive test against a reference over every codepoint (run it with the table;
       keep it in the test file under a `FULL` flag, not commented out). The tables come from the Unicode data files by a tool (see `font/TODO.md`).
 - [ ] (low) A `Lanes($T)` helper: twice the native vector length (the number of lanes for a hot loop at the level, `LevelLanes` / size of T times two) so the loops of one level are written once for
       the element type.
-- [ ] (low) The maximal subpart decoder as a library piece (`Utf8Next(bytes, at) -> (rune, size)` and `Utf8TrimPartial(bytes) -> int` that trims only a valid-so-far tail), used by `font`, `ui`
-      and `AnsiScreenWrite`; one rule, one set of tests (see `font/TODO.md`).
+- [x] The maximal subpart decoder as a library piece: `Utf8Next`, `Utf8TrimPartial`, `Utf8Clean` (`font`, `ui` and the cell screen move to it next)
 - [ ] (low) A benchmark convention for the library: a generator tool that writes inputs to files with a fixed seed, and a bench tool that reads them, so two revisions run the same bytes
       (`tool/info --bench` makes its data in the process: fine for a screen, not for a comparison).
 

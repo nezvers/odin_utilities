@@ -39,6 +39,15 @@ kernel, level, ok := simd_utils.TablePick(&sum_table, simd_utils.CpuLevel())    
 `TableUseful(&table, level)` says where more width stops paying. Measure it, and write the measurement where you call it: the gather kernel of the odin_plug resampler was
 15 to 20 percent slower than four scalar sums, the radix 8 passes of its AVX-512 FFT lose above 8192 points (16 power of two strides alias in L1).
 
+## Text kernels
+
+`text.odin`: `AsciiPrefix`, `AsciiRun`, `IndexOfByte`, `IndexOfAny`, `ScanText`, `RuneCount`, `Utf8Valid`, `Utf8ValidUpTo`, and the scalar pieces `Utf8Next` (the character at a place; a bad
+sequence is ONE error the size of its maximal subpart, as in the Unicode standard, table 3-7), `Utf8TrimPartial` (where a chunk of a stream can be cut) and `Utf8Clean` (a copy with U+FFFD
+for every bad subpart). A kernel per level (`TextLevel(level)` gives the table of a level, the plain procedures use `CpuLevel()` and follow `CpuForce` and `SIMD_LEVEL`): 16 bytes for SSE2, NEON
+and SIMD128 from one source of `core:simd`, 32 for AVX2, 64 for AVX-512; the UTF-8 validator is the lookup method of Keiser and Lemire (nibble tables and a byte shuffle, 16 byte vectors, ASCII
+groups skipped with one test, the exact place of an error from the scalar rule). 40 to 170 GB/s for the scans and 20 to 25 GB/s for the validator on mixed text (4 to 5 times the scalar one).
+`odin run simd/tool/info -o:speed -- --bench` prints them per level.
+
 ## The manager
 
 A program with an audio engine, a physics step and an image filter runs them on one core, often on two threads that share one set of vector units, and on some CPUs a few

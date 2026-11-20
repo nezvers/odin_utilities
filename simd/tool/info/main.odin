@@ -45,7 +45,10 @@ main :: proc() {
     for id in ([?]su.ClientId{audio, physics, images}) { fmt.println(" ", su.ManagerExplain(&manager, id, line[:])) }
 
     for argument in os.args[1:] {
-        if argument == "--bench" { bench() }
+        if argument == "--bench" {
+            bench()
+            benchText()
+        }
     }
 }
 
@@ -73,5 +76,49 @@ bench :: proc() {
         }
         if level == .SCALAR { base = best }
         fmt.printf("  %-12s %9.1f ns   %5.2fx  (%v)\n", su.LevelName(level), best, base / best if base > 0 else 1, sink != 0)
+    }
+}
+
+// The text kernels on 1 MB: English text with some accents and a little CJK (so the validator has real work), GB/s per level
+benchText :: proc() {
+    fmt.println()
+    fmt.println("text kernels, 1 MB (best of 5; GB/s)")
+    text: [dynamic]u8
+    defer delete(text)
+    pieces := [?]string{"The quick brown fox jumps over the lazy dog, again and again. ", "café naïve façade ", "日本語のテキスト ", "plain ASCII text with numbers 0123456789 and symbols ~!@# "}
+    for i := 0; len(text) < 1 << 20; i += 1 { append(&text, ..transmute([]u8)pieces[i % len(pieces)]) }
+    ascii: [dynamic]u8
+    defer delete(ascii)
+    for len(ascii) < 1 << 20 { append(&ascii, ..transmute([]u8)pieces[0]) }
+    Case :: struct { name: string, run: proc(procs: ^su.TextProcs, bytes: []u8) -> int }
+    cases := [?]Case{
+        {"ascii_prefix (ASCII)", proc(p: ^su.TextProcs, b: []u8) -> int { return p.ascii_prefix(b) }},
+        {"index_of_byte (ASCII)", proc(p: ^su.TextProcs, b: []u8) -> int { return p.index_of_byte(b, 0x1b) }},
+        {"rune_count (mixed)", proc(p: ^su.TextProcs, b: []u8) -> int { return p.rune_count(b) }},
+        {"utf8_valid (ASCII)", proc(p: ^su.TextProcs, b: []u8) -> int { return p.utf8_valid_up_to(b) }},
+        {"utf8_valid (mixed)", proc(p: ^su.TextProcs, b: []u8) -> int { return p.utf8_valid_up_to(b) }},
+    }
+    fmt.printf("  %-24s", "")
+    for level in su.Level { if su.LevelUsable(level, su.CpuBest()) && level != .SCALAR && su.LevelFamily(level) == su.CpuGet().family { fmt.printf(" %10s", su.LevelName(level)) } }
+    fmt.printf(" %10s\n", "scalar")
+    for test_case, c in cases {
+        data: []u8 = ascii[:] if c < 4 else text[:]
+        fmt.printf("  %-24s", test_case.name)
+        measure :: proc(test_case: Case, level: su.Level, data: []u8) -> f64 {
+            procs: ^su.TextProcs = su.TextLevel(level)
+            best: f64 = 1e30
+            sink: int
+            for _ in 0 ..< 5 {
+                start: time.Tick = time.tick_now()
+                for _ in 0 ..< 20 { sink += test_case.run(procs, data) }
+                best = min(best, f64(time.duration_nanoseconds(time.tick_since(start))) / 20)
+            }
+            _ = sink
+            return f64(len(data)) / best
+        }
+        for level in su.Level {
+            if su.LevelUsable(level, su.CpuBest()) && level != .SCALAR && su.LevelFamily(level) == su.CpuGet().family { fmt.printf(" %10.2f", measure(test_case, level, data)) }
+        }
+        fmt.printf(" %10.2f\n", measure(test_case, .SCALAR, data))
     }
 }
