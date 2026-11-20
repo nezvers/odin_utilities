@@ -1,7 +1,7 @@
 #+private file
 package demo_common
 
-// Nine examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Ten examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
 // a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
@@ -77,6 +77,15 @@ State :: struct {
     source_id: ui.Id,
     opened: [64]u8,             // the address of the link that was clicked last
     opened_length: int,
+    // 32_chat
+    messages: [CHAT_MESSAGES]Message,
+    message_count: int,
+    draft: [MESSAGE_TEXT]u8,
+    draft_length: int,
+    draft_id: ui.Id,
+    chat_list: ui.Id,
+    chat_follow: int,           // frames the list is still moved to its end (a new message is laid out in the next frame)
+    replies: int,
 }
 
 Download :: struct {
@@ -93,7 +102,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [9]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown"}
+EXAMPLES: [10]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat"}
 NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
@@ -119,6 +128,9 @@ init :: proc(ctx: ^kit.Context) {
     state.lab_switch = true
     state.fruit = 2
     state.note_length = copy(state.note[:], NOTE)
+    state.message_count = 0
+    state.replies = 0
+    for seed, i in CHAT_SEED { chat_add(seed, i % 2 == 1) }
     state.downloads = {{name = "odin-nightly.tar.gz", size = 24_000_000}, {name = "fonts.zip", size = 9_500_000}, {name = "changelog.md", size = 400_000}}
     ui.ChartViewInit(&state.chart)
     // the numbers of the original
@@ -372,6 +384,78 @@ markdown :: proc(c: ^ui.Context) {
     }
 }
 
+// 32_chat with the bubbles of 29_styled_text: messages as bubbles that are as wide as their text, with styles inside (the marks of Markdown), in a list that
+// stays at its newest message. The messages are in fixed storage: when it is full the oldest one goes.
+CHAT_MESSAGES :: 24
+MESSAGE_TEXT :: 160
+Message :: struct {
+    mine: bool,
+    text: [MESSAGE_TEXT]u8,
+    length: int,
+}
+CHAT_SEED: [7]string = {
+    "Did the **charts** land?",
+    "Yes, with the *color blind safe* palette. Line, area, bar and scatter.",
+    "And the date field?",
+    "A popup with a month to pick from, `UiDateField`. The time field is a combo over the times of a day.",
+    "Nice. What is left?",
+    "The editor with syntax colors. A paragraph with **strong**, *italic*, `code` and [links](ui/README.md) is done, and it wraps inside of a bubble like this one.",
+    "Send me a picture when it is in.",
+}
+CHAT_REPLIES: [3]string = {"Noted.", "I will look at *that* tomorrow.", "**Done**, see [the list](ui/TODO.md)."}
+
+chat_add :: proc(text: string, mine: bool) {
+    if state.message_count == CHAT_MESSAGES {
+        copy(state.messages[:CHAT_MESSAGES - 1], state.messages[1:])
+        state.message_count -= 1
+    }
+    message: ^Message = &state.messages[state.message_count]
+    message.mine = mine
+    message.length = copy(message.text[:], text)
+    state.message_count += 1
+    state.chat_follow = 3
+}
+
+chat :: proc(c: ^ui.Context) {
+    if stage(c, "chat", {640, 440}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(20)}) {
+        ui.UiTitle(c, "Chat", 1.25)
+        list: ui.Id = ui.UiId(c, "##messages")
+        state.chat_list = list
+        list_rect, _ := ui.UiElementRect(c, list)
+        // a bubble takes up to three quarters of the list (a guess before the list was laid out once)
+        widest: f32 = max(list_rect.z, 560) * 0.72
+        if state.chat_follow > 0 {
+            ui.UiScrollSet(c, list, 1e9)
+            state.chat_follow -= 1
+        }
+        if ui.UiScroll(c, "##messages", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, gap = 8, padding = {0, 14, 0, 0}}) {
+            for &message, i in state.messages[:state.message_count] {
+                ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, align = {x = .RIGHT if message.mine else .LEFT}}})
+                ui.UiPushTag(c, "bubble")
+                if message.mine { ui.UiPushTag(c, "mine") }
+                ui.ElementOpen(c, {layout = {size = {ui.Fit(), ui.Fit()}, padding = {12, 12, 8, 8}}, draw = {kind = .PANEL}})
+                if message.mine { ui.UiPopTag(c) }
+                ui.UiPopTag(c)
+                ui.UiRichText(c, ui.UiFormat(c, "##message %d", i), string(message.text[:message.length]), 1, widest - 24)
+                ui.ElementClose(c)
+                ui.ElementClose(c)
+            }
+        }
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 8, align = {y = .CENTER}}})
+        state.draft_id = ui.UiId(c, "Message##draft")
+        _, submitted := ui.UiTextField(c, "Message##draft", state.draft[:], &state.draft_length, {ui.Grow(), {}})
+        if ui.UiTagged(c, "primary") { submitted |= ui.UiButton(c, "Send", {}, state.draft_length == 0, ui_default.LucideIcon(.SEND)) }
+        ui.ElementClose(c)
+        if submitted && state.draft_length > 0 {
+            chat_add(string(state.draft[:state.draft_length]), true)
+            state.draft_length = 0
+            // the other side answers at once: the page has no clock, so its script and its pictures are the same on every machine
+            chat_add(CHAT_REPLIES[state.replies % len(CHAT_REPLIES)], false)
+            state.replies += 1
+        }
+    }
+}
+
 // 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
 charts :: proc(c: ^ui.Context) {
     if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
@@ -587,6 +671,8 @@ draw :: proc(ctx: ^kit.Context) {
         jobs(c, ctx.delta_time)
     case 8:
         markdown(c)
+    case 9:
+        chat(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -877,5 +963,27 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.opened[:state.opened_length]) == "ui/README.md" && shown("Link clicked: ui/README.md", "dim") }, "a clicked link gives its address"),
+
+    // chat: bubbles with styles inside, the list at its newest message; a sent message and its answer are added and the list follows
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(9) }, "the Chat tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("Send me a picture when it is in.", "") && shown("links", "link") }, "the newest message is in view, with the styles of the one before"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiScrollGet(&state.app.ctx, state.chat_list) > 0 }, "the list is at its end"),
+    kit.Capture("examples_chat"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        rect, found := ui.UiElementRect(&state.app.ctx, state.draft_id)
+        target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+        return found
+    }, "the field is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Type("On *it*."),
+    kit.Tap(.ENTER),
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.message_count == len(CHAT_SEED) + 2 && state.draft_length == 0 }, "the message and its answer are added, the field is empty"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("it", "italic") && shown("Noted.", "") }, "both are in view: the list followed"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

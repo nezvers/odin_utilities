@@ -44,7 +44,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Tables in `UiMarkdown`
 - [x] Links of a rich text can be clicked (`address, clicked := UiRichText(...)`, the same from `UiMarkdown`)
 - [x] (was) Runs of several styles in one wrapped text (bold, italic, code and links inside of a paragraph: the measure proc needs the face, the wrap has to break between runs); `UiMarkdown` would then draw emphasis instead of only taking its marks away
-- [ ] Baldr examples that are still to be remade with this library (references/Baldr/examples): 19_markdown, 07_code (an editor with syntax colors), date and time fields; the desktop shell ones (taskbar, dock, applets, tray) need a window system and are out of scope
+- [ ] Baldr examples that are still to be remade with this library (references/Baldr/examples): 07_code (an editor with syntax colors), 08_rich (a rich text editor), 20_shortcuts (rebinding by pressing), 27_conversation (one selection over several messages), 33_reading (a region in colors of its own); the desktop shell ones (taskbar, dock, applets, tray) need a window system and are out of scope
 - [ ] (later) Timeline: SIMD for the block renderer (ramps and fills with 8 or 16 lanes; the compiler may vectorize the loops already: check the assembly), a plan that several tracks share the cursor search of
 - [ ] (low priority) Right-to-left text (needs a font with the script and shaping for Arabic: measuring, wrapping, caret and selection all change)
 - [x] Virtual list and table (`UiVirtual`, `UiTable`): only the rows in view are declared, selection by pointer and keys, sortable header, resizable columns; demo with 100 000 rows and a screenshot

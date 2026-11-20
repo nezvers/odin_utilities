@@ -228,3 +228,34 @@ test_a_rich_text_breaks_again_when_its_room_changes :: proc(t: ^testing.T) {
     count, _ = lines(test)
     testing.expect_value(t, count, 1)
 }
+
+@(test)
+test_a_rich_text_with_a_width_limit_is_as_wide_as_its_text :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 4096),
+        ctx: Context,
+        style: Style,
+        short, long: Id,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    size: f32 = DEFAULT_METRICS.font_size
+    // already in the first frame: the width does not come from the frame before
+    UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {1200, 600}, &test.style)
+    if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(1000), {}}) {
+        test.short, test.long = UiId(&test.ctx, "short"), UiId(&test.ctx, "long")
+        UiRichText(&test.ctx, "short", "aaaa **bbbb**", 1, size * 10)
+        UiRichText(&test.ctx, "long", "aaaa bbbb cccc dddd eeee ffff", 1, size * 5)
+    }
+    UiEnd(&test.ctx)
+    short, short_found := UiElementRect(&test.ctx, test.short)
+    long, long_found := UiElementRect(&test.ctx, test.long)
+    testing.expect(t, short_found && long_found)
+    testing.expect_value(t, short.z, size * 4.5)                // nine letters: the text, not the limit and not the window
+    testing.expect_value(t, short.w, size)
+    testing.expect_value(t, long.z, size * 4.5)                 // two words a line
+    testing.expect_value(t, long.w, size * 3)
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

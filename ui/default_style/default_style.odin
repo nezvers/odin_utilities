@@ -546,6 +546,12 @@ DrawPanel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     case "tooltip", "dropdown", "combo", "menu", "drag":
         raised = true
     }
+    if ui.DrawInfoHasTag(info, "bubble") {
+        // a message of a chat: one's own in the soft accent, the others a step above the panel
+        fill: ui.Color = theme.accent_soft if ui.DrawInfoHasTag(info, "mine") else theme.surface_high
+        FillRoundedBorder(painter, info.rect, theme.panel_rounding, fill, fill, theme.border_width, theme.panel_max_radius)
+        return
+    }
     if info.name == "code" {
         // a block of code (ui.UiMarkdown): a well, like a field
         FillRoundedBorder(painter, info.rect, theme.rounding, theme.track, theme.border_soft, theme.border_width, theme.max_radius)

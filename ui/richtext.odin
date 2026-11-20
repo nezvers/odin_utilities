@@ -175,8 +175,9 @@ richWidth :: proc(ctx: ^Context, text: string, font_size: f32) -> f32 {
 // A paragraph of `source` with its marks drawn as styles, as wide as its container. `name` makes its id (it remembers its width), `scale` is its size as a part of
 // the font size. The tags that are pushed around it reach every run (a "dim" paragraph is dim). A link takes the pointer and the keyboard like a button: when one
 // is clicked `clicked` is true and `address` is what stands in its round brackets (a part of `source`); what to do with it is the program's.
-UiRichText :: proc(ctx: ^Context, name: string, source: string, scale: f32 = 1) -> (address: string, clicked: bool) {
-    return richParagraph(ctx, UiId(ctx, name), source, ctx.style.metrics.font_size * scale)
+// With `max_width` the paragraph is as wide as its text and not wider than that (the text of a bubble): its lines are broken for `max_width`.
+UiRichText :: proc(ctx: ^Context, name: string, source: string, scale: f32 = 1, max_width: f32 = 0) -> (address: string, clicked: bool) {
+    return richParagraph(ctx, UiId(ctx, name), source, ctx.style.metrics.font_size * scale, max_width)
 }
 
 // The run that is built: the pieces of one style (and of one link) that follow each other on a line, at the end of the text memory of the frame
@@ -233,10 +234,13 @@ richPut :: proc(ctx: ^Context, text: string) -> bool {
 }
 
 @(private)
-richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32) -> (address: string, clicked: bool) {
+richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32, max_width: f32 = 0) -> (address: string, clicked: bool) {
     state: ^WidgetState = stateGet(ctx, id)
-    width: f32 = state.rect.z
-    ElementOpen(ctx, {id = id, layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM}})
+    // the width to break for: the one it had in the last frame, or the given one (then it is as wide as its lines)
+    fit: bool = max_width > 0
+    width: f32 = max_width if fit else state.rect.z
+    line_width_sizing: SizingAxis = Fit() if fit else Grow()
+    ElementOpen(ctx, {id = id, layout = {size = {line_width_sizing, Fit()}, direction = .TOP_TO_BOTTOM}})
     defer ElementClose(ctx)
     if width <= 0 {
         // the first frame: the width is not known yet, the paragraph is a wrapped text without its marks
@@ -265,7 +269,7 @@ richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32) -> 
             line_width, space_width = 0, 0
         }
         if !line_open {
-            ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, align = {y = .BOTTOM}}})
+            ElementOpen(ctx, {layout = {size = {line_width_sizing, Fit()}, direction = .LEFT_TO_RIGHT, align = {y = .BOTTOM}}})
             line_open = true
         }
         space: bool = space_width > 0

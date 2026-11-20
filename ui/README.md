@@ -146,7 +146,7 @@ strong face, its marks are taken away (`MarkdownInline`). No images, no alignmen
 `richtext.odin`: `ui.UiRichText(&ctx, name, "plain, **strong**, *italic*, `code` and a [link](address)")` is a paragraph that wraps at words with several styles in it. The
 layout only knows texts of one style, so the widget breaks the lines itself for the width it had in the last frame (its first frame is a plain wrapped text) and declares a
 row of texts per line: one text per run of a style, with the tags "strong", "italic", "mono" and "link" for the style to draw (the default style: strong face, italic
-face, code face, accent with a line under it) and to measure in. `RichNext` reads a text piece by piece for a program that wants the pieces. A paragraph keeps one widget
+face, code face, accent with a line under it) and to measure in. `RichNext` reads a text piece by piece for a program that wants the pieces. With `max_width` it is as wide as its text up to that width (a bubble of a chat). A paragraph keeps one widget
 state (its width) and one per link. A link takes the pointer (the hand cursor) and the keyboard focus; `address, clicked := ui.UiRichText(...)` (and `ui.UiMarkdown(...)`)
 give the address of a clicked link, a part of the source: opening it is the program's.
 
@@ -171,14 +171,15 @@ library does not do (frosted glass: the blur of what is behind a card) is left o
 (`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
 
 ## Examples of Baldr, remade
-`demo_common/demo_examples.odin` has nine of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
+`demo_common/demo_examples.odin` has ten of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
 `update`), `04_controls` (check boxes, a switch and thin sliders that change the state of the program in place; the switch turns the page to the light theme), `03_scroll` (forty
 cards in a scrolling region, a ghost button on each), `17_toasts` (raised cards at the top right that a click takes away: floating elements with `ui.UiInteract`) and
 `02_theme_lab` (a page to judge a theme by: here its accent is picked by a tile or a hue and the theme is made on the spot with `ThemeFromAccent`) and `05_overlays` (a select,
 a menu that opens from a button: `ui.UiMenu` inside of a button tag, tooltips, a card that takes a click while the cross in it keeps its own, a dialog) and `21_charts` (the
 same numbers as a line, an area, bars and a scatter with `ui.UiChart`) and `09_jobs` (three downloads with their progress while the page stays live: the original
 runs each on a thread that posts messages, here a download is a number that grows with the time of the frame) and `19_markdown` (a text in Markdown and how it reads, side
-by side, with `ui.UiTextArea` and `ui.UiMarkdown`; the original is an editor that shows the styles while one types). The texts
+by side, with `ui.UiTextArea` and `ui.UiMarkdown`; the original is an editor that shows the styles while one types) and `32_chat` with the bubbles of `29_styled_text`
+(bubbles as wide as their text with styles inside, a list that stays at its newest message, a field that sends; the panel tags "bubble" and "mine" of the default style). The texts
 and the sample data are the originals'. Each has its part of the script and a stored picture.
 
 ## The demo of Dear ImGui, remade
