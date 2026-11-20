@@ -22,7 +22,7 @@ import "core:unicode/utf8"
 // Limits: one selection for the whole ui; a text outside of a list is a place by its index among the elements, right only while the texts before it stay the same
 //     a list needs UiSelectRows and a row_text proc (at most UI_SELECT_GROUPS, 8, lists in a frame); a row has a cell for each selectable text and a copy has a tab between them (columns in column order for a table)
 //     a copy is cut at UI_SELECT_BYTES (4096); letters are runes (a mark or an emoji sequence is several); no right-to-left text, no touch, no menu; the end follows the pointer one frame behind
-//     no selection in an icon, an image or a text of a widget (a field has its own selection); Shift + arrows move the end of a selection by letters, lines and pages; a double click selects a word and a drag from it goes on by words, a triple click a paragraph (no drag by paragraphs)
+//     no selection in an icon, an image or a text of a widget (a field has its own selection); Shift + arrows move the end of a selection by letters, lines and pages; a double click selects a word and a drag from it goes on by words, a triple click a paragraph and a drag from it by paragraphs
 //
 // Baldr's selection scope (examples/27_conversation) was the reason to have it; the code is written for this library.
 
@@ -45,6 +45,13 @@ SelectGroup :: struct {
     row_height: f32,
     row_text: SelectRowText,
     user: rawptr,
+}
+
+@(private)
+SelectUnit :: enum u8 {
+    NONE,
+    WORD,
+    PARAGRAPH,
 }
 
 // A place in the selectable text of a frame
@@ -80,9 +87,9 @@ TextSelect :: struct {
     press_time: f64,            // the last press on a text and where it was: a press at the same place soon after is a double click
     press_place: SelectPoint,
     presses: int,
-    by_word: bool,              // a drag that started with a double click: the end goes by whole words
-    word_low: SelectPoint,      // the word that the double click selected
-    word_high: SelectPoint,
+    unit: SelectUnit,           // a drag that started with a double or a triple click: the end goes by whole words or paragraphs
+    unit_low: SelectPoint,      // the word or paragraph that the click selected
+    unit_high: SelectPoint,
     groups: [UI_SELECT_GROUPS]SelectGroup,
     group_count: int,
     row_group: Id,              // while a row is declared (UiSelectRow): the list and the row of the texts that are declared
@@ -367,40 +374,25 @@ selectAfterLayout :: proc(ctx: ^Context) {
             select.press_time, select.press_place = ctx.time, place
             select.active, select.dragging = true, true
             select.anchor, select.cursor = place, place
-            whole: string = ctx.elements[best.element].text.text
             switch select.presses {
             case 1:
             case 2:
-                // the word under the pointer
-                from, to := textWordAt(whole, int(place.offset))
-                select.anchor, select.cursor = selectPointOf(ctx, best.element, i32(from)), selectPointOf(ctx, best.element, i32(to))
-                // held and moved, the selection goes on by words from this one
-                select.word_low, select.word_high = select.anchor, select.cursor
-                select.by_word, select.dragging = true, true
+                // the word under the pointer; held and moved, the selection goes on by words from this one
+                select.anchor, select.cursor = selectWordBounds(ctx, best.element, int(place.offset))
+                select.unit, select.unit_low, select.unit_high = .WORD, select.anchor, select.cursor
             case:
-                // the whole paragraph: the texts before and after this one that stand in its row or go on from its line (the runs and lines of a rich text)
-                first, final: i32 = best.element, best.element
-                for {
-                    previous: i32 = selectNeighbor(ctx, first, -1)
-                    if previous < 0 || !(selectSameRow(ctx, previous, first) || ctx.elements[first].text.config.continues) { break }
-                    first = previous
-                }
-                for {
-                    next: i32 = selectNeighbor(ctx, final, 1)
-                    if next < 0 || !(selectSameRow(ctx, final, next) || ctx.elements[next].text.config.continues) { break }
-                    final = next
-                }
-                select.anchor, select.cursor = selectPointOf(ctx, first, 0), selectPointOf(ctx, final, i32(len(ctx.elements[final].text.text)))
-                select.dragging = false
+                // the whole paragraph, and by paragraphs when it is held and moved
+                select.anchor, select.cursor = selectParagraphBounds(ctx, best.element)
+                select.unit, select.unit_low, select.unit_high = .PARAGRAPH, select.anchor, select.cursor
             }
         } else if !select.keep_press {
             select.active, select.dragging = false, false
         }
     } else if select.dragging {
         if best.found {
-            if select.by_word { selectWordDrag(ctx, best.element, place) } else { select.cursor = place }
+            if select.unit != .NONE { selectUnitDrag(ctx, best.element, place) } else { select.cursor = place }
         }
-        if !input.mouse_down { select.dragging, select.by_word = false, false }
+        if !input.mouse_down { select.dragging, select.unit = false, .NONE }
     }
     // select all, when the keys are not a text field's and the pointer is over the text or a part of it is selected: every selectable text of the frame
     focused: ^WidgetState = stateFind(ctx, ctx.focus)
@@ -472,20 +464,76 @@ selectPointLess :: proc "contextless" (select: ^TextSelect, a: SelectPoint, b: S
     return a.offset < b.offset
 }
 
-// The drag that started with a double click, the pointer at `place` in the text `element`: the selection is the word of the double click and every word from it to the
-// one under the pointer. Dragging before the first word the anchor is the end of it, so the first word stays selected on either side.
+// The word under the byte `probe` of the text `element`, as two places. A word that goes on in the next text of its row, or comes from the one before (the runs of a
+// paragraph: "re", "lat" and "ly" of re*lat*ly), is one word: the places are then in other texts.
 @(private)
-selectWordDrag :: proc(ctx: ^Context, element: i32, place: SelectPoint) {
-    select: ^TextSelect = &ctx.select
+selectWordBounds :: proc(ctx: ^Context, element: i32, probe: int) -> (low: SelectPoint, high: SelectPoint) {
     text: string = ctx.elements[element].text.text
-    probe: int = int(place.offset)
-    low, high := textWordAt(text, probe)
-    if low == high && probe > 0 { low, high = textWordAt(text, probe - 1) }           // at the end of the text: the last word
-    here_low, here_high := selectPointOf(ctx, element, i32(low)), selectPointOf(ctx, element, i32(high))
+    first, last := textWordAt(text, probe)
+    if first == last && probe > 0 { first, last = textWordAt(text, probe - 1) }           // at the end of the text: the last word
+    low_element, high_element: i32 = element, element
+    // on: while the word reaches the end of its text and the next text of the row begins with a letter of a word
+    for {
+        current: string = ctx.elements[high_element].text.text
+        if last != len(current) || last == 0 { break }
+        end, _ := utf8.decode_last_rune_in_string(current)
+        next: i32 = selectNeighbor(ctx, high_element, 1)
+        if !textIsWordRune(end) || next < 0 || !selectSameRow(ctx, high_element, next) { break }
+        following: string = ctx.elements[next].text.text
+        start, _ := utf8.decode_rune_in_string(following)
+        if len(following) == 0 || !textIsWordRune(start) { break }
+        _, word_end := textWordAt(following, 0)
+        high_element, last = next, word_end
+    }
+    // back: the same the other way
+    for {
+        current: string = ctx.elements[low_element].text.text
+        if first != 0 || len(current) == 0 { break }
+        start, _ := utf8.decode_rune_in_string(current)
+        previous: i32 = selectNeighbor(ctx, low_element, -1)
+        if !textIsWordRune(start) || previous < 0 || !selectSameRow(ctx, previous, low_element) { break }
+        before: string = ctx.elements[previous].text.text
+        if len(before) == 0 { break }
+        end, _ := utf8.decode_last_rune_in_string(before)
+        if !textIsWordRune(end) { break }
+        word_start, _ := textWordAt(before, len(before) - 1)
+        low_element, first = previous, word_start
+    }
+    return selectPointOf(ctx, low_element, i32(first)), selectPointOf(ctx, high_element, i32(last))
+}
+
+// The paragraph the text `element` is in, as two places: the texts before and after it that stand in its row or go on from its line (the runs and lines of a rich text)
+@(private)
+selectParagraphBounds :: proc(ctx: ^Context, element: i32) -> (low: SelectPoint, high: SelectPoint) {
+    first, final: i32 = element, element
+    for {
+        previous: i32 = selectNeighbor(ctx, first, -1)
+        if previous < 0 || !(selectSameRow(ctx, previous, first) || ctx.elements[first].text.config.continues) { break }
+        first = previous
+    }
+    for {
+        next: i32 = selectNeighbor(ctx, final, 1)
+        if next < 0 || !(selectSameRow(ctx, final, next) || ctx.elements[next].text.config.continues) { break }
+        final = next
+    }
+    return selectPointOf(ctx, first, 0), selectPointOf(ctx, final, i32(len(ctx.elements[final].text.text)))
+}
+
+// The drag that started with a double or a triple click, the pointer at `place` in the text `element`: the selection is the word (the paragraph) of the click and every
+// one from it to the one under the pointer. Dragging before the first one the anchor is the end of it, so it stays selected on either side.
+@(private)
+selectUnitDrag :: proc(ctx: ^Context, element: i32, place: SelectPoint) {
+    select: ^TextSelect = &ctx.select
+    here_low, here_high: SelectPoint
+    if select.unit == .WORD {
+        here_low, here_high = selectWordBounds(ctx, element, int(place.offset))
+    } else {
+        here_low, here_high = selectParagraphBounds(ctx, element)
+    }
     switch {
-    case selectPointLess(select, here_low, select.word_low): select.anchor, select.cursor = select.word_high, here_low
-    case selectPointLess(select, select.word_high, here_high): select.anchor, select.cursor = select.word_low, here_high
-    case: select.anchor, select.cursor = select.word_low, select.word_high
+    case selectPointLess(select, here_low, select.unit_low): select.anchor, select.cursor = select.unit_high, here_low
+    case selectPointLess(select, select.unit_high, here_high): select.anchor, select.cursor = select.unit_low, here_high
+    case: select.anchor, select.cursor = select.unit_low, select.unit_high
     }
 }
 

@@ -1047,3 +1047,134 @@ test_a_drag_after_a_double_click_selects_by_words :: proc(t: ^testing.T) {
     testing.expect_value(t, selected(test), "second line here")
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_a_drag_after_a_triple_click_selects_by_paragraphs :: proc(t: ^testing.T) {
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 3 { frame(test, away) }
+    selected :: proc(test: ^Test) -> string {
+        text, _ := UiTextSelected(&test.ctx)
+        return text
+    }
+    // three presses, the last one held and moved
+    triple_drag :: proc(test: ^Test, from: Vec2, to: Vec2, steps: int = 3) {
+        for _ in 0 ..< 40 { frame(test, {mouse_position = {-100, -100}}) }
+        frame(test, {mouse_position = from})
+        for _ in 0 ..< 2 {
+            frame(test, {mouse_position = from, mouse_down = true, mouse_pressed = true})
+            frame(test, {mouse_position = from, mouse_released = true})
+        }
+        frame(test, {mouse_position = from, mouse_down = true, mouse_pressed = true})
+        for step in 1 ..= steps { frame(test, {mouse_position = from + (to - from) * (f32(step) / f32(steps)), mouse_down = true}) }
+        frame(test, {mouse_position = to, mouse_released = true})
+        frame(test, {mouse_position = {-100, -100}})
+    }
+    // held still: the paragraph
+    hello: Vec2 = letter(test, "hello world", 3)
+    triple_drag(test, hello, hello)
+    testing.expect_value(t, selected(test), "hello world")
+    // dragged into the next text, at any place of it: that paragraph too
+    triple_drag(test, hello, letter(test, "second line here", 5))
+    testing.expect_value(t, selected(test), "hello world\nsecond line here")
+    // dragged back up: the paragraph of the click stays, the one above joins it
+    triple_drag(test, letter(test, "second line here", 5), letter(test, "hello world", 9))
+    testing.expect_value(t, selected(test), "hello world\nsecond line here")
+    // a paragraph of runs and a paragraph of lines: each is one
+    in_bold: Vec2 = letter(test, "bold", 2)
+    triple_drag(test, in_bold, letter(test, "one two", 2))
+    testing.expect_value(t, selected(test), "plain bold end\none two three four five six")
+    triple_drag(test, letter(test, "five six", 3), in_bold)
+    testing.expect_value(t, selected(test), "plain bold end\none two three four five six")
+    // across all the paragraphs there are
+    triple_drag(test, hello, letter(test, "aaaa", 2))
+    testing.expect_value(t, selected(test), "hello world\nsecond line here\nplain bold end\none two three four five six\naaaa bbbb cccc")
+    // after the drag the next press is a plain one: by letters
+    for _ in 0 ..< 40 { frame(test, away) }
+    drag(test, letter(test, "hello world", 2), letter(test, "hello world", 4))
+    testing.expect_value(t, selected(test), "ll")
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}
+
+@(private = "file")
+RunTest :: struct {
+    storage: Storage(128, 256, 64, 2048),
+    ctx: Context,
+    style: Style,
+}
+
+@(private = "file")
+runFrame :: proc(test: ^RunTest, input: Input) {
+    UiBegin(&test.ctx, input, 1.0 / 60, {1000, 700}, &test.style)
+    if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(700), {}}) {
+        if UiTagged(&test.ctx, TEXT_SELECTABLE) {
+            UiRichText(&test.ctx, "split", "ab re*lat*ly cd")
+        }
+    }
+    UiEnd(&test.ctx)
+}
+
+@(test)
+test_a_word_over_the_runs_of_a_paragraph_is_one_word :: proc(t: ^testing.T) {
+    test: ^RunTest = new(RunTest)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 4 { runFrame(test, away) }
+    // the runs are "ab re", "lat" (italic) and "ly cd": the word "relatly" is in all three
+    run :: proc(test: ^RunTest, text: string, offset: int) -> Vec2 {
+        for command in UiCommands(&test.ctx) {
+            info: DrawInfo = command.info
+            if command.kind == .DRAW && info.kind == .LABEL && info.text == text {
+                return {info.rect.x + f32(offset) * DEFAULT_METRICS.font_size * 0.5 + 1, info.rect.y + info.rect.w * 0.5}
+            }
+        }
+        return {-1, -1}
+    }
+    _, found := run(test, "lat", 0), true
+    testing.expect(t, found && run(test, "lat", 0).x > 0 && run(test, "ab re", 0).x > 0 && run(test, "ly cd", 0).x > 0, "the runs are there")
+    selected :: proc(test: ^RunTest) -> string {
+        text, _ := UiTextSelected(&test.ctx)
+        return text
+    }
+    click :: proc(test: ^RunTest, point: Vec2, count: int, to: Vec2, hold: bool = true) {
+        for _ in 0 ..< 40 { runFrame(test, {mouse_position = {-100, -100}}) }
+        runFrame(test, {mouse_position = point})
+        for i in 0 ..< count {
+            runFrame(test, {mouse_position = point, mouse_down = true, mouse_pressed = true})
+            if i < count - 1 || !hold { runFrame(test, {mouse_position = point, mouse_released = true}) }
+        }
+        if hold {
+            runFrame(test, {mouse_position = to, mouse_down = true})
+            runFrame(test, {mouse_position = to, mouse_down = true})
+            runFrame(test, {mouse_position = to, mouse_released = true})
+        }
+        runFrame(test, {mouse_position = {-100, -100}})
+    }
+    middle: Vec2 = run(test, "lat", 1)
+    // a double click on the middle run: the whole word, from the first run to the last, with nothing between the pieces
+    click(test, middle, 2, middle, false)
+    testing.expect_value(t, selected(test), "relatly")
+    // on the first or the last run: the same word
+    click(test, run(test, "ab re", 4), 2, {}, false)
+    testing.expect_value(t, selected(test), "relatly")
+    click(test, run(test, "ly cd", 1), 2, {}, false)
+    testing.expect_value(t, selected(test), "relatly")
+    // a word of a run alone is that word
+    click(test, run(test, "ab re", 1), 2, {}, false)
+    testing.expect_value(t, selected(test), "ab")
+    click(test, run(test, "ly cd", 4), 2, {}, false)
+    testing.expect_value(t, selected(test), "cd")
+    // dragged on by words: forward and back, the word of the click whole either way
+    click(test, middle, 2, run(test, "ly cd", 4))
+    testing.expect_value(t, selected(test), "relatly cd")
+    click(test, middle, 2, run(test, "ab re", 1))
+    testing.expect_value(t, selected(test), "ab relatly")
+    click(test, run(test, "ab re", 1), 2, middle)
+    testing.expect_value(t, selected(test), "ab relatly")
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}
