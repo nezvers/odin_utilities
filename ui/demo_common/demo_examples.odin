@@ -1,7 +1,7 @@
 #+private file
 package demo_common
 
-// Eleven examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Twelve examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
 // a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
@@ -11,6 +11,7 @@ package demo_common
 
 import "core:fmt"
 import "core:math"
+import "core:reflect"
 import ui ".."
 import ui_default "../default_style"
 import kit "../../demo_kit"
@@ -89,6 +90,10 @@ State :: struct {
     // 33_reading
     paper: int,
     page: int,
+    // 20_shortcuts
+    chords: [len(SHORTCUT_ACTIONS)]ui.Chord,
+    chord_ids: [len(SHORTCUT_ACTIONS)]ui.Id,
+    chord_changes: int,
 }
 
 Download :: struct {
@@ -105,7 +110,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [11]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading"}
+EXAMPLES: [12]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts"}
 NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
@@ -132,6 +137,8 @@ init :: proc(ctx: ^kit.Context) {
     state.fruit = 2
     state.note_length = copy(state.note[:], NOTE)
     state.paper, state.page = 1, 0
+    state.chords = {{{.CTRL}, u16(kit.Key.S)}, {{.CTRL}, u16(kit.Key.O)}, {{.CTRL}, u16(kit.Key.F)}, {{.CTRL, .SHIFT}, u16(kit.Key.B)}, {}}
+    state.chord_changes = 0
     state.message_count = 0
     state.replies = 0
     for seed, i in CHAT_SEED { chat_add(seed, i % 2 == 1) }
@@ -512,6 +519,40 @@ reading :: proc(c: ^ui.Context) {
     }
 }
 
+// 20_shortcuts: a shortcut is set by pressing it. A click on a row makes it listen; the next key with the modifiers that are held is written down. Escape lets
+// go, Backspace takes the shortcut away. A shortcut that another action had is taken from that one: two actions never share one.
+SHORTCUT_ACTIONS: [5]string = {"Save", "Open", "Find", "Toggle the sidebar", "Reload"}
+
+shortcuts :: proc(c: ^ui.Context, input: ^kit.Input) {
+    // the key that went down in this frame, in the numbers of the kit; a key that only is a modifier is no key of a shortcut
+    pressed: ui.Chord = {modifiers = c.input.modifiers}
+    for key in kit.Key {
+        if key == .None || (key >= .LEFT_SHIFT && key <= .RIGHT_ALT) || key not_in input.keys_pressed { continue }
+        pressed.key = u16(key)
+        break
+    }
+    if stage(c, "shortcuts", {520, 400}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(24)}) {
+        ui.UiTitle(c, "Shortcuts", 1.6)
+        ui.UiLabelDim(c, "Click a shortcut and press the keys. Escape lets go, Backspace takes it away.", .WORDS)
+        for action, i in SHORTCUT_ACTIONS {
+            ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 12, align = {y = .CENTER}}})
+            ui.UiLabel(c, action)
+            ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}}})
+            ui.ElementClose(c)
+            name: string = ui.UiFormat(c, "##shortcut %d", i)
+            state.chord_ids[i] = ui.UiId(c, name)
+            changed, _ := ui.UiShortcutField(c, name, &state.chords[i], pressed, proc(key: u16) -> string { return reflect.enum_string(kit.Key(key)) }, {ui.Fixed(170), {}})
+            if changed {
+                state.chord_changes += 1
+                for &other, k in state.chords {
+                    if k != i && other == state.chords[i] { other = {} }
+                }
+            }
+            ui.ElementClose(c)
+        }
+    }
+}
+
 // 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
 charts :: proc(c: ^ui.Context) {
     if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
@@ -732,6 +773,8 @@ draw :: proc(ctx: ^kit.Context) {
         chat(c)
     case 10:
         reading(c)
+    case 11:
+        shortcuts(c, &ctx.input)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -739,6 +782,13 @@ draw :: proc(ctx: ^kit.Context) {
 
 // The script finds the widgets by where they were in the last frame: the pages are laid out by the widths of their texts
 target: ui.Vec2
+
+// `target` is the middle of the shortcut field of a row
+chord_target :: proc(row: int) -> bool {
+    rect, found := ui.UiElementRect(&state.app.ctx, state.chord_ids[row])
+    target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    return found
+}
 
 // Something of a kind with a name was drawn in the last frame: `target` is its middle
 drawn :: proc(kind: ui.StyleKind, name: string) -> bool {
@@ -1075,5 +1125,36 @@ script: []kit.Step = {
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.page == 1 && shown("On type", "title") && shown("like this", "mono") }, "the next page is shown"),
     kit.Capture("examples_reading_night"),
+    kit.Wait(2),
+
+    // shortcuts: a row listens after a click and takes the next key; a shortcut another row had is taken from it; Backspace takes one away
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(11) }, "the Shortcuts tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.BUTTON, "Ctrl+S") && drawn(.BUTTON, "Ctrl+Shift+B") && drawn(.BUTTON, ui.SHORTCUT_NONE) }, "the shortcuts are written as their keys"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return chord_target(4) }, "the row of Reload"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.BUTTON, ui.SHORTCUT_LISTENING) }, "the row listens"),
+    kit.Capture("examples_shortcuts"),
+    kit.Wait(2),
+    kit.Tap(.F5),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.chords[4] == ui.Chord{{}, u16(kit.Key.F5)} && drawn(.BUTTON, "F5") }, "the key that was pressed is the shortcut"),
+    // the same key for another action: the first one loses it
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return chord_target(2) }, "the row of Find"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Tap(.F5),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.chords[2].key == u16(kit.Key.F5) && state.chords[4] == ui.Chord{} }, "a shortcut belongs to one action"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return chord_target(0) }, "the row of Save"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Tap(.BACKSPACE),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.chords[0] == ui.Chord{} && state.chord_changes == 3 }, "Backspace takes the shortcut away"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
