@@ -229,6 +229,7 @@ TextData :: struct {
     line_count: i32,
     select_group: Id,   // a row of a list that declares only the rows in view (UiSelectRow): the list and the row, for the selection of read text (select.odin)
     select_row: i32,
+    select_cell: i32,   // which of the selectable texts of that row it is, in the order they are declared (-1: it is not selectable)
 }
 
 // ------------------------------------------------------------------------------------------------------------------------

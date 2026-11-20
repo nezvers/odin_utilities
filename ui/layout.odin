@@ -243,6 +243,14 @@ TextOpen :: proc(ctx: ^Context, text: string, config: TextConfig = {}) {
     for i in 0 ..< min(ctx.tag_count, DRAW_TAGS) {
         element.decl.draw.tags[i] = ctx.tag_stack[ctx.tag_count - 1 - i]
     }
+    // the cell of a row of a list that is told to the selection (UiSelectRow): the selectable texts of a row are numbered in the order they are declared
+    if ctx.select.row_group != 0 {
+        element.text.select_cell = -1
+        if ctx.select.tag != 0 && selectHasTag(&ctx.select, element) {
+            element.text.select_cell = ctx.select.row_cells
+            ctx.select.row_cells += 1
+        }
+    }
     ctx.child_buffer[ctx.child_buffer_count] = index
     ctx.child_buffer_count += 1
 

@@ -348,8 +348,9 @@ go; `ui.UiTextSelected(&ctx)` gives the text, `ui.UiTextSelectionClear` lets it 
 whole ui, kept as a text (its place among the elements of the frame) and a byte in it: right while the texts before it stay the same. A list that only declares its
 rows in view (`UiVirtual`, `UiTable`) is told to the selection: `group := ui.UiSelectRows(&ctx, "log", count, row_text, user)` right before it and `if ui.UiSelectRow(&ctx,
 group, row) { ... }` around the text of every row it declares. A place in a row is the row and a byte of its text, so it stays right while the list scrolls, and the rows
-between the ends of the selection, in view or not, are copied from `row_text(user, row)` (the text of any row; valid until the end of the frame). A row is one text, and
-the text that `row_text` gives is the one it declares. The arrows move the end only among the rows that are in view. A double click selects the word under the pointer, a third click the whole text (a label, or the
+between the ends of the selection, in view or not, are copied from `row_text(user, row)` (the text of any row; valid until the end of the frame). A row may have several texts (a table:
+`cells` of `UiSelectRows`; the selectable texts of a row are its cells in the order they are declared) and `row_text(user, row, cell)` gives the text of one of them: a copy has
+a tab between the cells of a row and a new line between the rows. The arrows move the end only among the rows that are in view. A double click selects the word under the pointer, a third click the whole text (a label, or the
 paragraph with all of its runs and lines). Shift and a click extend the selection to there; the select all action takes every selectable text (while the pointer is over the
 text or a part is selected, and no text field is edited). The selection follows the pointer one frame behind. Shift with the arrows, Home or End moves its end by a letter, a line or to the end of its line (not while a text field is edited).
 
@@ -369,7 +370,7 @@ takes the shortcut away, the focus going elsewhere ends it. The ui does not know
 shortcuts off. What the operating system takes for itself (Alt+Tab) never arrives: holding those off is the work of the window system, not of the ui.
 
 ## A list that is read
-`ui.VirtualList.text = true`: the list takes the wheel and the bar but not the pointer or the keys (no row is picked), so a press on a row is for the selection of text.
+`ui.VirtualList.text = true` (a `ui.Table` has one: `table.list.text`): the list takes the wheel and the bar but not the pointer or the keys (no row is picked), so a press on a row is for the selection of text.
 See the selection below.
 
 ## A part in a theme of its own

@@ -15,17 +15,18 @@ import "core:unicode/utf8"
 //
 // A list that declares only the rows in view (UiVirtual, UiTable) gives its texts other places when it scrolls, and the rows out of view are no texts at all. Such a
 // list is told to the selection: `group := ui.UiSelectRows(&ctx, "log", count, row_text, user)` before it, and `if ui.UiSelectRow(&ctx, group, row) { ... }` around
-// the text of every row it declares. A place in a row is then the row and a byte of its text, so it stays right when the list scrolls, and the rows between the ends
-// of the selection are copied from `row_text(user, row)`, the text of any row as the program has it. A row is one text; the text of the row is the text that is declared.
+// the texts of every row it declares. A place in a row is then the row, the text of the row (its cell: the selectable texts of a row are numbered in the order they
+// are declared) and a byte of it, so it stays right when the list scrolls, and the rows between the ends of the selection are copied from `cell_text(user, row, cell)`,
+// the text of any cell as the program has it. A row with several cells (a table) is copied with a tab between its cells and a new line between its rows.
 //
 // Baldr's selection scope (examples/27_conversation) was the reason to have it; the code is written for this library.
 
 TEXT_SELECTABLE :: "selectable"
 UI_SELECT_BYTES :: #config(UI_SELECT_BYTES, 4096)
 
-// The text of the row `row` of a list that was told to the selection: the bytes of the text that the row declares. It is called after the layout, for the rows
-// between the ends of the selection, in order, and has to give a string that stays valid until the end of the frame.
-SelectRowText :: proc(user: rawptr, row: int) -> string
+// The text of the cell `cell` of the row `row` of a list that was told to the selection: the bytes of the text that the row declares there. It is called after the
+// layout, for the cells between the ends of the selection, in order, and has to give a string that is valid when it returns (it is copied at once).
+SelectRowText :: proc(user: rawptr, row: int, cell: int) -> string
 
 UI_SELECT_GROUPS :: #config(UI_SELECT_GROUPS, 8)
 
@@ -34,6 +35,7 @@ SelectGroup :: struct {
     id: Id,
     base: i32,                  // the elements declared before the list: where the list is among the other texts
     count: int,
+    cells: int,                 // the selectable texts of a row
     row_text: SelectRowText,
     user: rawptr,
 }
@@ -44,18 +46,20 @@ SelectPoint :: struct {
     group: Id,                  // 0: a text of its own; else the list it is a row of
     element: i32,               // which text: its index in the elements of the frame, or its row in the list
     offset: i32,                // a byte of that text
+    cell: i32,                  // in a list: which text of the row
 }
 
 // Where a place is among all the places: the position (a text counts twice its place plus one, a list twice its base, so that a list comes before a text that is
 // declared after it), the list, the row. Compared one after the other.
 @(private)
-SelectKey :: [3]i32
+SelectKey :: [4]i32
 
 @(private)
 selectKeyLess :: proc "contextless" (a: SelectKey, b: SelectKey) -> bool {
-    if a[0] != b[0] { return a[0] < b[0] }
-    if a[1] != b[1] { return a[1] < b[1] }
-    return a[2] < b[2]
+    for i in 0 ..< 4 {
+        if a[i] != b[i] { return a[i] < b[i] }
+    }
+    return false
 }
 
 @(private)
@@ -73,6 +77,7 @@ TextSelect :: struct {
     group_count: int,
     row_group: Id,              // while a row is declared (UiSelectRow): the list and the row of the texts that are declared
     row_index: i32,
+    row_cells: i32,             // the selectable texts that the row has declared so far
     copied: [UI_SELECT_BYTES]u8,
     copied_length: int,
     whole: bool,                // the selection fit into `copied`
@@ -89,19 +94,19 @@ selectGroupSlot :: proc "contextless" (select: ^TextSelect, group: Id) -> int {
 // Where a place is (false: it is a row of a list that is not declared in this frame)
 @(private)
 selectKeyOf :: proc "contextless" (select: ^TextSelect, point: SelectPoint) -> (key: SelectKey, ok: bool) {
-    if point.group == 0 { return {2 * point.element + 1, 0, 0}, true }
+    if point.group == 0 { return {2 * point.element + 1, 0, 0, 0}, true }
     slot: int = selectGroupSlot(select, point.group)
     if slot < 0 { return {}, false }
-    return {2 * select.groups[slot].base, i32(slot) + 1, point.element}, true
+    return {2 * select.groups[slot].base, i32(slot) + 1, point.element, point.cell}, true
 }
 
 // Where a text of the frame is
 @(private)
 selectElementKey :: proc "contextless" (select: ^TextSelect, element: ^Element, index: i32) -> SelectKey {
     if element.text.select_group != 0 {
-        if key, ok := selectKeyOf(select, {element.text.select_group, element.text.select_row, 0}); ok { return key }
+        if key, ok := selectKeyOf(select, {group = element.text.select_group, element = element.text.select_row, cell = element.text.select_cell}); ok { return key }
     }
-    return {2 * index + 1, 0, 0}
+    return {2 * index + 1, 0, 0, 0}
 }
 
 // The place of a letter of a text of the frame
@@ -109,9 +114,9 @@ selectElementKey :: proc "contextless" (select: ^TextSelect, element: ^Element, 
 selectPointOf :: proc "contextless" (ctx: ^Context, index: i32, offset: i32) -> SelectPoint {
     element: ^Element = &ctx.elements[index]
     if element.text.select_group != 0 && selectGroupSlot(&ctx.select, element.text.select_group) >= 0 {
-        return {element.text.select_group, element.text.select_row, offset}
+        return {group = element.text.select_group, element = element.text.select_row, offset = offset, cell = element.text.select_cell}
     }
-    return {0, index, offset}
+    return {element = index, offset = offset}
 }
 
 // The text of the frame a place is in (-1: it is not declared, a row of a list that is out of view)
@@ -123,7 +128,7 @@ selectElementOf :: proc "contextless" (ctx: ^Context, point: SelectPoint) -> i32
     }
     for index in 0 ..< i32(ctx.element_count) {
         element: ^Element = &ctx.elements[index]
-        if element.is_text && element.text.select_group == point.group && element.text.select_row == point.element { return index }
+        if element.is_text && element.text.select_group == point.group && element.text.select_row == point.element && element.text.select_cell == point.cell { return index }
     }
     return -1
 }
@@ -163,12 +168,13 @@ selectRange :: proc "contextless" (select: ^TextSelect, element: ^Element, index
 }
 
 // Tells the selection that the rows of a list are its texts: call it right before the list is declared. `count` rows, `row_text` gives the text of any of them (see
-// SelectRowText). Returns the list for UiSelectRow. When the lists of a frame are more than UI_SELECT_GROUPS the others are not selectable.
-UiSelectRows :: proc(ctx: ^Context, name: string, count: int, row_text: SelectRowText, user: rawptr = nil) -> Id {
+// SelectRowText) and `cells` selectable texts in each row (a table: one for every column that has text). Returns the list for UiSelectRow. When the lists of a
+// frame are more than UI_SELECT_GROUPS the others are not selectable.
+UiSelectRows :: proc(ctx: ^Context, name: string, count: int, row_text: SelectRowText, user: rawptr = nil, cells: int = 1) -> Id {
     id: Id = UiId(ctx, name)
     select: ^TextSelect = &ctx.select
     if select.group_count < len(select.groups) && selectGroupSlot(select, id) < 0 {
-        select.groups[select.group_count] = {id = id, base = i32(ctx.element_count), count = count, row_text = row_text, user = user}
+        select.groups[select.group_count] = {id = id, base = i32(ctx.element_count), count = count, cells = max(cells, 1), row_text = row_text, user = user}
         select.group_count += 1
     }
     return id
@@ -177,35 +183,41 @@ UiSelectRows :: proc(ctx: ^Context, name: string, count: int, row_text: SelectRo
 // The text that is declared inside of this block is the row `row` of the list `group`: `if ui.UiSelectRow(&ctx, group, i) { ui.UiLabel(&ctx, line) }`
 @(deferred_in = UiSelectRowEnd)
 UiSelectRow :: proc(ctx: ^Context, group: Id, row: int) -> bool {
-    ctx.select.row_group, ctx.select.row_index = group, i32(row)
+    ctx.select.row_group, ctx.select.row_index, ctx.select.row_cells = group, i32(row), 0
     return true
 }
 
 UiSelectRowEnd :: proc(ctx: ^Context, group: Id, row: int) {
-    ctx.select.row_group, ctx.select.row_index = 0, 0
+    ctx.select.row_group, ctx.select.row_index, ctx.select.row_cells = 0, 0, 0
 }
 
-// The selected rows of a list for the copy: from the place `low` of the selection to the place `high`, as far as they are in this list
+// The selected rows of a list for the copy: from the place `low` of the selection to the place `high`, as far as they are in this list. The cells of a row are
+// separated by a tab, the rows by a new line.
 @(private)
 selectCopyGroup :: proc(ctx: ^Context, slot: int, low: SelectPoint, high: SelectPoint, low_key: SelectKey, high_key: SelectKey) {
     select: ^TextSelect = &ctx.select
     group: ^SelectGroup = &select.groups[slot]
     if group.count <= 0 || group.row_text == nil { return }
-    first: SelectKey = {2 * group.base, i32(slot) + 1, 0}
-    final: SelectKey = {2 * group.base, i32(slot) + 1, i32(group.count) - 1}
+    last_cell: int = group.cells - 1
+    first: SelectKey = {2 * group.base, i32(slot) + 1, 0, 0}
+    final: SelectKey = {2 * group.base, i32(slot) + 1, i32(group.count) - 1, i32(last_cell)}
     if selectKeyLess(final, low_key) || selectKeyLess(high_key, first) { return }
-    start_row, start_offset: int = 0, 0
-    if !selectKeyLess(low_key, first) { start_row, start_offset = int(low_key[2]), int(low.offset) }
-    end_row: int = group.count - 1
-    end_offset: int = -1                                    // the end of the text of the row
-    if !selectKeyLess(final, high_key) { end_row, end_offset = int(high_key[2]), int(high.offset) }
+    start_row, start_cell, start_offset: int = 0, 0, 0
+    if !selectKeyLess(low_key, first) { start_row, start_cell, start_offset = int(low_key[2]), int(low_key[3]), int(low.offset) }
+    end_row, end_cell, end_offset: int = group.count - 1, last_cell, -1       // -1: to the end of the text of the cell
+    if !selectKeyLess(final, high_key) { end_row, end_cell, end_offset = int(high_key[2]), int(high_key[3]), int(high.offset) }
     for row in start_row ..= end_row {
         if !select.whole { return }
-        text: string = group.row_text(group.user, row)
-        from: int = clamp(start_offset if row == start_row else 0, 0, len(text))
-        to: int = clamp(end_offset if row == end_row && end_offset >= 0 else len(text), 0, len(text))
+        first_cell: int = start_cell if row == start_row else 0
+        final_cell: int = end_cell if row == end_row else last_cell
         if select.copied_length > 0 { selectCopy(select, "\n") }
-        if to > from { selectCopy(select, text[from:to]) }
+        for cell in first_cell ..= final_cell {
+            text: string = group.row_text(group.user, row, cell)
+            from: int = clamp(start_offset if row == start_row && cell == start_cell else 0, 0, len(text))
+            to: int = clamp(end_offset if row == end_row && cell == end_cell && end_offset >= 0 else len(text), 0, len(text))
+            if cell > first_cell { selectCopy(select, "\t") }
+            if to > from { selectCopy(select, text[from:to]) }
+        }
     }
 }
 
@@ -382,14 +394,14 @@ selectAfterLayout :: proc(ctx: ^Context) {
             have^ = true
         }
         if first_text >= 0 {
-            consider(select, {0, first_text, 0}, false, &start, &finish, &start_key, &finish_key, &have)
-            consider(select, {0, last_text, i32(len(ctx.elements[last_text].text.text))}, true, &start, &finish, &start_key, &finish_key, &have)
+            consider(select, {element = first_text}, false, &start, &finish, &start_key, &finish_key, &have)
+            consider(select, {element = last_text, offset = i32(len(ctx.elements[last_text].text.text))}, true, &start, &finish, &start_key, &finish_key, &have)
         }
         for slot in 0 ..< select.group_count {
             group: ^SelectGroup = &select.groups[slot]
             if group.count <= 0 || group.row_text == nil { continue }
-            consider(select, {group.id, 0, 0}, false, &start, &finish, &start_key, &finish_key, &have)
-            consider(select, {group.id, i32(group.count) - 1, i32(len(group.row_text(group.user, group.count - 1)))}, true, &start, &finish, &start_key, &finish_key, &have)
+            consider(select, {group = group.id}, false, &start, &finish, &start_key, &finish_key, &have)
+            consider(select, {group = group.id, element = i32(group.count) - 1, cell = i32(group.cells) - 1, offset = i32(len(group.row_text(group.user, group.count - 1, group.cells - 1)))}, true, &start, &finish, &start_key, &finish_key, &have)
         }
         select.active, select.dragging = true, false
         select.anchor, select.cursor = start, finish

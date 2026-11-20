@@ -382,7 +382,7 @@ rowOf :: proc(test: ^ListTest, row: int) -> string {
 }
 
 @(private = "file")
-listRowText :: proc(user: rawptr, row: int) -> string {
+listRowText :: proc(user: rawptr, row: int, cell: int) -> string {
     return rowOf(cast(^ListTest)user, row)
 }
 
@@ -519,5 +519,142 @@ test_a_selection_in_a_list_that_declares_only_its_rows_in_view :: proc(t: ^testi
     test.shown = false
     for _ in 0 ..< 3 { listFrame(test, away) }
     testing.expect_value(t, selection(test), "")
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}
+
+// Rows of three cells, like a table: the cell c of the row r is "0r.c-xyz" with the letter a, b or c
+@(private = "file")
+CellTest :: struct {
+    storage: Storage(128, 256, 64, 2048),
+    ctx: Context,
+    style: Style,
+    first: int,
+    lines: [20][3][12]u8,
+}
+
+@(private = "file")
+cellOf :: proc(test: ^CellTest, row: int, cell: int) -> string {
+    line: ^[12]u8 = &test.lines[row][cell]
+    copy(line[:], "00.a-xyz")
+    line[0], line[1], line[3] = u8('0' + row / 10), u8('0' + row % 10), u8('a' + cell)
+    return string(line[:8])
+}
+
+@(private = "file")
+cellText :: proc(user: rawptr, row: int, cell: int) -> string {
+    return cellOf(cast(^CellTest)user, row, cell)
+}
+
+@(private = "file")
+cellFrame :: proc(test: ^CellTest, input: Input) {
+    UiBegin(&test.ctx, input, 1.0 / 60, {1000, 700}, &test.style)
+    if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(700), {}}) {
+        if UiTagged(&test.ctx, TEXT_SELECTABLE) {
+            group: Id = UiSelectRows(&test.ctx, "cells", 20, cellText, test, 3)
+            for row in test.first ..< test.first + 4 {
+                if UiRow(&test.ctx) {
+                    if UiSelectRow(&test.ctx, group, row) {
+                        for cell in 0 ..< 3 {
+                            // a column of its own width, so that the cells stand apart
+                            ElementOpen(&test.ctx, {layout = {size = {Fixed(DEFAULT_METRICS.font_size * 6), Fit()}}})
+                            UiLabel(&test.ctx, cellOf(test, row, cell))
+                            ElementClose(&test.ctx)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    UiEnd(&test.ctx)
+}
+
+@(private = "file")
+cellLetter :: proc(test: ^CellTest, row: int, cell: int, offset: int) -> Vec2 {
+    text: string = cellOf(test, row, cell)
+    for command in UiCommands(&test.ctx) {
+        info: DrawInfo = command.info
+        if command.kind == .DRAW && info.kind == .LABEL && info.text == text {
+            return {info.rect.x + f32(offset) * DEFAULT_METRICS.font_size * 0.5 + 1, info.rect.y + info.rect.w * 0.5}
+        }
+    }
+    return {-1, -1}
+}
+
+@(private = "file")
+cellDrag :: proc(test: ^CellTest, from: Vec2, to: Vec2) {
+    for _ in 0 ..< 40 { cellFrame(test, {mouse_position = {-100, -100}}) }
+    cellFrame(test, {mouse_position = from})
+    cellFrame(test, {mouse_position = from, mouse_down = true, mouse_pressed = true})
+    cellFrame(test, {mouse_position = to, mouse_down = true})
+    cellFrame(test, {mouse_position = to, mouse_down = true})
+    cellFrame(test, {mouse_position = to, mouse_released = true})
+    cellFrame(test, {mouse_position = {-100, -100}})
+}
+
+@(test)
+test_a_selection_over_the_cells_of_the_rows_of_a_list :: proc(t: ^testing.T) {
+    test: ^CellTest = new(CellTest)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    test.first = 2
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 3 { cellFrame(test, away) }
+    selection :: proc(test: ^CellTest) -> string {
+        text, _ := UiTextSelected(&test.ctx)
+        return text
+    }
+    // within a row: from the second letter of the first cell to the second of the last: the cells between whole, a tab between the cells
+    cellDrag(test, cellLetter(test, 2, 0, 1), cellLetter(test, 2, 2, 2))
+    testing.expect_value(t, selection(test), "2.a-xyz\t02.b-xyz\t02")
+    // over rows: from the middle of the second cell of a row to the start of the first cell of a row two further on
+    cellDrag(test, cellLetter(test, 2, 1, 3), cellLetter(test, 4, 0, 4))
+    testing.expect_value(t, selection(test), "b-xyz\t02.c-xyz\n03.a-xyz\t03.b-xyz\t03.c-xyz\n04.a")
+    rects: int
+    for command in UiCommands(&test.ctx) {
+        if command.kind == .DRAW && command.info.kind == .TEXT_SELECTION { rects += 1 }
+    }
+    testing.expect_value(t, rects, 2 + 3 + 1)               // two cells of the first row, the three of the next, the first of the last
+    // the list scrolls: the same selection, none of its rows is in view
+    test.first = 12
+    for _ in 0 ..< 3 { cellFrame(test, away) }
+    testing.expect_value(t, selection(test), "b-xyz\t02.c-xyz\n03.a-xyz\t03.b-xyz\t03.c-xyz\n04.a")
+    // Shift and a click in the second cell of a row that is there: the cells before it in that row too
+    for _ in 0 ..< 40 { cellFrame(test, away) }
+    point: Vec2 = cellLetter(test, 13, 1, 5)
+    cellFrame(test, {mouse_position = point, modifiers = {.SHIFT}})
+    cellFrame(test, {mouse_position = point, mouse_down = true, mouse_pressed = true, modifiers = {.SHIFT}})
+    cellFrame(test, {mouse_position = point, mouse_released = true, modifiers = {.SHIFT}})
+    cellFrame(test, away)
+    text := selection(test)
+    testing.expect(t, len(text) > 0 && text[:5] == "b-xyz")
+    testing.expect_value(t, text[len(text) - 14:], "13.a-xyz\t13.b-")
+    lines: int
+    for character in transmute([]u8)text {
+        if character == '\n' { lines += 1 }
+    }
+    testing.expect_value(t, lines, 11)                      // rows 2 to 13
+    // keys among the cells of rows that are in view: the end goes into the next cell
+    key :: proc(test: ^CellTest, action: Action) -> string {
+        cellFrame(test, {mouse_position = {-100, -100}, actions = {action}, modifiers = {.SHIFT}})
+        cellFrame(test, {mouse_position = {-100, -100}})
+        text, _ := UiTextSelected(&test.ctx)
+        return text
+    }
+    cellDrag(test, cellLetter(test, 12, 0, 1), cellLetter(test, 12, 0, 8))
+    testing.expect_value(t, selection(test), "2.a-xyz")
+    testing.expect_value(t, key(test, .RIGHT), "2.a-xyz\t1")   // one letter into the next cell
+    testing.expect_value(t, key(test, .RIGHT), "2.a-xyz\t12")
+    // select all: every cell of every row of the list, in order
+    test.first = 5
+    for _ in 0 ..< 3 { cellFrame(test, away) }
+    over: Vec2 = cellLetter(test, 6, 1, 2)
+    cellFrame(test, {mouse_position = over})
+    cellFrame(test, {mouse_position = over, actions = {.SELECT_ALL}})
+    cellFrame(test, {mouse_position = over})
+    text = selection(test)
+    testing.expect_value(t, len(text), 20 * (3 * 8 + 2) + 19)     // 20 rows of three cells and two tabs, a new line between the rows
+    testing.expect_value(t, text[:8], "00.a-xyz")
+    testing.expect_value(t, text[len(text) - 8:], "19.c-xyz")
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }

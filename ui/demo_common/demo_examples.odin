@@ -113,7 +113,7 @@ State :: struct {
     command_id: ui.Id,
     term_follow: int,
     term_mode: int,             // 0 the log, 1 the screen of cells, 2 a big log in a virtual list
-    log_list: ui.VirtualList,
+    log_table: ui.Table,
     log_id: ui.Id,
     log_ring: [64][80]u8,       // the text of the rows that the selection asks for (it copies each at once)
     log_ring_at: int,
@@ -181,7 +181,9 @@ init :: proc(ctx: ^kit.Context) {
     state.paper, state.page = 1, 0
     state.ratings = {3, 0}
     state.term_count, state.command_length, state.term_mode, state.ticks = 0, 0, 0, 0
-    state.log_list = {selected = ui.VIRTUAL_NONE, text = true}
+    ui.TableInit(&state.log_table, {{name = "Line", width = 80, unsortable = true}, {name = "Level", width = 70, unsortable = true}, {name = "Message", width = 300, unsortable = true}})
+    state.log_table.fill_last = true
+    state.log_table.list.text = true                        // the rows are read: the pointer is for the selection of text
     state.screen = ui.AnsiScreenMake(state.screen_cells[:], SCREEN_COLUMNS, SCREEN_ROWS)
     ui.AnsiScreenWrite(&state.screen, transmute([]u8)string(SCREEN_START))
     screen_progress()
@@ -923,31 +925,35 @@ TermLine :: struct {
 }
 TERM_MODES: [3]string = {"Log", "Screen", "Big log"}
 
-// A big log: 20 000 lines that are made from their number, in a virtual list that declares only the rows in view. The selection runs over all of them: rows that are
-// out of view are copied from log_row_text.
+// A big log: 20 000 rows of three cells that are made from their number, in a table that declares only the rows in view. The selection runs over all of them: the
+// cells of the rows that are out of view are copied from log_row_text (a tab between the cells, a new line between the rows).
 LOG_LINES :: 20000
 LOG_LEVELS: [4]string = {"INFO ", "DEBUG", "INFO ", "WARN "}
 
-log_row_text :: proc(user: rawptr, row: int) -> string {
+log_row_text :: proc(user: rawptr, row: int, cell: int) -> string {
     slot: ^[80]u8 = &state.log_ring[state.log_ring_at % len(state.log_ring)]
     state.log_ring_at += 1
-    return fmt.bprintf(slot[:], "%06d %s request %d served in %d ms", row, LOG_LEVELS[row % 4], 1000 + row * 7 % 900, row * 13 % 97)
+    switch cell {
+    case 0: return fmt.bprintf(slot[:], "%06d", row)
+    case 1: return fmt.bprintf(slot[:], "%s", LOG_LEVELS[row % 4])
+    }
+    return fmt.bprintf(slot[:], "request %d served in %d ms", 1000 + row * 7 % 900, row * 13 % 97)
 }
 
 big_log :: proc(c: ^ui.Context) {
-    group: ui.Id = ui.UiSelectRows(c, "##biglog", LOG_LINES, log_row_text)
+    group: ui.Id = ui.UiSelectRows(c, "##biglog", LOG_LINES, log_row_text, nil, 3)
     ui.UiPushTag(c, "flat")
     ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, padding = ui.PaddingAll(10)}, draw = {kind = .PANEL, name = "code"}})
     ui.UiPopTag(c)
-    state.log_id = ui.UiId(c, "##biglog list")
+    state.log_id = ui.UiId(c, "##biglog table")
     if ui.UiTagged(c, ui.TEXT_SELECTABLE) {
-        if ui.UiTagged(c, "mono") {
-            if ui.UiVirtual(c, "##biglog list", &state.log_list, LOG_LINES, 20, {ui.Grow(), ui.Grow()}) {
-                for row in state.log_list.first ..< state.log_list.last {
-                    if ui.UiVirtualRow(c, &state.log_list, row) {
-                        if ui.UiSelectRow(c, group, row) {
-                            ui.UiLabel(c, ui.UiFormat(c, "%06d %s request %d served in %d ms", row, LOG_LEVELS[row % 4], 1000 + row * 7 % 900, row * 13 % 97))
-                        }
+        if ui.UiTable(c, "##biglog table", &state.log_table, LOG_LINES, 20, {ui.Grow(), ui.Grow()}) {
+            for row in state.log_table.list.first ..< state.log_table.list.last {
+                if ui.UiTableRow(c, &state.log_table, row) {
+                    if ui.UiSelectRow(c, group, row) {
+                        ui.UiTableText(c, &state.log_table, 0, ui.UiFormat(c, "%06d", row))
+                        ui.UiTableText(c, &state.log_table, 1, LOG_LEVELS[row % 4])
+                        ui.UiTableText(c, &state.log_table, 2, ui.UiFormat(c, "request %d served in %d ms", 1000 + row * 7 % 900, row * 13 % 97))
                     }
                 }
             }
@@ -1309,9 +1315,13 @@ draw :: proc(ctx: ^kit.Context) {
 // The script finds the widgets by where they were in the last frame: the pages are laid out by the widths of their texts
 target: ui.Vec2
 
-// The text of a row of the big log
+// The text of a cell and of a row of the big log (the cells with a tab between them: what a copy has)
+log_cell :: proc(row: int, cell: int) -> string {
+    return log_row_text(nil, row, cell)
+}
+
 log_text :: proc(row: int) -> string {
-    return log_row_text(nil, row)
+    return fmt.tprintf("%s\t%s\t%s", log_cell(row, 0), log_cell(row, 1), log_cell(row, 2))
 }
 
 count_lines :: proc(text: string) -> (count: int) {
@@ -1968,13 +1978,13 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
     kit.Wait(4),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown(log_text(0), "mono") }, "the first rows of the log are shown"),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target(log_text(2), 0.2) }, "a row to start in"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown(log_cell(0, 2), "") && shown(log_cell(0, 0), "") }, "the first rows of the log are shown, in cells"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target(log_cell(2, 2), 0.3) }, "a cell to start in"),
     kit.MoveAt(&target),
     kit.Wait(2),
     kit.MouseDownStep(),
     kit.Wait(2),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target(log_text(4), 0.6) }, "a row to end in"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target(log_cell(4, 2), 0.6) }, "a cell to end in"),
     kit.MoveAt(&target),
     kit.Wait(3),
     kit.MouseUpStep(),
@@ -1983,19 +1993,20 @@ script: []kit.Step = {
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         text, _ := ui.UiTextSelected(&state.app.ctx)
-        return contains(text, log_text(3)) && count_lines(text) == 2
+        // the end of the message of row 2, row 3 with its three cells, the start of the message of row 4: the cells of a row are apart by tabs
+        return contains(text, log_text(3)) && count_lines(text) == 2 && contains(text, "\t")
     }, "three rows are selected"),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
-        ui.UiScrollSet(&state.app.ctx, state.log_id, 30 * 20)       // row 30 at the top: the selected rows are out of the list
+        ui.UiScrollSet(&state.app.ctx, state.log_id, 30 * 20)       // row 30 at the top: the selected rows are out of the table
         return true
     }, "the list scrolls"),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         text, whole := ui.UiTextSelected(&state.app.ctx)
-        return whole && count_lines(text) == 2 && shown(log_text(30), "mono") && !shown(log_text(3), "mono")
+        return whole && count_lines(text) == 2 && shown(log_cell(30, 2), "") && !shown(log_cell(3, 2), "")
     }, "the selection is the same with its rows out of view"),
     kit.KeyDownStep(.LEFT_SHIFT),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target(log_text(36), 0.5) }, "a row further on"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target(log_cell(36, 2), 0.5) }, "a cell further on"),
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.KeyUpStep(.LEFT_SHIFT),
