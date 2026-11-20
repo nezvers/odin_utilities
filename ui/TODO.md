@@ -48,7 +48,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Screen of cells: scrollback (a caller owned ring) and wide characters (two cells, combining marks)
 - [x] Screen of cells: the alternate screen (`?1049`, `?47`, `?1047`)
 - [x] Completion list above the caret where it would not fit below (`UiComplete`)
-- [ ] (medium) Screen of cells: reverse video (SGR 7) and scroll regions (DECSTBM, `ESC [ t ; b r`): what pagers, editors and `top` send most, and the screen skips both now
+- [x] Reverse video (SGR 7, 27) in the log view and the screen of cells
+- [ ] (medium) Screen of cells: scroll regions (DECSTBM, `ESC [ t ; b r`): what pagers, editors and `top` send most with reverse video, and the screen skips them now
 - [ ] (low) Completion: draw the part of an item that matched, and rank (items that start with the word first)
 - [ ] (low) Selection of read text: a double click and a drag select by words, as editors do
 - [ ] (medium) Screen of cells: selection of cells, a width table that follows Unicode more closely (ambiguous widths, grapheme clusters, emoji sequences)

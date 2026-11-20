@@ -9,7 +9,7 @@ package ui
 // color by its parts (38;2;r;g;b), the default color, the same for the ground behind the text (40 to 47, 100 to 107, 48;..., 49), underline. Every other
 // escape sequence (moving the cursor, clearing) is skipped: this shows a log, it is not a screen.
 //
-// Limits: SGR only: bold, dim, italic, underline, the 16, 256 and RGB colors and the ground; no reverse video, blink, strike or hidden text, no hyperlinks
+// Limits: SGR only: bold, dim, italic, underline, reverse video, the 16, 256 and RGB colors and the ground; no blink, strike or hidden text, no hyperlinks
 //     it is a log: the cursor moves and clears are skipped, and the text is read again every frame it is shown (declare only the lines in view for a long one)
 //
 // Baldr's terminal screen (examples/25_terminal) was the reason to have it; the code is written for this library.
@@ -22,6 +22,14 @@ AnsiState :: struct {
     underline: bool,
     dim: bool,
     italic: bool,
+    reverse: bool,              // text and ground swapped (SGR 7): the colors are exchanged, a color that is not set is the theme's (the tag "reverse")
+}
+
+// The ground and the color of the text of a style, and whether there is a ground to draw: a reversed style swaps them. A color that is not set (alpha 0) stays so: the
+// style draws it from the theme, a ground by the tag "reverse" (the text color) and a text by the tag "reverse" (the panel color).
+AnsiColorsOf :: proc "contextless" (state: AnsiState) -> (ground: Color, ink: Color, grounded: bool) {
+    if state.reverse { return state.color, state.background, true }
+    return state.background, state.color, state.background.a != 0
 }
 
 // The 16 colors of a terminal for a dark ground and for a light one: black, red, green, yellow, blue, magenta, cyan, white, then the bright ones
@@ -63,6 +71,8 @@ ansiApply :: proc(state: ^AnsiState, numbers: []int, palette: ^[16]Color) {
         case number == 3: state.italic = true
         case number == 4: state.underline = true
         case number == 24: state.underline = false
+        case number == 7: state.reverse = true
+        case number == 27: state.reverse = false
         case number >= 40 && number <= 47: state.background = palette[number - 40]
         case number >= 100 && number <= 107: state.background = palette[number - 100 + 8]
         case number == 49: state.background = {}
@@ -170,10 +180,14 @@ UiAnsiLine :: proc(ctx: ^Context, line: string, state: ^AnsiState, palette: ^[16
             UiPushTag(ctx, "underline")
             pushed += 1
         }
+        if state.reverse {
+            UiPushTag(ctx, "reverse")
+            pushed += 1
+        }
         // a ground behind the run: an element around its text
-        grounded: bool = state.background.a != 0
-        if grounded { ElementOpen(ctx, {draw = {kind = .FILL, color = state.background}}) }
-        TextOpen(ctx, run, {wrap = .NONE, color = state.color})
+        ground, ink, grounded := AnsiColorsOf(state^)
+        if grounded { ElementOpen(ctx, {draw = {kind = .FILL, color = ground}}) }
+        TextOpen(ctx, run, {wrap = .NONE, color = ink})
         if grounded { ElementClose(ctx) }
         for _ in 0 ..< pushed { UiPopTag(ctx) }
     }

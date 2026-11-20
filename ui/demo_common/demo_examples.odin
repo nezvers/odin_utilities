@@ -1015,7 +1015,7 @@ screen_lines :: proc() {
 }
 
 // A pager, as a full screen program starts and quits: it asks for the alternate screen, draws its page on it and, when it quits, gives the screen back as it was
-PAGER_ON :: "\x1b[?1049h\x1b[2J\x1b[H\x1b[1;97;45m pager: lines.txt\x1b[K\x1b[0m\r\n\r\nthe screen of a full screen program\r\ndraws on its own page, and the\r\npage before it comes back\r\nwhen it quits\x1b[11;1H\x1b[2m(END)\x1b[0m"
+PAGER_ON :: "\x1b[?1049h\x1b[2J\x1b[H\x1b[1;97;45m pager: lines.txt\x1b[K\x1b[0m\r\n\r\nthe screen of a full screen program\r\ndraws on its own page, and the\r\npage before it comes back\r\nwhen it quits\x1b[11;1H\x1b[7m(END)\x1b[0m"
 PAGER_OFF :: "\x1b[?1049l"
 
 // The progress line of the screen: put at the row of the bottom, the old one erased, `ticks` of 20 steps done

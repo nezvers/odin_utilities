@@ -23,6 +23,8 @@ Recorder :: struct {
     wanted: [16]string,
     found: [16]bool,
     colors: [16]ui.Color,           // the color a wanted text was drawn in
+    fill_colors: [8]ui.Color,       // the colors of the first rectangles that were filled
+    fill_count: int,
     seen_icons: [icons.Icon]int,
     bad_rect: bool,                 // something was drawn with a size that is not a number or is negative
 }
@@ -46,6 +48,9 @@ recorderPainter :: proc(painter: ^Painter, recorder: ^Recorder, theme: Theme, wi
         user = recorder,
         theme = theme,
         fill_rect = proc(painter: ^Painter, rect: ui.Rect, color: ui.Color) {
+            recorder: ^Recorder = recorderOf(painter)
+            if recorder.fill_count < len(recorder.fill_colors) { recorder.fill_colors[recorder.fill_count] = color }
+            recorder.fill_count += 1
             recorderOf(painter).rects += 1
             checkRect(recorderOf(painter), rect)
         },
@@ -470,4 +475,44 @@ test_dashed_lines_keep_their_pattern_around_corners :: proc(t: ^testing.T) {
     recorder.polygons = 0
     PathLines(&painter, corners[:], true, 1, {255, 255, 255, 255})
     testing.expect_value(t, recorder.polygons, 4)
+}
+
+@(test)
+test_a_reversed_run_is_drawn_in_the_colors_of_the_theme_swapped :: proc(t: ^testing.T) {
+    for theme in ([2]Theme{THEME_DARK, THEME_LIGHT}) {
+        test: ^struct {
+            storage: ui.Storage(128, 256, 64, 2048),
+            ctx: ui.Context,
+            style: ui.Style,
+            painter: Painter,
+            recorder: Recorder,
+        } = new(struct {
+            storage: ui.Storage(128, 256, 64, 2048),
+            ctx: ui.Context,
+            style: ui.Style,
+            painter: Painter,
+            recorder: Recorder,
+        })
+        defer free(test)
+        recorderPainter(&test.painter, &test.recorder, theme, false)
+        test.style = StyleMake()
+        ui.UiInit(&test.ctx, &test.storage, Measure, &test.painter)
+        for _ in 0 ..< 2 {
+            test.recorder = {wanted = {0 = "plain", 1 = "green", 2 = "red"}}
+            ui.UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 600}, &test.style)
+            if ui.UiWindow(&test.ctx, "window", {0, 0}, {ui.Fixed(500), {}}) { ui.UiAnsiText(&test.ctx, "\x1b[7mplain\x1b[0m \x1b[32;7mgreen\x1b[0m \x1b[41mred\x1b[0m") }
+            ui.UiEnd(&test.ctx)
+            ui.UiRender(&test.ctx)
+        }
+        dark: [16]ui.Color = ui.ANSI_COLORS_DARK
+        // the reversed run without colors: its text in the panel color on a ground in the text color
+        testing.expect_value(t, test.recorder.colors[0], theme.panel)
+        testing.expect_value(t, test.recorder.colors[1], theme.panel)
+        testing.expect_value(t, test.recorder.colors[2], theme.text)
+        // the first rectangle is that ground, the second the green one, the third the red ground that is not reversed
+        testing.expect_value(t, test.recorder.fill_colors[0], theme.text)
+        testing.expect_value(t, test.recorder.fill_colors[1], dark[2])
+        testing.expect_value(t, test.recorder.fill_colors[2], dark[1])
+        testing.expect_value(t, test.painter.theme.text, theme.text)
+    }
 }

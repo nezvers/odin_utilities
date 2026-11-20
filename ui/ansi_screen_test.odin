@@ -503,3 +503,53 @@ test_the_alternate_screen_has_no_history_and_cannot_be_scrolled_back :: proc(t: 
     testing.expect(t, !AnsiScreenAlternate(&plain))
     testing.expect_value(t, row(&plain, 0), "abcxyz")
 }
+
+@(test)
+test_reverse_video_on_the_screen_splits_runs_and_survives_erasing :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(256, 512, 128, 4096),
+        ctx: Context,
+        style: Style,
+        cells: [12 * 2]AnsiCell,
+        screen: AnsiScreen,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    test.screen = AnsiScreenMake(test.cells[:], 12, 2)
+    dark: [16]Color = ANSI_COLORS_DARK
+    write(&test.screen, "ab\x1b[7mcd\x1b[27mef\x1b[2;1H\x1b[31;7mrev\x1b[0m")
+    testing.expect(t, !test.cells[1].style.reverse && test.cells[2].style.reverse && test.cells[3].style.reverse && !test.cells[4].style.reverse)
+    testing.expect_value(t, test.cells[12].style, AnsiState{color = dark[1], reverse = true})
+    // erasing keeps the ground that is set and not the reverse of the style that was on
+    write(&test.screen, "\x1b[1;1H\x1b[7m\x1b[K\x1b[0m")
+    testing.expect_value(t, test.cells[0].style, AnsiState{})
+    write(&test.screen, "ab\x1b[7mcd\x1b[0mef\x1b[2;1H\x1b[31;7mrev\x1b[0m")
+    for _ in 0 ..< 2 {
+        UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(400), {}}) { UiAnsiScreen(&test.ctx, &test.screen, false) }
+        UiEnd(&test.ctx)
+    }
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+    find :: proc(ctx: ^Context, text: string) -> (info: DrawInfo, found: bool) {
+        for command in UiCommands(ctx) {
+            if command.kind == .DRAW && command.info.kind == .LABEL && command.info.text == text { return command.info, true }
+        }
+        return
+    }
+    before, before_found := find(&test.ctx, "ab")
+    reversed, reversed_found := find(&test.ctx, "cd")
+    after, after_found := find(&test.ctx, "ef")
+    red, red_found := find(&test.ctx, "rev")
+    testing.expect(t, before_found && reversed_found && after_found && red_found, "the runs are split where the reverse starts and ends")
+    testing.expect(t, !DrawInfoHasTag(&before, "reverse") && DrawInfoHasTag(&reversed, "reverse") && !DrawInfoHasTag(&after, "reverse") && DrawInfoHasTag(&red, "reverse"))
+    testing.expect(t, reversed.color.a == 0 && red.color.a == 0, "no ground color was set: the text takes the theme's")
+    grounds: [dynamic]Color = make([dynamic]Color, context.temp_allocator)
+    for command in UiCommands(&test.ctx) {
+        if command.kind == .DRAW && command.info.kind == .FILL { append(&grounds, command.info.color) }
+    }
+    testing.expect_value(t, len(grounds), 2)
+    testing.expect(t, grounds[0].a == 0, "the ground of the first reversed run is the theme's text color")
+    testing.expect_value(t, grounds[1], dark[1])             // the red text became the ground
+}

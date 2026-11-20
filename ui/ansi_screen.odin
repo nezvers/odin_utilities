@@ -21,7 +21,7 @@ import "core:unicode/utf8"
 // screen and the screen as it was comes back when it quits; while it is shown the history is not fed and the view cannot be scrolled back. Every other mode (the
 // hidden cursor, the mouse) and every other sequence is skipped.
 //
-// Limits: a fixed grid (no resize: make another screen and write the output again), no scroll regions (DECSTBM), no origin or wrap modes, no tab stops that are set, no reverse video
+// Limits: a fixed grid (no resize: make another screen and write the output again), no scroll regions (DECSTBM), no origin or wrap modes, no tab stops that are set
 //     the width of a character is a table of the ranges that matter: ambiguous widths are 1, no grapheme clusters, no emoji sequences, no right-to-left text; a mark goes on the cell before it and one mark only
 //     the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; no selection of cells, no mouse or paste modes, no cursor shapes or hiding
 //     it only draws: nothing reads the keyboard or talks to a process; a cell is as wide as the code face's M, and a wide letter takes two of them whatever the font does
@@ -559,12 +559,17 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, na
             }
             width: f32 = cell.x * f32(stop - column)
             // the element has the width of its cells, so that a font that is not exactly the measured width does not move the next run
-            if style.background.a != 0 {
-                ElementOpen(ctx, {layout = {size = {Fixed(width), Fixed(cell.y)}}, draw = {kind = .FILL, color = style.background}})
+            if style.reverse {
+                UiPushTag(ctx, "reverse")
+                pushed += 1
+            }
+            ground, ink, grounded := AnsiColorsOf(style)
+            if grounded {
+                ElementOpen(ctx, {layout = {size = {Fixed(width), Fixed(cell.y)}}, draw = {kind = .FILL, color = ground}})
             } else {
                 ElementOpen(ctx, {layout = {size = {Fixed(width), Fixed(cell.y)}}})
             }
-            TextOpen(ctx, run, {wrap = .NONE, color = style.color})
+            TextOpen(ctx, run, {wrap = .NONE, color = ink})
             ElementClose(ctx)
             for _ in 0 ..< pushed { UiPopTag(ctx) }
             column = stop

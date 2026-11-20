@@ -674,12 +674,13 @@ SyntaxColor :: proc(theme: ^Theme, info: ^ui.DrawInfo) -> (color: ui.Color, foun
 }
 
 // A text. With the tag "title" or "strong" it is in the strong face, with "italic" in the italic one, with "mono" in the code face,
-// with "dim" in the dim color, with "link" in the accent with a line under it, with "underline" with a line under it in its own color.
+// with "dim" in the dim color, with "link" in the accent with a line under it, with "underline" with a line under it in its own color, with "reverse" and no color of its own in the panel color (its ground, a FILL with the tag, is in the text color).
 DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
     link: bool = ui.DrawInfoHasTag(info, "link")
     color: ui.Color = info.color if info.color.a > 0 else (theme.accent if link else (theme.text_dim if ui.DrawInfoHasTag(info, "dim") else theme.text))
+    if info.color.a == 0 && ui.DrawInfoHasTag(info, "reverse") { color = theme.panel }                      // the text of a reversed run that has no color of its own: on the ground of the text color
     if syntax, is_syntax := SyntaxColor(theme, info); is_syntax && info.color.a == 0 { color = syntax }
     painter.face = TagFace(ui.DrawInfoHasTag(info, "title") || ui.DrawInfoHasTag(info, "strong"), ui.DrawInfoHasTag(info, "mono"), ui.DrawInfoHasTag(info, "italic"))
     painter.draw_text(painter, info.text, {info.rect.x, info.rect.y}, info.font_size, color)
@@ -1146,7 +1147,9 @@ DrawTextCaret :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
 // A plain rectangle in the color of the element
 DrawFill :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
-    painter.fill_rect(painter, info.rect, info.color)
+    // the ground of a reversed text whose color was not set (ansi.odin): the color of the text
+    color: ui.Color = info.color if info.color.a > 0 || !ui.DrawInfoHasTag(info, "reverse") else painter.theme.text
+    painter.fill_rect(painter, info.rect, color)
 }
 
 DrawHighlight :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {

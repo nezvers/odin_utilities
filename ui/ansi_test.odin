@@ -42,7 +42,7 @@ test_escape_sequences_set_the_style_of_the_runs :: proc(t: ^testing.T) {
     // other sequences are skipped: clearing a line, moving the cursor, a private mode, an escape that is no sequence
     check(t, "a\x1b[2Kb\x1b[10;5Hc\x1b[?25ld\x1b7e", {{"a", {}, false}, {"b", {}, false}, {"c", {}, false}, {"d", {}, false}, {"e", {}, false}})
     // numbers that mean nothing here change nothing; too many numbers do no harm
-    check(t, "\x1b[5;7;8;999mx", {{"x", {}, false}})
+    check(t, "\x1b[5;8;999mx", {{"x", {}, false}})
     check(t, "\x1b[1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;31mx", {{"x", {bold = true}, false}})
     // a sequence that is not whole (the output still arrives): what is before it is shown, nothing of it
     check(t, "shown\x1b[3", {{"shown", {}, false}})
@@ -109,4 +109,82 @@ test_output_is_shown_in_its_colors :: proc(t: ^testing.T) {
     testing.expect(t, warning.rect.y > compiling.rect.y)
     testing.expect(t, failed.rect.y - warning.rect.y >= DEFAULT_METRICS.font_size * 1.9, "the empty line is a line")
     testing.expect_value(t, test.end, AnsiState{color = dark[1]})
+}
+
+@(test)
+test_reverse_video_swaps_the_ground_and_the_text :: proc(t: ^testing.T) {
+    dark: [16]Color = ANSI_COLORS_DARK
+    cursor: int
+    state: AnsiState
+    // SGR 7 and 27, and the reset
+    run, _, ok := AnsiNext("\x1b[7mone\x1b[27mtwo\x1b[7mthree\x1b[0mfour", &cursor, &state)
+    testing.expect(t, ok && run == "one" && state.reverse)
+    run, _, _ = AnsiNext("\x1b[7mone\x1b[27mtwo\x1b[7mthree\x1b[0mfour", &cursor, &state)
+    testing.expect(t, run == "two" && !state.reverse)
+    run, _, _ = AnsiNext("\x1b[7mone\x1b[27mtwo\x1b[7mthree\x1b[0mfour", &cursor, &state)
+    testing.expect(t, run == "three" && state.reverse)
+    run, _, _ = AnsiNext("\x1b[7mone\x1b[27mtwo\x1b[7mthree\x1b[0mfour", &cursor, &state)
+    testing.expect(t, run == "four" && !state.reverse)
+    // the colors of a style: swapped when reversed
+    ground, ink, grounded := AnsiColorsOf({color = dark[2], background = dark[1]})
+    testing.expect(t, grounded && ground == dark[1] && ink == dark[2])
+    ground, ink, grounded = AnsiColorsOf({color = dark[2], background = dark[1], reverse = true})
+    testing.expect(t, grounded && ground == dark[2] && ink == dark[1])
+    ground, ink, grounded = AnsiColorsOf({reverse = true})
+    testing.expect(t, grounded && ground.a == 0 && ink.a == 0, "a reversed style with no colors has a ground, from the theme")
+    _, _, grounded = AnsiColorsOf({color = dark[2]})
+    testing.expect(t, !grounded)
+
+    Test :: struct {
+        storage: Storage(128, 256, 64, 2048),
+        ctx: Context,
+        style: Style,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    for _ in 0 ..< 2 {
+        UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(600), {}}) {
+            UiAnsiText(&test.ctx, "\x1b[7mplain\x1b[0m \x1b[32;7mgreen\x1b[0m \x1b[32;41;7mboth\x1b[0m \x1b[41mred\x1b[0m")
+        }
+        UiEnd(&test.ctx)
+    }
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+    // the text and the ground of each run: what the program says, swapped, and the tag where a color is not set
+    texts: [4]DrawInfo
+    fills: [4]DrawInfo
+    for command in UiCommands(&test.ctx) {
+        info: DrawInfo = command.info
+        if command.kind != .DRAW { continue }
+        if info.kind == .LABEL {
+            switch info.text {
+            case "plain": texts[0] = info
+            case "green": texts[1] = info
+            case "both": texts[2] = info
+            case "red": texts[3] = info
+            }
+        }
+        if info.kind == .FILL {
+            // a ground is the element around a text: it is of the text that is inside of it, by its place
+            for text in texts {
+                _ = text
+            }
+        }
+    }
+    testing.expect(t, texts[0].color.a == 0 && DrawInfoHasTag(&texts[0], "reverse"), "plain reversed: the theme's colors")
+    testing.expect(t, texts[1].color.a == 0 && DrawInfoHasTag(&texts[1], "reverse"), "green reversed: the text has no color of its own")
+    testing.expect(t, texts[2].color == dark[1] && DrawInfoHasTag(&texts[2], "reverse"), "both: the text is in the ground that was set")
+    testing.expect(t, texts[3].color.a == 0 && !DrawInfoHasTag(&texts[3], "reverse"))
+    grounds: [dynamic]Color = make([dynamic]Color, context.temp_allocator)
+    for command in UiCommands(&test.ctx) {
+        if command.kind == .DRAW && command.info.kind == .FILL { append(&grounds, command.info.color) }
+    }
+    testing.expect_value(t, len(grounds), 4)
+    testing.expect(t, grounds[0].a == 0, "plain: the ground is the text color of the theme")
+    testing.expect_value(t, grounds[1], dark[2])
+    testing.expect_value(t, grounds[2], dark[2])
+    testing.expect_value(t, grounds[3], dark[1])
+    _ = fills
 }
