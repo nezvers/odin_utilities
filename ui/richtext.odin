@@ -1,0 +1,253 @@
+package ui
+
+// A paragraph with several styles in it: `ui.UiRichText(&ctx, name, "plain, **strong**, *italic*, `code` and a [link](address)")`. The marks are the ones of Markdown.
+// The paragraph wraps at words like a label, and a line may hold runs of different styles: the widget breaks the lines itself (the layout only knows texts of one
+// style) for the width it had in the last frame, and declares a row of texts per line. In its first frame, before it knows its width, it is a plain wrapped text.
+//
+// The style draws a run by its tags: "strong", "italic", "mono" (code) and "link"; they are measured in the same faces (a text is measured with its tags). Nothing is
+// allocated: the runs are built in the text memory of the frame.
+
+RichMark :: enum u8 {
+    STRONG,
+    ITALIC,
+    CODE,
+    LINK,
+}
+RichMarks :: bit_set[RichMark; u8]
+
+// A piece of a paragraph that is drawn in one go: a word or a part of one, with the marks that are on at that place
+RichToken :: struct {
+    text: string,               // a part of the source
+    marks: RichMarks,
+    space_before: bool,         // a space (or a line end) was between this piece and the one before
+}
+
+// Where RichNext is in a text
+RichCursor :: struct {
+    at: int,
+    marks: RichMarks,
+    link_end: int,              // inside of the text of a link: where its closing bracket is (0: not in a link)
+    pending_space: bool,
+}
+
+@(private)
+richIsSpace :: proc "contextless" (character: u8) -> bool {
+    return character == ' ' || character == '\t' || character == '\n' || character == '\r'
+}
+
+// The address part of a link whose text ends at `close` (the `]`): where its `)` is, -1 when it is not a link
+@(private)
+richLinkEnd :: proc "contextless" (source: string, close: int) -> int {
+    if close + 1 >= len(source) || source[close + 1] != '(' { return -1 }
+    for k in close + 2 ..< len(source) {
+        if source[k] == ')' { return k }
+        if source[k] == '\n' { return -1 }
+    }
+    return -1
+}
+
+// The next piece of `source`. The marks of Markdown switch the styles and are not part of a piece: `**` and `__` strong, `*` and `_` italic (an underscore inside of
+// a word is a letter), a backtick code (nothing is a mark inside of code), `[text](address)` a link that shows its text, a backslash takes the meaning of the mark
+// after it away. `ok` is false at the end of the text.
+RichNext :: proc "contextless" (source: string, cursor: ^RichCursor) -> (token: RichToken, ok: bool) {
+    for cursor.at < len(source) {
+        character: u8 = source[cursor.at]
+        // the end of the text of a link: its address is skipped
+        if cursor.link_end != 0 && cursor.at == cursor.link_end {
+            cursor.at = richLinkEnd(source, cursor.link_end) + 1
+            cursor.link_end = 0
+            cursor.marks -= {.LINK}
+            continue
+        }
+        if richIsSpace(character) {
+            cursor.pending_space = true
+            cursor.at += 1
+            continue
+        }
+        if .CODE in cursor.marks {
+            if character == '`' {
+                cursor.marks -= {.CODE}
+                cursor.at += 1
+                continue
+            }
+        } else {
+            switch character {
+            case '`':
+                cursor.marks += {.CODE}
+                cursor.at += 1
+                continue
+            case '*', '_':
+                // an underscore between two letters is a part of a name
+                if character == '_' && cursor.at > 0 && cursor.at + 1 < len(source) && !richIsSpace(source[cursor.at - 1]) && !richIsSpace(source[cursor.at + 1]) && source[cursor.at - 1] != '_' && source[cursor.at + 1] != '_' && source[cursor.at - 1] != '*' && source[cursor.at + 1] != '*' { break }
+                double: bool = cursor.at + 1 < len(source) && source[cursor.at + 1] == character
+                cursor.marks ~= {.STRONG} if double else {.ITALIC}
+                cursor.at += 2 if double else 1
+                continue
+            case '~':
+                if cursor.at + 1 < len(source) && source[cursor.at + 1] == '~' {
+                    cursor.at += 2                          // struck text is shown as it is: the marks are gone
+                    continue
+                }
+            case '[':
+                if cursor.link_end == 0 {
+                    close: int = -1
+                    for k in cursor.at + 1 ..< len(source) {
+                        if source[k] == ']' {
+                            close = k
+                            break
+                        }
+                        if source[k] == '\n' { break }
+                    }
+                    if close > 0 && richLinkEnd(source, close) > 0 {
+                        cursor.link_end = close
+                        cursor.marks += {.LINK}
+                        cursor.at += 1
+                        continue
+                    }
+                }
+            }
+        }
+        // a piece: up to a space or to the next mark
+        start: int = cursor.at
+        if character == '\\' && .CODE not_in cursor.marks && cursor.at + 1 < len(source) {
+            // the mark after a backslash is a letter: the piece starts at it
+            start = cursor.at + 1
+            cursor.at += 2
+        } else {
+            cursor.at += 1
+        }
+        for cursor.at < len(source) {
+            next: u8 = source[cursor.at]
+            if richIsSpace(next) || next == '`' { break }
+            if cursor.link_end != 0 && cursor.at == cursor.link_end { break }
+            if .CODE not_in cursor.marks {
+                if next == '*' || next == '\\' || next == '[' { break }
+                if next == '~' && cursor.at + 1 < len(source) && source[cursor.at + 1] == '~' { break }
+                if next == '_' {
+                    inside: bool = cursor.at + 1 < len(source) && !richIsSpace(source[cursor.at + 1]) && source[cursor.at + 1] != '_' && source[cursor.at + 1] != '*'
+                    if !inside { break }
+                }
+            }
+            cursor.at += 1
+        }
+        token = {text = source[start:cursor.at], marks = cursor.marks, space_before = cursor.pending_space}
+        cursor.pending_space = false
+        return token, true
+    }
+    return {}, false
+}
+
+// The tags a run is declared in, for the style: the names of its marks
+@(private)
+richPushTags :: proc(ctx: ^Context, marks: RichMarks) -> (pushed: int) {
+    if .STRONG in marks {
+        UiPushTag(ctx, "strong")
+        pushed += 1
+    }
+    if .ITALIC in marks {
+        UiPushTag(ctx, "italic")
+        pushed += 1
+    }
+    if .CODE in marks {
+        UiPushTag(ctx, "mono")
+        pushed += 1
+    }
+    if .LINK in marks {
+        UiPushTag(ctx, "link")
+        pushed += 1
+    }
+    return
+}
+
+// The width of a text with the tags that are pushed now
+@(private)
+richWidth :: proc(ctx: ^Context, text: string, font_size: f32) -> f32 {
+    for i in 0 ..< min(ctx.tag_count, DRAW_TAGS) { ctx.measure_tags[i] = ctx.tag_stack[ctx.tag_count - 1 - i] }
+    width: f32 = measureText(ctx, text, font_size).x
+    ctx.measure_tags = {}
+    return width
+}
+
+// A paragraph of `source` with its marks drawn as styles, as wide as its container. `name` makes its id (it remembers its width), `scale` is its size as a part of
+// the font size. The tags that are pushed around it reach every run (a "dim" paragraph is dim).
+UiRichText :: proc(ctx: ^Context, name: string, source: string, scale: f32 = 1) {
+    richParagraph(ctx, UiId(ctx, name), source, ctx.style.metrics.font_size * scale)
+}
+
+@(private)
+richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32) {
+    state: ^WidgetState = stateGet(ctx, id)
+    width: f32 = state.rect.z
+    ElementOpen(ctx, {id = id, layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM}})
+    defer ElementClose(ctx)
+    if width <= 0 {
+        // the first frame: the width is not known yet, the paragraph is a wrapped text without its marks
+        free_space: []u8 = ctx.text_buffer[ctx.text_used:]
+        shown: string = MarkdownInline(source, free_space[:min(len(free_space), len(source))])
+        ctx.text_used += len(shown)
+        TextOpen(ctx, shown, {wrap = .WORDS, font_size = font_size})
+        return
+    }
+    // lines of runs: a run is the pieces of one style that follow each other on a line, built at the end of the text memory of the frame
+    cursor: RichCursor
+    line_width: f32
+    line_open: bool
+    run_marks: RichMarks
+    run_start: int = ctx.text_used
+    run_open: bool
+    flushRun :: proc(ctx: ^Context, run_start: ^int, run_open: ^bool, marks: RichMarks, font_size: f32) {
+        if !run_open^ { return }
+        pushed: int = richPushTags(ctx, marks)
+        TextOpen(ctx, string(ctx.text_buffer[run_start^:ctx.text_used]), {font_size = font_size, wrap = .NONE})
+        for _ in 0 ..< pushed { UiPopTag(ctx) }
+        run_start^ = ctx.text_used
+        run_open^ = false
+    }
+    put :: proc(ctx: ^Context, text: string) -> bool {
+        if ctx.text_used + len(text) > len(ctx.text_buffer) {
+            ctx.problems += {.TEXT_FULL}
+            return false
+        }
+        copy(ctx.text_buffer[ctx.text_used:], text)
+        ctx.text_used += len(text)
+        return true
+    }
+    for {
+        token, ok := RichNext(source, &cursor)
+        if !ok { break }
+        pushed: int = richPushTags(ctx, token.marks)
+        token_width: f32 = richWidth(ctx, token.text, font_size)
+        space_width: f32 = richWidth(ctx, " ", font_size) if token.space_before && line_open else 0
+        for _ in 0 ..< pushed { UiPopTag(ctx) }
+        if line_open && line_width + space_width + token_width > width + LAYOUT_EPSILON {
+            // the piece does not fit: the line ends, the piece starts the next one (without the space before it)
+            flushRun(ctx, &run_start, &run_open, run_marks, font_size)
+            ElementClose(ctx)
+            line_open = false
+            line_width, space_width = 0, 0
+        }
+        if !line_open {
+            ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, align = {y = .BOTTOM}}})
+            line_open = true
+        }
+        space: bool = space_width > 0
+        if run_open && token.marks != run_marks {
+            // the space between two styles is in the plainer one: a link is not underlined past its last word, a strong run does not end in a space
+            if space && run_marks & {.LINK, .CODE} == {} && token.marks != {} {
+                if !put(ctx, " ") { break }
+                space = false
+            }
+            flushRun(ctx, &run_start, &run_open, run_marks, font_size)
+        }
+        if !run_open {
+            run_marks = token.marks
+            run_start = ctx.text_used
+            run_open = true
+        }
+        if space && !put(ctx, " ") { break }
+        if !put(ctx, token.text) { break }
+        line_width += space_width + token_width
+    }
+    flushRun(ctx, &run_start, &run_open, run_marks, font_size)
+    if line_open { ElementClose(ctx) }
+}

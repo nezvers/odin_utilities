@@ -139,9 +139,15 @@ few options in one track), `UiBreadcrumbs` (the parts of a path, the index of th
 ## Markdown
 `markdown.odin`: `ui.UiMarkdown(&ctx, source)` shows a text written in Markdown as widgets: headings as titles, paragraphs that wrap, lists (bullets and numbers, nested by
 indent), quotes with a bar, fenced code in the code face in a well, rules. It reads the text again every frame, block by block (`MarkdownNext` is the reader, for a program
-that wants the blocks itself), with no tree and no memory of its own: a note that is edited is shown as it is typed. Inside of a line the marks of emphasis are taken away
-and a link shows its text (`MarkdownInline`); **the emphasis itself is not drawn**: a wrapped paragraph is one text in one face, the layout has no runs of several styles
-yet. No tables, no images.
+that wants the blocks itself), with no tree and no memory of its own: a note that is edited is shown as it is typed. Inside of a paragraph, an entry of a list and a quote the marks are styles (rich text, below); a heading is one text in the
+strong face, its marks are taken away (`MarkdownInline`). No tables, no images. `ui.UiMarkdown(&ctx, source, name)`: two views in one container need two names.
+
+## Rich text
+`richtext.odin`: `ui.UiRichText(&ctx, name, "plain, **strong**, *italic*, `code` and a [link](address)")` is a paragraph that wraps at words with several styles in it. The
+layout only knows texts of one style, so the widget breaks the lines itself for the width it had in the last frame (its first frame is a plain wrapped text) and declares a
+row of texts per line: one text per run of a style, with the tags "strong", "italic", "mono" and "link" for the style to draw (the default style: strong face, italic
+face, code face, accent with a line under it) and to measure in. `RichNext` reads a text piece by piece for a program that wants the pieces. A paragraph keeps one widget
+state (its width); a link is drawn as one, it is not clickable yet.
 
 ## Date and time
 `date.odin`: `ui.UiDateField(&ctx, name, &date)` shows a `Date` (day/month/year) and opens a month of days: arrows go a month back and on, a click on a day takes it. The

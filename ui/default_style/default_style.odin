@@ -247,16 +247,16 @@ painterOf :: proc(ctx: ^ui.Context) -> ^Painter {
     return cast(^Painter)ctx.user
 }
 
-// The face a text with the tags of the style is drawn in: "title" strong, "mono" the code face, else regular
-TagFace :: proc(title: bool, mono: bool) -> Face {
-    return .STRONG if title else (.MONO if mono else .REGULAR)
+// The face a text with the tags of the style is drawn in: "title" and "strong" strong, "mono" the code face, "italic" italic, else regular
+TagFace :: proc(strong: bool, mono: bool, italic: bool = false) -> Face {
+    return .MONO if mono else (.STRONG if strong else (.ITALIC if italic else .REGULAR))
 }
 
 // The measure proc for ui.UiInit when the painter is the user pointer. A text is measured in the face DrawLabel draws it in (by the tags it was declared with), so a title
 // or a line of code gets the room it needs and wraps where it should.
 Measure :: proc(ctx: ^ui.Context, text: string, font_size: f32) -> ui.Vec2 {
     painter: ^Painter = painterOf(ctx)
-    painter.face = TagFace(ui.UiMeasureHasTag(ctx, "title"), ui.UiMeasureHasTag(ctx, "mono"))
+    painter.face = TagFace(ui.UiMeasureHasTag(ctx, "title") || ui.UiMeasureHasTag(ctx, "strong"), ui.UiMeasureHasTag(ctx, "mono"), ui.UiMeasureHasTag(ctx, "italic"))
     size: ui.Vec2 = painter.measure_text(painter, text, font_size)
     painter.face = .REGULAR
     return size
@@ -556,14 +556,17 @@ DrawPanel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     FillRoundedBorder(painter, info.rect, theme.panel_rounding, theme.surface_high if raised else theme.panel, theme.border if raised else theme.border_soft, theme.border_width, theme.max_radius if raised else theme.panel_max_radius)
 }
 
-// A text. With the tag "title" it is in the strong face, with "dim" in the dim color, with "mono" in the code face.
+// A text. With the tag "title" or "strong" it is in the strong face, with "italic" in the italic one, with "mono" in the code face,
+// with "dim" in the dim color, with "link" in the accent with a line under it.
 DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
-    color: ui.Color = info.color if info.color.a > 0 else (theme.text_dim if ui.DrawInfoHasTag(info, "dim") else theme.text)
-    painter.face = TagFace(ui.DrawInfoHasTag(info, "title"), ui.DrawInfoHasTag(info, "mono"))
+    link: bool = ui.DrawInfoHasTag(info, "link")
+    color: ui.Color = info.color if info.color.a > 0 else (theme.accent if link else (theme.text_dim if ui.DrawInfoHasTag(info, "dim") else theme.text))
+    painter.face = TagFace(ui.DrawInfoHasTag(info, "title") || ui.DrawInfoHasTag(info, "strong"), ui.DrawInfoHasTag(info, "mono"), ui.DrawInfoHasTag(info, "italic"))
     painter.draw_text(painter, info.text, {info.rect.x, info.rect.y}, info.font_size, color)
     painter.face = .REGULAR
+    if link { painter.fill_rect(painter, {info.rect.x, info.rect.y + info.rect.w - 1, info.rect.z, 1}, {color.r, color.g, color.b, 150}) }
 }
 
 // The icon of a control and its label, centered together in the rect. An icon without a label is in the middle.

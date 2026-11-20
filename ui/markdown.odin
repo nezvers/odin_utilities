@@ -4,8 +4,8 @@ package ui
 // code blocks and rules. It is a reader, not an editor: the text is parsed every frame, block by block, straight into elements, with no tree and no memory of its own.
 //
 // What it reads: headings (`#` to `######`), paragraphs (lines up to an empty one), lists (`-`, `*`, `+` or `1.`, nested by two spaces of indent), quotes (`>`), fenced
-// code (three backticks, kept as it is, in the code face), rules (`---`). Inside of a line the marks of emphasis are taken away and a link shows its text: a wrapped
-// paragraph is one text in one face here, so `**bold**` reads as bold but is not drawn bold (the layout has no runs of several styles in one paragraph yet).
+// code (three backticks, kept as it is, in the code face), rules (`---`). Inside of a paragraph, an entry of a list and a quote the marks are styles (richtext.odin):
+// `**strong**`, `*italic*`, `` `code` `` and `[links](address)`. A heading is one text in the strong face: its marks are taken away.
 //
 // The Markdown view of Baldr (baldr/widget_markdown_view.odin) was the reason to have one; the code is written for this library.
 
@@ -216,22 +216,46 @@ markdownShown :: proc(ctx: ^Context, text: string) -> string {
 // The sizes of the headings, as parts of the font size
 MARKDOWN_HEADING_SCALES: [6]f32 = {1.9, 1.5, 1.25, 1.1, 1, 1}
 
+// The lines of a quote without the mark at their start, in the memory of the frame (the marks of styles stay: the paragraph reads them)
+@(private)
+markdownQuoteText :: proc(ctx: ^Context, text: string) -> string {
+    start: int = ctx.text_used
+    line_start: bool = true
+    for i in 0 ..< len(text) {
+        character: u8 = text[i]
+        if line_start && (character == '>' || character == ' ' || character == '\t') { continue }
+        line_start = character == '\n'
+        if ctx.text_used >= len(ctx.text_buffer) {
+            ctx.problems += {.TEXT_FULL}
+            break
+        }
+        ctx.text_buffer[ctx.text_used] = character
+        ctx.text_used += 1
+    }
+    return string(ctx.text_buffer[start:ctx.text_used])
+}
+
 // Shows `source` as a column of blocks, as wide as its container. The texts are in the memory of the frame (the storage of the context needs room for the text).
-UiMarkdown :: proc(ctx: ^Context, source: string) {
+// `name` makes the id of the view: two views in one container need two names (a paragraph remembers its width by it).
+UiMarkdown :: proc(ctx: ^Context, source: string, name: string = "markdown") {
     metrics: ^Metrics = &ctx.style.metrics
-    ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM, gap = metrics.gap * 1.5}})
+    root: Id = UiId(ctx, name)
+    ElementOpen(ctx, {id = root, layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM, gap = metrics.gap * 1.5}})
     cursor: int
+    index: u32
     for {
         block, next, ok := MarkdownNext(source, cursor)
         if !ok { break }
         cursor = next
+        index += 1
+        paragraph: Id = IdFromIndex(index, root)
         switch block.kind {
         case .HEADING:
             UiPushTag(ctx, "title")
             TextOpen(ctx, markdownShown(ctx, block.text), {font_size = metrics.font_size * MARKDOWN_HEADING_SCALES[clamp(block.level, 1, 6) - 1], wrap = .WORDS})
             UiPopTag(ctx)
         case .PARAGRAPH:
-            TextOpen(ctx, markdownShown(ctx, block.text), {wrap = .WORDS})
+            richParagraph(ctx, paragraph, block.text, metrics.font_size)
         case .BULLET, .ORDERED:
             ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, gap = metrics.gap, padding = {left = f32(block.level) * metrics.font_size * 1.2}}})
             if block.kind == .BULLET {
@@ -242,20 +266,16 @@ UiMarkdown :: proc(ctx: ^Context, source: string) {
                 TextOpen(ctx, block.marker)
                 UiPopTag(ctx)
             }
-            ElementOpen(ctx, {layout = {size = {Grow(), Fit()}}})
-            TextOpen(ctx, markdownShown(ctx, block.text), {wrap = .WORDS})
-            ElementClose(ctx)
+            richParagraph(ctx, paragraph, block.text, metrics.font_size)
             ElementClose(ctx)
         case .QUOTE:
             // a bar on the left, the text dim
             ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, gap = metrics.gap * 1.5}})
             ElementOpen(ctx, {layout = {size = {Fixed(3), Grow()}}, draw = {kind = .SEPARATOR}})
             ElementClose(ctx)
-            ElementOpen(ctx, {layout = {size = {Grow(), Fit()}}})
             UiPushTag(ctx, "dim")
-            TextOpen(ctx, markdownShown(ctx, block.text), {wrap = .WORDS})
+            richParagraph(ctx, paragraph, markdownQuoteText(ctx, block.text), metrics.font_size)
             UiPopTag(ctx)
-            ElementClose(ctx)
             ElementClose(ctx)
         case .CODE:
             // a well with the lines as they are, in the code face

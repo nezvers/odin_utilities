@@ -844,7 +844,7 @@ script: []kit.Step = {
     kit.MoveTo({640, 700}),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("Release notes", "title") && shown("write Markdown", "") && shown("ui.UiMarkdown(&ctx, source)", "mono") }, "the note is shown as a title, a list and code"),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("See the README.", "") }, "a link shows its text"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("look", "strong") && shown("Baldr", "italic") && shown("the README", "link") }, "the marks inside of a paragraph are styles"),
     kit.Capture("examples_markdown"),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
@@ -857,6 +857,6 @@ script: []kit.Step = {
     kit.Tap(.END),
     kit.Type(" Typed."),
     kit.Wait(3),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("See the README. Typed.", "") }, "what is typed into the source is read on the right"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown(". Typed.", "") }, "what is typed into the source is read on the right"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
