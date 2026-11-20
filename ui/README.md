@@ -165,6 +165,8 @@ more, a ring around the hovered and the picked point with its value, in a palett
 in `default_style/chart.odin`). A style of your own draws with `ChartPlotRect`, `ChartPosition` and `ChartBarRect`.
 
 ## The gallery of Baldr, remade
+`demo_common/demo_emoji.odin` is Baldr's 31_emoji as the `emoji` demo: a composer with an Emoji button that opens a picker in a popover (`UiMenu` with any content; the app sets `ctx.open_menu = 0` to close it), a skin tone, categories, recents, and the chosen emoji written at the caret with `UiTextInsert`. There is no color emoji font, so each emoji is drawn from shapes (circles, quads, triangles) by a CUSTOM draw proc: 25 of them (faces, hands that take the skin tone, symbols); the text holds a shortcode (`:thumbs_up~3:`) that the messages draw as the shape again, inline with the words.
+
 `demo_common/demo_shell.odin` is the `shell` demo: Baldr's desktop shell examples with the same widgets and plain data in place of a compositor: a control centre (round icon toggles, sliders whose icon follows the value and mutes, a segmented power mode, a Sound page), a launcher (a search field over results walked with the arrows while it keeps the focus, Ctrl+P pins, Shift+Delete removes), a dock (icons grow with the distance of the pointer, a download on one, marks under the running ones), a taskbar (windows with raise, minimise, maximise, close, titles cut with an ellipsis, workspaces), a desktop (icons that stay where they are dropped) and a clock applet with a calendar.
 
 `demo_common/demo_gallery.odin` is the first page of Baldr's gallery (`examples/00_gallery`) with this library: the same cards (Buttons, Inputs, Menus, Choices, Project, Badges,
@@ -450,6 +452,8 @@ The ui demos draw with Inter, JetBrains Mono and the Lucide icons (`ui/kit` load
 `ui.UiSettings(&ctx)` gives the `Settings` of a context (`settings.odin`): `double_click_seconds` (0.35, also the time of a triple click), `multi_click_limit` (3: a
 triple click selects a paragraph; 2: a third quick press starts again; 1: no selection by double click), `drag_start_distance` (5 pixels) and `drag_rest_distance` (4),
 `extend_modifier` (Shift: held with a click or an arrow it extends a selection). A program with a settings page writes them; the widgets read them every frame.
+
+`ui.UiTextInsert(&ctx, id, buffer, &length, text)` writes a text at the caret of a text field or area from a button (an emoji picker, a snippet), with the caret after it and one undo step.
 
 Hotkeys are a `ui.KeyMap` (`keymap.odin`): for every `Action` (accept, cancel, the arrows, page up and down, copy, paste, undo, rename ...) `KEYMAP_SLOTS` (4) bindings, any one
 of which does it. A `Binding` is a device (`KEYBOARD`, `MOUSE`, `GAMEPAD`), a code (the program's own number for the key or the button) and `ctrl`, `alt`, `shift` that are

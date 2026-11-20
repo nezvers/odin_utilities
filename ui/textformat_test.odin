@@ -145,3 +145,47 @@ test_a_mark_at_the_start_of_the_line_of_the_cursor :: proc(t: ^testing.T) {
     testing.expect(t, !UiTextLinePrefix(&test.ctx, test.area, test.text[:], &test.length, ""))
     testing.expect(t, !UiTextLinePrefix(&test.ctx, test.area, test.text[:], &test.length, "0123456789012345678901234567890"))
 }
+
+@(test)
+test_text_is_inserted_at_the_cursor_over_the_selection_and_the_cursor_goes_after_it :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(64, 128, 32, 1024),
+        ctx: Context,
+        style: Style,
+        text: [16]u8,
+        length: int,
+        field: Id,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    frame :: proc(test: ^Test) {
+        UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(500), {}}) {
+            test.field = UiId(&test.ctx, "Message")
+            UiTextField(&test.ctx, "Message", test.text[:], &test.length, {Fixed(300), {}})
+        }
+        UiEnd(&test.ctx)
+    }
+    text :: proc(test: ^Test) -> string { return string(test.text[:test.length]) }
+    testing.expect(t, !UiTextInsert(&test.ctx, 999, test.text[:], &test.length, "x"), "a widget that was never declared")
+    test.length = copy(test.text[:], "hello world")
+    frame(test)
+    state: ^WidgetState = stateFind(&test.ctx, test.field)
+    state.cursor, state.anchor = 5, 5
+    testing.expect(t, UiTextInsert(&test.ctx, test.field, test.text[:], &test.length, ":x:"))
+    testing.expect_value(t, text(test), "hello:x: world")
+    testing.expect_value(t, [2]int{state.cursor, state.anchor}, [2]int{8, 8})
+    testing.expect_value(t, test.ctx.focus, test.field)
+    // twice: the second goes after the first
+    testing.expect(t, UiTextInsert(&test.ctx, test.field, test.text[:], &test.length, "!"))
+    testing.expect_value(t, text(test), "hello:x:! world")
+    // over a selection
+    state.anchor, state.cursor = 9, 15
+    testing.expect(t, UiTextInsert(&test.ctx, test.field, test.text[:], &test.length, "?"))
+    testing.expect_value(t, text(test), "hello:x:!?")
+    // no room: nothing changes
+    testing.expect(t, !UiTextInsert(&test.ctx, test.field, test.text[:], &test.length, "123456789"))
+    testing.expect_value(t, text(test), "hello:x:!?")
+}

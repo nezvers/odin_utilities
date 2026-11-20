@@ -87,3 +87,18 @@ UiTextLinePrefix :: proc(ctx: ^Context, id: Id, buffer: []u8, length: ^int, pref
     textFormatDone(ctx, id, state, buffer, length)
     return true
 }
+
+// Writes `text` over the selection of the text widget `id` (at the cursor when nothing is selected), the cursor after it, and gives the widget the focus back: what a
+// button that puts something into a text does (an emoji picker, a snippet, a file name). One step of the undo history. False when the widget is not known or the
+// buffer has no room.
+UiTextInsert :: proc(ctx: ^Context, id: Id, buffer: []u8, length: ^int, text: string) -> bool {
+    state: ^WidgetState = stateFind(ctx, id)
+    if state == nil { return false }
+    length^ = clamp(length^, 0, len(buffer))
+    state.cursor, state.anchor = clamp(state.cursor, 0, length^), clamp(state.anchor, 0, length^)
+    low, high := textSelection(state)
+    if length^ - (high - low) + len(text) > len(buffer) { return false }
+    textInsert(state, buffer, length, text)
+    textFormatDone(ctx, id, state, buffer, length)
+    return true
+}
