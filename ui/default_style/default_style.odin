@@ -537,6 +537,11 @@ DrawPanel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     case "tooltip", "dropdown", "combo", "menu", "drag":
         raised = true
     }
+    if info.name == "code" {
+        // a block of code (ui.UiMarkdown): a well, like a field
+        FillRoundedBorder(painter, info.rect, theme.rounding, theme.track, theme.border_soft, theme.border_width, theme.max_radius)
+        return
+    }
     radius: f32 = ui.RoundedRadius(info.rect, theme.panel_rounding, theme.max_radius if raised else theme.panel_max_radius)
     if !ui.DrawInfoHasTag(info, "flat") { Shadow(painter, info.rect, radius, 1.4 if raised else 1) }
     FillRoundedBorder(painter, info.rect, theme.panel_rounding, theme.surface_high if raised else theme.panel, theme.border if raised else theme.border_soft, theme.border_width, theme.max_radius if raised else theme.panel_max_radius)

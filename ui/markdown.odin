@@ -1,0 +1,275 @@
+package ui
+
+// Markdown as widgets: `ui.UiMarkdown(&ctx, source)` shows a text written in Markdown (a help page, a note, a changelog) as titles, wrapped paragraphs, lists, quotes,
+// code blocks and rules. It is a reader, not an editor: the text is parsed every frame, block by block, straight into elements, with no tree and no memory of its own.
+//
+// What it reads: headings (`#` to `######`), paragraphs (lines up to an empty one), lists (`-`, `*`, `+` or `1.`, nested by two spaces of indent), quotes (`>`), fenced
+// code (three backticks, kept as it is, in the code face), rules (`---`). Inside of a line the marks of emphasis are taken away and a link shows its text: a wrapped
+// paragraph is one text in one face here, so `**bold**` reads as bold but is not drawn bold (the layout has no runs of several styles in one paragraph yet).
+//
+// The Markdown view of Baldr (baldr/widget_markdown_view.odin) was the reason to have one; the code is written for this library.
+
+MarkdownKind :: enum u8 {
+    PARAGRAPH,
+    HEADING,            // level 1 to 6
+    BULLET,             // level: how deep it is nested, 0 for the outermost
+    ORDERED,            // the same, `marker` is its number as it was written ("3.")
+    QUOTE,
+    CODE,               // text: the lines between the fences, as they are
+    RULE,
+}
+
+MarkdownBlock :: struct {
+    kind: MarkdownKind,
+    level: int,
+    marker: string,
+    text: string,       // a part of the source: a paragraph may go over several lines (its line ends are in it)
+}
+
+@(private)
+markdownLine :: proc(source: string, cursor: int) -> (line: string, next: int) {
+    end: int = cursor
+    for end < len(source) && source[end] != '\n' { end += 1 }
+    line = source[cursor:end]
+    if len(line) > 0 && line[len(line) - 1] == '\r' { line = line[:len(line) - 1] }
+    return line, min(end + 1, len(source))
+}
+
+@(private)
+markdownTrimLeft :: proc(line: string) -> (rest: string, indent: int) {
+    for indent < len(line) && (line[indent] == ' ' || line[indent] == '\t') { indent += 1 }
+    return line[indent:], indent
+}
+
+@(private)
+markdownTrim :: proc(text: string) -> string {
+    rest, _ := markdownTrimLeft(text)
+    for len(rest) > 0 && (rest[len(rest) - 1] == ' ' || rest[len(rest) - 1] == '\t' || rest[len(rest) - 1] == '\r') { rest = rest[:len(rest) - 1] }
+    return rest
+}
+
+// What a line starts, by its first characters: a heading, an entry of a list, a quote, a rule, a fence; else it is text of a paragraph
+@(private)
+markdownLineKind :: proc(line: string) -> (kind: MarkdownKind, level: int, marker: string, text: string, fence: bool) {
+    rest, indent := markdownTrimLeft(line)
+    if len(rest) >= 3 && rest[:3] == "```" { return .CODE, 0, "", "", true }
+    if len(rest) > 0 && rest[0] == '#' {
+        hashes: int
+        for hashes < len(rest) && rest[hashes] == '#' { hashes += 1 }
+        if hashes <= 6 && hashes < len(rest) && rest[hashes] == ' ' { return .HEADING, hashes, "", markdownTrim(rest[hashes:]), false }
+    }
+    if len(rest) >= 3 {
+        // a rule: three or more of the same mark and nothing else
+        mark: u8 = rest[0]
+        if mark == '-' || mark == '*' || mark == '_' {
+            only: bool = true
+            for i in 0 ..< len(rest) {
+                if rest[i] != mark { only = false }
+            }
+            if only { return .RULE, 0, "", "", false }
+        }
+    }
+    if len(rest) >= 2 && (rest[0] == '-' || rest[0] == '*' || rest[0] == '+') && rest[1] == ' ' { return .BULLET, indent / 2, rest[:1], markdownTrim(rest[2:]), false }
+    digits: int
+    for digits < len(rest) && rest[digits] >= '0' && rest[digits] <= '9' { digits += 1 }
+    if digits > 0 && digits + 1 < len(rest) && rest[digits] == '.' && rest[digits + 1] == ' ' { return .ORDERED, indent / 2, rest[:digits + 1], markdownTrim(rest[digits + 2:]), false }
+    if len(rest) > 0 && rest[0] == '>' { return .QUOTE, 0, "", markdownTrim(rest[1:]), false }
+    return .PARAGRAPH, 0, "", markdownTrim(line), false
+}
+
+// The next block of a Markdown text from `cursor` on, and where the one after it starts. `ok` is false at the end of the text.
+MarkdownNext :: proc(source: string, cursor: int) -> (block: MarkdownBlock, next: int, ok: bool) {
+    at: int = cursor
+    line: string
+    // empty lines between blocks
+    for at < len(source) {
+        after: int
+        line, after = markdownLine(source, at)
+        if markdownTrim(line) != "" { break }
+        at = after
+    }
+    if at >= len(source) { return {}, at, false }
+    line_end: int
+    line, line_end = markdownLine(source, at)
+    kind, level, marker, text, fence := markdownLineKind(line)
+    if fence {
+        // everything up to the closing fence (or the end of the text), as it is
+        start: int = line_end
+        end: int = start
+        scan: int = start
+        for scan < len(source) {
+            inner, after := markdownLine(source, scan)
+            trimmed, _ := markdownTrimLeft(inner)
+            if len(trimmed) >= 3 && trimmed[:3] == "```" {
+                scan = after
+                break
+            }
+            end = after
+            scan = after
+        }
+        code: string = source[start:end]
+        if len(code) > 0 && code[len(code) - 1] == '\n' { code = code[:len(code) - 1] }
+        return {kind = .CODE, text = code}, scan, true
+    }
+    if kind != .PARAGRAPH && kind != .QUOTE { return {kind = kind, level = level, marker = marker, text = text}, line_end, true }
+    // a paragraph (or a quote) goes on over the next lines until an empty one or a line that starts something else
+    start_of_text: int = at
+    end_of_text: int = at + len(line)
+    scan: int = line_end
+    for scan < len(source) {
+        more, after := markdownLine(source, scan)
+        if markdownTrim(more) == "" { break }
+        more_kind, _, _, _, more_fence := markdownLineKind(more)
+        if more_fence || more_kind != kind { break }
+        end_of_text = scan + len(more)
+        scan = after
+    }
+    if kind == .QUOTE { return {kind = .QUOTE, text = source[start_of_text:end_of_text]}, scan, true }
+    return {kind = .PARAGRAPH, text = markdownTrim(source[start_of_text:end_of_text])}, scan, true
+}
+
+// The text of a line as it is shown: line ends are spaces, the marks of emphasis (`*`, `_`, `~~`, backticks) and of quotes at the start of a line are gone, a link
+// `[text](address)` is its text. Written into `out`; what does not fit is cut.
+MarkdownInline :: proc(text: string, out: []u8) -> string {
+    count: int
+    put :: proc(out: []u8, count: ^int, character: u8) {
+        if count^ < len(out) {
+            out[count^] = character
+            count^ += 1
+        }
+    }
+    i: int
+    line_start: bool = true
+    for i < len(text) {
+        character: u8 = text[i]
+        switch {
+        case character == '\r':
+            i += 1
+        case character == '\n':
+            if count > 0 && out[count - 1] != ' ' { put(out, &count, ' ') }
+            line_start = true
+            i += 1
+        case line_start && (character == ' ' || character == '\t' || character == '>'):
+            i += 1                                          // the indent and the mark of a quote on a line that goes on
+        case character == '\\' && i + 1 < len(text):
+            put(out, &count, text[i + 1])                   // an escaped mark is the mark itself
+            line_start = false
+            i += 2
+        case character == '*' || character == '`' || character == '~':
+            i += 1
+            line_start = false
+        case character == '_':
+            // an underscore inside of a word is a part of the word (snake_case), at its edge it is emphasis
+            inside: bool = i > 0 && i + 1 < len(text) && text[i - 1] != ' ' && text[i + 1] != ' ' && text[i - 1] != '_' && text[i + 1] != '_'
+            if inside { put(out, &count, character) }
+            i += 1
+            line_start = false
+        case character == '[':
+            // a link: its text is kept, its address in the round brackets after it is not
+            close: int = -1
+            for k in i + 1 ..< len(text) {
+                if text[k] == ']' {
+                    close = k
+                    break
+                }
+                if text[k] == '\n' { break }
+            }
+            if close > 0 && close + 1 < len(text) && text[close + 1] == '(' {
+                address_end: int = -1
+                for k in close + 2 ..< len(text) {
+                    if text[k] == ')' {
+                        address_end = k
+                        break
+                    }
+                    if text[k] == '\n' { break }
+                }
+                if address_end > 0 {
+                    for k in i + 1 ..< close { put(out, &count, text[k]) }
+                    i = address_end + 1
+                    line_start = false
+                    continue
+                }
+            }
+            put(out, &count, character)
+            i += 1
+            line_start = false
+        case:
+            put(out, &count, character)
+            line_start = false
+            i += 1
+        }
+    }
+    for count > 0 && out[count - 1] == ' ' { count -= 1 }
+    return string(out[:count])
+}
+
+// The shown text of a block in the memory of the frame
+@(private)
+markdownShown :: proc(ctx: ^Context, text: string) -> string {
+    free_space: []u8 = ctx.text_buffer[ctx.text_used:]
+    shown: string = MarkdownInline(text, free_space[:min(len(free_space), len(text))])
+    if len(text) > len(free_space) { ctx.problems += {.TEXT_FULL} }
+    ctx.text_used += len(shown)
+    return shown
+}
+
+// The sizes of the headings, as parts of the font size
+MARKDOWN_HEADING_SCALES: [6]f32 = {1.9, 1.5, 1.25, 1.1, 1, 1}
+
+// Shows `source` as a column of blocks, as wide as its container. The texts are in the memory of the frame (the storage of the context needs room for the text).
+UiMarkdown :: proc(ctx: ^Context, source: string) {
+    metrics: ^Metrics = &ctx.style.metrics
+    ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM, gap = metrics.gap * 1.5}})
+    cursor: int
+    for {
+        block, next, ok := MarkdownNext(source, cursor)
+        if !ok { break }
+        cursor = next
+        switch block.kind {
+        case .HEADING:
+            UiPushTag(ctx, "title")
+            TextOpen(ctx, markdownShown(ctx, block.text), {font_size = metrics.font_size * MARKDOWN_HEADING_SCALES[clamp(block.level, 1, 6) - 1], wrap = .WORDS})
+            UiPopTag(ctx)
+        case .PARAGRAPH:
+            TextOpen(ctx, markdownShown(ctx, block.text), {wrap = .WORDS})
+        case .BULLET, .ORDERED:
+            ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, gap = metrics.gap, padding = {left = f32(block.level) * metrics.font_size * 1.2}}})
+            if block.kind == .BULLET {
+                ElementOpen(ctx, {layout = {size = {Fixed(metrics.font_size * 0.6), Fixed(metrics.font_size)}}, draw = {kind = .BULLET}})
+                ElementClose(ctx)
+            } else {
+                UiPushTag(ctx, "dim")
+                TextOpen(ctx, block.marker)
+                UiPopTag(ctx)
+            }
+            ElementOpen(ctx, {layout = {size = {Grow(), Fit()}}})
+            TextOpen(ctx, markdownShown(ctx, block.text), {wrap = .WORDS})
+            ElementClose(ctx)
+            ElementClose(ctx)
+        case .QUOTE:
+            // a bar on the left, the text dim
+            ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, gap = metrics.gap * 1.5}})
+            ElementOpen(ctx, {layout = {size = {Fixed(3), Grow()}}, draw = {kind = .SEPARATOR}})
+            ElementClose(ctx)
+            ElementOpen(ctx, {layout = {size = {Grow(), Fit()}}})
+            UiPushTag(ctx, "dim")
+            TextOpen(ctx, markdownShown(ctx, block.text), {wrap = .WORDS})
+            UiPopTag(ctx)
+            ElementClose(ctx)
+            ElementClose(ctx)
+        case .CODE:
+            // a well with the lines as they are, in the code face
+            UiPushTag(ctx, "flat")
+            ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM, padding = PaddingAll(metrics.padding.x)}, draw = {kind = .PANEL, name = "code"}})
+            UiPopTag(ctx)
+            UiPushTag(ctx, "mono")
+            TextOpen(ctx, block.text, {wrap = .NEWLINES, font_size = metrics.font_size * 0.9})
+            UiPopTag(ctx)
+            ElementClose(ctx)
+        case .RULE:
+            ElementOpen(ctx, {layout = {size = {Grow(), Fixed(1)}}, draw = {kind = .SEPARATOR}})
+            ElementClose(ctx)
+        }
+    }
+    ElementClose(ctx)
+}

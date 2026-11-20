@@ -38,6 +38,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Charts (`UiChart`: line, area, bars, scatter; picking by pointer and keys) and Baldr's 21_charts remade
 - [x] Date and time fields (`UiDateField` with a month to pick from, `UiTimeField`), the "Date, time and colour" card of the gallery
 - [x] Baldr's 09_jobs remade (downloads with progress, simulated without threads)
+- [x] Markdown as widgets (`UiMarkdown`: headings, paragraphs, lists, quotes, code, rules) and Baldr's 19_markdown as source and preview side by side
+- [ ] Runs of several styles in one wrapped text (bold, italic, code and links inside of a paragraph: the measure proc needs the face, the wrap has to break between runs); `UiMarkdown` would then draw emphasis instead of only taking its marks away
 - [ ] Baldr examples that are still to be remade with this library (references/Baldr/examples): 19_markdown, 07_code (an editor with syntax colors), date and time fields; the desktop shell ones (taskbar, dock, applets, tray) need a window system and are out of scope
 - [ ] (later) Timeline: SIMD for the block renderer (ramps and fills with 8 or 16 lanes; the compiler may vectorize the loops already: check the assembly), a plan that several tracks share the cursor search of
 - [ ] (low priority) Right-to-left text (needs a font with the script and shaping for Arabic: measuring, wrapping, caret and selection all change)

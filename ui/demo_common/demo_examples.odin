@@ -1,11 +1,12 @@
 #+private file
 package demo_common
 
-// Eight examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Nine examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
 // a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
-// a thread that posts messages, here a download is a number that grows with the time of the frame). The texts and the sample data are the ones of the originals. There a `view` builds a tree and an `update` answers messages; here the page is
+// a thread that posts messages, here a download is a number that grows with the time of the frame) and 19_markdown (a text in Markdown and how it reads, side by side;
+// the original is an editor that shows the styles while one types, here the source is a plain text area and ui.UiMarkdown shows it). The texts and the sample data are the ones of the originals. There a `view` builds a tree and an `update` answers messages; here the page is
 // declared every frame and a widget hands back what happened: the counter is `if ui.UiButton(...) { count += 1 }`.
 
 import "core:fmt"
@@ -70,6 +71,10 @@ State :: struct {
     // 09_jobs
     downloads: [3]Download,
     bumps: int,
+    // 19_markdown
+    note: [1024]u8,
+    note_length: int,
+    source_id: ui.Id,
 }
 
 Download :: struct {
@@ -86,7 +91,8 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [8]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs"}
+EXAMPLES: [9]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown"}
+NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
 FRUIT: [5]string = {"Apple", "Banana", "Cherry", "Dragon fruit", "Elderberry"}
@@ -110,6 +116,7 @@ init :: proc(ctx: ^kit.Context) {
     _, _, state.hue = ui_default.ColorToOklch(state.accent)
     state.lab_switch = true
     state.fruit = 2
+    state.note_length = copy(state.note[:], NOTE)
     state.downloads = {{name = "odin-nightly.tar.gz", size = 24_000_000}, {name = "fonts.zip", size = 9_500_000}, {name = "changelog.md", size = 400_000}}
     ui.ChartViewInit(&state.chart)
     // the numbers of the original
@@ -345,6 +352,21 @@ jobs :: proc(c: ^ui.Context, delta_time: f32) {
     }
 }
 
+// 19_markdown: the source on the left, how it reads on the right. Every change of the text is on the right in the same frame: the view reads the text again each time.
+markdown :: proc(c: ^ui.Context) {
+    if stage(c, "markdown", {960, 560}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(20)}) {
+        ui.UiTitle(c, "Markdown", 1.25)
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, gap = 16}})
+        state.source_id = ui.UiId(c, "Markdown source##note")
+        // the source is in the face the lines are measured in: a wrapped text in another face would not fit its own lines
+        ui.UiTextArea(c, "Markdown source##note", state.note[:], &state.note_length, {ui.Percent(0.45), ui.Grow()})
+        if ui.UiScroll(c, "##preview", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, padding = {0, 14, 0, 0}}) {
+            ui.UiMarkdown(c, string(state.note[:state.note_length]))
+        }
+        ui.ElementClose(c)
+    }
+}
+
 // 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
 charts :: proc(c: ^ui.Context) {
     if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
@@ -558,6 +580,8 @@ draw :: proc(ctx: ^kit.Context) {
         charts(c)
     case 7:
         jobs(c, ctx.delta_time)
+    case 8:
+        markdown(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -565,6 +589,15 @@ draw :: proc(ctx: ^kit.Context) {
 
 // The script finds the widgets by where they were in the last frame: the pages are laid out by the widths of their texts
 target: ui.Vec2
+
+// A line of text was drawn in the last frame, with a tag ("" for any)
+shown :: proc(text: string, tag: string) -> bool {
+    for command in ui.UiCommands(&state.app.ctx) {
+        info: ui.DrawInfo = command.info
+        if command.kind == .DRAW && info.kind == .LABEL && info.text == text && (tag == "" || ui.DrawInfoHasTag(&info, tag)) { return true }
+    }
+    return false
+}
 
 aim :: proc(id: ui.Id) -> bool {
     rect, found := ui.UiElementRect(&state.app.ctx, id)
@@ -804,5 +837,26 @@ script: []kit.Step = {
     kit.Wait(3),
     kit.Capture("examples_jobs"),
     kit.Wait(2),
+
+    // markdown: the note is shown as titles, a list and a code block; what is typed into the source is on the right at once
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(8) }, "the Markdown tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("Release notes", "title") && shown("write Markdown", "") && shown("ui.UiMarkdown(&ctx, source)", "mono") }, "the note is shown as a title, a list and code"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("See the README.", "") }, "a link shows its text"),
+    kit.Capture("examples_markdown"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        rect, found := ui.UiElementRect(&state.app.ctx, state.source_id)
+        target = {rect.x + rect.z * 0.5, rect.y + rect.w - 12}
+        return found
+    }, "the source is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Tap(.END),
+    kit.Type(" Typed."),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("See the README. Typed.", "") }, "what is typed into the source is read on the right"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

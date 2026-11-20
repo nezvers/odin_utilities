@@ -136,6 +136,13 @@ in a pill, with a check mark when it is on), `UiTag` (a pill with a cross: it te
 few options in one track), `UiBreadcrumbs` (the parts of a path, the index of the one that was clicked), `UiSpinner`, `UiTitle`, `UiLabelDim`, `UiCard` (a panel with a title), and
 `UiInteract` (the pointer and the keyboard for an element the program declares itself: a row of an icon and texts that can be clicked).
 
+## Markdown
+`markdown.odin`: `ui.UiMarkdown(&ctx, source)` shows a text written in Markdown as widgets: headings as titles, paragraphs that wrap, lists (bullets and numbers, nested by
+indent), quotes with a bar, fenced code in the code face in a well, rules. It reads the text again every frame, block by block (`MarkdownNext` is the reader, for a program
+that wants the blocks itself), with no tree and no memory of its own: a note that is edited is shown as it is typed. Inside of a line the marks of emphasis are taken away
+and a link shows its text (`MarkdownInline`); **the emphasis itself is not drawn**: a wrapped paragraph is one text in one face, the layout has no runs of several styles
+yet. No tables, no images.
+
 ## Date and time
 `date.odin`: `ui.UiDateField(&ctx, name, &date)` shows a `Date` (day/month/year) and opens a month of days: arrows go a month back and on, a click on a day takes it. The
 calendar math is in the library (`DateDaysInMonth`, `DateWeekday` with Monday as 0, `DateAddMonths`, `DateIsValid`, `DateFormat`). `ui.UiTimeField(&ctx, name, &minutes, step)`
@@ -157,13 +164,14 @@ library does not do (frosted glass: the blur of what is behind a card) is left o
 (`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
 
 ## Examples of Baldr, remade
-`demo_common/demo_examples.odin` has eight of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
+`demo_common/demo_examples.odin` has nine of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
 `update`), `04_controls` (check boxes, a switch and thin sliders that change the state of the program in place; the switch turns the page to the light theme), `03_scroll` (forty
 cards in a scrolling region, a ghost button on each), `17_toasts` (raised cards at the top right that a click takes away: floating elements with `ui.UiInteract`) and
 `02_theme_lab` (a page to judge a theme by: here its accent is picked by a tile or a hue and the theme is made on the spot with `ThemeFromAccent`) and `05_overlays` (a select,
 a menu that opens from a button: `ui.UiMenu` inside of a button tag, tooltips, a card that takes a click while the cross in it keeps its own, a dialog) and `21_charts` (the
 same numbers as a line, an area, bars and a scatter with `ui.UiChart`) and `09_jobs` (three downloads with their progress while the page stays live: the original
-runs each on a thread that posts messages, here a download is a number that grows with the time of the frame). The texts
+runs each on a thread that posts messages, here a download is a number that grows with the time of the frame) and `19_markdown` (a text in Markdown and how it reads, side
+by side, with `ui.UiTextArea` and `ui.UiMarkdown`; the original is an editor that shows the styles while one types). The texts
 and the sample data are the originals'. Each has its part of the script and a stored picture.
 
 ## The demo of Dear ImGui, remade
