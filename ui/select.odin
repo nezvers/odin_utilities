@@ -80,6 +80,8 @@ TextSelect :: struct {
     row_group: Id,              // while a row is declared (UiSelectRow): the list and the row of the texts that are declared
     row_index: i32,
     row_cells: i32,             // the selectable texts that the row has declared so far
+    cell_column: i32,           // inside of a cell of a table (UiTableCell): its column plus one, the cell of the texts that are declared there (0: the next number of the row)
+    keep_press: bool,           // a press of this frame was for a bar or a header: it does not let the selection go
     copied: [UI_SELECT_BYTES]u8,
     copied_length: int,
     whole: bool,                // the selection fit into `copied`
@@ -181,6 +183,12 @@ UiSelectRows :: proc(ctx: ^Context, name: string, count: int, row_text: SelectRo
         select.group_count += 1
     }
     return id
+}
+
+// A press on this widget is not a press elsewhere: the selection of text stays (a scroll bar, the header of a table, the edge of a column). Call it in the frame of the
+// press. The widgets of the library do it themselves.
+UiTextSelectionKeep :: proc(ctx: ^Context) {
+    ctx.select.keep_press = true
 }
 
 // The text that is declared inside of this block is the row `row` of the list `group`: `if ui.UiSelectRow(&ctx, group, i) { ui.UiLabel(&ctx, line) }`
@@ -375,7 +383,7 @@ selectAfterLayout :: proc(ctx: ^Context) {
                 select.anchor, select.cursor = selectPointOf(ctx, first, 0), selectPointOf(ctx, final, i32(len(ctx.elements[final].text.text)))
                 select.dragging = false
             }
-        } else {
+        } else if !select.keep_press {
             select.active, select.dragging = false, false
         }
     } else if select.dragging {

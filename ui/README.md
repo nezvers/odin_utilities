@@ -344,12 +344,14 @@ selection. The widget gets the focus back, so the typing goes on, and the change
 `select.odin`: everything declared inside of `ui.UiTagged(&ctx, ui.TEXT_SELECTABLE)` (labels, wrapped texts, the paragraphs of rich text and Markdown) is one text to the
 pointer: a press on it and a drag select from letter to letter, over lines and from one text into the next (the messages of a chat, the blocks of a page). The copy
 action puts the selection on the clipboard (a new line between two texts, none between the runs of one paragraph), a press somewhere else or the cancel action lets it
-go; `ui.UiTextSelected(&ctx)` gives the text, `ui.UiTextSelectionClear` lets it go. A press on a widget (a button, a link) stays the widget's. One selection for the
+go; `ui.UiTextSelected(&ctx)` gives the text, `ui.UiTextSelectionClear` lets it go. A press on a widget (a button, a link) stays the widget's and lets the selection go, except a press on a scroll bar, the header of a table or the edge of a column
+(`ui.UiTextSelectionKeep`): the selection stays while the list is scrolled or the columns are moved. One selection for the
 whole ui, kept as a text (its place among the elements of the frame) and a byte in it: right while the texts before it stay the same. A list that only declares its
 rows in view (`UiVirtual`, `UiTable`) is told to the selection: `group := ui.UiSelectRows(&ctx, "log", count, row_text, user)` right before it and `if ui.UiSelectRow(&ctx,
 group, row) { ... }` around the text of every row it declares. A place in a row is the row and a byte of its text, so it stays right while the list scrolls, and the rows
 between the ends of the selection, in view or not, are copied from `row_text(user, row)` (the text of any row; valid until the end of the frame). A row may have several texts (a table:
-`cells` of `UiSelectRows`; the selectable texts of a row are its cells in the order they are declared) and `row_text(user, row, cell)` gives the text of one of them: a copy has
+`cells` of `UiSelectRows`; the selectable texts of a row are its cells in the order they are declared, in a `UiTableCell` the cell is the column, so the selection stays on
+its columns when they are moved: give `cells` the number of columns and `row_text` the text of a column; a copy has the columns in column order) and `row_text(user, row, cell)` gives the text of one of them: a copy has
 a tab between the cells of a row and a new line between the rows. With the id of the scrolling list and the height of its rows (`UiSelectRows(..., cells, scroll, row_height)`) Shift with the up and down arrows, the left and right arrows (over the border of a cell into the next cell, of a row into the
 next row) and Page up and down also moves the end to rows that are out of view and scrolls the list to show it. A double click selects the word under the pointer, a third click the whole text (a label, or the
 paragraph with all of its runs and lines). Shift and a click extend the selection to there; the select all action takes every selectable text (while the pointer is over the

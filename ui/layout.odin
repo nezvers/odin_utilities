@@ -247,7 +247,7 @@ TextOpen :: proc(ctx: ^Context, text: string, config: TextConfig = {}) {
     if ctx.select.row_group != 0 {
         element.text.select_cell = -1
         if ctx.select.tag != 0 && selectHasTag(&ctx.select, element) {
-            element.text.select_cell = ctx.select.row_cells
+            element.text.select_cell = ctx.select.cell_column - 1 if ctx.select.cell_column > 0 else ctx.select.row_cells
             ctx.select.row_cells += 1
         }
     }

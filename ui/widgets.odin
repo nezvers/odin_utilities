@@ -262,6 +262,7 @@ scrollbarDrag :: proc(ctx: ^Context, id: Id, state: ^WidgetState) {
     range: f32 = content - view
     if view <= 0 || range <= 0.5 { return }
     bar: Interaction = widgetBehavior(ctx, scrollbarId(id))
+    if bar.pressed && ctx.input.mouse_pressed { UiTextSelectionKeep(ctx) }
     if !bar.pressed || !ctx.input.mouse_down { return }
     thumb: f32 = clamp(max(view * clamp(view / content, 0, 1), ctx.style.metrics.scrollbar_width * 2), 0, view)
     free: f32 = view - thumb

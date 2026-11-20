@@ -826,3 +826,164 @@ test_letters_and_pages_move_the_end_of_a_selection_through_the_rows_of_a_list ::
     UiTextSelectionClear(&test.ctx)
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(private = "file")
+TableTest :: struct {
+    storage: Storage(256, 512, 128, 4096),
+    ctx: Context,
+    style: Style,
+    table: Table,
+    text: [10][3][8]u8,
+}
+
+// The cell of the column c of the row r is "r2c1": by column, whatever the order of the columns on the screen
+@(private = "file")
+tableCell :: proc(test: ^TableTest, row: int, column: int) -> string {
+    line: ^[8]u8 = &test.text[row][column]
+    copy(line[:], "r0c0")
+    line[1], line[3] = u8('0' + row), u8('0' + column)
+    return string(line[:4])
+}
+
+@(private = "file")
+tableCellText :: proc(user: rawptr, row: int, cell: int) -> string {
+    return tableCell(cast(^TableTest)user, row, cell)
+}
+
+@(private = "file")
+tableFrame :: proc(test: ^TableTest, input: Input) {
+    UiBegin(&test.ctx, input, 1.0 / 60, {1000, 700}, &test.style)
+    if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(600), {}}) {
+        group: Id = UiSelectRows(&test.ctx, "rows", 10, tableCellText, test, 3, UiId(&test.ctx, "table"), 20)
+        if UiTagged(&test.ctx, TEXT_SELECTABLE) {
+            if UiTable(&test.ctx, "table", &test.table, 10, 20, {Fixed(400), Fixed(100)}) {
+                for row in test.table.list.first ..< test.table.list.last {
+                    if UiTableRow(&test.ctx, &test.table, row) {
+                        if UiSelectRow(&test.ctx, group, row) {
+                            for place in 0 ..< 3 {
+                                column: int = TableColumnAt(&test.table, place)
+                                UiTableText(&test.ctx, &test.table, column, tableCell(test, row, column))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    UiEnd(&test.ctx)
+}
+
+@(test)
+test_a_selection_in_a_table_stays_while_a_header_is_dragged_and_a_bar_is_pressed :: proc(t: ^testing.T) {
+    test: ^TableTest = new(TableTest)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    TableInit(&test.table, {{name = "A", width = 100, unsortable = true}, {name = "B", width = 100, unsortable = true}, {name = "C", width = 100, unsortable = true}})
+    test.table.reorderable = true
+    test.table.list.text = true
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 4 { tableFrame(test, away) }
+    label :: proc(test: ^TableTest, text: string) -> Vec2 {
+        for command in UiCommands(&test.ctx) {
+            info: DrawInfo = command.info
+            if command.kind == .DRAW && info.kind == .LABEL && info.text == text { return {info.rect.x + 2, info.rect.y + info.rect.w * 0.5} }
+        }
+        return {-1, -1}
+    }
+    selection :: proc(test: ^TableTest) -> string {
+        text, _ := UiTextSelected(&test.ctx)
+        return text
+    }
+    centre :: proc(test: ^TableTest, id: Id) -> Vec2 {
+        state: ^WidgetState = stateFind(&test.ctx, id)
+        if state == nil { return {-1, -1} }
+        return {state.rect.x + state.rect.z * 0.5, state.rect.y + state.rect.w * 0.5}
+    }
+    drag :: proc(test: ^TableTest, from: Vec2, to: Vec2, steps: int = 6) {
+        tableFrame(test, {mouse_position = from})
+        tableFrame(test, {mouse_position = from, mouse_down = true, mouse_pressed = true})
+        for step in 1 ..= steps {
+            tableFrame(test, {mouse_position = from + (to - from) * (f32(step) / f32(steps)), mouse_down = true})
+        }
+        tableFrame(test, {mouse_position = to, mouse_released = true})
+        tableFrame(test, {mouse_position = {-100, -100}})
+        tableFrame(test, {mouse_position = {-100, -100}})
+    }
+    // from the start of a cell of the first row to the start of a cell of the second: the three cells of the first row and the first two of the next
+    drag(test, label(test, "r1c0"), label(test, "r2c2"), 2)
+    before: string = strings.clone(selection(test), context.temp_allocator)
+    testing.expect_value(t, before, "r1c0\tr1c1\tr1c2\nr2c0\tr2c1\t")
+
+    // the header of the first column is dragged to the place of the last: the columns are moved, and the selection is where it was, on the same columns
+    header :: proc(test: ^TableTest, column: int) -> Id {
+        return IdFromIndex(u32(column), IdFromString("header", UiIdPath("window", "table")))
+    }
+    drag(test, centre(test, header(test, 0)), centre(test, header(test, 2)) + {20, 0})
+    testing.expect_value(t, test.table.order[0], 1)
+    testing.expect_value(t, test.table.order[2], 0)
+    testing.expect_value(t, selection(test), before)
+    rects: int
+    for command in UiCommands(&test.ctx) {
+        if command.kind == .DRAW && command.info.kind == .TEXT_SELECTION { rects += 1 }
+    }
+    testing.expect_value(t, rects, 3 + 2)                    // the three cells of a row and two of the next: drawn where the columns are now
+    // and the selection of cells follows the columns: the text under the highlight is the text of the cell
+    first: Vec2 = label(test, "r1c0")
+    testing.expect(t, first.x > label(test, "r1c1").x, "the first column is the last now")
+
+    // a press on the edge of a column (to widen it) keeps the selection
+    edge: Id = IdFromIndex(1, IdFromString("edge", UiIdPath("window", "table")))
+    drag(test, centre(test, edge), centre(test, edge) + {10, 0}, 2)
+    testing.expect_value(t, selection(test), before)
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+    // a press elsewhere, on a text that is not selected, starts another selection; on nothing, lets it go
+    tableFrame(test, {mouse_position = {900, 600}, mouse_down = true, mouse_pressed = true})
+    tableFrame(test, {mouse_position = {900, 600}, mouse_released = true})
+    testing.expect_value(t, selection(test), "")
+}
+
+@(test)
+test_a_selection_stays_while_the_scroll_bar_of_its_list_is_dragged :: proc(t: ^testing.T) {
+    test: ^RevealTest = new(RevealTest)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    test.list = {selected = VIRTUAL_NONE, text = true}
+    UiInit(&test.ctx, &test.storage, measure)
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 4 { revealFrame(test, away) }
+    point: Vec2
+    for command in UiCommands(&test.ctx) {
+        info: DrawInfo = command.info
+        if command.kind == .DRAW && info.kind == .LABEL && info.text == "row 001 text" { point = {info.rect.x + 1, info.rect.y + info.rect.w * 0.5} }
+    }
+    // a selection over two rows
+    to: Vec2 = point + {0, 20}
+    revealFrame(test, {mouse_position = point})
+    revealFrame(test, {mouse_position = point, mouse_down = true, mouse_pressed = true})
+    revealFrame(test, {mouse_position = to, mouse_down = true})
+    revealFrame(test, {mouse_position = to, mouse_released = true})
+    revealFrame(test, away)
+    selected, _ := UiTextSelected(&test.ctx)
+    testing.expect_value(t, selected, "row 001 text\n")
+    // the thumb of the bar is held and pulled down: the list scrolls and the selection is not let go
+    // (the bar is a strip at the right edge of the list: the thumb is at the top while the list is not scrolled)
+    area, found := UiElementRect(&test.ctx, test.list_id)
+    testing.expect(t, found && area.z > 0)
+    if !found { return }
+    grab: Vec2 = {area.x + area.z - 2, area.y + 5}
+    revealFrame(test, {mouse_position = grab})
+    revealFrame(test, {mouse_position = grab, mouse_down = true, mouse_pressed = true})
+    for step in 1 ..= 5 { revealFrame(test, {mouse_position = grab + {0, f32(step) * 12}, mouse_down = true}) }
+    revealFrame(test, {mouse_position = grab + {0, 60}, mouse_released = true})
+    revealFrame(test, away)
+    testing.expect(t, UiScrollGet(&test.ctx, test.list_id) > 100, "the list scrolled by its bar")
+    selected, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, selected, "row 001 text\n")
+    // a press on nothing else lets it go, as before
+    revealFrame(test, {mouse_position = {900, 600}, mouse_down = true, mouse_pressed = true})
+    revealFrame(test, {mouse_position = {900, 600}, mouse_released = true})
+    selected, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, selected, "")
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

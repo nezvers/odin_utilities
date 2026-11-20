@@ -259,6 +259,7 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
         header_id: Id = IdFromIndex(u32(i), IdFromString("header", id))
         _ = stateGet(ctx, header_id)
         interaction: Interaction = widgetBehavior(ctx, header_id)
+        if interaction.pressed && ctx.input.mouse_pressed { UiTextSelectionKeep(ctx) }
         if table.reorderable && interaction.pressed && ctx.input.mouse_pressed {
             table.reorder, table.reorder_start, table.reorder_active = i, ctx.input.mouse_position, false
         }
@@ -284,6 +285,7 @@ UiTable :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_heig
         handle_id: Id = IdFromIndex(u32(i), IdFromString("edge", id))
         handle_state: ^WidgetState = stateGet(ctx, handle_id)
         handle: Interaction = widgetBehavior(ctx, handle_id)
+        if handle.pressed && ctx.input.mouse_pressed { UiTextSelectionKeep(ctx) }
         if handle.double_clicked && handle.pressed && ctx.input.mouse_pressed { table.fit = i }
         if handle.pressed && (ctx.input.mouse_down || ctx.input.mouse_released) {
             if ctx.input.mouse_pressed {
@@ -397,6 +399,7 @@ UiTableEnd :: proc(ctx: ^Context, name: string, table: ^Table, count: int, row_h
         bar_id: Id = IdFromString("sideways", id)
         bar_state: ^WidgetState = stateGet(ctx, bar_id)
         bar: Interaction = widgetBehavior(ctx, bar_id)
+        if bar.pressed && ctx.input.mouse_pressed { UiTextSelectionKeep(ctx) }
         limit: f32 = table.content_width - body.rect.z
         ratio: f32 = clamp(body.rect.z / table.content_width, 0, 1)
         track: Rect = bar_state.rect
@@ -442,6 +445,8 @@ UiTableCell :: proc(ctx: ^Context, table: ^Table, column: int) -> bool {
     width: f32 = table.shown[clamp(column, 0, TABLE_MAX_COLUMNS - 1)]
     // the current cell of the selected row is marked while the table has the focus
     current: bool = table.cells && column == table.cell && table.current_row == table.list.selected && ctx.focus == table.body_id
+    // the selectable text of a cell is the cell of its column: the same when the columns are moved (SelectRowText gets the column)
+    ctx.select.cell_column = i32(column) + 1
     return ElementOpen(ctx, {
         layout = {size = {Fixed(width), Grow()}, padding = PaddingXY(TABLE_CELL_PADDING, 0), align = {y = .CENTER}},
         clip = {horizontal = true, cut = true},
@@ -450,6 +455,7 @@ UiTableCell :: proc(ctx: ^Context, table: ^Table, column: int) -> bool {
 }
 
 UiTableCellEnd :: proc(ctx: ^Context, table: ^Table, column: int) {
+    ctx.select.cell_column = 0
     ElementClose(ctx)
 }
 
