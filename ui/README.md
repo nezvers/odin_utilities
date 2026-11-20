@@ -108,6 +108,36 @@ text, measure, clip) that the glue fills in. `demo_common/demo_styles.odin` swap
 Rounded rectangles: `RoundedRadius(rect, rounding, max_radius)` takes the rounding as a part of the shortest side (1 = full round, a pill or a circle),
 clamped to half of it and to `max_radius` pixels; `RoundedPoints` writes the polygon into a buffer of yours (`RoundedBuffer`) for a triangle fan.
 
+## The look: themes, fonts, icons
+The default style follows **Baldr** (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License): its colors, its corners, its typeface and its icons.
+No code of Baldr is in this library; the numbers come from its theme generator and its pictures, and are credited in `default_style/default_style.odin`.
+- `ui_default.THEME_DARK` and `THEME_LIGHT` are plain data (`painter.theme = ui_default.THEME_LIGHT`): the window, cards one step lighter, wells for fields, a surface above the
+  cards for popups, the accent as a fill and as a soft fill, a focus ring, danger / warning / success, a shadow (a light theme needs it), state washes of 8 and 14 percent. Controls
+  have corners of 8 pixels, cards of 12.
+- Text is drawn in a `Face` of the painter: REGULAR, STRONG (the labels of controls, titles), ITALIC, MONO. The style sets the face, a glue draws it: `ui/kit` loads Inter and
+  JetBrains Mono into the demo kit; a program on raylib or Karl2D calls `FontsLoad(&fonts)` and `PainterUseFonts(&painter, &fonts)` of the glue (or `PainterUseVectorFonts` when
+  the text is drawn from outlines by the font library). A glue with one font draws every face in it.
+- Icons are numbers (`ui.Icon`): the few the library names itself (FOLDER, FILE, CLOSE, CHECK, the chevrons...) and every Lucide icon through `ui_default.LucideIcon(.SAVE)`
+  (the `icons` library of this repository: 188 icons as a font). `ui.UiIcon` shows one; `ui.UiButton(ctx, "Save", icon = ui_default.LucideIcon(.SAVE))` puts one before the name, a
+  button with an icon and a hidden name (`"##settings"`) is a square. A painter without icons draws the file and folder pictures and the arrows with rectangles and triangles.
+- A button is picked by the tag around it: `if ui.UiTagged(&ctx, "primary") { ui.UiButton(...) }`; "primary" (the accent), "secondary" (the soft accent), "outline", "ghost",
+  "danger", none (a neutral fill). A slider or a progress bar with the tag "thin" is a line with a round handle. A text with the tag "title" is strong, with "dim" dim, with "mono"
+  in the code face (`ui.UiTitle`, `ui.UiLabelDim`). A panel with the tag "popup" is a raised surface, with "flat" it has no shadow.
+- The fonts and the icons have licenses that ask for their notices to go with a program: Inter and JetBrains Mono are under the SIL Open Font License (`assets/fonts/inter/Inter-OFL.txt`,
+  `assets/fonts/jetbrains_mono/OFL.txt`), Lucide is ISC with a part under MIT (`icons/lucide/LICENSE`).
+
+## Small widgets
+`widgets_extra.odin`, after the gallery of Baldr: `UiSwitch` (a toggle as a track with a knob that slides), `UiBadge` (a word in a pill, colored by a `Tone`), `UiChip` (a choice
+in a pill, with a check mark when it is on), `UiTag` (a pill with a cross: it tells whether the cross or the rest was clicked), `UiAvatar` (letters on a disc), `UiSegmented` (one of a
+few options in one track), `UiBreadcrumbs` (the parts of a path, the index of the one that was clicked), `UiSpinner`, `UiTitle`, `UiLabelDim`, `UiCard` (a panel with a title), and
+`UiInteract` (the pointer and the keyboard for an element the program declares itself: a row of an icon and texts that can be clicked).
+
+## The gallery of Baldr, remade
+`demo_common/demo_gallery.odin` is the first page of Baldr's gallery (`examples/00_gallery`) with this library: the same cards (Buttons, Inputs, Menus, Choices, Project, Badges,
+Files), the same sample data, dark and light. Baldr is retained (a view builds a tree, messages change a state); here the page is declared every frame. What this library has no
+widget for (a date and a time field, frosted glass) is left out. A second page shows every icon with its name. Its script finds the widgets by their rectangles of the last frame
+(`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
+
 ## The demo of Dear ImGui, remade
 `demo_common/demo_imgui.odin` is the layout of `ShowDemoWindow` (`imgui_demo.cpp` of ocornut/imgui): a window with a title bar and
 a menu bar (Menu with submenus, Examples, Tools), collapsing headers (Help, Configuration, Window options, Widgets, Layout & Scrolling, Popups & Modal windows, Tables, Inputs & Focus)
@@ -268,8 +298,8 @@ Pass `ui_default.PainterScale(&painter)` to the glue; the scale can change from 
 
 ## Layout of the folder
 ```
-ui.odin files   common, id, element (types), context (Begin/End/state), layout (Clay port), widgets, style, render, rounded, graph* (node graph), ui_test.odin
-default_style/  the default style + Painter
+ui.odin files   common, id, element (types), context (Begin/End/state), layout (Clay port), widgets, widgets_extra, style, render, rounded, graph* (node graph), ui_test.odin
+default_style/  the default style + Painter (themes, faces, icons), extra.odin (the look of widgets_extra)
 kit/            Painter and input over demo_kit (the demos use it)         glue_raylib/, glue_karl2d/   Painter + InputPoll for a plain program
 demo_common/    widgets, layout, styles demos with scripted input          demo_raylib/, demo_karl2d/   thin mains
 ```
@@ -277,7 +307,7 @@ Run: `odin test ui`, `odin test ui/demo_common` (the scripts click real widgets)
 
 ## Testing the look
 Three levels: `odin test ui` (layout and behavior with a fake font), `odin test ui/demo_common` (scripted clicks on real widgets, headless) and screen captures:
-The demos draw with Fira Code (`assets/fonts`, OFL): the raylib and Karl2D backends of `demo_kit` load it as the font of every text that asks for no other, so the ui demos and all the other demos have it. `kit.MeasureTextFont` measures a text in a font that was loaded with `kit.FontLoad`.
+The ui demos draw with Inter, JetBrains Mono and the Lucide icons (`ui/kit` loads them with `kit.FontLoad`; with `-define:DEMO_VECTOR_TEXT=slug` they are faces of the text system of the kit). The other demos of the repository draw with Fira Code, the font of every text of `demo_kit` that asks for no other.
 `odin run ui/demo_raylib -define:DEMO_TEST=true -define:DEMO_CAPTURE=true` compares frames with `demo_common/captures/<backend>/*.png`
 (see `demo_kit/README.md`). `UiCommands(&ctx)` is the third way: assert on what the style would be asked to draw, without pixels.
 

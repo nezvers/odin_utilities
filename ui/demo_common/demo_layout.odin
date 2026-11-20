@@ -27,7 +27,7 @@ init :: proc(ctx: ^kit.Context) {
     file_clicks = 0
     tooltip_visible = false
     wrap = true
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
 }
 
 draw :: proc(ctx: ^kit.Context) {

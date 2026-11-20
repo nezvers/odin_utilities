@@ -17,7 +17,7 @@ _ :: font           // only used with -define:DEMO_VECTOR_TEXT
 
 MAX_TEXTURES :: 64
 MAX_SOUNDS :: 64
-MAX_FONTS :: 8
+MAX_FONTS :: 8                  // one less than the faces of a text system has room for the fonts after the default one
 
 State :: struct {
     textures: [MAX_TEXTURES]rl.Texture2D,
@@ -66,11 +66,11 @@ Run :: proc(title: string, demos: []kit.Demo, width: i32 = 1280, height: i32 = 7
 // Fill a Backend with the raylib procs. The window has to be open. `state` has to live as long as the backend.
 Init :: proc(backend: ^kit.Backend, state: ^State) {
     state.last_mouse = rl.GetMousePosition()
-    state.default_font = fontLoad(nil, FIRA_CODE, 32, 1280, state)
     when kit.DEMO_VECTOR_TEXT != "" {
         method: font.Method = .SCANLINE if kit.DEMO_VECTOR_TEXT == "scanline" else .SLUG
         if !font_raylib.TextSystemInit(&state.vector_text, FIRA_CODE, method) { exit_process(false) }
     }
+    state.default_font = fontLoad(nil, FIRA_CODE, 32, 1280, 0, state)
     backend^ = {
         name = "raylib" when kit.DEMO_VECTOR_TEXT == "" else "raylib_" + kit.DEMO_VECTOR_TEXT,
         state = state,
@@ -113,7 +113,7 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
                 return rl.MeasureTextEx(face(state, kit.FONT_DEFAULT), cstringInto(&buffer, text), size, 0)
             }
         },
-        font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int) -> kit.Font { return fontLoad(backend, bytes, size, glyph_count, cast(^State)backend.state) },
+        font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int, first_glyph: int) -> kit.Font { return fontLoad(backend, bytes, size, glyph_count, first_glyph, cast(^State)backend.state) },
         font_unload = proc(backend: ^kit.Backend, font: kit.Font) {
             state: ^State = cast(^State)backend.state
             if u32(font) == 0 || u32(font) > state.font_count { return }
@@ -122,13 +122,21 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         },
         measure_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, size: f32) -> kit.Vec2 {
             state: ^State = cast(^State)backend.state
-            buffer: [TEXT_BUFFER_SIZE]u8
-            return rl.MeasureTextEx(face(state, font), cstringInto(&buffer, text), size, 0)
+            when kit.DEMO_VECTOR_TEXT != "" {
+                return font_raylib.TextSystemMeasure(&state.vector_text, text, size, {face = vectorFace(state, font)})
+            } else {
+                buffer: [TEXT_BUFFER_SIZE]u8
+                return rl.MeasureTextEx(face(state, font), cstringInto(&buffer, text), size, 0)
+            }
         },
         draw_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
             state: ^State = cast(^State)backend.state
-            buffer: [TEXT_BUFFER_SIZE]u8
-            rl.DrawTextEx(face(state, font), cstringInto(&buffer, text), position, size, 0, rl.Color(color))
+            when kit.DEMO_VECTOR_TEXT != "" {
+                font_raylib.TextSystemDraw(&state.vector_text, text, position, size, rl.Color(color), {face = vectorFace(state, font)})
+            } else {
+                buffer: [TEXT_BUFFER_SIZE]u8
+                rl.DrawTextEx(face(state, font), cstringInto(&buffer, text), position, size, 0, rl.Color(color))
+            }
         },
         texture_load = textureLoad,
         texture_from_pixels = proc(backend: ^kit.Backend, width: int, height: int, rgba: []u8) -> kit.Texture {
@@ -266,12 +274,23 @@ face :: proc(state: ^State, font: kit.Font) -> rl.Font {
     return rl.GetFontDefault()
 }
 
+// The face of the vector text a kit font is: the default font is the regular face, the others were added when they were loaded (font n is face n - 1)
 @(private)
-fontLoad :: proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int, state: ^State) -> kit.Font {
+vectorFace :: proc(state: ^State, font: kit.Font) -> u8 {
+    if font == kit.FONT_DEFAULT || font == state.default_font || u32(font) > state.font_count { return 0 }
+    return u8(u32(font) - 1)
+}
+
+@(private)
+fontLoad :: proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int, first_glyph: int, state: ^State) -> kit.Font {
     if state.font_count + 1 >= MAX_FONTS { return kit.FONT_DEFAULT }
+    when kit.DEMO_VECTOR_TEXT != "" {
+        // the text is drawn from outlines: the font is one more face of the text system (the first font is the regular face it was made with)
+        if state.font_count > 0 && !font_raylib.TextSystemAddFace(&state.vector_text, int(state.font_count), bytes) { return kit.FONT_DEFAULT }
+    }
     codepoints: [dynamic]rune
     defer delete(codepoints)
-    for i in 0 ..< glyph_count { append(&codepoints, rune(i)) }
+    for i in 0 ..< glyph_count { append(&codepoints, rune(first_glyph + i)) }
     font: rl.Font = rl.LoadFontFromMemory(".ttf", raw_data(bytes), i32(len(bytes)), i32(size), raw_data(codepoints), i32(len(codepoints)))
     if font.texture.id == 0 { return kit.FONT_DEFAULT }
     state.font_count += 1

@@ -107,7 +107,7 @@ init :: proc(ctx: ^kit.Context) {
     popup_choice = "nothing"
     last_action = "nothing"
     for i in 0 ..< len(histogram) { histogram[i] = f32(math.abs(math.sin(f64(i) * 0.9))) }
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
 }
 
 update :: proc(ctx: ^kit.Context) {

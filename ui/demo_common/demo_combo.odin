@@ -25,7 +25,7 @@ FONTS: []string = {
 
 init :: proc(ctx: ^kit.Context) {
     ui_demo_init(&state)
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
     selected = 0
     changed_count = 0
 }

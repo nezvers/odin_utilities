@@ -75,7 +75,7 @@ init :: proc(ctx: ^kit.Context) {
     reports.ReportFinding(&report, .MEDIUM, "table size is a magic number", "resample.odin:40")
     reports.ReportFinding(&report, .LOW, "comment explains what, not why", "resample.odin:97")
     reports.ReportCode(&report, "odin test dsp -test-name:ResampleStopband\n[ERROR] stopband -81 dB, expected below -88 dB", "text")
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
 }
 
 draw :: proc(ctx: ^kit.Context) {

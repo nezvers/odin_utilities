@@ -28,7 +28,7 @@ state: State
 init :: proc(ctx: ^kit.Context) {
     state = {volume = 0.6}
     ui_demo_init(&state.app)
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
 }
 
 draw :: proc(ctx: ^kit.Context) {

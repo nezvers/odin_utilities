@@ -239,6 +239,10 @@ TextOpen :: proc(ctx: ^Context, text: string, config: TextConfig = {}) {
         root = ctx.root_stack[ctx.root_stack_count - 1] if ctx.root_stack_count > 0 else 0,
         text = {text = text, config = text_config},
     }
+    // a text carries the tags that are pushed now, as every element does (a style draws a "title" or a "dim" text by them)
+    for i in 0 ..< min(ctx.tag_count, DRAW_TAGS) {
+        element.decl.draw.tags[i] = ctx.tag_stack[ctx.tag_count - 1 - i]
+    }
     ctx.child_buffer[ctx.child_buffer_count] = index
     ctx.child_buffer_count += 1
 
@@ -1126,6 +1130,7 @@ textCommands :: proc(ctx: ^Context, element: ^Element, rect: Rect, clip_rect: Re
             align = config.align,
             color = config.color,
             user = config.user,
+            tags = element.decl.draw.tags,
         }})
         y += line_height
     }

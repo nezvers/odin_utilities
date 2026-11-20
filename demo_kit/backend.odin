@@ -54,8 +54,9 @@ Backend :: struct {
     draw_text: proc(backend: ^Backend, text: string, position: Vec2, size: f32, color: Color),
     measure_text: proc(backend: ^Backend, text: string, size: f32) -> Vec2,
 
-    // a font from the bytes of a ttf file with the glyphs of the unicode range 0 .. glyph_count (a language other than english needs them)
-    font_load: proc(backend: ^Backend, bytes: []u8, size: f32, glyph_count: int) -> Font,
+    // a font from the bytes of a ttf file with the glyphs of the unicode range first_glyph .. first_glyph + glyph_count (a language other than english needs more than the
+    // first 128, an icon font has its glyphs in the private use area)
+    font_load: proc(backend: ^Backend, bytes: []u8, size: f32, glyph_count: int, first_glyph: int) -> Font,
     font_unload: proc(backend: ^Backend, font: Font),
     measure_text_font: proc(backend: ^Backend, font: Font, text: string, size: f32) -> Vec2,
     draw_text_font: proc(backend: ^Backend, font: Font, text: string, position: Vec2, size: f32, color: Color),
@@ -146,9 +147,10 @@ DrawTextCentered :: proc(ctx: ^Context, text: string, center: Vec2, size: f32, c
     DrawText(ctx, text, center - measured * 0.5, size, color)
 }
 
-// `size` is the size the glyphs are made in (draw at this size for a sharp text), glyph_count the number of unicode code points from 0
-FontLoad :: proc(ctx: ^Context, bytes: []u8, size: f32 = 32, glyph_count: int = 1280) -> Font {
-    return ctx.backend.font_load(ctx.backend, bytes, size, glyph_count)
+// `size` is the size the glyphs are made in (draw at this size for a sharp text), glyph_count the number of unicode code points from `first_glyph` on. `bytes` have to stay
+// as long as the font is used. With -define:DEMO_VECTOR_TEXT the font is drawn from its outlines like the other text.
+FontLoad :: proc(ctx: ^Context, bytes: []u8, size: f32 = 32, glyph_count: int = 1280, first_glyph: int = 0) -> Font {
+    return ctx.backend.font_load(ctx.backend, bytes, size, glyph_count, first_glyph)
 }
 
 FontUnload :: proc(ctx: ^Context, font: Font) {

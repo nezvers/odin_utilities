@@ -48,7 +48,7 @@ keyOf :: proc(row: int, column: int) -> int {
 init :: proc(ctx: ^kit.Context) {
     state = {}
     ui_demo_init(&state.app)
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
     ui.TableInit(&state.table, {{name = "Name", width = 200}, {name = "Size", width = 120}, {name = "Kind", width = 140}, {name = "Path", width = 260}})
     state.table.reorderable = true
     for i in 0 ..< ROWS { state.order[i] = i }

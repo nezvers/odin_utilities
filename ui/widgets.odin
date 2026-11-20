@@ -374,8 +374,9 @@ UiSpacer :: proc(ctx: ^Context, size: Size = {}) {
 // ------------------------------------------------------------------------------------------------------------------------
 // Controls
 
-// True in the frame the button was clicked (pressed on it and let go on it)
-UiButton :: proc(ctx: ^Context, name: string, size: Size = {}, disabled: bool = false) -> (clicked: bool) {
+// True in the frame the button was clicked (pressed on it and let go on it). An `icon` is drawn before the name; a button with an icon and no shown name ("##save") is a square.
+// The style picks the look by the tags around it (the default style: "primary", "secondary", "outline", "ghost", "danger").
+UiButton :: proc(ctx: ^Context, name: string, size: Size = {}, disabled: bool = false, icon: Icon = .NONE) -> (clicked: bool) {
     id: Id = UiId(ctx, name)
     _ = stateGet(ctx, id)
     interaction: Interaction = widgetBehavior(ctx, id, disabled)
@@ -383,11 +384,13 @@ UiButton :: proc(ctx: ^Context, name: string, size: Size = {}, disabled: bool = 
     shown: string = IdSplitName(name)
     flags: Flags = {.DISABLED} if disabled else {}
     hit: HitKinds = {} if disabled else {.INTERACTIVE}
+    width: f32 = textWidth(ctx, shown) + metrics.padding.x * 2
+    if icon != .NONE { width = metrics.control_height if shown == "" else width + metrics.font_size + 6 }
     ElementOpen(ctx, {
         id = id,
-        layout = {size = widgetSize(size, textWidth(ctx, shown) + metrics.padding.x * 2, metrics.control_height)},
+        layout = {size = widgetSize(size, width, metrics.control_height)},
         hit = hit,
-        draw = {kind = .BUTTON, name = shown, font_size = metrics.font_size, flags = flags},
+        draw = {kind = .BUTTON, name = shown, icon = icon, font_size = metrics.font_size, flags = flags},
     })
     ElementClose(ctx)
     return interaction.clicked

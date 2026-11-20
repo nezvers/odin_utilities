@@ -47,7 +47,7 @@ init :: proc(ctx: ^kit.Context) {
     loading = 0.45
     on = false
     gauge = 0.5
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
 }
 
 draw :: proc(ctx: ^kit.Context) {
@@ -61,7 +61,7 @@ draw :: proc(ctx: ^kit.Context) {
     case LOOK_NEON:
         ctx.background = {8, 6, 18, 255}
     case:
-        ctx.background = {24, 26, 32, 255}
+        ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
     }
     ui_demo_begin(&state, ctx)
     c: ^ui.Context = &state.ctx
@@ -84,16 +84,8 @@ draw :: proc(ctx: ^kit.Context) {
 }
 
 light_theme :: proc() -> ui_default.Theme {
-    theme: ui_default.Theme = ui_default.THEME_DARK
-    theme.panel = {250, 250, 252, 255}
-    theme.border = {190, 194, 206, 255}
-    theme.text = {30, 32, 44, 255}
-    theme.text_dim = {120, 124, 140, 255}
-    theme.control = {222, 226, 238, 255}
-    theme.control_hover = {206, 212, 230, 255}
-    theme.control_pressed = {186, 194, 220, 255}
-    theme.track = {232, 234, 242, 255}
-    theme.accent = {60, 120, 220, 255}
+    // the light theme of the style with square corners: a theme is plain data, a program changes what it wants
+    theme: ui_default.Theme = ui_default.THEME_LIGHT
     theme.rounding = 0
     theme.panel_rounding = 0
     return theme

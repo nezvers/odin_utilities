@@ -5,4 +5,4 @@ package demo_common
 
 import kit "../../demo_kit"
 
-demos: []kit.Demo = {demo_widgets, demo_layout, demo_styles, demo_navigation, demo_imgui, demo_resize, demo_graph, demo_audio, demo_scale, demo_text, demo_timeline, demo_table, demo_inspector, demo_tree, demo_dock, demo_color, demo_combo}
+demos: []kit.Demo = {demo_gallery, demo_widgets, demo_layout, demo_styles, demo_navigation, demo_imgui, demo_resize, demo_graph, demo_audio, demo_scale, demo_text, demo_timeline, demo_table, demo_inspector, demo_tree, demo_dock, demo_color, demo_combo}

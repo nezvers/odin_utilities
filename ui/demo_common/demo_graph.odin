@@ -81,7 +81,7 @@ init :: proc(ctx: ^kit.Context) {
     ui.GraphInit(&state.graph)
     state.view.clipboard = &state.clipboard
     state.view.reroute_on_double_click = true
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
     osc: ui.NodeHandle = addNode("Oscillator", {40, 50}, {}, {"saw"})
     noise: ui.NodeHandle = addNode("Noise", {40, 210}, {}, {"white"})
     gain: ui.NodeHandle = addNode("Gain", {290, 30}, {"in"}, {"out"})

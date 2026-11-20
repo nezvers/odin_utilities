@@ -22,7 +22,7 @@ hex: [9]u8
 
 init :: proc(ctx: ^kit.Context) {
     ui_demo_init(&state)
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
     color = {0.9, 0.4, 0.1}
     alpha = 1
 }

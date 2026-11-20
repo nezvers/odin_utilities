@@ -35,7 +35,7 @@ HeadlessInit :: proc(backend: ^Backend, state: ^HeadlessState, screen: Vec2 = HE
         draw_triangle = proc(backend: ^Backend, a: Vec2, b: Vec2, c: Vec2, color: Color) {},
         draw_text = proc(backend: ^Backend, text: string, position: Vec2, size: f32, color: Color) {},
         measure_text = proc(backend: ^Backend, text: string, size: f32) -> Vec2 { return {f32(len(text)) * size * 0.5, size} },
-        font_load = proc(backend: ^Backend, bytes: []u8, size: f32, glyph_count: int) -> Font {
+        font_load = proc(backend: ^Backend, bytes: []u8, size: f32, glyph_count: int, first_glyph: int) -> Font {
             state: ^HeadlessState = cast(^HeadlessState)backend.state
             state.fonts_loaded += 1
             return Font(state.fonts_loaded)

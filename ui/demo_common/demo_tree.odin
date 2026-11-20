@@ -61,7 +61,7 @@ load :: proc(parent: ui.TreeHandle) {
 init :: proc(ctx: ^kit.Context) {
     state = {}
     ui_demo_init(&state.app)
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
     ui.TreeInit(&state.tree)
     ui.TreeViewInit(&state.view)
     ui.TreeAdd(&state.tree, {}, "assets", branch = true, icon = .FOLDER)

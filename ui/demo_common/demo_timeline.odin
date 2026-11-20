@@ -40,7 +40,7 @@ state: State
 init :: proc(ctx: ^kit.Context) {
     state = {}
     ui_demo_init(&state.app)
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
     ui.TimelineInit(&state.timeline, &state)
     state.timeline.rules.can_place = ui.TimelineRuleNoOverlap
     state.timeline.rules.min_length = 0.25

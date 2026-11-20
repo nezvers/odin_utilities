@@ -37,7 +37,7 @@ init :: proc(ctx: ^kit.Context) {
     progress = 0
     name_length = 0
     quality = 0
-    ctx.background = {24, 26, 32, 255}
+    ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
 }
 
 update :: proc(ctx: ^kit.Context) {

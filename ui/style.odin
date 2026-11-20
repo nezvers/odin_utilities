@@ -65,6 +65,14 @@ StyleKind :: enum u8 {
     COLOR_FIELD,        // the square of a color picker: actual: the hue 0..1, value: saturation, ratio: the value (brightness), color: the pure hue; the marker is at (value, 1 - ratio)
     COLOR_STRIP,        // a bar of a color picker: actual 0 for the hues, 1 for the alpha; value: where the marker is, 0 at the top; color: the color the alpha is of
     ICON,               // a small picture: actual is the Icon, color (alpha 0: the style's own), the rect is square
+    SWITCH,             // a toggle drawn as a track with a knob: ON flag, value 0..1 where the knob is on its way, ratio the width of the track, name
+    BADGE,              // a few words in a pill: name, actual the Tone
+    CHIP,               // a choice in a pill: name, icon, SELECTED flag; actual 1 for a tag with a cross on its right (ratio: the width the cross takes)
+    AVATAR,             // a disc with letters: name, color
+    SEGMENTED,          // the track of a segmented choice
+    SEGMENT,            // one option in it: name, SELECTED flag
+    BREADCRUMB,         // a part of a path: name, SELECTED flag for the last one (where the user is)
+    SPINNER,            // something is going on: value is the time in seconds
     CUSTOM,             // DrawInfo.custom is called instead of a table entry
 }
 
@@ -108,6 +116,7 @@ DrawInfo :: struct {
     tags: [DRAW_TAGS]Id,    // the tags that were pushed when the widget was declared, the innermost first (UiPushTag); DrawInfoHasTag
     values: []f32,          // plots: the numbers (they have to live until the frame is rendered)
     color: Color,           // swatches and colored text
+    icon: Icon,             // buttons, chips: a picture before the name (NONE: no picture)
     custom: StyleProc,      // kind == .CUSTOM: the user's own draw proc
     user: rawptr,           // anything of the user: it is passed through to the style
 }

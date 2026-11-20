@@ -5,6 +5,47 @@ package ui_kit
 import ui ".."
 import ui_default "../default_style"
 import kit "../../demo_kit"
+import icons "../../icons"
+
+// The fonts of the default style: Inter for text (the labels of controls in semibold), JetBrains Mono for numbers and code, Lucide for the icons. They are loaded into the
+// backend of the kit once (the first Begin) and stay for the run of the program: every demo of a program shares them.
+INTER_REGULAR :: #load("../../assets/fonts/inter/Inter-Regular.ttf")
+INTER_SEMIBOLD :: #load("../../assets/fonts/inter/Inter-SemiBold.ttf")
+INTER_ITALIC :: #load("../../assets/fonts/inter/Inter-Italic.ttf")
+JETBRAINS_MONO :: #load("../../assets/fonts/jetbrains_mono/JetBrainsMono-Regular.ttf")
+
+@(private)
+Fonts :: struct {
+    backend: ^kit.Backend,
+    faces: [ui_default.Face]kit.Font,
+    icons: kit.Font,
+}
+
+@(private)
+fonts: Fonts
+
+// Loads the fonts into the backend of `ctx` when they are not there yet, and tells the painter their numbers
+@(private)
+fontsEnsure :: proc(painter: ^ui_default.Painter, ctx: ^kit.Context) {
+    if fonts.backend != ctx.backend {
+        fonts = {backend = ctx.backend}
+        fonts.faces[.REGULAR] = kit.FontLoad(ctx, INTER_REGULAR, 32, 1280)
+        fonts.faces[.STRONG] = kit.FontLoad(ctx, INTER_SEMIBOLD, 32, 1280)
+        fonts.faces[.ITALIC] = kit.FontLoad(ctx, INTER_ITALIC, 32, 1280)
+        fonts.faces[.MONO] = kit.FontLoad(ctx, JETBRAINS_MONO, 32, 1280)
+        fonts.icons = kit.FontLoad(ctx, icons.LUCIDE_FONT, 32, len(icons.Icon), int(icons.ICON_FIRST_CHARACTER))
+    }
+    for face in ui_default.Face { painter.glue_fonts[face] = u32(fonts.faces[face]) }
+    painter.glue_icon_font = u32(fonts.icons)
+    painter.glue_ready = true
+}
+
+// The kit font of the face the painter is set to (the regular one for a face that could not be loaded, the font of the kit before the fonts are loaded)
+@(private)
+fontOf :: proc(painter: ^ui_default.Painter) -> kit.Font {
+    font: kit.Font = kit.Font(painter.glue_fonts[painter.face])
+    return font if font != kit.FONT_DEFAULT else kit.Font(painter.glue_fonts[.REGULAR])
+}
 
 // Fills a painter with the procs that draw through the kit. Call Begin every frame: it tells the painter which kit.Context it draws into.
 PainterInit :: proc(painter: ^ui_default.Painter) {
@@ -26,11 +67,18 @@ PainterInit :: proc(painter: ^ui_default.Painter) {
         },
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
             scale: f32 = ui_default.PainterScale(painter)
-            kit.DrawText(contextOf(painter), text, ui_default.PaintPoint(painter, position), size * scale, kit.Color(color))
+            kit.DrawTextFont(contextOf(painter), fontOf(painter), text, ui_default.PaintPoint(painter, position), size * scale, kit.Color(color))
         },
         measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
             scale: f32 = ui_default.PainterScale(painter)
-            return kit.MeasureText(contextOf(painter), text, size * scale) / scale
+            return kit.MeasureTextFont(contextOf(painter), fontOf(painter), text, size * scale) / scale
+        },
+        draw_icon = proc(painter: ^ui_default.Painter, icon: icons.Icon, rect: ui.Rect, color: ui.Color) {
+            if painter.glue_icon_font == 0 { return }
+            // an icon is a letter of the icon font: its box is the em, so the size of the text is the side of the square
+            text, length := icons.IconText(icon)
+            box: ui.Rect = ui_default.PaintRect(painter, rect)
+            kit.DrawTextFont(contextOf(painter), kit.Font(painter.glue_icon_font), icons.IconString(&text, length), {box.x, box.y}, min(box.z, box.w), kit.Color(color))
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             if begin {
@@ -128,6 +176,7 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
 // Starts a ui frame inside of a demo's draw: the painter draws into `kit_ctx`, the input is the one of the frame.
 Begin :: proc(ui_ctx: ^ui.Context, painter: ^ui_default.Painter, style: ^ui.Style, kit_ctx: ^kit.Context) {
     painter.user = kit_ctx
+    fontsEnsure(painter, kit_ctx)
     scale: f32 = ui_default.PainterScale(painter)
     ui.UiMeasureCacheScale(ui_ctx, scale)
     ui.UiBegin(ui_ctx, InputFrom(kit_ctx, scale), kit_ctx.delta_time, kit_ctx.screen / scale, style)

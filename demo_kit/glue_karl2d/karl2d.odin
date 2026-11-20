@@ -115,9 +115,13 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
                 return karl2d.measure_text(text, size, state.default_font)
             }
         },
-        font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int) -> kit.Font {
+        font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int, first_glyph: int) -> kit.Font {
             state: ^State = cast(^State)backend.state
             if state.font_count + 1 >= MAX_FONTS { return kit.FONT_DEFAULT }
+            when kit.DEMO_VECTOR_TEXT != "" {
+                // the text is drawn from outlines: the font is one more face of the text system (font n is face n)
+                if !font_karl2d.TextSystemAddFace(&state.vector_text, int(state.font_count) + 1, bytes) { return kit.FONT_DEFAULT }
+            }
             // a dynamic font makes the glyphs it needs when they are drawn: any language works
             font, ok := karl2d.load_dynamic_font_from_bytes(bytes)
             if !ok { return kit.FONT_DEFAULT }
@@ -133,12 +137,20 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         },
         measure_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, size: f32) -> kit.Vec2 {
             state: ^State = cast(^State)backend.state
+            when kit.DEMO_VECTOR_TEXT != "" {
+                if u32(font) != 0 && u32(font) <= state.font_count { return font_karl2d.TextSystemMeasure(&state.vector_text, text, size, {face = u8(font)}) }
+                return font_karl2d.TextSystemMeasure(&state.vector_text, text, size)
+            }
             face: karl2d.Font = state.default_font
             if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
             return karl2d.measure_text(text, size, face)
         },
         draw_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
             state: ^State = cast(^State)backend.state
+            when kit.DEMO_VECTOR_TEXT != "" {
+                font_karl2d.TextSystemDraw(&state.vector_text, text, position, size, color, {face = u8(font) if u32(font) <= state.font_count else 0})
+                return
+            }
             face: karl2d.Font = state.default_font
             if u32(font) != 0 && u32(font) <= state.font_count { face = state.fonts[font] }
             karl2d.draw_text(text, position, size, color, face)

@@ -23,7 +23,82 @@ package ui_karl2d
 import "../../karl2d"
 import ui ".."
 import ui_default "../default_style"
+import font "../../font"
 import font_karl2d "../../font/glue_karl2d"
+import icons "../../icons"
+
+// The fonts of the default style as Karl2D fonts: Inter for text (the labels of controls in semibold), JetBrains Mono for numbers and code, Lucide for the icons.
+// The files are part of the program that calls FontsLoad (about 1.5 MB); their licenses (SIL Open Font License, ISC, MIT) ask for their notices to go with the program:
+// assets/fonts/inter/Inter-OFL.txt, assets/fonts/jetbrains_mono/OFL.txt, icons/lucide/LICENSE.
+Fonts :: struct {
+    faces: [ui_default.Face]karl2d.Font,
+    icons: karl2d.Font,
+}
+
+INTER_REGULAR :: #load("../../assets/fonts/inter/Inter-Regular.ttf")
+INTER_SEMIBOLD :: #load("../../assets/fonts/inter/Inter-SemiBold.ttf")
+INTER_ITALIC :: #load("../../assets/fonts/inter/Inter-Italic.ttf")
+JETBRAINS_MONO :: #load("../../assets/fonts/jetbrains_mono/JetBrainsMono-Regular.ttf")
+
+// Loads the fonts of the style (after karl2d.init). The fonts make their glyphs at the sizes they are drawn in. False when one could not be loaded (it is then the default font).
+FontsLoad :: proc(fonts: ^Fonts) -> bool {
+    all: bool = true
+    load :: proc(bytes: []u8, all: ^bool) -> karl2d.Font {
+        loaded, ok := karl2d.load_dynamic_font_from_bytes(bytes)
+        if !ok {
+            all^ = false
+            return karl2d.FONT_DEFAULT
+        }
+        return loaded
+    }
+    fonts.faces[.REGULAR] = load(INTER_REGULAR, &all)
+    fonts.faces[.STRONG] = load(INTER_SEMIBOLD, &all)
+    fonts.faces[.ITALIC] = load(INTER_ITALIC, &all)
+    fonts.faces[.MONO] = load(JETBRAINS_MONO, &all)
+    fonts.icons = load(icons.LUCIDE_FONT, &all)
+    return all
+}
+
+FontsUnload :: proc(fonts: ^Fonts) {
+    for face in fonts.faces {
+        if face != karl2d.FONT_DEFAULT { karl2d.destroy_font(face) }
+    }
+    if fonts.icons != karl2d.FONT_DEFAULT { karl2d.destroy_font(fonts.icons) }
+    fonts^ = {}
+}
+
+// The painter draws its text in the faces of `fonts` and gets the icons. `fonts` has to live as long as the painter.
+PainterUseFonts :: proc(painter: ^ui_default.Painter, fonts: ^Fonts) {
+    painter.fonts = fonts
+    for face in ui_default.Face { painter.glue_fonts[face] = 1 }
+    painter.glue_icon_font = 1
+    painter.glue_ready = true
+    painter.draw_icon = proc(painter: ^ui_default.Painter, icon: icons.Icon, rect: ui.Rect, color: ui.Color) {
+        ui_default.PainterFlush(painter)
+        text, length := icons.IconText(icon)
+        box: ui.Rect = ui_default.PaintRect(painter, rect)
+        karl2d.draw_text(icons.IconString(&text, length), {box.x, box.y}, min(box.z, box.w), color, (cast(^Fonts)painter.fonts).icons)
+    }
+}
+
+// The same for a painter that draws its text from outlines (PainterUseVectorText): the faces are added to the text system (their bytes are the ones of this package) and
+// the painter picks them. Call it after PainterUseVectorText. False when the system has no room for the faces.
+PainterUseVectorFonts :: proc(painter: ^ui_default.Painter, system: ^font_karl2d.TextSystem) -> bool {
+    FIRST_FACE :: font.ATLAS_FACES - 4          // the last four faces of an atlas: the first ones are the family of the font the system was made with
+    sources: [4][]u8 = {INTER_SEMIBOLD, INTER_ITALIC, JETBRAINS_MONO, icons.LUCIDE_FONT}
+    for bytes, i in sources {
+        if !font_karl2d.TextSystemAddFace(system, FIRST_FACE + i, bytes) { return false }
+    }
+    painter.vector_faces = {.REGULAR = 0, .STRONG = FIRST_FACE, .ITALIC = FIRST_FACE + 1, .MONO = FIRST_FACE + 2}
+    painter.vector_icon_face = FIRST_FACE + 3
+    painter.glue_fonts[.MONO] = 1
+    painter.draw_icon = proc(painter: ^ui_default.Painter, icon: icons.Icon, rect: ui.Rect, color: ui.Color) {
+        text, length := icons.IconText(icon)
+        box: ui.Rect = ui_default.PaintRect(painter, rect)
+        font_karl2d.TextSystemDraw(cast(^font_karl2d.TextSystem)painter.vector_text, icons.IconString(&text, length), {box.x, box.y}, min(box.z, box.w), color, {face = painter.vector_icon_face})
+    }
+    return true
+}
 
 // Draws the text of the ui from the outlines of a font with the font library (sharp at any size and scale) instead of Karl2D's own font: the size of a text stays the height of its line, so the
 // layout does not change. The system (font_karl2d.TextSystem) has to live as long as the painter and be made after karl2d.init.
@@ -36,11 +111,11 @@ PainterUseVectorText :: proc(painter: ^ui_default.Painter, system: ^font_karl2d.
     }
     painter.draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
         scale: f32 = ui_default.PainterScale(painter)
-        font_karl2d.TextSystemDraw(cast(^font_karl2d.TextSystem)painter.vector_text, text, ui_default.PaintPoint(painter, position), size * scale, color)
+        font_karl2d.TextSystemDraw(cast(^font_karl2d.TextSystem)painter.vector_text, text, ui_default.PaintPoint(painter, position), size * scale, color, {face = painter.vector_faces[painter.face]})
     }
     painter.measure_text = proc(painter: ^ui_default.Painter, text: string, size: f32) -> ui.Vec2 {
         scale: f32 = ui_default.PainterScale(painter)
-        return font_karl2d.TextSystemMeasure(cast(^font_karl2d.TextSystem)painter.vector_text, text, size * scale) / scale
+        return font_karl2d.TextSystemMeasure(cast(^font_karl2d.TextSystem)painter.vector_text, text, size * scale, {face = painter.vector_faces[painter.face]}) / scale
     }
 }
 
@@ -80,8 +155,10 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^karl2d.Font = nil) {
     }
 }
 
+// The font of the face the painter is set to: of its set of fonts (PainterUseFonts), else the one font it was made with, else the font of Karl2D
 @(private)
 fontOf :: proc(painter: ^ui_default.Painter) -> karl2d.Font {
+    if painter.fonts != nil { return (cast(^Fonts)painter.fonts).faces[painter.face] }
     if painter.user == nil { return karl2d.FONT_DEFAULT }
     return (cast(^karl2d.Font)painter.user)^
 }

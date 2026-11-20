@@ -23,8 +23,8 @@ TextSystem :: struct {
     texels: []f32,
     slots: []i32,
     vertices: []font.TextVertex,
-    faces: [3]font.Font,        // the bold, the italic and the bold italic face (TextSystemAddFace)
-    face_slots: [3][]i32,
+    faces: [font.ATLAS_FACES - 1]font.Font,     // the faces after the regular one (TextSystemAddFace): bold, italic, bold italic, and the ones a program adds
+    face_slots: [font.ATLAS_FACES - 1][]i32,
 }
 
 // `bytes` is the font file (it has to live as long as the system); the atlas is `rows` rows of 4096 texels (16 bytes each).
@@ -38,10 +38,11 @@ TextSystemInit :: proc(system: ^TextSystem, bytes: []u8, method: font.Method, ro
     return RendererInit(&system.renderer, &system.atlas, system.vertices)
 }
 
-// Adds a face of the family: `index` 1 bold, 2 italic, 3 bold italic. `bytes` is the font file (it has to live as long as the system). A rich text with [b] or [i] then uses the real face
-// instead of striking or slanting the regular one; plain text picks it with `TextOptions.face`.
+// Adds a face: `index` 1 bold, 2 italic, 3 bold italic of the family, 4 and above any other font (another weight, a code face, an icon font). `bytes` is the font file (it has to live as long
+// as the system). A rich text with [b] or [i] then uses the real face instead of striking or slanting the regular one; plain text picks a face with `TextOptions.face`. A text in another
+// face is measured and placed with the numbers of that face (TextSystemMeasure and TextSystemDraw look at `options.face`).
 TextSystemAddFace :: proc(system: ^TextSystem, index: int, bytes: []u8) -> bool {
-    if index < 1 || index > 3 { return false }
+    if index < 1 || index >= font.ATLAS_FACES { return false }
     face: ^font.Font = &system.faces[index - 1]
     if !font.FontInit(face, bytes) { return false }
     system.face_slots[index - 1] = make([]i32, font.FontSlotCount(face), system.allocator)
@@ -65,13 +66,14 @@ TextSystemDestroy :: proc(system: ^TextSystem) {
 
 // The size of the text in pixels, for a line `line_height` pixels high
 TextSystemMeasure :: proc(system: ^TextSystem, text: string, line_height: f32, options: font.TextOptions = {}) -> [2]f32 {
-    ppem, _ := font.TextBox(&system.face, line_height)
-    return font.TextMeasure(&system.face, text, ppem, options)
+    face: ^font.Font = font.AtlasFace(&system.atlas, int(options.face))
+    ppem, _ := font.TextBox(face, line_height)
+    return font.TextMeasure(face, text, ppem, options)
 }
 
 // Draws the text in a box whose top left corner is `position` (pixels, y down)
 TextSystemDraw :: proc(system: ^TextSystem, text: string, position: [2]f32, line_height: f32, color: rl.Color, options: font.TextOptions = {}) {
-    ppem, baseline := font.TextBox(&system.face, line_height)
+    ppem, baseline := font.TextBox(font.AtlasFace(&system.atlas, int(options.face)), line_height)
     options := options
     options.snap_to_pixels = true
     DrawText(&system.renderer, text, {position.x, position.y + baseline}, ppem, color, options)

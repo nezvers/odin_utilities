@@ -42,7 +42,8 @@ demo_rich: kit.Demo = {
 }
 
 loaded: bool
-fonts: [font.ATLAS_FACES]font.Font
+FAMILY_FACES :: 4                // regular, bold, italic, bold italic: the faces rich text asks for
+fonts: [FAMILY_FACES]font.Font
 family: [font.ATLAS_FACES]^font.Font
 face: ^font.Font
 title, body, typewriter: Block
@@ -62,9 +63,9 @@ prepare :: proc(block: ^Block, markup: string, size: f32, wrap: f32) -> bool {
 
 init :: proc(ctx: ^kit.Context) {
     ctx.background = {24, 26, 32, 255}
-    sources: [font.ATLAS_FACES][]u8 = {JB_REGULAR, JB_BOLD, JB_ITALIC, JB_BOLD_ITALIC}
+    sources: [FAMILY_FACES][]u8 = {JB_REGULAR, JB_BOLD, JB_ITALIC, JB_BOLD_ITALIC}
     loaded = true
-    for i in 0 ..< font.ATLAS_FACES {
+    for i in 0 ..< FAMILY_FACES {
         loaded = font.FontInit(&fonts[i], sources[i]) && loaded
         family[i] = &fonts[i]
     }
