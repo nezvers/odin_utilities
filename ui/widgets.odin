@@ -515,6 +515,7 @@ UiTextField :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, siz
         changed, submitted = textFieldEdit(ctx, state, buffer, length)
         // where the caret is in the field, under the text: a list that opens at the caret (UiComplete) is placed by it
         state.caret = {metrics.padding.x + measureText(ctx, string(buffer[:state.cursor]), metrics.font_size).x, max(state.rect.w, metrics.control_height)}
+        state.caret_top = 0
     }
 
     flags: Flags = {.DISABLED} if disabled else {}

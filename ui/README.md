@@ -445,3 +445,43 @@ The ui demos draw with Inter, JetBrains Mono and the Lucide icons (`ui/kit` load
 ## Known limits
 a text field edits one line of UTF-8 (a text area several, wrapped by words);
 an element that is declared after the floating element that names it as parent is not found (declare the parent first).
+
+### Widgets
+
+What the widgets do not do (yet): the same words are in the header of the source file of each (`Limits:`), and a limit that is lifted is changed in both places and
+ticked off in `TODO.md`. Look here before relying on a widget for something it may not do.
+
+- **UiMarkdown** (`markdown.odin`):
+  - no images, no HTML, no footnotes, no reference links or bare addresses as links, no setext headings (underlined with = or -), no `~~~` fences, no language for a fenced block
+  - a list is nested by two spaces of indent and is not checked (a list item holds one paragraph: no block of its own inside), a quote is its lines as text (no block inside)
+  - a heading is one text in the strong face: its marks are taken away, not drawn; a table has no alignment of its columns and every column is as wide as the others
+- **UiRichText** (`richtext.odin`):
+  - marks: strong, italic, code, links; `~~strike~~` is taken away, not drawn; no underline, no colors, no images
+  - a link that is broken over two lines is two links with the same address; a run keeps the innermost `ui.DRAW_TAGS` (4) tags, so a paragraph inside of three tags loses the outer ones
+  - lines are broken by the width the paragraph had in the last frame (the first frame is plain); a word wider than the line is not cut
+- **selection of read text** (`select.odin`):
+  - one selection for the whole ui; a text outside of a list is a place by its index among the elements, right only while the texts before it stay the same
+  - a list needs UiSelectRows and a row_text proc (at most UI_SELECT_GROUPS, 8, lists in a frame); a row has a cell for each selectable text and a copy has a tab between them (columns in column order for a table)
+  - a copy is cut at UI_SELECT_BYTES (4096); letters are runes (a mark or an emoji sequence is several); no right-to-left text, no touch, no menu; the end follows the pointer one frame behind
+  - no selection in an icon, an image or a text of a widget (a field has its own selection); Shift + arrows move the end of a selection by letters, lines and pages, a word or a paragraph only by the clicks
+- **UiComplete** (`complete.odin`):
+  - one trigger character, ASCII letters only match without regard to case, no ranking and no highlight of what matched; at most COMPLETE_ROWS (8) rows and no scrolling of a longer list
+  - the list opens below the caret of the last frame, or above its row when it would not fit below and does; it is declared right before its field or area
+- **UiShortcutField** (`shortcut.odin`):
+  - one chord, no sequences; a modifier alone is not a chord; what the operating system takes (Alt + Tab) never arrives; no conflict check (the program does it, as the demo does)
+  - the keys are numbers of the program: the ui has no key names and no layout of the keyboard
+- **syntax colors** (`highlight.odin`):
+  - HighlightCode reads languages like C or Odin by a table of words: no grammar, no language detection, a string in quotes ends with its row, numbers are a guess (digits and letters)
+  - at most AREA_SPANS (96) spans in a row; the state of a row is one number, so it carries block comments and raw strings and nothing more; all rows are read again when the text changes
+- **UiAnsiText** (`ansi.odin`):
+  - SGR only: bold, dim, italic, underline, the 16, 256 and RGB colors and the ground; no reverse video, blink, strike or hidden text, no hyperlinks
+  - it is a log: the cursor moves and clears are skipped, and the text is read again every frame it is shown (declare only the lines in view for a long one)
+- **AnsiScreen** (`ansi_screen.odin`):
+  - a fixed grid (no resize: make another screen and write the output again), no scroll regions (DECSTBM), no origin or wrap modes, no tab stops that are set, no reverse video
+  - the width of a character is a table of the ranges that matter: ambiguous widths are 1, no grapheme clusters, no emoji sequences, no right-to-left text; a mark goes on the cell before it and one mark only
+  - the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; no selection of cells, no mouse or paste modes, no cursor shapes or hiding
+  - it only draws: nothing reads the keyboard or talks to a process; a cell is as wide as the code face's M, and a wide letter takes two of them whatever the font does
+- **Theme areas** (`default_style`): four areas (`THEME_AREAS`); a draw command carries its innermost `ui.DRAW_TAGS` tags, so an area tag with three tags inside of it is not seen; a popup is in the area only when it is declared inside of it.
+- **Lines** (`default_style/lines.odin`): dashes are cut at their ends, no round caps or joins on dashed paths; the pattern is by length along the path.
+- **Faces** (`default_style`): the vector text of the standalone glues has 8 faces for the ui; a face a glue lacks is drawn in the nearest one it has (`FaceFallback`).
+- **Dates** (`date.odin`): the Gregorian calendar, Monday first, English month names; no time zones, no ranges.

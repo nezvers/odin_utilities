@@ -10,7 +10,7 @@ package ui
 // thousands wants a search of its own that gives the few that match).
 //
 // Limits: one trigger character, ASCII letters only match without regard to case, no ranking and no highlight of what matched; at most COMPLETE_ROWS (8) rows and no scrolling of a longer list
-//     the list opens below the caret of the last frame and does not move above it near the bottom of the screen; it is declared right before its field or area
+//     the list opens below the caret of the last frame, or above its row when it would not fit below and does; it is declared right before its field or area
 //
 // Baldr's completion (examples/34_mentions, editor_complete) was the reason to have one; the code is written for this library.
 
@@ -115,12 +115,16 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
         return
     }
     // the list, under the caret of the last frame. It is placed on the screen by the rectangle the area had then: the area is declared after this, an element
-    // cannot be attached to one that comes later.
+    // cannot be attached to one that comes later. Where it would end below the screen and there is room above the row of the caret, it stands above it.
     metrics: ^Metrics = &ctx.style.metrics
+    list_height: f32 = f32(count) * metrics.control_height + 4
+    below: f32 = state.rect.y + state.caret.y
+    above: f32 = state.rect.y + state.caret_top
+    flip: bool = below + list_height > ctx.screen.y && above >= list_height
     ElementOpen(ctx, {
         id = list,
         layout = {size = {Fit(metrics.control_width), Fit()}, direction = .TOP_TO_BOTTOM, padding = PaddingAll(2)},
-        floating = {attach_to = .ROOT, parent_point = .LEFT_TOP, element_point = .LEFT_TOP, offset = {state.rect.x + state.caret.x, state.rect.y + state.caret.y}, z_index = 100, capture = true},
+        floating = {attach_to = .ROOT, parent_point = .LEFT_TOP, element_point = .LEFT_BOTTOM if flip else .LEFT_TOP, offset = {state.rect.x + state.caret.x, above if flip else below}, z_index = 100, capture = true},
         hit = {.BLOCKER},
         draw = {kind = .PANEL, name = "dropdown", font_size = metrics.font_size},
     })

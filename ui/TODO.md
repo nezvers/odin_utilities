@@ -47,6 +47,10 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] ANSI output: a screen of cells for programs that move the cursor (`AnsiScreen`)
 - [x] Screen of cells: scrollback (a caller owned ring) and wide characters (two cells, combining marks)
 - [x] Screen of cells: the alternate screen (`?1049`, `?47`, `?1047`)
+- [x] Completion list above the caret where it would not fit below (`UiComplete`)
+- [ ] (medium) Screen of cells: reverse video (SGR 7) and scroll regions (DECSTBM, `ESC [ t ; b r`): what pagers, editors and `top` send most, and the screen skips both now
+- [ ] (low) Completion: draw the part of an item that matched, and rank (items that start with the word first)
+- [ ] (low) Selection of read text: a double click and a drag select by words, as editors do
 - [ ] (medium) Screen of cells: selection of cells, a width table that follows Unicode more closely (ambiguous widths, grapheme clusters, emoji sequences)
 - [x] Editing commands for a text (`UiTextWrap`, `UiTextLinePrefix`) and Baldr's 08_rich as a toolbar over the Markdown source
 - [x] Dashed lines and paths for overlays (`default_style/lines.odin`) and Baldr's 28_lines

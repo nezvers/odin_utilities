@@ -240,3 +240,78 @@ test_a_completion_list_of_a_text_field_and_its_undo :: proc(t: ^testing.T) {
     testing.expect_value(t, UiFocused(&test.ctx), test.other)
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_the_completion_list_stands_above_the_caret_where_it_does_not_fit_below :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 2048),
+        ctx: Context,
+        style: Style,
+        text: [64]u8,
+        length: int,
+        area: Id,
+        top: f32,                   // where the window is
+        screen: Vec2,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    frame :: proc(test: ^Test, input: Input) {
+        files: [5]string = {"main.odin", "layout.odin", "README.md", "markdown.odin", "render.odin"}
+        UiBegin(&test.ctx, input, 1.0 / 60, test.screen, &test.style)
+        if UiWindow(&test.ctx, "window", {0, test.top}, {Fixed(500), {}}) {
+            test.area = UiId(&test.ctx, "Message")
+            UiComplete(&test.ctx, "Message", test.text[:], &test.length, files[:])
+            UiTextArea(&test.ctx, "Message", test.text[:], &test.length, {Fixed(400), Fixed(60)})
+        }
+        UiEnd(&test.ctx)
+    }
+    rows :: proc(test: ^Test) -> (count: int, top: f32, bottom: f32) {
+        top = 1e9
+        for command in UiCommands(&test.ctx) {
+            if command.kind != .DRAW || command.info.kind != .DROPDOWN_ITEM { continue }
+            count += 1
+            top = min(top, command.info.rect.y)
+            bottom = max(bottom, command.info.rect.y + command.info.rect.w)
+        }
+        return
+    }
+    open :: proc(test: ^Test) {
+        away: Input = {mouse_position = {-100, -100}}
+        for _ in 0 ..< 3 { frame(test, away) }
+        UiFocus(&test.ctx, test.area)
+        frame(test, away)
+        input: Input = away
+        input.text_count = u8(copy(input.text[:], "@"))
+        frame(test, input)
+        frame(test, away)
+        frame(test, away)
+    }
+    // plenty of room below: the list is below the row of the caret, as before
+    test.screen, test.top = {800, 600}, 100
+    open(test)
+    area, _ := UiElementRect(&test.ctx, test.area)
+    count, top, bottom := rows(test)
+    testing.expect_value(t, count, 5)
+    testing.expect(t, top >= area.y + DEFAULT_METRICS.font_size, "below the caret")
+    // the window is low on the screen: the list would end below it, so it stands above the row of the caret and inside of the screen
+    test.length = 0
+    UiTextSelectionClear(&test.ctx)
+    test.screen, test.top = {800, 600}, 540
+    open(test)
+    area, _ = UiElementRect(&test.ctx, test.area)
+    count, top, bottom = rows(test)
+    testing.expect_value(t, count, 5)
+    testing.expect(t, bottom <= area.y + DEFAULT_METRICS.padding.y + 1 && top >= 0, "above the row of the caret, inside of the screen")
+    testing.expect(t, bottom - top >= f32(count) * DEFAULT_METRICS.control_height - 1, "the rows are all there")
+    // no room above either (a tall list in a short screen): it stays below, where there is more of it to see
+    test.length = 0
+    test.screen, test.top = {800, 120}, 40
+    open(test)
+    area, _ = UiElementRect(&test.ctx, test.area)
+    count, top, bottom = rows(test)
+    testing.expect(t, count >= 1, "the rows that are on the screen are drawn")
+    testing.expect(t, top >= area.y + DEFAULT_METRICS.font_size, "below the caret when there is no room above")
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}
