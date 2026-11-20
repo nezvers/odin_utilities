@@ -18,7 +18,10 @@ import "core:slice"
 import "core:strings"
 import "core:time"
 
-SKIP_PREFIXES :: [?]string{"karl2d/", "references/", "scratch/", "hot_reload_demo/"}
+// "templates/": the template of a library has the imports of the place a copy of it goes to, it does not build where it is
+SKIP_PREFIXES :: [?]string{"karl2d/", "references/", "scratch/", "hot_reload_demo/", "templates/"}
+// Packages whose tests read files by a path from their own folder: they are run there
+OWN_DIRECTORY :: [?]string{"3d_models"}
 MAX_ERROR_LINES :: 12
 
 Package :: struct {
@@ -207,9 +210,15 @@ gitLines :: proc(command: []string) -> [dynamic]string {
 // One line when the package passes. When it does not: the failed tests and the errors, never the progress lines.
 runPackage :: proc(dir: string, verbose: bool) -> bool {
     start: time.Tick = time.tick_now()
-    state, stdout, stderr, err := os.process_exec({command = {"odin", "test", dir, "-strict-style", "-vet"}}, context.allocator)
+    inside: bool
+    for own in OWN_DIRECTORY {
+        if own == dir { inside = true }
+    }
+    description: os.Process_Desc = {command = {"odin", "test", "." if inside else dir, "-strict-style", "-vet"}, working_dir = dir if inside else ""}
+    state, stdout, stderr, err := os.process_exec(description, context.allocator)
     seconds: f64 = time.duration_seconds(time.tick_since(start))
-    os.remove(fmt.tprintf("%s.exe", baseName(dir)))                    // `odin test <pkg>` leaves it in the working directory
+    // `odin test <pkg>` leaves its program in the working directory
+    os.remove(fmt.tprintf("%s/%s.exe", dir, baseName(dir)) if inside else fmt.tprintf("%s.exe", baseName(dir)))
     if err != nil {
         fmt.printfln("FAIL %s: cannot start odin: %v", dir, err)
         return false
