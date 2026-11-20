@@ -96,10 +96,13 @@ Tick an item when it is done and verified (tests pass, committed).
       characters of 21 bits in one u64 (`AnsiCell.characters`), the colors three bytes each, the attributes and the wide flags in a u16 (`attributes`); `AnsiCellMake`, `AnsiCellStyle`,
       `AnsiCellSetStyle`, `AnsiCellSameStyle` are the way to make and read a style. Two extra characters instead of four: a family of four people is shown with its first two (and copied
       so); the ghostty answer (a side table of the long sequences) needs a lifetime for the entries (a history row that holds a reference): take it up only if a program needs the tail.
-- [ ] (medium) The cell screen: what is left. A cell write is 1 ns now; cursor movement and erase run at 7 ns per byte (136 MB/s) and wide letters and emoji at 3.7: `screenSequence`
-      splits the parameters again for every sequence (a table of the common sequences: `ESC [ K`, `ESC [ row ; column H`, `ESC [ m` with one number, and no `[]int` parse for them), and a
-      wide letter is a `screenPut` with the join tests (decode a UTF-8 run of non ASCII letters in one loop, as ghostty does). Then the `simd` library's `ScanText` for the run scan
-      (8 bytes a time today).
+- [x] Cursor movement, erase and wide letters (MB/s before -> after, same data): cursor moves and erase 136 -> 480, wide letters and emoji 246 -> 293. What it was: every `ESC [ K` and
+      `ESC [ J` repaired the pairs of wide letters of the WHOLE row (or screen: 10 000 cells for a `J`) and now only the two cells next to the cleared part (`screenFixEdges`); a
+      sequence zeroed a 128 byte array of numbers; a letter of several bytes that is whole in the slice is decoded at once (the byte at a time letter buffer is for a letter cut by the end of
+      a write). The width function tests the big wide blocks first. A test checks that no half of a wide letter is left on random streams (broken on purpose: it fails at round 183), and an
+      exhaustive test compares the reordered width function with the previous one for every code point, both modes (it found a block that started 12 code points too early).
+- [ ] (low) The cell screen: what is left is about 2 to 3 ns per byte on every kind of output; the next real gain is vector work (the `simd` library's `ScanText` for the run scan, 16 to 64 bytes a
+      step) and a lookup table for the width of the BMP instead of the chain of ranges (64 KB built on first use: the `font` task that generates the tables from the Unicode files).
 - [ ] (medium) Invalid UTF-8 in `AnsiScreenWrite`: one U+FFFD per maximal subpart and a partial sequence at the end of a write carried only when it is valid so far (an invalid start byte is an
       error at once). See `font/TODO.md` for the shared decoder.
 - [ ] (low) Print by slices in the demo and the pager: a program that writes a line at a time can call `AnsiScreenWrite` once per chunk (it is already how the demo does it): document

@@ -258,6 +258,12 @@ screenLineFeed :: proc "contextless" (screen: ^AnsiScreen) {
 // Unicode. Characters of ambiguous width (UAX #11) are 1 unless `ambiguous_wide`.
 AnsiRuneWidth :: proc "contextless" (character: rune, ambiguous_wide: bool = false) -> int {
     if character < 0x300 && !ambiguous_wide { return 1 }
+    // the common cases first (the order of frequency: ghostty does the same): the big blocks that are all wide (cut around the combining kana marks 0x3099 and 0x309A and the skin tones 0x1F3FB to 0x1F3FF), then the scripts below 0x1100 that have no wide letter, where only a
+    // mark or an ambiguous letter can be something other than one cell
+    switch character {
+    case 0x3041 ..= 0x3098, 0x309B ..= 0x33FF, 0x3400 ..= 0x4DBF, 0x4E00 ..= 0x9FFF, 0xAC00 ..= 0xD7A3, 0xFF00 ..= 0xFF60, 0x1F300 ..= 0x1F3FA, 0x1F400 ..= 0x1F64F, 0x1F680 ..= 0x1F6FF, 0x1F90C ..= 0x1F9FF, 0x20000 ..= 0x3FFFD:
+        return 2
+    }
     switch character {
     case 0x300 ..= 0x36F, 0x483 ..= 0x489, 0x591 ..= 0x5BD, 0x5BF, 0x5C1 ..= 0x5C2, 0x5C4 ..= 0x5C5, 0x5C7, 0x610 ..= 0x61A, 0x64B ..= 0x65F, 0x670, 0x6D6 ..= 0x6DC,
          0x6DF ..= 0x6E4, 0x6E7 ..= 0x6E8, 0x6EA ..= 0x6ED, 0x711, 0x730 ..= 0x74A, 0x900 ..= 0x902, 0x93A, 0x93C, 0x941 ..= 0x948, 0x94D, 0x951 ..= 0x957, 0x962 ..= 0x963,
@@ -333,14 +339,26 @@ screenBreakPair :: proc "contextless" (screen: ^AnsiScreen, column: int, row: in
     }
 }
 
+// A wide character without its other half is an empty cell (the ground stays): the repair of one cell
+@(private)
+screenFixCell :: proc "contextless" (screen: ^AnsiScreen, column: int, row: int) {
+    if column < 0 || column >= screen.columns { return }
+    cell: ^AnsiCell = screenCell(screen, column, row)
+    if cell.continuation && (column == 0 || !screenCell(screen, column - 1, row).wide) { cell^ = ansiCellCleared(cell) }
+    if cell.wide && (column == screen.columns - 1 || !screenCell(screen, column + 1, row).continuation) { cell^ = ansiCellCleared(cell) }
+}
+
 // A row after something cut it (erasing, deleting, inserting): a wide character without its other half is an empty cell
 @(private)
 screenFixRow :: proc "contextless" (screen: ^AnsiScreen, row: int) {
-    for column in 0 ..< screen.columns {
-        cell: ^AnsiCell = screenCell(screen, column, row)
-        if cell.continuation && (column == 0 || !screenCell(screen, column - 1, row).wide) { cell^ = ansiCellCleared(cell) }
-        if cell.wide && (column == screen.columns - 1 || !screenCell(screen, column + 1, row).continuation) { cell^ = ansiCellCleared(cell) }
-    }
+    for column in 0 ..< screen.columns { screenFixCell(screen, column, row) }
+}
+
+// After the cells [first, last) of a row were cleared: only the two cells next to the cleared part can have lost a half
+@(private)
+screenFixEdges :: proc "contextless" (screen: ^AnsiScreen, row: int, first: int, last: int) {
+    screenFixCell(screen, first - 1, row)
+    screenFixCell(screen, last, row)
 }
 
 // The cell that the next character would join: the one before the cursor (the letter of a wide one)
@@ -448,7 +466,8 @@ AnsiScreenAlternate :: proc(screen: ^AnsiScreen) -> bool {
 screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
     // text[0] is '[', the last byte is the final one
     final: u8 = text[len(text) - 1]
-    numbers: [16]int
+    numbers: [16]int = ---                          // not zeroed: a number is cleared when it starts
+    numbers[0] = 0
     count: int
     any_digit: bool
     private: bool
@@ -458,7 +477,10 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
             if count < len(numbers) { numbers[count] = min(numbers[count] * 10 + int(character - '0'), 100000) }
             any_digit = true
         case character == ';' || character == ':':
-            if count < len(numbers) { count += 1 }
+            if count < len(numbers) {
+                count += 1
+                if count < len(numbers) { numbers[count] = 0 }
+            }
             any_digit = false
         case character == '?' || character == '>' || character == '<' || character == '=':
             private = true
@@ -506,7 +528,11 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
             screenClearRange(screen, 0, 0, rows, 0)
             screen.history_count, screen.history_head, screen.back = 0, 0, 0       // the history too
         }
-        for row in 0 ..< rows { screenFixRow(screen, row) }
+        // the cells of the row of the cursor next to the cleared part (the other rows were cleared whole)
+        switch mode {
+        case 0: screenFixEdges(screen, screen.row, column, columns)
+        case 1: screenFixEdges(screen, screen.row, 0, min(column + 1, columns))
+        }
     case 'K':
         mode: int = parameters[0] if len(parameters) > 0 else 0
         column: int = min(screen.column, columns)
@@ -515,11 +541,15 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
         case 1: screenClearRange(screen, screen.row, 0, screen.row, min(column + 1, columns))
         case 2: screenClearRange(screen, screen.row, 0, screen.row, columns)
         }
-        screenFixRow(screen, screen.row)
+        switch mode {
+        case 0: screenFixEdges(screen, screen.row, column, columns)
+        case 1: screenFixEdges(screen, screen.row, 0, min(column + 1, columns))
+        }
     case 'X':
         column: int = min(screen.column, columns)
-        screenClearRange(screen, screen.row, column, screen.row, min(column + screenParameter(parameters, 0, 1), columns))
-        screenFixRow(screen, screen.row)
+        last: int = min(column + screenParameter(parameters, 0, 1), columns)
+        screenClearRange(screen, screen.row, column, screen.row, last)
+        screenFixEdges(screen, screen.row, column, last)
     case 'P':
         // delete letters: the rest of the row moves left
         column: int = min(screen.column, columns)
@@ -650,6 +680,26 @@ AnsiScreenWrite :: proc(screen: ^AnsiScreen, bytes: []u8) {
             screenPutRun(screen, bytes[i:end])
             i = end
             continue
+        }
+        // a letter of several bytes that is all in this slice is decoded at once (it only goes through the byte at a time letter buffer when it is cut by the end of the slice, or
+        // is not well formed: the state machine then does what it always did with it)
+        if byte >= 0xC0 && screen.sequence_length == 0 && screen.letter_length == 0 && !screen.bytewise {
+            needed: int = 2 if byte < 0xE0 else (3 if byte < 0xF0 else 4)
+            if i + needed <= len(bytes) {
+                whole: bool = true
+                for k in 1 ..< needed {
+                    if bytes[i + k] & 0xC0 != 0x80 {
+                        whole = false
+                        break
+                    }
+                }
+                if whole {
+                    character, _ := utf8.decode_rune(bytes[i:i + needed])
+                    screenPut(screen, character)
+                    i += needed
+                    continue
+                }
+            }
         }
         screenByte(screen, byte)
         i += 1
