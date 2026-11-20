@@ -5,6 +5,7 @@ package demo_kit_raylib
 //     main :: proc() { kit_raylib.Run("tween", demo_common.demos[:]) }
 
 import "base:runtime"
+import "core:math"
 import "core:os"
 import "core:strings"
 import rl "vendor:raylib"
@@ -13,11 +14,16 @@ import kit ".."
 import font "../../font"
 import font_raylib "../../font/glue_raylib"
 
-_ :: font           // only used with -define:DEMO_VECTOR_TEXT
-
 MAX_TEXTURES :: 64
 MAX_SOUNDS :: 64
+SIZED_FONTS :: 12                // the sizes of one font that text was drawn at (see sizedFace)
 MAX_FONTS :: 16                 // one less than the faces of a text system has room for the fonts after the default one
+
+// The glyphs of a font made at one size
+SizedFont :: struct {
+    pixels: i32,
+    font: rl.Font,
+}
 
 State :: struct {
     textures: [MAX_TEXTURES]rl.Texture2D,
@@ -26,6 +32,15 @@ State :: struct {
     sound_count: u32,
     fonts: [MAX_FONTS]rl.Font,
     font_count: u32,
+    // what the text needs to look like the Karl2D text: the glyphs made at the size they are drawn at (raylib scales one atlas, which blurs) and the exact advances of the file
+    // (raylib keeps whole pixels, which crowds the letters)
+    sources: [MAX_FONTS]font.Font,
+    source_ok: [MAX_FONTS]bool,
+    source_bytes: [MAX_FONTS][]u8,
+    source_first: [MAX_FONTS]int,
+    source_count: [MAX_FONTS]int,
+    sized: [MAX_FONTS][SIZED_FONTS]SizedFont,
+    sized_count: [MAX_FONTS]int,
     last_mouse: kit.Vec2,
     default_font: kit.Font,         // Fira Code (assets/fonts): the font of every text that does not ask for another one
     vector_text: font_raylib.TextSystem,    // the text drawn from the outlines of the font (-define:DEMO_VECTOR_TEXT)
@@ -100,8 +115,7 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             when kit.DEMO_VECTOR_TEXT != "" {
                 font_raylib.TextSystemDraw(&state.vector_text, text, position, size, rl.Color(color))
             } else {
-                buffer: [TEXT_BUFFER_SIZE]u8
-                rl.DrawTextEx(face(state, kit.FONT_DEFAULT), cstringInto(&buffer, text), position, size, 0, rl.Color(color))
+                drawText(state, kit.FONT_DEFAULT, text, position, size, color)
             }
         },
         measure_text = proc(backend: ^kit.Backend, text: string, size: f32) -> kit.Vec2 {
@@ -109,8 +123,7 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             when kit.DEMO_VECTOR_TEXT != "" {
                 return font_raylib.TextSystemMeasure(&state.vector_text, text, size)
             } else {
-                buffer: [TEXT_BUFFER_SIZE]u8
-                return rl.MeasureTextEx(face(state, kit.FONT_DEFAULT), cstringInto(&buffer, text), size, 0)
+                return measureText(state, kit.FONT_DEFAULT, text, size)
             }
         },
         font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int, first_glyph: int) -> kit.Font { return fontLoad(backend, bytes, size, glyph_count, first_glyph, cast(^State)backend.state) },
@@ -125,8 +138,7 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             when kit.DEMO_VECTOR_TEXT != "" {
                 return font_raylib.TextSystemMeasure(&state.vector_text, text, size, {face = vectorFace(state, font)})
             } else {
-                buffer: [TEXT_BUFFER_SIZE]u8
-                return rl.MeasureTextEx(face(state, font), cstringInto(&buffer, text), size, 0)
+                return measureText(state, font, text, size)
             }
         },
         draw_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
@@ -134,8 +146,7 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             when kit.DEMO_VECTOR_TEXT != "" {
                 font_raylib.TextSystemDraw(&state.vector_text, text, position, size, rl.Color(color), {face = vectorFace(state, font)})
             } else {
-                buffer: [TEXT_BUFFER_SIZE]u8
-                rl.DrawTextEx(face(state, font), cstringInto(&buffer, text), position, size, 0, rl.Color(color))
+                drawText(state, font, text, position, size, color)
             }
         },
         texture_load = textureLoad,
@@ -286,6 +297,77 @@ face :: proc(state: ^State, font: kit.Font) -> rl.Font {
     return rl.GetFontDefault()
 }
 
+// ---- text ---------------------------------------------------------------------------------------------------------------------------------------------------
+// raylib makes one bitmap of each font at the size it is loaded in and scales it: smaller text is a blurred copy, and its advances are whole pixels of the loading size,
+// so the letters crowd or drift apart. Karl2D makes the glyphs at the size they are drawn at and moves the pen by the exact advance. The same here: the glyphs of a size
+// are made once from the file (a cache of SIZED_FONTS sizes per font), each one is drawn on a whole pixel, and the pen moves by the advance of the file in em units, so
+// that the text measures the same at every size and the layout of the two frameworks agrees. Kerning pairs are not applied (the measure and the drawing agree).
+
+// The font of `id` made for text of `size` pixels (the whole pixels are the size it is loaded in). False when there is no file or no room: the caller draws with the
+// atlas of the loading size then.
+@(private)
+sizedFace :: proc(state: ^State, id: kit.Font, size: f32) -> (result: rl.Font, ok: bool) {
+    if u32(id) == 0 || u32(id) > state.font_count || !state.source_ok[id] { return {}, false }
+    pixels: i32 = clamp(i32(size + 0.5), 4, 256)
+    for i in 0 ..< state.sized_count[id] {
+        if state.sized[id][i].pixels == pixels { return state.sized[id][i].font, true }
+    }
+    if state.sized_count[id] >= SIZED_FONTS { return {}, false }
+    codepoints: [dynamic]rune
+    defer delete(codepoints)
+    for i in 0 ..< state.source_count[id] { append(&codepoints, rune(state.source_first[id] + i)) }
+    bytes: []u8 = state.source_bytes[id]
+    loaded: rl.Font = rl.LoadFontFromMemory(".ttf", raw_data(bytes), i32(len(bytes)), pixels, raw_data(codepoints), i32(len(codepoints)))
+    if loaded.texture.id == 0 { return {}, false }
+    state.sized[id][state.sized_count[id]] = {pixels, loaded}
+    state.sized_count[id] += 1
+    return loaded, true
+}
+
+// How many pixels an em is when the text is `size` pixels high (raylib's size is the height from the ascent to the descent)
+@(private)
+emPixels :: proc(source: ^font.Font, size: f32) -> f32 {
+    height: f32 = source.ascent - source.descent
+    return size / height if height > 0 else size
+}
+
+@(private)
+measureText :: proc(state: ^State, font_id: kit.Font, text: string, size: f32) -> kit.Vec2 {
+    id: kit.Font = font_id if font_id != kit.FONT_DEFAULT else state.default_font
+    if u32(id) == 0 || u32(id) > state.font_count || !state.source_ok[id] {
+        buffer: [TEXT_BUFFER_SIZE]u8
+        return rl.MeasureTextEx(face(state, font_id), cstringInto(&buffer, text), size, 0)
+    }
+    source: ^font.Font = &state.sources[id]
+    em: f32 = emPixels(source, size)
+    width: f32
+    for character in text {
+        if character < 32 { continue }
+        width += font.FontAdvance(source, font.FontGlyph(source, character)) * em
+    }
+    return {width, size}
+}
+
+@(private)
+drawText :: proc(state: ^State, font_id: kit.Font, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
+    id: kit.Font = font_id if font_id != kit.FONT_DEFAULT else state.default_font
+    sized, ok := sizedFace(state, id, size)
+    if !ok {
+        buffer: [TEXT_BUFFER_SIZE]u8
+        rl.DrawTextEx(face(state, font_id), cstringInto(&buffer, text), position, size, 0, rl.Color(color))
+        return
+    }
+    source: ^font.Font = &state.sources[id]
+    em: f32 = emPixels(source, size)
+    x: f32 = position.x
+    for character in text {
+        if character < 32 { continue }
+        // a whole pixel for the glyph, the exact advance for the pen: the glyph is sharp and the spacing does not drift
+        rl.DrawTextCodepoint(sized, character, {math.round(x), math.round(position.y)}, size, rl.Color(color))
+        x += font.FontAdvance(source, font.FontGlyph(source, character)) * em
+    }
+}
+
 // The face of the vector text a kit font is: the default font is the regular face, the others were added when they were loaded (font n is face n - 1)
 @(private)
 vectorFace :: proc(state: ^State, font: kit.Font) -> u8 {
@@ -303,10 +385,14 @@ fontLoad :: proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int
     codepoints: [dynamic]rune
     defer delete(codepoints)
     for i in 0 ..< glyph_count { append(&codepoints, rune(first_glyph + i)) }
-    font: rl.Font = rl.LoadFontFromMemory(".ttf", raw_data(bytes), i32(len(bytes)), i32(size), raw_data(codepoints), i32(len(codepoints)))
-    if font.texture.id == 0 { return kit.FONT_DEFAULT }
+    loaded: rl.Font = rl.LoadFontFromMemory(".ttf", raw_data(bytes), i32(len(bytes)), i32(size), raw_data(codepoints), i32(len(codepoints)))
+    if loaded.texture.id == 0 { return kit.FONT_DEFAULT }
     state.font_count += 1
-    state.fonts[state.font_count] = font
+    state.fonts[state.font_count] = loaded
+    // the file stays with the caller (an embedded font lives for ever): the exact advances and the glyphs of other sizes are made from it
+    state.source_bytes[state.font_count] = bytes
+    state.source_ok[state.font_count] = font.FontInit(&state.sources[state.font_count], bytes)
+    state.source_first[state.font_count], state.source_count[state.font_count] = first_glyph, glyph_count
     return kit.Font(state.font_count)
 }
 
