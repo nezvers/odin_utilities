@@ -118,6 +118,8 @@ State :: struct {
     log_ring: [64][80]u8,       // the text of the rows that the selection asks for (it copies each at once)
     log_ring_at: int,
     screen_cells: [SCREEN_COLUMNS * SCREEN_ROWS]ui.AnsiCell,
+    screen_alternate: [SCREEN_COLUMNS * SCREEN_ROWS]ui.AnsiCell,     // the other buffer of a full screen program
+    pager_id: ui.Id,
     screen_history: [SCREEN_COLUMNS * 100]ui.AnsiCell,       // the lines that scroll off the top: a hundred of them
     logged: int,
     lines_id: ui.Id,
@@ -187,7 +189,7 @@ init :: proc(ctx: ^kit.Context) {
     ui.TableInit(&state.log_table, {{name = "Line", width = 80, unsortable = true}, {name = "Level", width = 70, unsortable = true}, {name = "Message", width = 300, unsortable = true}})
     state.log_table.fill_last = true
     state.log_table.list.text = true                        // the rows are read: the pointer is for the selection of text
-    state.screen = ui.AnsiScreenMake(state.screen_cells[:], SCREEN_COLUMNS, SCREEN_ROWS, state.screen_history[:])
+    state.screen = ui.AnsiScreenMake(state.screen_cells[:], SCREEN_COLUMNS, SCREEN_ROWS, state.screen_history[:], state.screen_alternate[:])
     state.logged = 0
     ui.AnsiScreenWrite(&state.screen, transmute([]u8)string(SCREEN_START))
     screen_progress()
@@ -1012,6 +1014,10 @@ screen_lines :: proc() {
     ui.AnsiScreenWrite(&state.screen, bytes[:count])
 }
 
+// A pager, as a full screen program starts and quits: it asks for the alternate screen, draws its page on it and, when it quits, gives the screen back as it was
+PAGER_ON :: "\x1b[?1049h\x1b[2J\x1b[H\x1b[1;97;45m pager: lines.txt\x1b[K\x1b[0m\r\n\r\nthe screen of a full screen program\r\ndraws on its own page, and the\r\npage before it comes back\r\nwhen it quits\x1b[11;1H\x1b[2m(END)\x1b[0m"
+PAGER_OFF :: "\x1b[?1049l"
+
 // The progress line of the screen: put at the row of the bottom, the old one erased, `ticks` of 20 steps done
 screen_progress :: proc() {
     line: [80]u8
@@ -1042,6 +1048,11 @@ terminal :: proc(c: ^ui.Context) {
                 }
                 state.lines_id = ui.UiId(c, "Lines##screen")
                 if ui.UiButton(c, "Lines##screen") { screen_lines() }
+                state.pager_id = ui.UiId(c, "Pager##screen")
+                pager_name: string = "Quit pager##screen" if ui.AnsiScreenAlternate(&state.screen) else "Pager##screen"
+                if ui.UiButton(c, pager_name) {
+                    ui.AnsiScreenWrite(&state.screen, transmute([]u8)string(PAGER_OFF if ui.AnsiScreenAlternate(&state.screen) else PAGER_ON))
+                }
             }
         }
         ui.ElementClose(c)
@@ -2021,6 +2032,25 @@ script: []kit.Step = {
     kit.Scroll(-1),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.screen.back == 0 && shown("logged line 12", "") }, "and forward to the live screen"),
+    // a pager: the alternate screen shows its own page, the wheel finds no history behind it, and quitting brings the screen back as it was
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.BUTTON, "Pager") }, "the Pager button"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.AnsiScreenAlternate(&state.screen) && shown(" pager: lines.txt", "strong") && shown("(END)", "") && !shown("logged line 12", "") }, "the pager has the screen to itself"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target("when it quits", 0.5) }, "a place on its page"),
+    kit.MoveAt(&target),
+    kit.Wait(2),
+    kit.Scroll(1),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.screen.back == 0 && !shown("logged line 6", "") }, "the wheel finds no history behind the alternate screen"),
+    kit.Capture("examples_terminal_pager"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.BUTTON, "Quit pager") }, "the button quits it now"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !ui.AnsiScreenAlternate(&state.screen) && shown("logged line 12", "") && !shown("(END)", "") && state.screen.history_count == 12 }, "the screen is as it was, with its history"),
     // the big log: a drag over three rows, the list scrolls away, Shift + click extends the selection to a row that was not there: the rows between are copied
     kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.SEGMENT, "Big log") }, "the Big log segment"),
     kit.ClickAt(&target),

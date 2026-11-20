@@ -335,8 +335,10 @@ writes), `ui.UiAnsiScreen(&ctx, &screen)`. The caller owns the cells (`ui.AnsiCe
 when it is full, `ESC [ 3 J` empties it); the wheel over `UiAnsiScreen` scrolls the view back through it (`AnsiScreenScroll`, `AnsiScreenFollow`, `AnsiScreenViewCell`), and
 a view that is scrolled back stays on what it shows while lines arrive. A wide letter (`AnsiRuneWidth` is 2: Chinese, Japanese, Korean, emoji) takes two cells and is a text
 of its own, two cells wide, so that what follows it stays on the grid; a combining mark goes on the letter before it. Writing or erasing over half of a wide letter
-makes the other half an empty cell. The width table covers the ranges that matter, not all of Unicode; ambiguous widths are 1. No alternate screen;
-the cursor is a block over its cell. `AnsiScreenRow` gives the text of a row (a test, a copy). Selection of the cells is not done.
+makes the other half an empty cell. The width table covers the ranges that matter, not all of Unicode; ambiguous widths are 1. A full screen program (an editor, a pager) asks for the alternate
+screen with `ESC [ ? 1049 h` (the older 47 and 1047 too): with room for a second buffer (`AnsiScreenMake(..., history, alternate)`) the two buffers swap places, the program
+draws on a clean screen (1049 saves the cursor and the style) and the screen as it was comes back with `l`; while it is shown nothing feeds the history and the view
+cannot be scrolled back (`AnsiScreenAlternate`). Without room for it the sequences are skipped. The cursor is a block over its cell. `AnsiScreenRow` gives the text of a row (a test, a copy). Selection of the cells is not done.
 
 ## Editing commands for a text
 `textformat.odin`: what the buttons of an editor do to the text of a `ui.UiTextArea` or `ui.UiTextField` from outside of it. `ui.UiTextWrap(&ctx, id, buffer[:], &length,

@@ -7,6 +7,9 @@ package ui
 // The ui does not know the keys of a framework: a key is a number of the program (its key code, never 0), the program says which key went down in this frame
 // (`pressed`) and how a key is called (`key_name`, a proc: the field asks for the name of the key it has after the frame's change). A key that only is a modifier (Shift, Ctrl, Alt) is not a key of a chord: do not pass it.
 //
+// Limits: one chord, no sequences; a modifier alone is not a chord; what the operating system takes (Alt + Tab) never arrives; no conflict check (the program does it, as the demo does)
+//     the keys are numbers of the program: the ui has no key names and no layout of the keyboard
+//
 // Baldr's shortcut capture (examples/20_shortcuts) was the reason to have one; the code is written for this library.
 
 Chord :: struct {

@@ -419,3 +419,87 @@ test_a_screen_with_wide_letters_and_history_is_drawn_on_its_grid :: proc(t: ^tes
     for _ in 0 ..< 3 { frame(test, -1, true) }
     testing.expect_value(t, test.screen.back, 0)
 }
+
+@(test)
+test_the_alternate_screen_is_drawn_on_and_left_as_it_was :: proc(t: ^testing.T) {
+    cells: [8 * 4]AnsiCell
+    alternate: [8 * 4]AnsiCell
+    history: [8 * 6]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 8, 4, history[:], alternate[:])
+    write(&screen, "\x1b[1mmain\x1b[0m\r\nlines\x1b[3;4H")
+    testing.expect(t, !AnsiScreenAlternate(&screen))
+    // in: a clean screen, the cursor where it was, the style as it was; a program homes the cursor and draws
+    write(&screen, "\x1b[?1049h")
+    testing.expect(t, AnsiScreenAlternate(&screen))
+    testing.expect_value(t, row(&screen, 0), "")
+    testing.expect_value(t, row(&screen, 1), "")
+    write(&screen, "\x1b[H\x1b[31mpager\x1b[2;1Hline 2\x1b[0m")
+    testing.expect_value(t, row(&screen, 0), "pager")
+    testing.expect_value(t, row(&screen, 1), "line 2")
+    // out: the screen as it was, with the cursor and the style it had
+    write(&screen, "\x1b[?1049l")
+    testing.expect(t, !AnsiScreenAlternate(&screen))
+    testing.expect_value(t, row(&screen, 0), "main")
+    testing.expect_value(t, row(&screen, 1), "lines")
+    testing.expect_value(t, [2]int{screen.column, screen.row}, [2]int{3, 2})
+    testing.expect(t, cells[0].style.bold)
+    // a second visit starts clean again (1049), the main screen is untouched by what was drawn on the other
+    write(&screen, "\x1b[?1049h")
+    testing.expect_value(t, row(&screen, 0), "")
+    write(&screen, "\x1b[?1049h\x1b[Hx")                         // entering again is nothing
+    write(&screen, "\x1b[?1049l\x1b[?1049l")
+    testing.expect_value(t, row(&screen, 0), "main")
+    // 47 keeps what the alternate screen had, and does not save the cursor
+    write(&screen, "\x1b[?47h\x1b[Habc\x1b[?47l")
+    testing.expect_value(t, row(&screen, 0), "main")
+    write(&screen, "\x1b[?47h")
+    testing.expect_value(t, row(&screen, 0), "abc")
+    // 1047 leaves a clean alternate screen behind it
+    write(&screen, "\x1b[?1047l\x1b[?1047h")
+    testing.expect_value(t, row(&screen, 0), "")
+    write(&screen, "\x1b[?1047l")
+    // the sequence cut anywhere, with other modes in it
+    AnsiScreenClear(&screen)
+    write(&screen, "keep")
+    for byte in transmute([]u8)string("\x1b[?25;1049h\x1b[Hq") { AnsiScreenWrite(&screen, {byte}) }
+    testing.expect(t, AnsiScreenAlternate(&screen))
+    testing.expect_value(t, row(&screen, 0), "q")
+    for byte in transmute([]u8)string("\x1b[?1049;25l") { AnsiScreenWrite(&screen, {byte}) }
+    testing.expect_value(t, row(&screen, 0), "keep")
+    // the reset leaves the alternate screen, and what was on it is gone
+    write(&screen, "\x1b[?1049h\x1b[Hgone\x1bc")
+    testing.expect(t, !AnsiScreenAlternate(&screen))
+    testing.expect_value(t, row(&screen, 0), "")
+    write(&screen, "\x1b[?47h")
+    testing.expect_value(t, row(&screen, 0), "")
+}
+
+@(test)
+test_the_alternate_screen_has_no_history_and_cannot_be_scrolled_back :: proc(t: ^testing.T) {
+    cells: [6 * 3]AnsiCell
+    alternate: [6 * 3]AnsiCell
+    history: [6 * 8]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 6, 3, history[:], alternate[:])
+    write(&screen, "a\r\nb\r\nc\r\nd\r\ne")
+    testing.expect_value(t, AnsiScreenHistory(&screen), 2)
+    AnsiScreenScroll(&screen, 2)
+    testing.expect_value(t, screen.back, 2)
+    // entering: the view is the screen again; lines that scroll in it are not kept, the history is as it was
+    write(&screen, "\x1b[?1049h")
+    testing.expect_value(t, screen.back, 0)
+    write(&screen, "\x1b[H1\r\n2\r\n3\r\n4\r\n5\r\n6")
+    testing.expect_value(t, AnsiScreenHistory(&screen), 2)
+    AnsiScreenScroll(&screen, 2)
+    testing.expect_value(t, screen.back, 0)
+    write(&screen, "\x1b[?1049l")
+    testing.expect_value(t, AnsiScreenHistory(&screen), 2)
+    AnsiScreenScroll(&screen, 2)
+    testing.expect_value(t, screen.back, 2)
+    testing.expect_value(t, row(&screen, 0), "c")
+    // without room for a second buffer the sequences are skipped: the program draws on the screen
+    plain_cells: [6 * 3]AnsiCell
+    plain: AnsiScreen = AnsiScreenMake(plain_cells[:], 6, 3)
+    write(&plain, "abc\x1b[?1049hxyz\x1b[?1049l")
+    testing.expect(t, !AnsiScreenAlternate(&plain))
+    testing.expect_value(t, row(&plain, 0), "abcxyz")
+}

@@ -9,14 +9,22 @@ import "core:unicode/utf8"
 //
 //     cells: [24 * 80]ui.AnsiCell
 //     history: [1000 * 80]ui.AnsiCell                           // optional
-//     screen := ui.AnsiScreenMake(cells[:], 80, 24, history[:])
+//     alternate: [24 * 80]ui.AnsiCell                           // optional: room for the alternate screen
+//     screen := ui.AnsiScreenMake(cells[:], 80, 24, history[:], alternate[:])
 //     ui.AnsiScreenWrite(&screen, output)
 //     ui.UiAnsiScreen(&ctx, &screen)
 //
 // What is read: the printable characters (UTF-8; a wide letter (Chinese, Japanese, Korean, emoji) takes two cells, a combining mark goes on the cell before it: see
 // `AnsiRuneWidth`), \r \n \b \t, the cursor moves (A B C D E F G H f d, s u, ESC 7 and
-// ESC 8), erasing (J, K, X, P, @), inserting and deleting lines (L, M), reverse index (ESC M), reset (ESC c), and the same SGR styles as UiAnsiText. Modes (the
-// alternate screen, the hidden cursor, the mouse) and every other sequence are skipped.
+// ESC 8), erasing (J, K, X, P, @), inserting and deleting lines (L, M), reverse index (ESC M), reset (ESC c), and the same SGR styles as UiAnsiText. The alternate
+// screen (`ESC [ ? 1049 h` and `l`, and the older 47 and 1047) is read when the caller gave room for it: a full screen program (an editor, a pager) draws on a clean
+// screen and the screen as it was comes back when it quits; while it is shown the history is not fed and the view cannot be scrolled back. Every other mode (the
+// hidden cursor, the mouse) and every other sequence is skipped.
+//
+// Limits: a fixed grid (no resize: make another screen and write the output again), no scroll regions (DECSTBM), no origin or wrap modes, no tab stops that are set, no reverse video
+//     the width of a character is a table of the ranges that matter: ambiguous widths are 1, no grapheme clusters, no emoji sequences, no right-to-left text; a mark goes on the cell before it and one mark only
+//     the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; no selection of cells, no mouse or paste modes, no cursor shapes or hiding
+//     it only draws: nothing reads the keyboard or talks to a process; a cell is as wide as the code face's M, and a wide letter takes two of them whatever the font does
 //
 // Baldr's terminal screen (examples/25_terminal) was the reason to have it; the code is written for this library.
 
@@ -49,12 +57,19 @@ AnsiScreen :: struct {
     history_count: int,         // how many of them are filled
     history_head: int,          // the row of the ring the next line goes to
     back: int,                  // the rows the view is scrolled back into the history (0: the live screen)
+    alternate: []AnsiCell,      // while the alternate screen is not shown, the cells of the other buffer (the two swap places); empty: no alternate screen
+    alternate_active: bool,     // the alternate screen is shown: `cells` is its grid
+    alternate_column: int,      // the cursor of the screen it replaced (ESC [ ? 1049 h saves it, the `l` puts it back)
+    alternate_row: int,
+    alternate_style: AnsiState,
 }
 
 // A screen over `cells` (at least columns * rows of them), cleared. `history`: room for the lines that scroll off the top, as many rows as it has room for (nil: none).
-AnsiScreenMake :: proc(cells: []AnsiCell, columns: int, rows: int, history: []AnsiCell = nil) -> AnsiScreen {
+// `alternate`: room for the other buffer of a full screen program, as many cells as the screen has (nil: that program draws on the screen as it is).
+AnsiScreenMake :: proc(cells: []AnsiCell, columns: int, rows: int, history: []AnsiCell = nil, alternate: []AnsiCell = nil) -> AnsiScreen {
     assert(columns > 0 && rows > 0 && len(cells) >= columns * rows, "a screen needs its cells")
     screen: AnsiScreen = {cells = cells[:columns * rows], columns = columns, rows = rows}
+    if len(alternate) >= columns * rows { screen.alternate = alternate[:columns * rows] }
     screen.history_rows = len(history) / columns
     screen.history = history[:screen.history_rows * columns]
     AnsiScreenClear(&screen)
@@ -69,6 +84,8 @@ AnsiScreenClear :: proc(screen: ^AnsiScreen) {
     screen.saved_column, screen.saved_row = 0, 0
     screen.sequence_length, screen.letter_length = 0, 0
     screen.history_count, screen.history_head, screen.back = 0, 0, 0
+    screen.alternate_active = false
+    for &cell in screen.alternate { cell = {} }
 }
 
 @(private)
@@ -111,7 +128,7 @@ screenScroll :: proc "contextless" (screen: ^AnsiScreen, top: int, bottom: int, 
 // The lines that scroll off the top are kept (the oldest of a full history is lost); a view that is scrolled back stays on what it shows
 @(private)
 screenHistoryPush :: proc "contextless" (screen: ^AnsiScreen) {
-    if screen.history_rows == 0 { return }
+    if screen.history_rows == 0 || screen.alternate_active { return }
     columns: int = screen.columns
     copy(screen.history[screen.history_head * columns:(screen.history_head + 1) * columns], screen.cells[:columns])
     screen.history_head = (screen.history_head + 1) % screen.history_rows
@@ -198,6 +215,33 @@ screenParameter :: proc "contextless" (numbers: []int, index: int, default: int)
     return numbers[index]
 }
 
+// Enters or leaves the alternate screen: the two buffers swap places. 1049 also saves the cursor and the style on the way in (and puts them back on the way out) and
+// starts with a clean screen; 1047 leaves a clean screen behind it; 47 keeps what the alternate screen had.
+@(private)
+screenAlternate :: proc "contextless" (screen: ^AnsiScreen, mode: int, enter: bool) {
+    if len(screen.alternate) < len(screen.cells) || enter == screen.alternate_active { return }
+    swap :: proc "contextless" (screen: ^AnsiScreen) {
+        for i in 0 ..< len(screen.cells) { screen.cells[i], screen.alternate[i] = screen.alternate[i], screen.cells[i] }
+    }
+    if enter {
+        if mode == 1049 { screen.alternate_column, screen.alternate_row, screen.alternate_style = screen.column, screen.row, screen.style }
+        swap(screen)
+        if mode == 1049 { for &cell in screen.cells { cell = {} } }
+        screen.alternate_active = true
+        screen.back = 0
+    } else {
+        if mode == 1047 || mode == 1049 { for &cell in screen.cells { cell = {} } }
+        swap(screen)
+        screen.alternate_active = false
+        if mode == 1049 { screen.column, screen.row, screen.style = screen.alternate_column, screen.alternate_row, screen.alternate_style }
+    }
+}
+
+// The alternate screen is shown
+AnsiScreenAlternate :: proc(screen: ^AnsiScreen) -> bool {
+    return screen.alternate_active
+}
+
 // One whole sequence: ESC [ parameters final
 @(private)
 screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
@@ -220,8 +264,16 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
         }
     }
     if any_digit && count < len(numbers) { count += 1 }
-    if private { return }                                                   // modes and reports: nothing of a screen of cells
     parameters: []int = numbers[:count]
+    if private {
+        // the modes of the alternate screen; the others (the cursor, the mouse, reports) are nothing of a screen of cells
+        if final == 'h' || final == 'l' {
+            for mode in parameters {
+                if mode == 47 || mode == 1047 || mode == 1049 { screenAlternate(screen, mode, final == 'h') }
+            }
+        }
+        return
+    }
     columns, rows: int = screen.columns, screen.rows
     switch final {
     case 'm':
@@ -405,7 +457,7 @@ AnsiScreenHistory :: proc(screen: ^AnsiScreen) -> int {
 
 // Scrolls the view back into the history (`rows` > 0) or forward (< 0), as far as there are lines. UiAnsiScreen does it for the wheel.
 AnsiScreenScroll :: proc(screen: ^AnsiScreen, rows: int) {
-    screen.back = clamp(screen.back + rows, 0, screen.history_count)
+    screen.back = 0 if screen.alternate_active else clamp(screen.back + rows, 0, screen.history_count)       // there is no history behind the alternate screen
 }
 
 // The view is the live screen again

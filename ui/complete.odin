@@ -9,6 +9,9 @@ package ui
 // Nothing is kept but the row that is chosen and where the list was closed; the items are the program's, looked through every frame the list is open (a list of
 // thousands wants a search of its own that gives the few that match).
 //
+// Limits: one trigger character, ASCII letters only match without regard to case, no ranking and no highlight of what matched; at most COMPLETE_ROWS (8) rows and no scrolling of a longer list
+//     the list opens below the caret of the last frame and does not move above it near the bottom of the screen; it is declared right before its field or area
+//
 // Baldr's completion (examples/34_mentions, editor_complete) was the reason to have one; the code is written for this library.
 
 // The rows of the list at most

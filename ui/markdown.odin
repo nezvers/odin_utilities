@@ -7,6 +7,10 @@ package ui
 // code (three backticks, kept as it is, in the code face), rules (`---`), tables (`| a | b |` with a line of dashes under the header). Inside of a paragraph, an entry of a list and a quote the marks are styles (richtext.odin):
 // `**strong**`, `*italic*`, `` `code` `` and `[links](address)`. A heading is one text in the strong face: its marks are taken away.
 //
+// Limits: no images, no HTML, no footnotes, no reference links or bare addresses as links, no setext headings (underlined with = or -), no `~~~` fences, no language for a fenced block
+//     a list is nested by two spaces of indent and is not checked (a list item holds one paragraph: no block of its own inside), a quote is its lines as text (no block inside)
+//     a heading is one text in the strong face: its marks are taken away, not drawn; a table has no alignment of its columns and every column is as wide as the others
+//
 // The Markdown view of Baldr (baldr/widget_markdown_view.odin) was the reason to have one; the code is written for this library.
 
 MarkdownKind :: enum u8 {

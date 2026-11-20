@@ -6,6 +6,10 @@ package ui
 //
 // The style draws a run by its tags: "strong", "italic", "mono" (code) and "link"; they are measured in the same faces (a text is measured with its tags). Nothing is
 // allocated: the runs are built in the text memory of the frame.
+//
+// Limits: marks: strong, italic, code, links; `~~strike~~` is taken away, not drawn; no underline, no colors, no images
+//     a link that is broken over two lines is two links with the same address; a run keeps the innermost `ui.DRAW_TAGS` (4) tags, so a paragraph inside of three tags loses the outer ones
+//     lines are broken by the width the paragraph had in the last frame (the first frame is plain); a word wider than the line is not cut
 
 RichMark :: enum u8 {
     STRONG,

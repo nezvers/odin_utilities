@@ -10,6 +10,9 @@ package ui
 //
 // `HighlightCode` is a highlighter for languages that look like C or Odin, by a table of words. A string in quotes ends at the end of its row.
 //
+// Limits: HighlightCode reads languages like C or Odin by a table of words: no grammar, no language detection, a string in quotes ends with its row, numbers are a guess (digits and letters)
+//     at most AREA_SPANS (96) spans in a row; the state of a row is one number, so it carries block comments and raw strings and nothing more; all rows are read again when the text changes
+//
 // Baldr's code editor (examples/07_code) was the reason to have it; the code is written for this library.
 
 // A piece of a row and the tag it is drawn with ("": plain)

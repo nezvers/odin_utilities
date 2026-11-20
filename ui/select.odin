@@ -19,6 +19,11 @@ import "core:unicode/utf8"
 // are declared) and a byte of it, so it stays right when the list scrolls, and the rows between the ends of the selection are copied from `cell_text(user, row, cell)`,
 // the text of any cell as the program has it. A row with several cells (a table) is copied with a tab between its cells and a new line between its rows.
 //
+// Limits: one selection for the whole ui; a text outside of a list is a place by its index among the elements, right only while the texts before it stay the same
+//     a list needs UiSelectRows and a row_text proc (at most UI_SELECT_GROUPS, 8, lists in a frame); a row has a cell for each selectable text and a copy has a tab between them (columns in column order for a table)
+//     a copy is cut at UI_SELECT_BYTES (4096); letters are runes (a mark or an emoji sequence is several); no right-to-left text, no touch, no menu; the end follows the pointer one frame behind
+//     no selection in an icon, an image or a text of a widget (a field has its own selection); Shift + arrows move the end of a selection by letters, lines and pages, a word or a paragraph only by the clicks
+//
 // Baldr's selection scope (examples/27_conversation) was the reason to have it; the code is written for this library.
 
 TEXT_SELECTABLE :: "selectable"

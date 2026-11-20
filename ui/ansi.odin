@@ -9,6 +9,9 @@ package ui
 // color by its parts (38;2;r;g;b), the default color, the same for the ground behind the text (40 to 47, 100 to 107, 48;..., 49), underline. Every other
 // escape sequence (moving the cursor, clearing) is skipped: this shows a log, it is not a screen.
 //
+// Limits: SGR only: bold, dim, italic, underline, the 16, 256 and RGB colors and the ground; no reverse video, blink, strike or hidden text, no hyperlinks
+//     it is a log: the cursor moves and clears are skipped, and the text is read again every frame it is shown (declare only the lines in view for a long one)
+//
 // Baldr's terminal screen (examples/25_terminal) was the reason to have it; the code is written for this library.
 
 // The style of the text at a place of the output
