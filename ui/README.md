@@ -165,6 +165,8 @@ more, a ring around the hovered and the picked point with its value, in a palett
 in `default_style/chart.odin`). A style of your own draws with `ChartPlotRect`, `ChartPosition` and `ChartBarRect`.
 
 ## The gallery of Baldr, remade
+`demo_common/demo_shell.odin` is the `shell` demo: Baldr's desktop shell examples with the same widgets and plain data in place of a compositor: a control centre (round icon toggles, sliders whose icon follows the value and mutes, a segmented power mode, a Sound page), a launcher (a search field over results walked with the arrows while it keeps the focus, Ctrl+P pins, Shift+Delete removes), a dock (icons grow with the distance of the pointer, a download on one, marks under the running ones), a taskbar (windows with raise, minimise, maximise, close, titles cut with an ellipsis, workspaces), a desktop (icons that stay where they are dropped) and a clock applet with a calendar.
+
 `demo_common/demo_gallery.odin` is the first page of Baldr's gallery (`examples/00_gallery`) with this library: the same cards (Buttons, Inputs, Menus, Choices, Project, Badges,
 Date and time, Files), the same sample data, dark and light. Baldr is retained (a view builds a tree, messages change a state); here the page is declared every frame. What this
 library does not do (frosted glass: the blur of what is behind a card) is left out. A second page shows every icon with its name. Its script finds the widgets by their rectangles of the last frame
