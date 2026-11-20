@@ -1,0 +1,43 @@
+{
+    "version": "2.0.0",
+    "command": "",
+    "args": [],
+    "tasks": [
+        {
+            "label": "Build Tests",
+            "type": "shell",
+            "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            },
+            "osx": {
+                "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            }
+        },
+        {
+            "label": "Build Gen",
+            "type": "shell",
+            "command": "odin build tool/gen -strict-style -vet -debug -out:${config:project_name}_gen.exe",
+            "group": "build",
+            "linux": {
+                "command": "odin build tool/gen -strict-style -vet -debug -out:${config:project_name}_gen.bin"
+            },
+            "osx": {
+                "command": "odin build tool/gen -strict-style -vet -debug -out:${config:project_name}_gen.bin"
+            }
+        },
+        {
+            "label": "Test",
+            "type": "shell",
+            "command": "odin test . -strict-style -vet",
+            "group": "test"
+        },
+        {
+            "label": "Check",
+            "type": "shell",
+            "command": "odin check . -no-entry-point -strict-style -vet",
+            "group": "test"
+        }
+    ]
+}
