@@ -171,7 +171,7 @@ library does not do (frosted glass: the blur of what is behind a card) is left o
 (`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
 
 ## Examples of Baldr, remade
-`demo_common/demo_examples.odin` has twelve of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
+`demo_common/demo_examples.odin` has thirteen of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
 `update`), `04_controls` (check boxes, a switch and thin sliders that change the state of the program in place; the switch turns the page to the light theme), `03_scroll` (forty
 cards in a scrolling region, a ghost button on each), `17_toasts` (raised cards at the top right that a click takes away: floating elements with `ui.UiInteract`) and
 `02_theme_lab` (a page to judge a theme by: here its accent is picked by a tile or a hue and the theme is made on the spot with `ThemeFromAccent`) and `05_overlays` (a select,
@@ -180,7 +180,7 @@ same numbers as a line, an area, bars and a scatter with `ui.UiChart`) and `09_j
 runs each on a thread that posts messages, here a download is a number that grows with the time of the frame) and `19_markdown` (a text in Markdown and how it reads, side
 by side, with `ui.UiTextArea` and `ui.UiMarkdown`; the original is an editor that shows the styles while one types) and `32_chat` with the bubbles of `29_styled_text`
 (bubbles as wide as their text with styles inside, a list that stays at its newest message, a field that sends; the panel tags "bubble" and "mine" of the default style) and `33_reading` (a page in Paper, Sepia, Dusk or Night with its
-controls in the same colors, inside of a window that keeps its theme: a theme area) and `20_shortcuts` (shortcuts that are set by pressing them). The texts
+controls in the same colors, inside of a window that keeps its theme: a theme area) `20_shortcuts` (shortcuts that are set by pressing them) and `07_code` (the text area with a highlighter for Odin). The texts
 and the sample data are the originals'. Each has its part of the script and a stored picture.
 
 ## The demo of Dear ImGui, remade
@@ -304,6 +304,13 @@ Undo and redo (`timeline_history.odin`): `TimelineHistoryInit(&history, states[:
 around the pointer (`view.track_zoom`, `TIMELINE_TRACK_ZOOM_MIN` .. `MAX`; the time zoom stays); the style gets the heights already multiplied. Markers (`TimelineMarkerAdd`, `Move`, `Remove`, `TIMELINE_MARKERS`) are named points of time with events (`MARKER_ADDED`, `MARKER_MOVED` with the old time, `MARKER_REMOVED`): a flag in the upper half of the ruler and a line down through the tracks, dragged by the flag,
 removed by Delete when selected; a double click on the ruler is a `RULER_DOUBLE_CLICK` event for the program to put a marker there. With `view.snap_to_edges` starts and ends of clips (the start or the end, whichever is nearer), markers, the loop and the playhead snap to the edges of other
 clips, to markers and to the playhead when they are within `view.snap_pixels` (8), else to the grid. Lanes, clips, the ruler and the playhead are drawn by `TimelineStyle` procs (`timeline_style.odin`, default in `default_style/timeline.odin`) from the model, only what is in view, so thousands of clips cost the ones on screen. Demo: `demo_common/demo_timeline.odin`.
+
+## Colors in a text area
+`highlight.odin`: `ui.UiTextArea(..., highlight = ui.HighlightCode, highlight_user = &ui.HIGHLIGHT_ODIN)` draws the words of every row in view in the colors of what they
+are. A highlighter (`ui.TextHighlight`) cuts a row into `ui.TextSpan`s, each with a tag; the area declares a text per span, placed by the same measure as the caret. The
+default style has the colors of the tags `ui.SYNTAX_KEYWORD`, `_TYPE`, `_STRING`, `_NUMBER`, `_COMMENT` (`ui_default.SyntaxColor`). `HighlightCode` reads languages that
+look like C or Odin by a `HighlightLanguage` (keywords, types, the mark of a line comment); it reads a row on its own, so a comment or a string over several lines is
+only colored on its first, and it is meant for an area without `wrap`. Nothing is kept between frames and nothing is allocated; at most `AREA_SPANS` (96) spans a row.
 
 ## Shortcut field
 `shortcut.odin`: `changed, listening := ui.UiShortcutField(&ctx, name, &chord, pressed, key_name)` is a shortcut that is set by pressing it. A click or the confirm key makes it

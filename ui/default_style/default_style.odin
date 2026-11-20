@@ -618,6 +618,33 @@ DrawPanel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     FillRoundedBorder(painter, info.rect, theme.panel_rounding, theme.surface_high if raised else theme.panel, theme.border if raised else theme.border_soft, theme.border_width, theme.max_radius if raised else theme.panel_max_radius)
 }
 
+// The colors of code (the spans of a highlighted text area, ui.SYNTAX_...): keywords in the accent, types in the violet of the charts, numbers in the warning color,
+// strings green, comments dim.
+SYNTAX_TAGS: [5]string = {ui.SYNTAX_KEYWORD, ui.SYNTAX_TYPE, ui.SYNTAX_STRING, ui.SYNTAX_NUMBER, ui.SYNTAX_COMMENT}
+@(private)
+syntax_ids: [5]ui.Id
+
+SyntaxColor :: proc(theme: ^Theme, info: ^ui.DrawInfo) -> (color: ui.Color, found: bool) {
+    // the ids of the tags are made once: a label is drawn many times a frame
+    if syntax_ids[0] == 0 {
+        for tag, i in SYNTAX_TAGS { syntax_ids[i] = ui.IdFromString(tag) }
+    }
+    for tag in info.tags {
+        if tag == 0 { continue }
+        for id, i in syntax_ids {
+            if id != tag { continue }
+            switch i {
+            case 0: return theme.accent, true
+            case 1: return ChartColor(theme, 6), true
+            case 2: return theme.success, true
+            case 3: return theme.warning, true
+            case: return theme.text_dim, true
+            }
+        }
+    }
+    return {}, false
+}
+
 // A text. With the tag "title" or "strong" it is in the strong face, with "italic" in the italic one, with "mono" in the code face,
 // with "dim" in the dim color, with "link" in the accent with a line under it.
 DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
@@ -625,6 +652,7 @@ DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     theme: ^Theme = &painter.theme
     link: bool = ui.DrawInfoHasTag(info, "link")
     color: ui.Color = info.color if info.color.a > 0 else (theme.accent if link else (theme.text_dim if ui.DrawInfoHasTag(info, "dim") else theme.text))
+    if syntax, is_syntax := SyntaxColor(theme, info); is_syntax && info.color.a == 0 { color = syntax }
     painter.face = TagFace(ui.DrawInfoHasTag(info, "title") || ui.DrawInfoHasTag(info, "strong"), ui.DrawInfoHasTag(info, "mono"), ui.DrawInfoHasTag(info, "italic"))
     painter.draw_text(painter, info.text, {info.rect.x, info.rect.y}, info.font_size, color)
     painter.face = .REGULAR

@@ -348,3 +348,84 @@ test_a_text_is_measured_with_the_tags_it_is_drawn_with :: proc(t: ^testing.T) {
     testing.expect(t, !UiMeasureHasTag(&test.ctx, "mono"))
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_code_is_cut_into_spans :: proc(t: ^testing.T) {
+    Expected :: struct { text: string, tag: string }
+    check :: proc(t: ^testing.T, source: string, expected: []Expected, language: ^HighlightLanguage = nil) {
+        spans: [16]TextSpan
+        count: int = HighlightCode(source, 0, len(source), spans[:], language)
+        testing.expectf(t, count == len(expected), "%q: %d spans, expected %d", source, count, len(expected))
+        at: int
+        for want, i in expected {
+            if i >= count { break }
+            testing.expectf(t, source[at:at + spans[i].length] == want.text && spans[i].tag == want.tag, "%q: span %d is %q %q", source, i, source[at:at + spans[i].length], spans[i].tag)
+            at += spans[i].length
+        }
+    }
+    check(t, "", {})
+    check(t, "main :: proc() {", {{"main :: ", ""}, {"proc", SYNTAX_KEYWORD}, {"() {", ""}})
+    check(t, "count: int = 0x1F // a number", {{"count: ", ""}, {"int", SYNTAX_TYPE}, {" = ", ""}, {"0x1F", SYNTAX_NUMBER}, {" ", ""}, {"// a number", SYNTAX_COMMENT}})
+    check(t, "x := 1.5e3 + y.z", {{"x := ", ""}, {"1.5e3", SYNTAX_NUMBER}, {" + y.z", ""}})
+    check(t, "say(\"a \\\" b // not\", 'c')", {{"say(", ""}, {"\"a \\\" b // not\"", SYNTAX_STRING}, {", ", ""}, {"'c'", SYNTAX_STRING}, {")", ""}})
+    check(t, "s := `raw \\` + \"open", {{"s := ", ""}, {"`raw \\`", SYNTAX_STRING}, {" + ", ""}, {"\"open", SYNTAX_STRING}})
+    // a word that only starts like a keyword is a name
+    check(t, "format if_ready process", {{"format if_ready process", ""}})
+    python: HighlightLanguage = {keywords = {"def", "return"}, line_comment = "#"}
+    check(t, "def f(): # go", {{"def", SYNTAX_KEYWORD}, {" f(): ", ""}, {"# go", SYNTAX_COMMENT}}, &python)
+    check(t, "x // y", {{"x // y", ""}}, &python)
+    // a row of a longer text, and room for fewer spans than the row has: the rest is left to the caller
+    text: string = "a := 1\nreturn a"
+    spans: [2]TextSpan
+    testing.expect_value(t, HighlightCode(text, 7, len(text), spans[:], nil), 2)
+    testing.expect(t, spans[0] == TextSpan{6, SYNTAX_KEYWORD} && spans[1] == TextSpan{2, ""})
+    testing.expect_value(t, HighlightCode("a = 1 + 2 + 3", 0, 13, spans[:], nil), 2)
+}
+
+@(test)
+test_a_text_area_draws_its_rows_in_spans :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 2048),
+        ctx: Context,
+        style: Style,
+        text: [128]u8,
+        length: int,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measureFaces)
+    test.length = copy(test.text[:], "x: int = 42 // answer\nplain line\n\nreturn \"done\"")
+    for _ in 0 ..< 2 {
+        UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {1200, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(1000), {}}) {
+            // in the code face (twice as wide in this test): every span is placed by the widths of that face, not only the first of the area
+            if UiTagged(&test.ctx, "mono") { UiTextArea(&test.ctx, "code", test.text[:], &test.length, {Fixed(900), Fixed(200)}, false, false, HighlightCode) }
+        }
+        UiEnd(&test.ctx)
+    }
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+    find :: proc(ctx: ^Context, text: string) -> (info: DrawInfo, found: bool) {
+        for command in UiCommands(ctx) {
+            if command.kind == .DRAW && command.info.kind == .LABEL && command.info.text == text { return command.info, true }
+        }
+        return
+    }
+    size: f32 = DEFAULT_METRICS.font_size
+    name, name_found := find(&test.ctx, "x: ")
+    type, type_found := find(&test.ctx, "int")
+    number, number_found := find(&test.ctx, "42")
+    comment, comment_found := find(&test.ctx, "// answer")
+    plain, plain_found := find(&test.ctx, "plain line")
+    keyword, keyword_found := find(&test.ctx, "return")
+    text, text_found := find(&test.ctx, "\"done\"")
+    testing.expect(t, name_found && type_found && number_found && comment_found && plain_found && keyword_found && text_found, "every span is a text")
+    testing.expect(t, DrawInfoHasTag(&type, SYNTAX_TYPE) && DrawInfoHasTag(&number, SYNTAX_NUMBER) && DrawInfoHasTag(&comment, SYNTAX_COMMENT) && DrawInfoHasTag(&keyword, SYNTAX_KEYWORD) && DrawInfoHasTag(&text, SYNTAX_STRING))
+    testing.expect(t, !DrawInfoHasTag(&name, SYNTAX_TYPE) && !DrawInfoHasTag(&plain, SYNTAX_KEYWORD))
+    // a span starts where the text before it ends: a size per letter in this face
+    testing.expect_value(t, type.rect.x - name.rect.x, size * 3)
+    testing.expect_value(t, number.rect.x - name.rect.x, size * 9)
+    testing.expect_value(t, comment.rect.x - name.rect.x, size * 12)
+    testing.expect_value(t, text.rect.x - keyword.rect.x, size * 7)
+    testing.expect(t, type.rect.y == name.rect.y && plain.rect.y > name.rect.y && keyword.rect.y > plain.rect.y)
+}

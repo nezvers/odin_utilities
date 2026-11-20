@@ -247,8 +247,10 @@ TextOpen :: proc(ctx: ^Context, text: string, config: TextConfig = {}) {
     ctx.child_buffer_count += 1
 
     // measured with its tags: a style that draws a tagged text in another face measures it in that face
+    // (what was set before comes back: a text area measures its rows with its own tags around the texts it declares)
+    outer_tags: [DRAW_TAGS]Id = ctx.measure_tags
     ctx.measure_tags = element.decl.draw.tags
-    defer ctx.measure_tags = {}
+    defer ctx.measure_tags = outer_tags
     preferred, min_width, newlines := textMeasure(ctx, text, text_config)
     line_height: f32 = text_config.line_height if text_config.line_height > 0 else preferred.y
     element.text.preferred = preferred

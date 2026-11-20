@@ -1,7 +1,7 @@
 #+private file
 package demo_common
 
-// Twelve examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Thirteen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
 // a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
@@ -90,6 +90,10 @@ State :: struct {
     // 33_reading
     paper: int,
     page: int,
+    // 07_code
+    code: [1536]u8,
+    code_length: int,
+    code_id: ui.Id,
     // 20_shortcuts
     chords: [len(SHORTCUT_ACTIONS)]ui.Chord,
     chord_ids: [len(SHORTCUT_ACTIONS)]ui.Id,
@@ -110,7 +114,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [12]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts"}
+EXAMPLES: [13]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code"}
 NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
@@ -137,6 +141,7 @@ init :: proc(ctx: ^kit.Context) {
     state.fruit = 2
     state.note_length = copy(state.note[:], NOTE)
     state.paper, state.page = 1, 0
+    state.code_length = copy(state.code[:], CODE_SAMPLE)
     state.chords = {{{.CTRL}, u16(kit.Key.S)}, {{.CTRL}, u16(kit.Key.O)}, {{.CTRL}, u16(kit.Key.F)}, {{.CTRL, .SHIFT}, u16(kit.Key.B)}, {}}
     state.chord_changes = 0
     state.message_count = 0
@@ -553,6 +558,45 @@ shortcuts :: proc(c: ^ui.Context, input: ^kit.Input) {
     }
 }
 
+// 07_code: an editor for code. It is the text area of the library with a highlighter: the words of every row in view are cut into spans and drawn in the
+// colors of what they are, while the text is edited as any text.
+CODE_SAMPLE :: `package counter
+
+import "core:fmt"
+
+// Counts the words of a text
+Counter :: struct {
+    words: int,
+    longest: string,
+}
+
+count :: proc(counter: ^Counter, text: string) -> int {
+    start: int = -1
+    for character, i in text {
+        if character == ' ' {
+            start = -1
+            continue
+        }
+        if start < 0 {
+            start = i
+            counter.words += 1
+        }
+    }
+    fmt.println("words:", counter.words, 0x10, 2.5)
+    return counter.words
+}`
+
+code :: proc(c: ^ui.Context) {
+    if stage(c, "code", {720, 560}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(20)}) {
+        ui.UiTitle(c, "Code", 1.25)
+        ui.UiLabelDim(c, "A text area with a highlighter for Odin. Type: the colors follow.", .WORDS)
+        state.code_id = ui.UiId(c, "Source##code")
+        if ui.UiTagged(c, "mono") {
+            ui.UiTextArea(c, "Source##code", state.code[:], &state.code_length, {ui.Grow(), ui.Grow()}, false, false, ui.HighlightCode, &ui.HIGHLIGHT_ODIN)
+        }
+    }
+}
+
 // 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
 charts :: proc(c: ^ui.Context) {
     if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
@@ -775,6 +819,8 @@ draw :: proc(ctx: ^kit.Context) {
         reading(c)
     case 11:
         shortcuts(c, &ctx.input)
+    case 12:
+        code(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -1156,5 +1202,27 @@ script: []kit.Step = {
     kit.Tap(.BACKSPACE),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.chords[0] == ui.Chord{} && state.chord_changes == 3 }, "Backspace takes the shortcut away"),
+
+    // code: the words of the rows are drawn by what they are; what is typed is colored in the same frame
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(12) }, "the Code tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        return shown("package", ui.SYNTAX_KEYWORD) && shown("// Counts the words of a text", ui.SYNTAX_COMMENT) && shown("\"core:fmt\"", ui.SYNTAX_STRING) && shown("0x10", ui.SYNTAX_NUMBER) && shown("string", ui.SYNTAX_TYPE)
+    }, "keywords, comments, strings, numbers and types have their tags"),
+    kit.Capture("examples_code"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        rect, found := ui.UiElementRect(&state.app.ctx, state.code_id)
+        target = {rect.x + rect.z * 0.5, rect.y + rect.w - 12}
+        return found
+    }, "the editor is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Tap(.END),
+    kit.Type(" // typed"),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("// typed", ui.SYNTAX_COMMENT) }, "what is typed is a comment at once"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

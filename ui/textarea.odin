@@ -167,7 +167,8 @@ areaLineLimit :: proc(text: string, line: AreaLine, last: bool) -> int {
 }
 
 // A text of several lines in a scrolling box. True when the text changed. `wrap` breaks long lines at words (else they are cut by the box).
-UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size: Size = {}, wrap: bool = true, disabled: bool = false) -> (changed: bool) {
+// `highlight` colors the words of the rows (highlight.odin: `ui.HighlightCode` for code), `highlight_user` is passed to it.
+UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size: Size = {}, wrap: bool = true, disabled: bool = false, highlight: TextHighlight = nil, highlight_user: rawptr = nil) -> (changed: bool) {
     // the lines are measured with the tags the area is declared in (a "mono" area wraps by the widths of the code face)
     for i in 0 ..< min(ctx.tag_count, DRAW_TAGS) { ctx.measure_tags[i] = ctx.tag_stack[ctx.tag_count - 1 - i] }
     defer ctx.measure_tags = {}
@@ -312,7 +313,7 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
                 ElementClose(ctx)
             }
         }
-        if line.end > line.start {
+        if line.end > line.start && highlight == nil {
             shown: string = text[int(line.start):int(line.end)]
             ElementOpen(ctx, {
                 layout = {size = {Fixed(measureText(ctx, shown, metrics.font_size).x), Fixed(line_height)}},
@@ -320,6 +321,28 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
             })
             TextOpen(ctx, shown, {wrap = .NONE})
             ElementClose(ctx)
+        } else if line.end > line.start {
+            // a text per span, each where the text before it ends (the same measure the caret and the selection are placed by)
+            spans: [AREA_SPANS]TextSpan
+            span_count: int = clamp(highlight(text, int(line.start), int(line.end), spans[:], highlight_user), 0, AREA_SPANS)
+            at: int = int(line.start)
+            for index in 0 ..= span_count {
+                // after the spans: what they did not cover, plain
+                span: TextSpan = spans[index] if index < span_count else {int(line.end) - at, ""}
+                piece_end: int = min(at + span.length, int(line.end))
+                if piece_end <= at { continue }
+                piece: string = text[at:piece_end]
+                x: f32 = measureText(ctx, text[int(line.start):at], metrics.font_size).x
+                ElementOpen(ctx, {
+                    layout = {size = {Fixed(measureText(ctx, piece, metrics.font_size).x), Fixed(line_height)}},
+                    absolute = {enabled = true, offset = {padding.x + x, y}},
+                })
+                if span.tag != "" { UiPushTag(ctx, span.tag) }
+                TextOpen(ctx, piece, {wrap = .NONE})
+                if span.tag != "" { UiPopTag(ctx) }
+                ElementClose(ctx)
+                at = piece_end
+            }
         }
     }
     if focused {

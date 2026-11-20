@@ -166,9 +166,11 @@ richPushTags :: proc(ctx: ^Context, marks: RichMarks) -> (pushed: int) {
 // The width of a text with the tags that are pushed now
 @(private)
 richWidth :: proc(ctx: ^Context, text: string, font_size: f32) -> f32 {
+    outer_tags: [DRAW_TAGS]Id = ctx.measure_tags
+    ctx.measure_tags = {}
     for i in 0 ..< min(ctx.tag_count, DRAW_TAGS) { ctx.measure_tags[i] = ctx.tag_stack[ctx.tag_count - 1 - i] }
     width: f32 = measureText(ctx, text, font_size).x
-    ctx.measure_tags = {}
+    ctx.measure_tags = outer_tags
     return width
 }
 
