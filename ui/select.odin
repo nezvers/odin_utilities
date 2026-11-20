@@ -108,11 +108,14 @@ selectAfterLayout :: proc(ctx: ^Context) {
     select.copied_length = 0
     select.whole = true
     last: i32 = -1
+    first_text, last_text: i32 = -1, -1                   // the first and the last selectable text of the frame
     for index in 0 ..< i32(ctx.element_count) {
         element: ^Element = &ctx.elements[index]
         if !element.is_text || !selectHasTag(select, element) { continue }
         data: ^TextData = &element.text
         rect: Rect = element.rect
+        if first_text < 0 { first_text = index }
+        last_text = index
         line_height: f32 = data.config.line_height if data.config.line_height > 0 else data.preferred.y
         for l in 0 ..< int(data.line_count) {
             line: TextLine = ctx.lines[int(data.line_start) + l]
@@ -169,7 +172,10 @@ selectAfterLayout :: proc(ctx: ^Context) {
     }
     if input.mouse_pressed {
         // a press on a text that no widget took starts a selection, any other press lets the selection go
-        if best.found && best.direct && ctx.active == 0 {
+        if best.found && best.direct && ctx.active == 0 && select.active && .SHIFT in input.modifiers {
+            // with Shift: from where the selection started to here
+            select.cursor, select.dragging = place, true
+        } else if best.found && best.direct && ctx.active == 0 {
             again: bool = ctx.time - select.press_time <= DOUBLE_CLICK_SECONDS && select.press_place.element == place.element && abs(select.press_place.offset - place.offset) <= 1
             select.presses = select.presses + 1 if again else 1
             select.press_time, select.press_place = ctx.time, place
@@ -194,14 +200,21 @@ selectAfterLayout :: proc(ctx: ^Context) {
         if best.found { select.cursor = place }
         if !input.mouse_down { select.dragging = false }
     }
+    // select all, when the keys are not a text field's and the pointer is over the text or a part of it is selected: every selectable text of the frame
+    focused: ^WidgetState = stateFind(ctx, ctx.focus)
+    editing: bool = focused != nil && focused.editing
+    if .SELECT_ALL in input.actions && !editing && first_text >= 0 && (select.active || select.over) {
+        select.active, select.dragging = true, false
+        select.anchor = {first_text, 0}
+        select.cursor = {last_text, i32(len(ctx.elements[last_text].text.text))}
+    }
     if !select.active { return }
     if ctx.cancel_pending {
         select.active, select.dragging = false, false
         return
     }
     // copy, unless a text field that is edited has the keys
-    focused: ^WidgetState = stateFind(ctx, ctx.focus)
-    if .COPY in input.actions && select.copied_length > 0 && !(focused != nil && focused.editing) {
+    if .COPY in input.actions && select.copied_length > 0 && !editing {
         UiClipboardSet(ctx, string(select.copied[:select.copied_length]))
     }
 }

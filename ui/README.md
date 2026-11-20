@@ -340,7 +340,8 @@ action puts the selection on the clipboard (a new line between two texts, none b
 go; `ui.UiTextSelected(&ctx)` gives the text, `ui.UiTextSelectionClear` lets it go. A press on a widget (a button, a link) stays the widget's. One selection for the
 whole ui, kept as a text (its place among the elements of the frame) and a byte in it: right while the texts before it stay the same, so not across a list that only
 declares its rows in view. A double click selects the word under the pointer, a third click the whole text (a label, a
-run of a paragraph). The selection follows the pointer one frame behind. No selecting by the keyboard yet.
+run of a paragraph). Shift and a click extend the selection to there; the select all action takes every selectable text (while the pointer is over the
+text or a part is selected, and no text field is edited). The selection follows the pointer one frame behind. No moving of its end by the arrows yet.
 
 ## Completion in a text area or field
 `complete.odin`: `inserted, item := ui.UiComplete(&ctx, "Message", buffer[:], &length, items[:])` right before the `ui.UiTextArea` of the same name: after a trigger

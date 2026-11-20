@@ -238,3 +238,54 @@ test_a_double_click_selects_a_word_and_a_third_the_text :: proc(t: ^testing.T) {
     text, _ = UiTextSelected(&test.ctx)
     testing.expect_value(t, text, "bold")
 }
+
+@(test)
+test_a_selection_is_extended_with_shift_and_takes_everything_with_select_all :: proc(t: ^testing.T) {
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 3 { frame(test, away) }
+    drag(test, letter(test, "hello world", 0), letter(test, "hello world", 5))
+    text, _ := UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "hello")
+    // Shift and a click further on: from the start of the selection to there
+    for _ in 0 ..< 40 { frame(test, away) }
+    point: Vec2 = letter(test, "second line here", 6)
+    frame(test, {mouse_position = point, modifiers = {.SHIFT}})
+    frame(test, {mouse_position = point, mouse_down = true, mouse_pressed = true, modifiers = {.SHIFT}})
+    frame(test, {mouse_position = point, mouse_released = true, modifiers = {.SHIFT}})
+    frame(test, away)
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "hello world\nsecond")
+    // select all while a part is selected: every selectable text, and not the one outside of the tag
+    frame(test, {mouse_position = {-100, -100}, actions = {.SELECT_ALL}})
+    frame(test, away)
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "hello world\nsecond line here\nplain bold end\none two three four five six\naaaa bbbb cccc")
+    frame(test, {mouse_position = {-100, -100}, actions = {.COPY}})
+    testing.expect_value(t, test.ctx.clipboard.local_length, len(text))
+    // nothing selected and the pointer somewhere else: select all is not for the texts
+    frame(test, {mouse_position = {-100, -100}, actions = {.CANCEL}})
+    frame(test, {mouse_position = {-100, -100}, actions = {.SELECT_ALL}})
+    frame(test, away)
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "")
+    // the pointer over a text: it is
+    over: Vec2 = letter(test, "hello world", 2)
+    frame(test, {mouse_position = over})
+    frame(test, {mouse_position = over, actions = {.SELECT_ALL}})
+    frame(test, {mouse_position = over})
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect(t, len(text) > 60)
+    // a text field that is edited keeps select all for itself
+    frame(test, {mouse_position = {-100, -100}, actions = {.CANCEL}})
+    test.field_length = copy(test.field[:], "field")
+    UiFocus(&test.ctx, UiIdPath("window", "field"))
+    frame(test, {mouse_position = over})
+    frame(test, {mouse_position = over, actions = {.SELECT_ALL}})
+    frame(test, {mouse_position = over})
+    text, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, text, "")
+}
