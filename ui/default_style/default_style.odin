@@ -247,10 +247,19 @@ painterOf :: proc(ctx: ^ui.Context) -> ^Painter {
     return cast(^Painter)ctx.user
 }
 
-// The measure proc for ui.UiInit when the painter is the user pointer
+// The face a text with the tags of the style is drawn in: "title" strong, "mono" the code face, else regular
+TagFace :: proc(title: bool, mono: bool) -> Face {
+    return .STRONG if title else (.MONO if mono else .REGULAR)
+}
+
+// The measure proc for ui.UiInit when the painter is the user pointer. A text is measured in the face DrawLabel draws it in (by the tags it was declared with), so a title
+// or a line of code gets the room it needs and wraps where it should.
 Measure :: proc(ctx: ^ui.Context, text: string, font_size: f32) -> ui.Vec2 {
     painter: ^Painter = painterOf(ctx)
-    return painter.measure_text(painter, text, font_size)
+    painter.face = TagFace(ui.UiMeasureHasTag(ctx, "title"), ui.UiMeasureHasTag(ctx, "mono"))
+    size: ui.Vec2 = painter.measure_text(painter, text, font_size)
+    painter.face = .REGULAR
+    return size
 }
 
 // The style: the table of procs below with the metrics of the theme
@@ -552,7 +561,7 @@ DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
     color: ui.Color = info.color if info.color.a > 0 else (theme.text_dim if ui.DrawInfoHasTag(info, "dim") else theme.text)
-    painter.face = .STRONG if ui.DrawInfoHasTag(info, "title") else (.MONO if ui.DrawInfoHasTag(info, "mono") else .REGULAR)
+    painter.face = TagFace(ui.DrawInfoHasTag(info, "title"), ui.DrawInfoHasTag(info, "mono"))
     painter.draw_text(painter, info.text, {info.rect.x, info.rect.y}, info.font_size, color)
     painter.face = .REGULAR
 }

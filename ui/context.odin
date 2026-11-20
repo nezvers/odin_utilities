@@ -119,6 +119,7 @@ Context :: struct {
     press_position: Vec2,           // where the last press was (a drag starts some pixels from it)
     tag_stack: [16]Id,
     tag_count: int,
+    measure_tags: [DRAW_TAGS]Id,    // the tags of the text that is measured right now (all 0: none): a measure proc reads them to measure in the face the style draws that text in (UiMeasureHasTag)
     disabled_depth: int,            // UiDisabled scopes that are open
     animating: bool,                // some fade of the last frame had not arrived yet (UiAnimating)
     cursor: Cursor,                 // what the pointer is over (UiCursor)

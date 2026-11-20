@@ -246,6 +246,9 @@ TextOpen :: proc(ctx: ^Context, text: string, config: TextConfig = {}) {
     ctx.child_buffer[ctx.child_buffer_count] = index
     ctx.child_buffer_count += 1
 
+    // measured with its tags: a style that draws a tagged text in another face measures it in that face
+    ctx.measure_tags = element.decl.draw.tags
+    defer ctx.measure_tags = {}
     preferred, min_width, newlines := textMeasure(ctx, text, text_config)
     line_height: f32 = text_config.line_height if text_config.line_height > 0 else preferred.y
     element.text.preferred = preferred
@@ -609,6 +612,8 @@ textWrapAll :: proc(ctx: ^Context) {
         if !element.is_text { continue }
         data: ^TextData = &element.text
         config: TextConfig = data.config
+        ctx.measure_tags = element.decl.draw.tags
+        defer ctx.measure_tags = {}
         data.line_start = i32(ctx.line_count)
         data.line_count = 0
         line_height: f32 = config.line_height if config.line_height > 0 else data.preferred.y

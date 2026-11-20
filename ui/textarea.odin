@@ -168,6 +168,9 @@ areaLineLimit :: proc(text: string, line: AreaLine, last: bool) -> int {
 
 // A text of several lines in a scrolling box. True when the text changed. `wrap` breaks long lines at words (else they are cut by the box).
 UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size: Size = {}, wrap: bool = true, disabled: bool = false) -> (changed: bool) {
+    // the lines are measured with the tags the area is declared in (a "mono" area wraps by the widths of the code face)
+    for i in 0 ..< min(ctx.tag_count, DRAW_TAGS) { ctx.measure_tags[i] = ctx.tag_stack[ctx.tag_count - 1 - i] }
+    defer ctx.measure_tags = {}
     id: Id = UiId(ctx, name)
     state: ^WidgetState = stateGet(ctx, id)
     interaction: Interaction = widgetBehavior(ctx, id, disabled)

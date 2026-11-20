@@ -287,3 +287,64 @@ test_badges_avatars_titles_and_cards_reach_the_style :: proc(t: ^testing.T) {
     testing.expect_value(t, extra.row_clicks, 1)
     testing.expect_value(t, UiProblems(&extra.ctx), Problems{})
 }
+
+// A measure proc that knows two faces: a text inside of the tag "mono" is twice as wide
+@(private = "file")
+measureFaces :: proc(ctx: ^Context, text: string, font_size: f32) -> Vec2 {
+    width: f32 = f32(len(text)) * font_size * 0.5
+    return {width * 2 if UiMeasureHasTag(ctx, "mono") else width, font_size}
+}
+
+@(test)
+test_a_text_is_measured_with_the_tags_it_is_drawn_with :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(64, 128, 32, 1024),
+        ctx: Context,
+        style: Style,
+        area: [64]u8,
+        area_length: int,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measureFaces)
+    test.area_length = copy(test.area[:], "aaaa bbbb cccc dddd")
+    for _ in 0 ..< 2 {
+        UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(600), {}}) {
+            UiLabel(&test.ctx, "same text")
+            if UiTagged(&test.ctx, "mono") { UiLabel(&test.ctx, "same text") }
+            UiLabel(&test.ctx, "same text")
+            // a wrapped text breaks by the widths of its face: 19 characters are 152 wide in the plain face and 304 in the other
+            ElementOpen(&test.ctx, {id = UiId(&test.ctx, "narrow"), layout = {size = {Fixed(200), Fit()}, direction = .TOP_TO_BOTTOM}})
+            UiLabel(&test.ctx, "aaaa bbbb cccc dddd##plain", .WORDS)
+            if UiTagged(&test.ctx, "mono") { UiLabel(&test.ctx, "aaaa bbbb cccc dddd##wide", .WORDS) }
+            ElementClose(&test.ctx)
+            if UiTagged(&test.ctx, "mono") { UiTextArea(&test.ctx, "area", test.area[:], &test.area_length, {Fixed(200), Fixed(120)}) }
+        }
+        UiEnd(&test.ctx)
+    }
+    widths: [3]f32
+    count: int
+    plain_lines, wide_lines: int
+    for command in UiCommands(&test.ctx) {
+        if command.kind != .DRAW || command.info.kind != .LABEL { continue }
+        info: DrawInfo = command.info
+        if info.text == "same text" && count < 3 {
+            widths[count] = info.rect.z
+            count += 1
+        }
+        if info.name == "aaaa bbbb cccc dddd" {
+            if DrawInfoHasTag(&info, "mono") { wide_lines += 1 } else { plain_lines += 1 }
+        }
+    }
+    testing.expect_value(t, count, 3)
+    testing.expect_value(t, widths[0], 72)
+    testing.expect_value(t, widths[1], 144)                     // the tagged one: measured in its face
+    testing.expect_value(t, widths[2], 72)                      // and the tags do not stay for the next text (nor in the cache)
+    testing.expect_value(t, plain_lines, 1)
+    testing.expect(t, wide_lines >= 2, "the same words wrap in the wider face")
+    // outside of a measure there are no tags
+    testing.expect(t, !UiMeasureHasTag(&test.ctx, "mono"))
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

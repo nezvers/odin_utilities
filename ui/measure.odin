@@ -36,6 +36,12 @@ measureText :: proc(ctx: ^Context, text: string, font_size: f32) -> Vec2 {
     }
     hash ~= u64(transmute(u32)font_size)
     hash *= 1099511628211
+    // the same text with other tags may be drawn in another face: it is another entry
+    for tag in ctx.measure_tags {
+        if tag == 0 { continue }
+        hash ~= u64(tag)
+        hash *= 1099511628211
+    }
     if hash == 0 { hash = 1 }
     cache: ^MeasureCache = &ctx.measure_cache
     entry: ^MeasureEntry = &cache.entries[hash % UI_MEASURE_CACHE]
@@ -47,6 +53,16 @@ measureText :: proc(ctx: ^Context, text: string, font_size: f32) -> Vec2 {
     result: Vec2 = ctx.measure(ctx, text, font_size)
     entry^ = {key = hash, size = font_size, length = u32(len(text)), result = result}
     return result
+}
+
+// For a measure proc: the text it is asked for right now was declared inside of a tag of this name (`ui.UiTagged(&ctx, "mono")`), so the style will draw it in the face of
+// that tag and the proc should measure it in that face. False for the texts of controls (they are measured without tags) and outside of a measure.
+UiMeasureHasTag :: proc(ctx: ^Context, name: string) -> bool {
+    wanted: Id = IdFromString(name)
+    for tag in ctx.measure_tags {
+        if tag == wanted { return true }
+    }
+    return false
 }
 
 // Forgets every measured size (a new font, a new UI scale).

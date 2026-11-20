@@ -297,6 +297,9 @@ removed by Delete when selected; a double click on the ruler is a `RULER_DOUBLE_
 clips, to markers and to the playhead when they are within `view.snap_pixels` (8), else to the grid. Lanes, clips, the ruler and the playhead are drawn by `TimelineStyle` procs (`timeline_style.odin`, default in `default_style/timeline.odin`) from the model, only what is in view, so thousands of clips cost the ones on screen. Demo: `demo_common/demo_timeline.odin`.
 
 ## Measuring text
+A text is measured with the tags it was declared in (`ctx.measure_tags`, `ui.UiMeasureHasTag(&ctx, "mono")` for a measure proc): the default style measures a "title" in its
+strong face and a "mono" text in its code face, so they get the room they are drawn in and wrap where they should. A text area measures its lines the same way.
+
 Every size of a text goes through a cache (`measure.odin`): a table of `UI_MEASURE_CACHE` slots (2048) in the context, found by a 64 bit hash of the bytes, the length and the font size, overwritten by a text that lands on the same slot (no growing, no aging).
 A frame that shows the same texts as the last one calls the measure proc of the glue zero times. `UiMeasureCacheClear` forgets everything (a new font), `UiMeasureCacheScale(ctx, scale)` clears when the UI scale changed (`ui_kit.Begin` calls it; call it
 yourself with the raylib and Karl2D glue when the scale can change), `UiMeasureCacheStats` gives the hits and the misses.

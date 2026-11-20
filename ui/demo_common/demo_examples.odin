@@ -358,8 +358,8 @@ markdown :: proc(c: ^ui.Context) {
         ui.UiTitle(c, "Markdown", 1.25)
         ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, gap = 16}})
         state.source_id = ui.UiId(c, "Markdown source##note")
-        // the source is in the face the lines are measured in: a wrapped text in another face would not fit its own lines
-        ui.UiTextArea(c, "Markdown source##note", state.note[:], &state.note_length, {ui.Percent(0.45), ui.Grow()})
+        // the source in the code face: its lines are measured in that face too, so they wrap where they are drawn
+        if ui.UiTagged(c, "mono") { ui.UiTextArea(c, "Markdown source##note", state.note[:], &state.note_length, {ui.Percent(0.45), ui.Grow()}) }
         if ui.UiScroll(c, "##preview", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, padding = {0, 14, 0, 0}}) {
             ui.UiMarkdown(c, string(state.note[:state.note_length]))
         }
