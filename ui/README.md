@@ -325,7 +325,14 @@ italic, the 16 colors (`ANSI_COLORS_DARK` / `ANSI_COLORS_LIGHT`, or a palette of
 carries the style to the next (`AnsiState`): for a long log declare only the lines in view with it. `AnsiNext` is the reader, run by run, for a program that wants the
 runs. The text is read every frame it is shown, nothing is kept or allocated. Bold is the tag "strong" on a text in the code face: the default style draws it in its strong code face (JetBrains Mono Bold; `Face.MONO_STRONG`). Italic
 code has no face of its own and looks like the rest. A ground behind a run is a rectangle of the kind FILL, underline the tag "underline". Every other escape sequence (moving the cursor,
-clearing) is skipped: it shows a log, it is not a screen of cells.
+clearing) is skipped: `UiAnsiText` shows a log. A program that moves the cursor needs the screen below.
+
+## A screen of cells
+`ansi_screen.odin`: `screen := ui.AnsiScreenMake(cells[:], 80, 24)`, `ui.AnsiScreenWrite(&screen, bytes)` (in any pieces: an escape sequence or a letter may be cut between two
+writes), `ui.UiAnsiScreen(&ctx, &screen)`. The caller owns the cells (`ui.AnsiCell`: a letter and its style), nothing is allocated. Read: letters (UTF-8, one cell each),
+`\r \n \b \t`, the cursor moves (`A B C D E F G H f d s u`, ESC 7 and 8), erasing (`J K X P @`, an erased cell keeps the ground that is set), inserting and deleting lines
+(`L M`), reverse index, reset, and the styles of `UiAnsiText`. Modes, titles and character sets are skipped. No scrollback, no wide characters, no alternate screen;
+the cursor is a block over its cell. `AnsiScreenRow` gives the text of a row (a test, a copy). Selection of the cells is not done.
 
 ## Editing commands for a text
 `textformat.odin`: what the buttons of an editor do to the text of a `ui.UiTextArea` or `ui.UiTextField` from outside of it. `ui.UiTextWrap(&ctx, id, buffer[:], &length,

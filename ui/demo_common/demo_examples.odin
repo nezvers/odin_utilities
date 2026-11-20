@@ -112,6 +112,11 @@ State :: struct {
     command_length: int,
     command_id: ui.Id,
     term_follow: int,
+    term_mode: int,             // 0 the log, 1 the screen of cells
+    screen_cells: [SCREEN_COLUMNS * SCREEN_ROWS]ui.AnsiCell,
+    screen: ui.AnsiScreen,
+    ticks: int,
+    tick_id: ui.Id,
     // 28_lines
     turn: f32,                  // the angle of the transform box, degrees
     march: bool,
@@ -171,7 +176,10 @@ init :: proc(ctx: ^kit.Context) {
     state.arrived = -1
     state.paper, state.page = 1, 0
     state.ratings = {3, 0}
-    state.term_count, state.command_length = 0, 0
+    state.term_count, state.command_length, state.term_mode, state.ticks = 0, 0, 0, 0
+    state.screen = ui.AnsiScreenMake(state.screen_cells[:], SCREEN_COLUMNS, SCREEN_ROWS)
+    ui.AnsiScreenWrite(&state.screen, transmute([]u8)string(SCREEN_START))
+    screen_progress()
     for line in TERM_SEED { term_add(line) }
     state.turn, state.march = 12, false
     state.folder, state.file_parents, state.spring_seconds, state.spring_over = 0, {0, 0, 1}, 0.75, -1
@@ -908,6 +916,7 @@ TermLine :: struct {
     text: [112]u8,
     length: int,
 }
+TERM_MODES: [2]string = {"Log", "Screen"}
 TERM_SEED: [9]string = {
     "\x1b[2m$\x1b[0m odin test ui -strict-style -vet",
     "\x1b[1;32m   Compiling\x1b[0m ui (247 tests)",
@@ -931,9 +940,56 @@ term_add :: proc(text: string) {
     state.term_follow = 3
 }
 
+// The screen of cells: a program that puts things where it wants them with the cursor (the header with a ground to the end of the line, columns by a move to a
+// column, a progress line that is drawn again in place). Its text is written to the screen as the program would write it.
+SCREEN_COLUMNS :: 56
+SCREEN_ROWS :: 11
+SCREEN_START :: "\x1b[2J\x1b[H\x1b[1;97;44m top - 3 tasks, load 0.42\x1b[K\x1b[0m\r\n" +
+    "\x1b[2m  PID\x1b[12GNAME\x1b[32GCPU\x1b[42GMEM\x1b[0m\r\n" +
+    "  101\x1b[12Gcompiler\x1b[32G\x1b[32m 38%\x1b[0m\x1b[42G210M\r\n" +
+    "  102\x1b[12Gtest runner\x1b[32G\x1b[33m 12%\x1b[0m\x1b[42G 96M\r\n" +
+    "  103\x1b[12Gshell\x1b[32G\x1b[2m  0%\x1b[0m\x1b[42G  8M\r\n" +
+    "\x1b[3;12H\x1b[1mcompiler\x1b[0m"
+
+// The progress line of the screen: put at the row of the bottom, the old one erased, `ticks` of 20 steps done
+screen_progress :: proc() {
+    line: [80]u8
+    count: int
+    put :: proc(line: ^[80]u8, count: ^int, text: string) {
+        count^ += copy(line[count^:], text)
+    }
+    put(&line, &count, "\x1b[10;1H\x1b[2K building [")
+    for step in 0 ..< 20 { put(&line, &count, "#" if step < state.ticks else ".") }
+    put(&line, &count, "] ")
+    percent: [4]u8 = {u8('0' + state.ticks * 5 / 100 % 10) if state.ticks * 5 >= 100 else ' ', u8('0' + state.ticks * 5 / 10 % 10) if state.ticks * 5 >= 10 else ' ', u8('0' + state.ticks * 5 % 10), '%'}
+    put(&line, &count, string(percent[:]))
+    put(&line, &count, "\x1b[11;1H")
+    ui.AnsiScreenWrite(&state.screen, line[:count])
+}
+
 terminal :: proc(c: ^ui.Context) {
     if stage(c, "terminal", {700, 440}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(20)}) {
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 12, align = {y = .CENTER}}})
         ui.UiTitle(c, "Terminal", 1.25)
+        ui.UiSegmented(c, "##term mode", TERM_MODES[:], &state.term_mode)
+        if state.term_mode == 1 {
+            state.tick_id = ui.UiId(c, "Tick##screen")
+            if ui.UiTagged(c, "ghost") {
+                if ui.UiButton(c, "Tick##screen") {
+                    state.ticks = min(state.ticks + 1, 20)
+                    screen_progress()
+                }
+            }
+        }
+        ui.ElementClose(c)
+        if state.term_mode == 1 {
+            ui.UiPushTag(c, "flat")
+            ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, padding = ui.PaddingAll(10)}, draw = {kind = .PANEL, name = "code"}})
+            ui.UiPopTag(c)
+            ui.UiAnsiScreen(c, &state.screen, true)
+            ui.ElementClose(c)
+            return
+        }
         screen: ui.Id = ui.UiId(c, "##screen")
         if state.term_follow > 0 {
             ui.UiScrollSet(c, screen, 1e9)
@@ -1210,6 +1266,13 @@ draw :: proc(ctx: ^kit.Context) {
 
 // The script finds the widgets by where they were in the last frame: the pages are laid out by the widths of their texts
 target: ui.Vec2
+
+// `target` is the middle of the element with an id
+ui_element_center :: proc(id: ui.Id) -> bool {
+    rect, found := ui.UiElementRect(&state.app.ctx, id)
+    target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    return found
+}
 
 // `target` is the middle of a button of the editor
 format_target :: proc(index: int) -> bool {
@@ -1832,5 +1895,19 @@ script: []kit.Step = {
     kit.Tap(.ENTER),
     kit.Wait(5),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.term_count == len(TERM_SEED) + 2 && state.command_length == 0 && shown("   247 tests", "mono") }, "the command and its answer are on the screen, which followed"),
+    // the screen of cells: a program that moves the cursor; Tick redraws its progress line in place
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.SEGMENT, "Screen") }, "the Screen segment"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown(" top - 3 tasks, load 0.42", "strong") && shown("compiler", "strong") && shown(" building [....................]   0%", "mono") }, "the screen shows what the program put in its places"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.tick_id != 0 && ui_element_center(state.tick_id) }, "the Tick button"),
+    kit.ClickAt(&target),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown(" building [##..................]  10%", "mono") }, "the progress line was drawn again in place"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { state.app.ctx.time = 0; return true }, "the cursor shows"),
+    kit.Capture("examples_terminal_screen"),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
