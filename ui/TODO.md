@@ -83,12 +83,14 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] (was) Runs of several styles in one wrapped text (bold, italic, code and links inside of a paragraph: the measure proc needs the face, the wrap has to break between runs); `UiMarkdown` would then draw emphasis instead of only taking its marks away
 - [x] The desktop shell examples of Baldr (15_control_centre, 16_launcher, 18_dock, 13_taskbar, 24_desktop, 12_applet) remade as the `shell` demo: the windows, workspaces and applets are plain data, not a compositor
 - [x] 31_emoji remade as the `emoji` demo: the picker in a popover, recents, skin tone, `UiTextInsert`, every emoji drawn from shapes (no color emoji font)
-- [ ] (high) The cell screen writes 45 MB/s of plain ASCII lines and 29 MB/s with colors (22 and 35 ns per byte, `AnsiScreenWrite`, 200 x 50, 9950X, `-o:speed`; measured 2026-11-21);
-      ghostty does ASCII at memory speed. Where it goes: a state machine step per byte, `screenPut` per character (the width call, the join test, `screenBreakPair` on every cell, a 36 byte
-      struct written per cell). Ghostty's shape, in order: (1) a run scan: from the ground state find the printable ASCII run up to the next control or ESC (the `simd` library's
-      `ScanText`, a table or SWAR scan before it exists) and hand the whole run to `screenPutRun`; (2) `screenPutRun` checks the modes once and fills a row with a tight loop (no width
-      call below 0x100, no break check when the cells under it are plain), wrapping at the margin; (3) a control character or a non ASCII byte goes back to the per character path.
-      Keep the output identical: the tests of `ansi_screen_test.odin` plus a test that writes the same random text through both paths and compares the cells.
+- [x] The cell screen write path (measured 2026-11-21, 200 x 50, 9950X, `odin run ui/tool/ansi_bench -o:speed`, MB/s before -> after): long ASCII lines 46 -> 379, short lines (ls like)
+      13 -> 143, colors every 25 bytes 28 -> 254, wide letters and emoji 36 -> 207, cursor moves and erase 95 -> 97. The first guess (a run fill for printable ASCII, `screenPutRun`, ghostty's
+      batching) gained only 20 percent: the cost was per line, not per byte, 2 microseconds a line, which was the `copy` of the whole screen (360 KB) at every scroll. The rows are a ring now
+      (`AnsiScreen.top`, `screenRowCells`): a scroll of the whole screen turns the ring and clears one row. `AnsiScreen.bytewise` keeps the byte at a time path as the reference: a test compares
+      both on 400 random streams (controls, escapes, wide letters, emoji sequences, regions, the alternate screen, pieces cut anywhere), and a model test checks the ring through 102 scrolls.
+- [ ] (medium) The cell screen: what is left. Plain ASCII is at 2.6 ns per byte, about 14 GB/s of cell stores: the 36 byte cell is the limit now (next item). Cursor movement and erase run at
+      10 ns per byte (95 MB/s): `screenSequence` splits the parameters again for every sequence; a table of the common sequences (`ESC [ K`, `ESC [ row ; column H`, `ESC [ m` with one
+      number) and no `[]int` parse for them. Then the run scan with the `simd` library (`ScanText`, `simd/TODO.md`): the scan is a byte loop today.
 - [ ] (medium) Shrink `AnsiCell` (36 bytes; ghostty's is 8): the four extra characters (16 bytes) are used by almost no cell: keep them in a small side table of the screen (a caller owned
       array of `(cell number, characters)` entries, a free list) and leave a flag and an index in the cell; the style (13 bytes) becomes an index into a table of the styles in use. A
       scroll copies cells, so size is speed. Measure the scroll and the write before and after; the history ring grows by the same factor.

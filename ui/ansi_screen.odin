@@ -14,6 +14,9 @@ import "core:unicode/utf8"
 //     ui.AnsiScreenWrite(&screen, output)
 //     ui.UiAnsiScreen(&ctx, &screen)
 //
+// Speed: printable ASCII goes into a row in one loop (`screenPutRun`), and the rows are a ring, so scrolling the whole screen copies nothing: 379 MB/s on long lines, 143 on `ls` like
+// output, 254 with colors (`odin run ui/tool/ansi_bench -o:speed`; `AnsiScreen.bytewise` is the byte at a time reference the fast path is tested against).
+//
 // What is read: the printable characters (UTF-8; a wide letter (Chinese, Japanese, Korean, emoji) takes two cells, a combining mark goes on the cell before it: see
 // `AnsiRuneWidth`), \r \n \b \t, the cursor moves (A B C D E F G H f d, s u, ESC 7 and
 // ESC 8), erasing (J, K, X, P, @), scroll regions (`ESC [ top ; bottom r`: a line feed, a reverse index, inserting and deleting lines and `S` / `T` work inside of the
@@ -74,6 +77,9 @@ AnsiScreen :: struct {
     margin_top: int,            // the scroll region: the first and the last row of it (the whole screen unless a program sets it)
     margin_bottom: int,
     join_at: int,               // 1 + the cell number (row * columns + column) where a joiner was read last, so that the emoji after it joins even when the cell has no room to keep the joiner (0: none)
+    top: int,                   // the row of `cells` that is row 0 of the screen: the rows are a ring, so a scroll of the whole screen moves this number and clears a row, it does not copy
+    alternate_top: int,         // the same for the buffer that is not shown
+    bytewise: bool,             // every byte goes through the state machine, even printable ASCII runs (the reference the fast path is tested against; a program has no reason to set it)
     ambiguous_wide: bool,       // characters of ambiguous width (box drawing, Greek, Cyrillic, arrows ...) take two cells, as in a terminal of an East Asian locale
     pushed: int,                // the lines the whole screen scrolled up (down: fewer): `pushed + row` is the number of a live row that stays with its text, see AnsiScreenSelect
     select_active: bool,        // a selection of cells exists
@@ -99,6 +105,7 @@ AnsiScreenMake :: proc(cells: []AnsiCell, columns: int, rows: int, history: []An
 // Every cell empty, the cursor at the top left, the style reset
 AnsiScreenClear :: proc(screen: ^AnsiScreen) {
     for &cell in screen.cells { cell = {} }
+    screen.top, screen.alternate_top = 0, 0
     screen.column, screen.row = 0, 0
     screen.style, screen.saved_style = {}, {}
     screen.saved_column, screen.saved_row = 0, 0
@@ -110,9 +117,19 @@ AnsiScreenClear :: proc(screen: ^AnsiScreen) {
     screen.margin_top, screen.margin_bottom = 0, screen.rows - 1
 }
 
+// The cells of a row of the screen: the row is a ring (`top`), each row is contiguous
+@(private)
+screenRowCells :: proc "contextless" (screen: ^AnsiScreen, row: int) -> []AnsiCell {
+    physical: int = screen.top + row
+    if physical >= screen.rows { physical -= screen.rows }
+    return screen.cells[physical * screen.columns:(physical + 1) * screen.columns]
+}
+
 @(private)
 screenCell :: proc "contextless" (screen: ^AnsiScreen, column: int, row: int) -> ^AnsiCell {
-    return &screen.cells[row * screen.columns + column]
+    physical: int = screen.top + row
+    if physical >= screen.rows { physical -= screen.rows }
+    return &screen.cells[physical * screen.columns + column]
 }
 
 // An empty cell keeps the ground of the style that erased it (a cleared line in a colored ground stays colored)
@@ -123,28 +140,46 @@ screenBlank :: proc "contextless" (screen: ^AnsiScreen) -> AnsiCell {
 
 @(private)
 screenClearRange :: proc "contextless" (screen: ^AnsiScreen, from_row: int, from_column: int, to_row: int, to_column: int) {
-    // [from, to) as cell numbers
-    from: int = clamp(from_row * screen.columns + from_column, 0, len(screen.cells))
-    to: int = clamp(to_row * screen.columns + to_column, 0, len(screen.cells))
+    // [from, to) as cell numbers of the screen (row by row): a row at a time, the rows are where the ring has them
+    columns: int = screen.columns
+    from: int = clamp(from_row * columns + from_column, 0, screen.rows * columns)
+    to: int = clamp(to_row * columns + to_column, 0, screen.rows * columns)
     blank: AnsiCell = screenBlank(screen)
-    for i in from ..< to { screen.cells[i] = blank }
+    for from < to {
+        row: int = from / columns
+        first: int = from - row * columns
+        last: int = min(to - row * columns, columns)
+        cells: []AnsiCell = screenRowCells(screen, row)
+        for i in first ..< last { cells[i] = blank }
+        from = (row + 1) * columns
+    }
 }
 
-// The lines `top` to `bottom` (inclusive) move up (`count` > 0) or down (`count` < 0); the lines that come in are empty
+// The lines `top` to `bottom` (inclusive) move up (`count` > 0) or down (`count` < 0); the lines that come in are empty. The whole screen is a turn of the ring (the first row
+// moves, one row is cleared: ghostty never copies the rows of a full scroll either); a region copies the rows that move.
 @(private)
 screenScroll :: proc "contextless" (screen: ^AnsiScreen, top: int, bottom: int, count: int) {
     height: int = bottom - top + 1
     shift: int = min(abs(count), height)
     if shift <= 0 { return }
-    columns: int = screen.columns
     blank: AnsiCell = screenBlank(screen)
-    if top == 0 && bottom == screen.rows - 1 { screen.pushed += shift if count > 0 else -shift }
+    if top == 0 && bottom == screen.rows - 1 {
+        screen.pushed += shift if count > 0 else -shift
+        if count > 0 {
+            screen.top = (screen.top + shift) % screen.rows
+            for i in screen.rows - shift ..< screen.rows { for &cell in screenRowCells(screen, i) { cell = blank } }
+        } else {
+            screen.top = (screen.top - shift + screen.rows) % screen.rows
+            for i in 0 ..< shift { for &cell in screenRowCells(screen, i) { cell = blank } }
+        }
+        return
+    }
     if count > 0 {
-        copy(screen.cells[top * columns:(bottom + 1 - shift) * columns], screen.cells[(top + shift) * columns:(bottom + 1) * columns])
-        for i in (bottom + 1 - shift) * columns ..< (bottom + 1) * columns { screen.cells[i] = blank }
+        for row in top ..< bottom + 1 - shift { copy(screenRowCells(screen, row), screenRowCells(screen, row + shift)) }
+        for row in bottom + 1 - shift ..< bottom + 1 { for &cell in screenRowCells(screen, row) { cell = blank } }
     } else {
-        copy(screen.cells[(top + shift) * columns:(bottom + 1) * columns], screen.cells[top * columns:(bottom + 1 - shift) * columns])
-        for i in top * columns ..< (top + shift) * columns { screen.cells[i] = blank }
+        for row := bottom; row >= top + shift; row -= 1 { copy(screenRowCells(screen, row), screenRowCells(screen, row - shift)) }
+        for row in top ..< top + shift { for &cell in screenRowCells(screen, row) { cell = blank } }
     }
 }
 
@@ -154,7 +189,7 @@ screenScroll :: proc "contextless" (screen: ^AnsiScreen, top: int, bottom: int, 
 screenHistoryPush :: proc "contextless" (screen: ^AnsiScreen) {
     if screen.history_rows == 0 || screen.alternate_active { return }
     columns: int = screen.columns
-    copy(screen.history[screen.history_head * columns:(screen.history_head + 1) * columns], screen.cells[:columns])
+    copy(screen.history[screen.history_head * columns:(screen.history_head + 1) * columns], screenRowCells(screen, 0))
     screen.history_head = (screen.history_head + 1) % screen.history_rows
     screen.history_count = min(screen.history_count + 1, screen.history_rows)
     if screen.back > 0 { screen.back = min(screen.back + 1, screen.history_count) }
@@ -322,6 +357,7 @@ screenAlternate :: proc "contextless" (screen: ^AnsiScreen, mode: int, enter: bo
     if len(screen.alternate) < len(screen.cells) || enter == screen.alternate_active { return }
     swap :: proc "contextless" (screen: ^AnsiScreen) {
         for i in 0 ..< len(screen.cells) { screen.cells[i], screen.alternate[i] = screen.alternate[i], screen.cells[i] }
+        screen.top, screen.alternate_top = screen.alternate_top, screen.top
     }
     screen.select_active, screen.select_dragging = false, false          // the cells it was on are another screen now
     if enter {
@@ -426,7 +462,7 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
         // delete letters: the rest of the row moves left
         column: int = min(screen.column, columns)
         amount: int = min(screenParameter(parameters, 0, 1), columns - column)
-        row: []AnsiCell = screen.cells[screen.row * columns:(screen.row + 1) * columns]
+        row: []AnsiCell = screenRowCells(screen, screen.row)
         copy(row[column:columns - amount], row[column + amount:columns])
         blank: AnsiCell = screenBlank(screen)
         for i in columns - amount ..< columns { row[i] = blank }
@@ -435,7 +471,7 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
         // insert blanks: the rest of the row moves right
         column: int = min(screen.column, columns)
         amount: int = min(screenParameter(parameters, 0, 1), columns - column)
-        row: []AnsiCell = screen.cells[screen.row * columns:(screen.row + 1) * columns]
+        row: []AnsiCell = screenRowCells(screen, screen.row)
         copy(row[column + amount:columns], row[column:columns - amount])
         blank: AnsiCell = screenBlank(screen)
         for i in column ..< column + amount { row[i] = blank }
@@ -458,86 +494,132 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
     }
 }
 
-// Writes bytes to the screen. The bytes may be cut anywhere: what is not whole yet waits for the next call.
-AnsiScreenWrite :: proc(screen: ^AnsiScreen, bytes: []u8) {
-    for byte in bytes {
-        // inside of an escape sequence
-        if screen.sequence_length > 0 {
-            if screen.sequence_length == 1 {
-                // the byte after ESC
-                switch byte {
-                case '[', ']', '(', ')', '*', '+':
-                    // CSI; OSC (a string up to BEL or ESC, skipped); a character set (one more byte, skipped)
-                    screen.sequence[1] = byte
-                    screen.sequence_length = 2
-                case '7':
-                    screen.saved_column, screen.saved_row, screen.saved_style = screen.column, screen.row, screen.style
-                    screen.sequence_length = 0
-                case '8':
-                    screen.column, screen.row, screen.style = screen.saved_column, screen.saved_row, screen.saved_style
-                    screen.sequence_length = 0
-                case 'M':
-                    if screen.row == screen.margin_top { screenScroll(screen, screen.margin_top, screen.margin_bottom, -1) } else if screen.row > 0 { screen.row -= 1 }
-                    screen.sequence_length = 0
-                case 'c':
-                    AnsiScreenClear(screen)
-                case:
-                    screen.sequence_length = 0                              // another escape: skipped with its letter
-                }
-                continue
-            }
-            if screen.sequence[1] == ']' {
-                // a string: ends at BEL, or at an ESC that starts the next sequence (the \ after it is skipped)
-                if byte == 0x07 {
-                    screen.sequence_length = 0
-                } else if byte == 0x1b {
-                    screen.sequence_length = 1
-                }
-            } else if screen.sequence[1] != '[' {
+// One byte through the state machine: an escape sequence, a letter of several bytes, a control character or a printable ASCII character. The slow path, and the reference that the
+// fast path of AnsiScreenWrite is tested against.
+@(private)
+screenByte :: proc(screen: ^AnsiScreen, byte: u8) {
+    // inside of an escape sequence
+    if screen.sequence_length > 0 {
+        if screen.sequence_length == 1 {
+            // the byte after ESC
+            switch byte {
+            case '[', ']', '(', ')', '*', '+':
+                // CSI; OSC (a string up to BEL or ESC, skipped); a character set (one more byte, skipped)
+                screen.sequence[1] = byte
+                screen.sequence_length = 2
+            case '7':
+                screen.saved_column, screen.saved_row, screen.saved_style = screen.column, screen.row, screen.style
                 screen.sequence_length = 0
-            } else if byte >= 0x40 && byte <= 0x7e {
-                screen.sequence[screen.sequence_length] = byte
-                screenSequence(screen, screen.sequence[1:screen.sequence_length + 1])
+            case '8':
+                screen.column, screen.row, screen.style = screen.saved_column, screen.saved_row, screen.saved_style
                 screen.sequence_length = 0
-            } else if screen.sequence_length < len(screen.sequence) - 1 {
-                screen.sequence[screen.sequence_length] = byte
-                screen.sequence_length += 1
-            } else {
-                screen.sequence_length = 0                                  // too long to be anything we know
+            case 'M':
+                if screen.row == screen.margin_top { screenScroll(screen, screen.margin_top, screen.margin_bottom, -1) } else if screen.row > 0 { screen.row -= 1 }
+                screen.sequence_length = 0
+            case 'c':
+                AnsiScreenClear(screen)
+            case:
+                screen.sequence_length = 0                              // another escape: skipped with its letter
             }
-            continue
+            return
         }
-        // inside of a letter of several bytes
-        if screen.letter_length > 0 {
-            if byte & 0xC0 != 0x80 {
-                screen.letter_length = 0                                    // it was cut: the new byte starts over
-            } else {
-                screen.letter[screen.letter_length] = byte
-                screen.letter_length += 1
-                if screen.letter_length == screen.letter_needed {
-                    character, _ := utf8.decode_rune(screen.letter[:screen.letter_length])
-                    screenPut(screen, character)
-                    screen.letter_length = 0
-                }
-                continue
+        if screen.sequence[1] == ']' {
+            // a string: ends at BEL, or at an ESC that starts the next sequence (the \ after it is skipped)
+            if byte == 0x07 {
+                screen.sequence_length = 0
+            } else if byte == 0x1b {
+                screen.sequence_length = 1
             }
+        } else if screen.sequence[1] != '[' {
+            screen.sequence_length = 0
+        } else if byte >= 0x40 && byte <= 0x7e {
+            screen.sequence[screen.sequence_length] = byte
+            screenSequence(screen, screen.sequence[1:screen.sequence_length + 1])
+            screen.sequence_length = 0
+        } else if screen.sequence_length < len(screen.sequence) - 1 {
+            screen.sequence[screen.sequence_length] = byte
+            screen.sequence_length += 1
+        } else {
+            screen.sequence_length = 0                                  // too long to be anything we know
         }
-        switch {
-        case byte == 0x1b:
-            screen.sequence[0] = byte
-            screen.sequence_length = 1
-        case byte == '\r': screen.column = 0
-        case byte == '\n': screenLineFeed(screen)
-        case byte == '\b': screen.column = max(min(screen.column, screen.columns - 1) - 1, 0)
-        case byte == '\t': screen.column = min((min(screen.column, screen.columns - 1) / 8 + 1) * 8, screen.columns - 1)
-        case byte < 0x20 || byte == 0x7f:
-        case byte < 0x80: screenPut(screen, rune(byte))
-        case byte >= 0xC0:
-            screen.letter[0] = byte
-            screen.letter_length = 1
-            screen.letter_needed = 2 if byte < 0xE0 else (3 if byte < 0xF0 else 4)
+        return
+    }
+    // inside of a letter of several bytes
+    if screen.letter_length > 0 {
+        if byte & 0xC0 != 0x80 {
+            screen.letter_length = 0                                    // it was cut: the new byte starts over
+        } else {
+            screen.letter[screen.letter_length] = byte
+            screen.letter_length += 1
+            if screen.letter_length == screen.letter_needed {
+                character, _ := utf8.decode_rune(screen.letter[:screen.letter_length])
+                screenPut(screen, character)
+                screen.letter_length = 0
+            }
+            return
         }
     }
+    switch {
+    case byte == 0x1b:
+        screen.sequence[0] = byte
+        screen.sequence_length = 1
+    case byte == '\r': screen.column = 0
+    case byte == '\n': screenLineFeed(screen)
+    case byte == '\b': screen.column = max(min(screen.column, screen.columns - 1) - 1, 0)
+    case byte == '\t': screen.column = min((min(screen.column, screen.columns - 1) / 8 + 1) * 8, screen.columns - 1)
+    case byte < 0x20 || byte == 0x7f:
+    case byte < 0x80: screenPut(screen, rune(byte))
+    case byte >= 0xC0:
+        screen.letter[0] = byte
+        screen.letter_length = 1
+        screen.letter_needed = 2 if byte < 0xE0 else (3 if byte < 0xF0 else 4)
+    }
+}
+
+// Writes bytes to the screen. The bytes may be cut anywhere: what is not whole yet waits for the next call.
+AnsiScreenWrite :: proc(screen: ^AnsiScreen, bytes: []u8) {
+    i: int
+    for i < len(bytes) {
+        byte: u8 = bytes[i]
+        // in the ground state (no escape sequence and no letter of several bytes under way) a run of printable ASCII needs no state machine: it goes into the cells of a row in one loop.
+        // Text is mostly this (ghostty finds the run with a vector scan and fills a row at a time: batching is most of its speed)
+        if byte >= 0x20 && byte < 0x7f && screen.sequence_length == 0 && screen.letter_length == 0 && !screen.bytewise {
+            end: int = i + 1
+            for end < len(bytes) && bytes[end] >= 0x20 && bytes[end] < 0x7f { end += 1 }
+            screenPutRun(screen, bytes[i:end])
+            i = end
+            continue
+        }
+        screenByte(screen, byte)
+        i += 1
+    }
+}
+
+// A run of printable ASCII (0x20 to 0x7e) written at the cursor: the same cells as one `screenPut` per character, without the join test, the width and the wrap test per
+// character. The cursor after the last cell of a row waits (the next character wraps first), as it does for a single character.
+@(private)
+screenPutRun :: proc "contextless" (screen: ^AnsiScreen, run: []u8) {
+    columns: int = screen.columns
+    style: AnsiState = screen.style
+    i: int
+    for i < len(run) {
+        if screen.column >= columns {
+            screen.column = 0
+            screenLineFeed(screen)
+        }
+        count: int = min(len(run) - i, columns - screen.column)
+        row_cells: []AnsiCell = screenRowCells(screen, screen.row)
+        at: int = screen.column
+        for k in 0 ..< count {
+            cell: ^AnsiCell = &row_cells[at + k]
+            // half of a wide letter that this character lands on: the other half becomes empty (screenBreakPair does it for a single character)
+            if cell.wide || cell.continuation { screenBreakPair(screen, at + k, screen.row) }
+            cell^ = {character = rune(run[i + k]), style = style}
+        }
+        screen.column += count
+        i += count
+    }
+    screen.join_at = 0
 }
 
 // A cell as UTF-8 at `out[count^:]`: its character (`character`: a space for an empty cell) and what goes with it. False when it does not fit (nothing of it is written).

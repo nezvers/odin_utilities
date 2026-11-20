@@ -1,6 +1,7 @@
 #+build !js
 package ui
 
+import "core:fmt"
 import "core:strings"
 import "core:testing"
 
@@ -352,7 +353,7 @@ test_wide_letters_take_two_cells_and_marks_go_on_the_cell_before :: proc(t: ^tes
     testing.expect_value(t, row(&screen, 0), "")
     AnsiScreenClear(&screen)
     write(&screen, "q\r\n\u6f22\r\n\r\n")
-    testing.expect(t, cells[0].wide && cells[1].continuation, "scrolling moves the pair as one")
+    testing.expect(t, screenCell(&screen, 0, 0).wide && screenCell(&screen, 1, 0).continuation, "scrolling moves the pair as one")
 }
 
 @(test)
@@ -876,4 +877,101 @@ test_ambiguous_characters_take_two_cells_when_the_screen_is_set_to_it :: proc(t:
     testing.expect(t, cells[2].wide && cells[3].continuation && cells[4].wide)
     write(&screen, "ab")
     testing.expect_value(t, cells[6].character, 'a')
+}
+
+// The fast path of AnsiScreenWrite (a run of printable ASCII into a row) gives the cells of the byte at a time reference, on random streams of text, controls, escape sequences, wide
+// letters, marks and emoji sequences, written in pieces that cut the sequences anywhere, on screens small enough to wrap and scroll all the time.
+@(test)
+test_the_run_fast_path_gives_the_same_cells_as_the_state_machine :: proc(t: ^testing.T) {
+    PIECES :: [?]string{
+        "hello", " world ", "x", "0123456789", "~~~~~~~~~~~~~~~~~~~~~~~~~~~~", " ", "The quick brown fox jumps over the lazy dog",
+        "\r", "\n", "\r\n", "\b", "\t", "\x07", "\x7f",
+        "\x1b[H", "\x1b[3;5H", "\x1b[2J", "\x1b[K", "\x1b[1K", "\x1b[2K", "\x1b[1m", "\x1b[31m", "\x1b[0m", "\x1b[7m", "\x1b[3L", "\x1b[2M", "\x1b[2P", "\x1b[2@", "\x1b[2X",
+        "\x1b[2;4r", "\x1b[r", "\x1b[2S", "\x1b[T", "\x1bM", "\x1b7", "\x1b8", "\x1b[?1049h", "\x1b[?1049l", "\x1b]0;a title\x07", "\x1b(B",
+        "日本", "é", "é", "😀", "👨‍👩", "🇩🇪", "❤️", "─", "α",
+    }
+    pieces := PIECES
+    state: u32 = 12345
+    next :: proc(state: ^u32) -> u32 {
+        state^ = state^ * 1664525 + 1013904223
+        return state^ >> 8
+    }
+    for round in 0 ..< 400 {
+        columns: int = 5 + int(next(&state) % 9)
+        rows: int = 3 + int(next(&state) % 4)
+        fast_cells := make([]AnsiCell, columns * rows)
+        slow_cells := make([]AnsiCell, columns * rows)
+        fast_history := make([]AnsiCell, columns * 6)
+        slow_history := make([]AnsiCell, columns * 6)
+        fast_alternate := make([]AnsiCell, columns * rows)
+        slow_alternate := make([]AnsiCell, columns * rows)
+        defer { delete(fast_cells); delete(slow_cells); delete(fast_history); delete(slow_history); delete(fast_alternate); delete(slow_alternate) }
+        fast: AnsiScreen = AnsiScreenMake(fast_cells, columns, rows, fast_history, fast_alternate)
+        slow: AnsiScreen = AnsiScreenMake(slow_cells, columns, rows, slow_history, slow_alternate)
+        slow.bytewise = true
+        ambiguous: bool = round % 5 == 0
+        fast.ambiguous_wide, slow.ambiguous_wide = ambiguous, ambiguous
+        stream: [dynamic]u8
+        defer delete(stream)
+        for _ in 0 ..< 60 {
+            append(&stream, ..transmute([]u8)pieces[next(&state) % len(pieces)])
+            if next(&state) % 11 == 0 { append(&stream, u8(next(&state) % 256)) }          // a stray byte: a lone continuation, a cut start
+        }
+        // the same bytes in pieces of every size
+        at: int
+        for at < len(stream) {
+            size: int = 1 + int(next(&state) % 23)
+            end: int = min(at + size, len(stream))
+            AnsiScreenWrite(&fast, stream[at:end])
+            AnsiScreenWrite(&slow, stream[at:end])
+            at = end
+        }
+        same: bool = fast.column == slow.column && fast.row == slow.row && fast.pushed == slow.pushed && fast.history_count == slow.history_count && fast.history_head == slow.history_head
+        for i in 0 ..< len(fast.cells) { if fast.cells[i] != slow.cells[i] { same = false } }
+        for i in 0 ..< len(fast.history) { if fast.history[i] != slow.history[i] { same = false } }
+        for i in 0 ..< len(fast.alternate) { if fast.alternate[i] != slow.alternate[i] { same = false } }
+        testing.expectf(t, same, "round %d (%d x %d): the cells differ", round, columns, rows)
+        if !same { break }
+    }
+}
+
+// The rows of the screen are a ring: after any number of scrolls the rows are the last lines written, the history has the ones before, a scroll down (reverse index) turns it back,
+// and a region scroll leaves the rows outside of it alone.
+@(test)
+test_the_ring_of_rows_keeps_the_lines_in_order_through_many_scrolls :: proc(t: ^testing.T) {
+    cells: [12 * 4]AnsiCell
+    history: [12 * 5]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 12, 4, history[:])
+    for line in 1 ..= 105 {
+        text: string = fmt.tprintf("line %d\r\n", line)
+        write(&screen, text)
+    }
+    // the cursor is on the empty last row: the three rows above are lines 103 to 105; 102 scrolls turned the ring
+    testing.expect_value(t, row(&screen, 0), "line 103")
+    testing.expect_value(t, row(&screen, 1), "line 104")
+    testing.expect_value(t, row(&screen, 2), "line 105")
+    testing.expect_value(t, row(&screen, 3), "")
+    testing.expect_value(t, screen.top, 102 % 4)
+    testing.expect_value(t, AnsiScreenHistory(&screen), 5)
+    AnsiScreenScroll(&screen, 5)                                            // all the way back: the oldest line kept is 98 (five before 103)
+    first: [32]u8
+    text: string = ""
+    for column in 0 ..< 12 {
+        cell: ^AnsiCell = AnsiScreenViewCell(&screen, column, 0)
+        if cell.character != 0 { first[len(text)] = u8(cell.character); text = string(first[:len(text) + 1]) }
+    }
+    testing.expect_value(t, text, "line 98")
+    AnsiScreenFollow(&screen)
+    // a reverse index at the top turns the ring the other way: the rows move down, a blank comes in at the top, the one at the bottom is gone
+    write(&screen, "\x1b[H\x1bM")
+    testing.expect_value(t, row(&screen, 0), "")
+    testing.expect_value(t, row(&screen, 1), "line 103")
+    testing.expect_value(t, row(&screen, 3), "line 105")
+    // a region in the middle scrolls by copying and leaves the first and the last row where they are
+    write(&screen, "\x1b[2;3r\x1b[2;1H\x1b[S")
+    testing.expect_value(t, row(&screen, 0), "")
+    testing.expect_value(t, row(&screen, 1), "line 104")                 // the region moved up by one
+    testing.expect_value(t, row(&screen, 2), "")
+    testing.expect_value(t, row(&screen, 3), "line 105")
+    testing.expect_value(t, AnsiScreenSelected(&screen, first[:]), "")
 }
