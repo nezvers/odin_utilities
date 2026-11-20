@@ -35,7 +35,7 @@ UiDragSource :: proc(ctx: ^Context, kind: string, payload: []u8) -> bool {
     if id == 0 { return false }
     if !ctx.drag.active && ctx.active == id && ctx.input.mouse_down {
         moved: Vec2 = ctx.input.mouse_position - ctx.press_position
-        if moved.x * moved.x + moved.y * moved.y >= DRAG_START_DISTANCE * DRAG_START_DISTANCE {
+        if moved.x * moved.x + moved.y * moved.y >= ctx.settings.drag_start_distance * ctx.settings.drag_start_distance {
             ctx.drag = {active = true, source = id, kind = IdFromString(kind)}
             ctx.drag.size = min(len(payload), DRAG_PAYLOAD_BYTES)
             copy(ctx.drag.data[:], payload[:ctx.drag.size])
@@ -75,7 +75,7 @@ UiDropHover :: proc(ctx: ^Context, kind: string) -> bool {
     return ctx.drag.active && ctx.drag.kind == IdFromString(kind) && ctx.hover == ctx.last_id
 }
 
-// A drag that moves less than this many pixels stands still
+// A drag that moves less than this many pixels stands still, by default (`UiSettings(&ctx).drag_rest_distance`)
 DRAG_REST_DISTANCE :: 4
 
 // The drag stood still over the widget declared just before: true once, when something of this kind has been held over it without moving for `seconds`. For what
@@ -89,7 +89,7 @@ UiDragRest :: proc(ctx: ^Context, kind: string, seconds: f32 = 0.75) -> bool {
         return false
     }
     moved: Vec2 = ctx.input.mouse_position - drag.rest_position
-    if drag.rest_id != id || moved.x * moved.x + moved.y * moved.y > DRAG_REST_DISTANCE * DRAG_REST_DISTANCE {
+    if drag.rest_id != id || moved.x * moved.x + moved.y * moved.y > ctx.settings.drag_rest_distance * ctx.settings.drag_rest_distance {
         drag.rest_id, drag.rest_position, drag.rest_time, drag.rest_fired = id, ctx.input.mouse_position, 0, false
         return false
     }

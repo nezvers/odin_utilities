@@ -444,9 +444,23 @@ The ui demos draw with Inter, JetBrains Mono and the Lucide icons (`ui/kit` load
 `odin run ui/demo_raylib -define:DEMO_TEST=true -define:DEMO_CAPTURE=true` compares frames with `demo_common/captures/<backend>/*.png`
 (see `demo_kit/README.md`). `UiCommands(&ctx)` is the third way: assert on what the style would be asked to draw, without pixels.
 
+## Settings and hotkeys
+`ui.UiSettings(&ctx)` gives the `Settings` of a context (`settings.odin`): `double_click_seconds` (0.35, also the time of a triple click), `multi_click_limit` (3: a
+triple click selects a paragraph; 2: a third quick press starts again; 1: no selection by double click), `drag_start_distance` (5 pixels) and `drag_rest_distance` (4),
+`extend_modifier` (Shift: held with a click or an arrow it extends a selection). A program with a settings page writes them; the widgets read them every frame.
+
+Hotkeys are a `ui.KeyMap` (`keymap.odin`): for every `Action` (accept, cancel, the arrows, page up and down, copy, paste, undo, rename ...) `KEYMAP_SLOTS` (4) bindings, any one
+of which does it. A `Binding` is a device (`KEYBOARD`, `MOUSE`, `GAMEPAD`), a code (the program's own number for the key or the button) and `ctrl`, `alt`, `shift` that are
+`ANY`, `YES` or `NO` (so Tab and Shift + Tab are two actions). `ui.KeyMapSet`, `KeyMapClear`, `KeyMapFreeSlot` and `KeyMapConflict` edit and check it; `ui.KeyMapActions` turns
+the inputs that went down in a frame into `Input.actions`. The kit (`ui_kit`) keeps the table of every demo in `ui_kit.KeyMapOf()` and starts from
+`ui_kit.KeyMapDefault()`, the keys that were fixed before: `ui.KeyMapSet(ui_kit.KeyMapOf(), .COPY, 0, {device = .KEYBOARD, code = u16(kit.Key.K), ctrl = .YES})`.
+The raylib and Karl2D glues of this library still have their keys fixed (see `TODO.md`).
+
 ## Known limits
 a text field edits one line of UTF-8 (a text area several, wrapped by words);
 an element that is declared after the floating element that names it as parent is not found (declare the parent first).
+
+- **Settings and hotkeys** (`settings.odin`, `keymap.odin`): plain numbers and a table read every frame, nothing is saved and nothing tells the program that they changed; a double click is by time and place, not by the button; a binding is one input with modifiers (no sequences, no two inputs at once, no hold); two actions on one input both fire unless the program checks `KeyMapConflict`; only the kit uses the table, the raylib and Karl2D glues have fixed keys.
 
 ### Widgets
 

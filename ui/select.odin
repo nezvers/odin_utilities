@@ -365,12 +365,13 @@ selectAfterLayout :: proc(ctx: ^Context) {
     }
     if input.mouse_pressed {
         // a press on a text that no widget took starts a selection, any other press lets the selection go
-        if best.found && best.direct && ctx.active == 0 && select.active && .SHIFT in input.modifiers {
+        if best.found && best.direct && ctx.active == 0 && select.active && ctx.settings.extend_modifier in input.modifiers {
             // with Shift: from where the selection started to here
             select.cursor, select.dragging = place, true
         } else if best.found && best.direct && ctx.active == 0 {
-            again: bool = ctx.time - select.press_time <= DOUBLE_CLICK_SECONDS && select.press_place.group == place.group && select.press_place.element == place.element && abs(select.press_place.offset - place.offset) <= 1
+            again: bool = ctx.time - select.press_time <= ctx.settings.double_click_seconds && select.press_place.group == place.group && select.press_place.element == place.element && abs(select.press_place.offset - place.offset) <= 1
             select.presses = select.presses + 1 if again else 1
+            if select.presses > max(ctx.settings.multi_click_limit, 1) { select.presses = 1 }         // a longer chain than the settings allow starts again
             select.press_time, select.press_place = ctx.time, place
             select.active, select.dragging = true, true
             select.anchor, select.cursor = place, place
@@ -584,7 +585,7 @@ UiTextSelectionClear :: proc(ctx: ^Context) {
 // UiBegin leaves these to the selection (they do not move the focus).
 @(private)
 selectKeysTaken :: proc(ctx: ^Context, input: Input) -> Actions {
-    if !ctx.select.active || .SHIFT not_in input.modifiers { return {} }
+    if !ctx.select.active || ctx.settings.extend_modifier not_in input.modifiers { return {} }
     focused: ^WidgetState = stateFind(ctx, ctx.focus)
     if focused != nil && focused.editing { return {} }
     taken: Actions = input.actions & {.LEFT, .RIGHT, .UP, .DOWN, .HOME, .END}

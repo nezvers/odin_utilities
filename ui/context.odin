@@ -77,6 +77,7 @@ Context :: struct {
     graph_minimaps: [UI_MAX_GRAPHS]GraphMinimapData,
     graph_minimap_count: int,
     clipboard: Clipboard,
+    settings: Settings,             // click times, drag distances (settings.odin)
     select: TextSelect,             // the selection of the text that is read (select.odin)
     combo_filter: [UI_COMBO_FILTER]u8,              // the text of the search field of the combo box that is open (widgets_combo.odin)
     combo_filter_length: int,
@@ -148,6 +149,7 @@ Context :: struct {
 UiInit :: proc(ctx: ^Context, storage: ^Storage($E, $C, $L, $T), measure: MeasureProc, user: rawptr = nil) {
     assert(measure != nil, "ui needs a text measuring proc")
     ctx^ = {}
+    ctx.settings = SettingsDefault()
     ctx.inspector.command_list.selected = VIRTUAL_NONE
     ctx.elements = storage.elements[:]
     ctx.children = storage.children[:]

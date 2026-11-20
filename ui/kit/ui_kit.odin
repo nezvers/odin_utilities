@@ -123,6 +123,72 @@ fillRounded :: proc(painter: ^ui_default.Painter, rect: ui.Rect, radius: f32, co
     kit.DrawCircle(ctx, {rect.x + rect.z - r, rect.y + rect.w - r}, r, color_kit)
 }
 
+// The table of hotkeys of the kit: which key, mouse button or button of a gamepad does which action of the ui. KeyMapDefault is what the keys were before they were a
+// table (Godot's default input map and the shortcuts of the editors); a program changes it with `ui.KeyMapSet` on `KeyMapOf()`.
+KeyMapDefault :: proc() -> ui.KeyMap {
+    table: ui.KeyMap
+    key :: proc(table: ^ui.KeyMap, action: ui.Action, slot: int, key: kit.Key, ctrl: ui.Tri = .ANY, alt: ui.Tri = .ANY, shift: ui.Tri = .ANY) {
+        ui.KeyMapSet(table, action, slot, {device = .KEYBOARD, code = u16(key), ctrl = ctrl, alt = alt, shift = shift})
+    }
+    key(&table, .ACCEPT, 0, .ENTER)
+    key(&table, .ACCEPT, 1, .SPACE)
+    key(&table, .SELECT, 0, .SPACE)
+    key(&table, .CANCEL, 0, .ESCAPE)
+    key(&table, .FOCUS_NEXT, 0, .TAB, shift = .NO)
+    key(&table, .FOCUS_PREV, 0, .TAB, shift = .YES)
+    key(&table, .UP, 0, .UP)
+    key(&table, .DOWN, 0, .DOWN)
+    // Alt + left and right turn (the timeline); with Ctrl as well they are plain arrows again
+    key(&table, .LEFT, 0, .LEFT, alt = .NO)
+    key(&table, .LEFT, 1, .LEFT, ctrl = .YES, alt = .YES)
+    key(&table, .RIGHT, 0, .RIGHT, alt = .NO)
+    key(&table, .RIGHT, 1, .RIGHT, ctrl = .YES, alt = .YES)
+    key(&table, .PAGE_UP, 0, .PAGE_UP)
+    key(&table, .PAGE_DOWN, 0, .PAGE_DOWN)
+    key(&table, .HOME, 0, .HOME)
+    key(&table, .END, 0, .END)
+    key(&table, .RENAME, 0, .F2)
+    key(&table, .COPY, 0, .C, ctrl = .YES)
+    key(&table, .CUT, 0, .X, ctrl = .YES)
+    key(&table, .PASTE, 0, .V, ctrl = .YES)
+    key(&table, .SELECT_ALL, 0, .A, ctrl = .YES)
+    key(&table, .DUPLICATE, 0, .D, ctrl = .YES)
+    key(&table, .UNDO, 0, .Z, ctrl = .YES, shift = .NO)
+    key(&table, .REDO, 0, .Z, ctrl = .YES, shift = .YES)
+    key(&table, .REDO, 1, .Y, ctrl = .YES)
+    key(&table, .INVERT, 0, .I, ctrl = .NO, alt = .YES)
+    key(&table, .REVERSE, 0, .R, ctrl = .NO, alt = .YES)
+    key(&table, .REPEAT, 0, .D, ctrl = .NO, alt = .YES)
+    key(&table, .ROTATE_LEFT, 0, .LEFT, ctrl = .NO, alt = .YES)
+    key(&table, .ROTATE_RIGHT, 0, .RIGHT, ctrl = .NO, alt = .YES)
+    return table
+}
+
+@(private)
+keymap: ui.KeyMap
+@(private)
+keymap_ready: bool
+
+// The table of hotkeys that every frame of the kit goes through; the default one until a program changes it
+KeyMapOf :: proc() -> ^ui.KeyMap {
+    if !keymap_ready {
+        keymap, keymap_ready = KeyMapDefault(), true
+    }
+    return &keymap
+}
+
+// What went down in this frame, for the table: the keys and the mouse buttons of the kit input
+@(private)
+inputProbe :: proc(user: rawptr, device: ui.InputDevice, code: u16) -> bool {
+    source: ^kit.Input = cast(^kit.Input)user
+    switch device {
+    case .KEYBOARD: return kit.Key(u8(code)) in source.keys_pressed
+    case .MOUSE: return kit.MouseButton(u8(code)) in source.mouse_pressed
+    case .GAMEPAD, .NONE: return false
+    }
+    return false
+}
+
 // The input of a kit frame for the ui. A pointer over the menu of the kit (ctx.ui_hover) is not for the ui. `scale` is the UI scale: the pointer is given in logical units.
 InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
     source: ^kit.Input = &ctx.input
@@ -139,25 +205,10 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
         result.mouse_pressed = false
     }
     if kit.ShiftDown(source) { result.modifiers += {.SHIFT} }
-    if .F2 in source.keys_pressed { result.actions += {.RENAME} }
     if .LEFT_ALT in source.keys_down || .RIGHT_ALT in source.keys_down { result.modifiers += {.ALT} }
     if kit.CtrlDown(source) {
         result.modifiers += {.CTRL}
         result.text_count = 0               // Ctrl + a letter is a command, not text
-        if .C in source.keys_pressed { result.actions += {.COPY} }
-        if .X in source.keys_pressed { result.actions += {.CUT} }
-        if .V in source.keys_pressed { result.actions += {.PASTE} }
-        if .A in source.keys_pressed { result.actions += {.SELECT_ALL} }
-        if .D in source.keys_pressed { result.actions += {.DUPLICATE} }
-        if .Z in source.keys_pressed { result.actions += {.REDO} if .SHIFT in result.modifiers else {.UNDO} }
-        if .Y in source.keys_pressed { result.actions += {.REDO} }
-    }
-    if .ALT in result.modifiers && !kit.CtrlDown(source) {
-        if .I in source.keys_pressed { result.actions += {.INVERT} }
-        if .R in source.keys_pressed { result.actions += {.REVERSE} }
-        if .D in source.keys_pressed { result.actions += {.REPEAT} }
-        if .LEFT in source.keys_pressed { result.actions = result.actions + {.ROTATE_LEFT} - {.LEFT} }
-        if .RIGHT in source.keys_pressed { result.actions = result.actions + {.ROTATE_RIGHT} - {.RIGHT} }
     }
     for i in 0 ..< int(result.text_count) {
         result.text[i] = source.text[i]
@@ -169,20 +220,8 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
     for key in ui.Key {
         if keys[key] in source.keys_pressed { result.keys += {key} }
     }
-    // the default actions of Godot's input map
-    pressed: ^kit.KeySet = &source.keys_pressed
-    if .ENTER in pressed^ || .SPACE in pressed^ { result.actions += {.ACCEPT} }
-    if .SPACE in pressed^ { result.actions += {.SELECT} }
-    if .ESCAPE in pressed^ { result.actions += {.CANCEL} }
-    if .TAB in pressed^ { result.actions += {.FOCUS_PREV} if kit.ShiftDown(source) else {.FOCUS_NEXT} }
-    if .UP in pressed^ { result.actions += {.UP} }
-    if .DOWN in pressed^ { result.actions += {.DOWN} }
-    if .LEFT in pressed^ { result.actions += {.LEFT} }
-    if .RIGHT in pressed^ { result.actions += {.RIGHT} }
-    if .PAGE_UP in pressed^ { result.actions += {.PAGE_UP} }
-    if .PAGE_DOWN in pressed^ { result.actions += {.PAGE_DOWN} }
-    if .HOME in pressed^ { result.actions += {.HOME} }
-    if .END in pressed^ { result.actions += {.END} }
+    // the actions: what the table of hotkeys says (KeyMapOf), by the keys, the mouse buttons and the buttons of a gamepad that went down in this frame
+    result.actions += ui.KeyMapActions(KeyMapOf(), inputProbe, source, result.modifiers)
     return result
 }
 

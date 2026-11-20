@@ -25,7 +25,7 @@ Interaction :: struct {
     rect: Rect,         // where it was at the end of the last frame (0 the first time)
 }
 
-// The time between two presses that makes a double click
+// The time between two presses that makes a double click, by default (`UiSettings(&ctx).double_click_seconds` changes it)
 DOUBLE_CLICK_SECONDS :: 0.35
 
 // Everything declared inside of this block is disabled: drawn greyed out, no pointer, no focus (a group of widgets that do not apply now):
@@ -79,7 +79,7 @@ widgetBehavior :: proc(ctx: ^Context, id: Id, disabled: bool = false) -> Interac
     if result.hovered && ctx.input.mouse_pressed {
         ctx.active = id
         ctx.focus = id
-        result.double_clicked = ctx.last_press_id == id && ctx.time - ctx.last_press_time <= DOUBLE_CLICK_SECONDS
+        result.double_clicked = ctx.last_press_id == id && ctx.time - ctx.last_press_time <= ctx.settings.double_click_seconds
         ctx.last_press_id = id
         ctx.last_press_time = ctx.time
         ctx.press_position = ctx.input.mouse_position

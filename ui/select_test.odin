@@ -1178,3 +1178,75 @@ test_a_word_over_the_runs_of_a_paragraph_is_one_word :: proc(t: ^testing.T) {
     testing.expect_value(t, selected(test), "ab relatly")
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_the_click_chain_and_the_key_that_extends_a_selection_are_settings :: proc(t: ^testing.T) {
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 3 { frame(test, away) }
+    selected :: proc(test: ^Test) -> string {
+        text, _ := UiTextSelected(&test.ctx)
+        return text
+    }
+    presses :: proc(test: ^Test, point: Vec2, count: int, gap: int = 0) {
+        for _ in 0 ..< 40 { frame(test, {mouse_position = {-100, -100}}) }
+        frame(test, {mouse_position = point})
+        for _ in 0 ..< count {
+            frame(test, {mouse_position = point, mouse_down = true, mouse_pressed = true})
+            frame(test, {mouse_position = point, mouse_released = true})
+            for _ in 0 ..< gap { frame(test, {mouse_position = point}) }
+        }
+    }
+    in_line: Vec2 = letter(test, "second line here", 9)
+    settings: ^Settings = UiSettings(&test.ctx)
+    // the defaults: a word at the second press, the text at the third
+    presses(test, in_line, 2)
+    testing.expect_value(t, selected(test), "line")
+    presses(test, in_line, 3)
+    testing.expect_value(t, selected(test), "second line here")
+    // a chain of two: the third press starts again
+    settings.multi_click_limit = 2
+    presses(test, in_line, 2)
+    testing.expect_value(t, selected(test), "line")
+    presses(test, in_line, 3)
+    testing.expect_value(t, selected(test), "")
+    // a chain of one: no double click selection at all
+    settings.multi_click_limit = 1
+    presses(test, in_line, 2)
+    testing.expect_value(t, selected(test), "")
+    settings.multi_click_limit = 3
+    // a longer time between the presses: slow hands still make the double click
+    presses(test, in_line, 2, 30)                                                   // half a second between the presses
+    testing.expect_value(t, selected(test), "")
+    settings.double_click_seconds = 1
+    presses(test, in_line, 2, 30)
+    testing.expect_value(t, selected(test), "line")
+    settings.double_click_seconds = DOUBLE_CLICK_SECONDS
+    // the key that extends a selection: Ctrl instead of Shift
+    settings.extend_modifier = .CTRL
+    for _ in 0 ..< 40 { frame(test, away) }
+    drag(test, letter(test, "hello world", 0), letter(test, "hello world", 5))
+    testing.expect_value(t, selected(test), "hello")
+    far: Vec2 = letter(test, "second line here", 6)
+    for _ in 0 ..< 40 { frame(test, away) }
+    frame(test, {mouse_position = far, modifiers = {.SHIFT}})
+    frame(test, {mouse_position = far, mouse_down = true, mouse_pressed = true, modifiers = {.SHIFT}})
+    frame(test, {mouse_position = far, mouse_released = true, modifiers = {.SHIFT}})
+    testing.expect_value(t, selected(test), "")                                     // Shift is a plain press now
+    drag(test, letter(test, "hello world", 0), letter(test, "hello world", 5))
+    for _ in 0 ..< 40 { frame(test, away) }
+    frame(test, {mouse_position = far, modifiers = {.CTRL}})
+    frame(test, {mouse_position = far, mouse_down = true, mouse_pressed = true, modifiers = {.CTRL}})
+    frame(test, {mouse_position = far, mouse_released = true, modifiers = {.CTRL}})
+    testing.expect_value(t, selected(test), "hello world\nsecond")
+    // and the arrows with it
+    frame(test, {mouse_position = {-100, -100}, actions = {.RIGHT}, modifiers = {.SHIFT}})
+    testing.expect_value(t, selected(test), "hello world\nsecond")
+    frame(test, {mouse_position = {-100, -100}, actions = {.RIGHT}, modifiers = {.CTRL}})
+    frame(test, away)
+    testing.expect_value(t, selected(test), "hello world\nsecond ")
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

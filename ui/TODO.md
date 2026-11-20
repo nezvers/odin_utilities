@@ -53,6 +53,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Completion: the part of an item that matched is drawn, items are ranked (prefix, start of a part, elsewhere)
 - [x] Selection of read text: a double click and a drag select by words
 - [x] Selection of read text: a triple click and a drag select by paragraphs; a word over the runs of a paragraph is one word
+- [x] Settings of the ui (click times, drag distances, the key that extends a selection) and a `KeyMap` of hotkeys that the kit uses
+- [ ] (medium) The raylib and Karl2D glues use a `KeyMap` for their actions as the kit does (their keys are fixed in `actionsPoll`)
 - [ ] (medium) Screen of cells: selection of cells, a width table that follows Unicode more closely (ambiguous widths, grapheme clusters, emoji sequences)
 - [x] Editing commands for a text (`UiTextWrap`, `UiTextLinePrefix`) and Baldr's 08_rich as a toolbar over the Markdown source
 - [x] Dashed lines and paths for overlays (`default_style/lines.odin`) and Baldr's 28_lines
