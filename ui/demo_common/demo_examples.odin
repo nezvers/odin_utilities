@@ -76,6 +76,7 @@ State :: struct {
     note: [1024]u8,
     note_length: int,
     source_id: ui.Id,
+    arrived: int,               // the note is shown as it arrives (26_reply): how much of it is there, -1 when it is all shown
     opened: [64]u8,             // the address of the link that was clicked last
     opened_length: int,
     // 32_chat
@@ -149,6 +150,7 @@ init :: proc(ctx: ^kit.Context) {
     state.lab_switch = true
     state.fruit = 2
     state.note_length = copy(state.note[:], NOTE)
+    state.arrived = -1
     state.paper, state.page = 1, 0
     state.ratings = {3, 0}
     state.mention_length, state.mentions, state.mentioned = 0, 0, -1
@@ -395,15 +397,29 @@ jobs :: proc(c: ^ui.Context, delta_time: f32) {
 
 // 19_markdown: the source on the left, how it reads on the right. Every change of the text is on the right in the same frame: the view reads the text again each time.
 markdown :: proc(c: ^ui.Context) {
+    // 26_reply: Stream shows the note as a reply arrives, some characters a frame (a fixed number: the page has no clock). The view reads what is there every
+    // frame, so half a table or an open fence is shown as what it is so far.
+    STREAM_STEP :: 12
+    if state.arrived >= 0 {
+        state.arrived += STREAM_STEP
+        if state.arrived >= state.note_length { state.arrived = -1 }
+    }
     if stage(c, "markdown", {960, 560}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(20)}) {
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 8, align = {y = .CENTER}}})
         ui.UiTitle(c, "Markdown", 1.25)
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}}})
+        ui.ElementClose(c)
+        if ui.UiTagged(c, "ghost") {
+            if ui.UiButton(c, "Stream", {}, state.arrived >= 0, ui_default.LucideIcon(.PLAY)) { state.arrived = 0 }
+        }
+        ui.ElementClose(c)
         ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, gap = 16}})
         state.source_id = ui.UiId(c, "Markdown source##note")
         // the source in the code face: its lines are measured in that face too, so they wrap where they are drawn
         if ui.UiTagged(c, "mono") { ui.UiTextArea(c, "Markdown source##note", state.note[:], &state.note_length, {ui.Percent(0.45), ui.Grow()}) }
         if ui.UiScroll(c, "##preview", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, padding = {0, 14, 0, 0}}) {
             // a clicked link gives its address: a program opens it, here it is shown (it is a part of the note, so it is copied before the note changes)
-            address, clicked := ui.UiMarkdown(c, string(state.note[:state.note_length]))
+            address, clicked := ui.UiMarkdown(c, string(state.note[:state.arrived if state.arrived >= 0 else state.note_length]))
             if clicked { state.opened_length = copy(state.opened[:], address) }
             if state.opened_length > 0 { ui.UiLabelDim(c, ui.UiFormat(c, "Link clicked: %s", string(state.opened[:state.opened_length]))) }
         }
@@ -1248,6 +1264,13 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.opened[:state.opened_length]) == "ui/README.md" && shown("Link clicked: ui/README.md", "dim") }, "a clicked link gives its address"),
+    // Stream: the note arrives some characters a frame and is shown at every length
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.BUTTON, "Stream") }, "the Stream button is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.arrived > 0 && state.arrived < 100 && shown("Release notes", "title") && !shown("the README", "link") }, "the start of the note is shown, its end is not there yet"),
+    kit.Wait(60),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.arrived == -1 && shown("the README", "link") && ui.UiProblems(&state.app.ctx) == ui.Problems{} }, "the whole note arrived"),
 
     // chat: bubbles with styles inside, the list at its newest message; a sent message and its answer are added and the list follows
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(9) }, "the Chat tab is in the bar"),

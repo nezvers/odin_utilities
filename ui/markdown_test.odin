@@ -208,3 +208,44 @@ test_markdown_reads_and_shows_a_table :: proc(t: ^testing.T) {
     testing.expect(t, name.rect.x == a.rect.x && a.rect.x == escaped.rect.x && size.rect.x == one.rect.x && one.rect.x == three.rect.x && size.rect.x > name.rect.x, "the columns line up")
     testing.expect(t, a.rect.y > name.rect.y && escaped.rect.y > a.rect.y && link.rect.y > escaped.rect.y, "a row under the other")
 }
+
+// A text that arrives a few characters at a time (a reply that is streamed) is shown at every length: half a fence, half a link, half a table
+@(test)
+test_markdown_is_shown_at_every_length_of_a_text :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(256, 512, 128, 8192),
+        ctx: Context,
+        style: Style,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    EXTRA :: "| a | b |\n|---|---|\n| **c** | [d](e) |\n\ntext with `code`, a [link](address), **strong *both* strong**, snake_case and a \\* star\n> quote [l](m)\n- item `x`\n  - nested **y**"
+    sources: [2]string = {SAMPLE, EXTRA}
+    for source in sources {
+        for length in 0 ..= len(source) {
+            part: string = source[:length]
+            // the reader always ends, and every block is inside of the text
+            cursor: int
+            blocks: int
+            for {
+                block, next, ok := MarkdownNext(part, cursor)
+                if !ok { break }
+                testing.expectf(t, next > cursor, "length %d: the reader goes on", length)
+                if next <= cursor { break }
+                cursor = next
+                blocks += 1
+                testing.expect(t, len(block.text) <= length)
+            }
+            testing.expect(t, blocks <= length)
+            // two frames: the second one is the rich text with the widths of the first
+            for _ in 0 ..< 2 {
+                UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 900}, &test.style)
+                if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(300), {}}) { UiMarkdown(&test.ctx, part) }
+                UiEnd(&test.ctx)
+            }
+            testing.expectf(t, UiProblems(&test.ctx) == Problems{}, "length %d: %v", length, UiProblems(&test.ctx))
+        }
+    }
+}

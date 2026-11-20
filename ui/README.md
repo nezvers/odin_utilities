@@ -178,7 +178,8 @@ cards in a scrolling region, a ghost button on each), `17_toasts` (raised cards 
 a menu that opens from a button: `ui.UiMenu` inside of a button tag, tooltips, a card that takes a click while the cross in it keeps its own, a dialog) and `21_charts` (the
 same numbers as a line, an area, bars and a scatter with `ui.UiChart`) and `09_jobs` (three downloads with their progress while the page stays live: the original
 runs each on a thread that posts messages, here a download is a number that grows with the time of the frame) and `19_markdown` (a text in Markdown and how it reads, side
-by side, with `ui.UiTextArea` and `ui.UiMarkdown`; the original is an editor that shows the styles while one types) and `32_chat` with the bubbles of `29_styled_text`
+by side, with `ui.UiTextArea` and `ui.UiMarkdown`; the original is an editor that shows the styles while one types; its Stream button is `26_reply`: the note shown
+as it arrives, some characters a frame) and `32_chat` with the bubbles of `29_styled_text`
 (bubbles as wide as their text with styles inside, a list that stays at its newest message, a field that sends; the panel tags "bubble" and "mine" of the default style) and `33_reading` (a page in Paper, Sepia, Dusk or Night with its
 controls in the same colors, inside of a window that keeps its theme: a theme area) `20_shortcuts` (shortcuts that are set by pressing them) `07_code` (the text area with a highlighter for Odin) and `37_custom` (a star rating made in the demo: the pattern for a widget of one's own, with
 `ui.UiInteract`, an element of the kind CUSTOM whose draw proc uses `ui_default.PainterOf(ctx)`, and `ui.UiNavBlock` for the arrows it takes itself) and `34_mentions` (a text whose `@` offers the files of a project). The texts
