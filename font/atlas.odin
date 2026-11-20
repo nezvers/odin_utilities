@@ -150,12 +150,27 @@ AtlasClear :: proc(atlas: ^Atlas) {
     atlas.version += 1
 }
 
-// Bakes every glyph of a text. False when the atlas is full (clear it and ask again: a text of more different glyphs than an atlas holds cannot be drawn).
+// Bakes every glyph of a text. False when the atlas is full (clear it and ask again: a text of more different glyphs than an atlas holds cannot be drawn at once). A text repeats a few
+// dozen characters: the ASCII ones are looked at once each (a set of 128 bits), and the others are decoded by the rule of the layout (one missing glyph for a bad part).
 AtlasReserveText :: proc(atlas: ^Atlas, text: string, face: int = 0) -> bool {
     font: ^Font = AtlasFace(atlas, face)
-    for character in text {
+    seen: u128
+    i: int
+    for i < len(text) {
+        b: u8 = text[i]
+        if b < 0x80 {
+            bit: u128 = u128(1) << b
+            if seen & bit == 0 {
+                seen |= bit
+                if _, ok := AtlasGlyph(atlas, int(font.ascii_glyph[b]), face); !ok { return false }
+            }
+            i += 1
+            continue
+        }
+        character, size := fontNext(text, i)
         glyph: int = FontResolve(font, character)
         if _, ok := AtlasGlyph(atlas, glyph, face); !ok { return false }
+        i += size
     }
     return true
 }

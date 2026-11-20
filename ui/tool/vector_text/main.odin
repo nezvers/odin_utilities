@@ -25,14 +25,14 @@ main :: proc() {
     defer rl.CloseWindow()
     rl.SetTargetFPS(60)
 
-    system: font_raylib.TextSystem
-    if !font_raylib.TextSystemInit(&system, FIRA, method) {
+    system: ^font_raylib.TextSystem = new(font_raylib.TextSystem)       // 500 KB: a text system holds a parsed font per face
+    if !font_raylib.TextSystemInit(system, FIRA, method) {
         fmt.eprintln("no text system")
         os.exit(1)
     }
     painter: ui_default.Painter
     ui_raylib.PainterInit(&painter)
-    ui_raylib.PainterUseVectorText(&painter, &system)
+    ui_raylib.PainterUseVectorText(&painter, system)
     style: ui.Style = ui_default.StyleMake()
     storage: ^ui.Storage(512, 1024, 128, 8192) = new(ui.Storage(512, 1024, 128, 8192))
     ctx: ^ui.Context = new(ui.Context)

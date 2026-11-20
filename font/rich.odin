@@ -32,7 +32,6 @@ package font
 // A tag that is not known is shown as it was written and counted in `unknown_tags`. `visible_characters` (RichDrawOptions) shows only the first glyphs: a typewriter.
 
 import "core:math"
-import "core:unicode/utf8"
 
 RICH_MAX_EFFECTS :: 4
 RICH_MAX_DEPTH :: 24
@@ -322,7 +321,7 @@ RichParse :: proc(rich: ^RichText, markup: string) -> bool {
 
     i: int
     for i < len(markup) {
-        character, width := utf8.decode_rune_in_string(markup[i:])
+        character, width := fontNext(markup, i)
         if character != '[' {
             if !append_glyph(rich, character, &current, &style_index) { fits = false; break }
             i += width

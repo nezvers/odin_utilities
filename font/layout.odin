@@ -8,7 +8,7 @@ package font
 //     count := font.TextQuads(&atlas, "Hello", {20, 100}, 32, vertices[:])         // the baseline starts at (20, 100), 32 pixels to the em
 
 import "core:math"
-import "core:unicode/utf8"
+import su "../simd"
 
 TextVertex :: struct {
     position: Vec2,             // pixels, y down
@@ -39,17 +39,18 @@ TextOptions :: struct {
 
 // A line break that fits: the width of the text from `from` to the next space or the end, in em units
 @(private)
-wordWidth :: proc(font: ^Font, text: string, from: int, previous_glyph: int) -> f32 {
+wordWidth :: proc(font: ^Font, text: string, from: int, previous_glyph: int, previous_character: rune) -> f32 {
     width: f32
     previous: int = previous_glyph
+    before: rune = previous_character
     i: int = from
     for i < len(text) {
-        character, size := utf8.decode_rune_in_string(text[i:])
+        character, size := fontNext(text, i)
         if character == ' ' || character == '\n' || character == '\t' { break }
-        glyph: int = FontResolve(font, character)
-        if previous != 0 { width += FontKerning(font, previous, glyph) }
-        width += FontAdvance(font, glyph)
-        previous = glyph
+        glyph, advance := fontMetrics(font, character)
+        if previous != 0 { width += fontPairKerning(font, before, previous, character, glyph) }
+        width += advance
+        previous, before = glyph, character
         i += size
     }
     return width
@@ -61,31 +62,45 @@ TextMeasure :: proc(font: ^Font, text: string, pixels_per_em: f32, options: Text
     lines: int = 1
     pen: f32
     previous: int
+    before: rune                                    // the character that `previous` is the glyph of
     wrap: f32 = options.wrap_width / pixels_per_em if options.wrap_width > 0 else 0
     tab: int = options.tab_columns if options.tab_columns > 0 else 4
-    space: f32 = FontAdvance(font, FontGlyph(font, ' '))
+    space: f32 = font.ascii_advance[' ']
+    bytes: []u8 = transmute([]u8)text
     i: int
     for i < len(text) {
-        character, size := utf8.decode_rune_in_string(text[i:])
+        // a run of printable ASCII without a wrap goes by the tables, a character at a time without a decode, a lookup or a switch
+        if wrap <= 0 && text[i] >= 0x20 && text[i] < 0x7f && (previous == 0 || before < 128) {
+            run: int = su.AsciiRun(bytes[i:])
+            for k in 0 ..< run {
+                c: u8 = bytes[i + k]
+                if previous != 0 { pen += FontKerningAscii(font, u8(before), c) }
+                pen += font.ascii_advance[c]
+                previous, before = int(font.ascii_glyph[c]), rune(c)
+            }
+            i += run
+            continue
+        }
+        character, size := fontNext(text, i)
         switch character {
         case '\n':
             widest = max(widest, pen)
-            pen, previous = 0, 0
+            pen, previous, before = 0, 0, 0
             lines += 1
         case '\t':
             columns: f32 = f32(tab) * space
             pen = (f32(int(pen / columns)) + 1) * columns
-            previous = 0
+            previous, before = 0, 0
         case:
-            glyph: int = FontResolve(font, character)
-            if character == ' ' && wrap > 0 && pen > 0 && pen + space + wordWidth(font, text, i + size, glyph) > wrap {
+            glyph, advance := fontMetrics(font, character)
+            if character == ' ' && wrap > 0 && pen > 0 && pen + space + wordWidth(font, text, i + size, glyph, character) > wrap {
                 widest = max(widest, pen)
-                pen, previous = 0, 0
+                pen, previous, before = 0, 0, 0
                 lines += 1
             } else {
-                if previous != 0 { pen += FontKerning(font, previous, glyph) }
-                pen += FontAdvance(font, glyph)
-                previous = glyph
+                if previous != 0 { pen += fontPairKerning(font, before, previous, character, glyph) }
+                pen += advance
+                previous, before = glyph, character
             }
         }
         i += size
@@ -106,10 +121,11 @@ TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32,
     tab: int = options.tab_columns if options.tab_columns > 0 else 4
     spacing: f32 = options.line_spacing if options.line_spacing > 0 else 1
     line_height: f32 = FontLineHeight(font) * spacing
-    space: f32 = FontAdvance(font, FontGlyph(font, ' '))
+    space: f32 = font.ascii_advance[' ']
     x: f32                      // em units from the start of the line
     line: int
     previous: int
+    before: rune                // the character that `previous` is the glyph of
     complete = true
     turn: TextTurn = TextTurnMake(origin, options.rotation)
     snap: bool = options.snap_to_pixels && options.rotation == 0
@@ -117,27 +133,27 @@ TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32,
     missing_known: bool
     i: int
     for i < len(text) {
-        character, size := utf8.decode_rune_in_string(text[i:])
+        character, size := fontNext(text, i)
         i += size
         switch character {
         case '\n':
-            x, previous = 0, 0
+            x, previous, before = 0, 0, 0
             line += 1
             continue
         case '\t':
             columns: f32 = f32(tab) * space
             x = (f32(int(x / columns)) + 1) * columns
-            previous = 0
+            previous, before = 0, 0
             continue
         }
-        glyph: int = FontResolve(font, character)
-        if character == ' ' && wrap > 0 && x > 0 && x + space + wordWidth(font, text, i, glyph) > wrap {
-            x, previous = 0, 0
+        glyph, advance := fontMetrics(font, character)
+        if character == ' ' && wrap > 0 && x > 0 && x + space + wordWidth(font, text, i, glyph, character) > wrap {
+            x, previous, before = 0, 0, 0
             line += 1
             continue
         }
-        if previous != 0 { x += FontKerning(font, previous, glyph) }
-        previous = glyph
+        if previous != 0 { x += fontPairKerning(font, before, previous, character, glyph) }
+        previous, before = glyph, character
         instance: GlyphInstance = {glyph = glyph, face = u8(face), pixels_per_em = pixels_per_em, color = color, alpha = 255}
         baseline: f32 = f32(line) * line_height * pixels_per_em
         left: f32 = x * pixels_per_em
@@ -161,7 +177,7 @@ TextQuads :: proc(atlas: ^Atlas, text: string, origin: Vec2, pixels_per_em: f32,
             break
         }
         count += emitted
-        x += FontAdvance(font, glyph)
+        x += advance
     }
     pen = TextTurnPoint(turn, {x * pixels_per_em, f32(line) * line_height * pixels_per_em})
     return

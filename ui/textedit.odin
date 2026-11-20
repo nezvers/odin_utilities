@@ -5,6 +5,7 @@ package ui
 
 import "core:unicode"
 import "core:unicode/utf8"
+import su "../simd"
 
 CLIPBOARD_LOCAL :: 1024
 
@@ -153,7 +154,11 @@ textFieldEditKeys :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, leng
             pasted[kept] = character
             kept += 1
         }
-        changed = textInsert(state, buffer, length, string(pasted[:kept])) || changed
+        // text from outside is checked once, here, at the edge: a bad part (a cut character, a stray byte) becomes U+FFFD, so the buffer of a text widget holds well formed UTF-8 and the
+        // cursor never lands inside of a character
+        cleaned: [CLIPBOARD_LOCAL * 3]u8
+        written: int = su.Utf8Clean(pasted[:kept], cleaned[:])
+        changed = textInsert(state, buffer, length, string(cleaned[:written])) || changed
     }
     // typed text goes in at the cursor, in place of the selection
     if input.text_count > 0 {

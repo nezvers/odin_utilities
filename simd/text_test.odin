@@ -254,3 +254,61 @@ test_forcing_a_lower_level_changes_the_kernels_the_plain_procedures_use :: proc(
         testing.expect(t, !Utf8Valid(text[:]))
     }
 }
+
+// The byte at a time decoder gives the characters that Utf8Next gives, on text of every kind (valid, damaged, cut), and holds a sequence that is valid so far until the next byte
+@(test)
+test_the_byte_at_a_time_decoder_follows_the_maximal_subpart_rule :: proc(t: ^testing.T) {
+    random: Random = {31}
+    for round in 0 ..< 3000 {
+        text := makeText(&random, int(next(&random) % 120), next(&random) % 5)
+        defer delete(text)
+        bytes: []u8 = text[:]
+        // the reference: Utf8Next from the start
+        expected: [dynamic]rune
+        defer delete(expected)
+        at: int
+        for at < len(bytes) {
+            character, size := Utf8Next(bytes, at)
+            append(&expected, character)
+            at += max(size, 1)
+        }
+        // the decoder, a byte at a time
+        got: [dynamic]rune
+        defer delete(got)
+        decoder: Utf8Decoder
+        for b in bytes {
+            for {
+                character, status := Utf8DecoderPush(&decoder, b)
+                switch status {
+                case .MORE:
+                case .CHARACTER, .ASCII, .ERROR: append(&got, character)
+                case .CUT:
+                    append(&got, character)
+                    continue                                    // the same byte again
+                }
+                break
+            }
+        }
+        if Utf8DecoderPending(&decoder) { append(&got, utf8.RUNE_ERROR) }     // the end of the text cuts a sequence that was valid so far: one replacement
+        same: bool = len(got) == len(expected)
+        if same {
+            for i in 0 ..< len(got) { if got[i] != expected[i] { same = false } }
+        }
+        if !same {
+            testing.expectf(t, false, "round %d: %v, expected %v, text %q", round, got[:], expected[:], string(bytes))
+            return
+        }
+    }
+    // a valid start waits, an invalid byte is an error at once
+    decoder: Utf8Decoder
+    _, status := Utf8DecoderPush(&decoder, 0xE2)
+    testing.expect(t, status == .MORE && Utf8DecoderPending(&decoder))
+    _, status = Utf8DecoderPush(&decoder, 0x82)
+    testing.expect(t, status == .MORE)
+    character, finished := Utf8DecoderPush(&decoder, 0xAC)
+    testing.expect(t, finished == .CHARACTER && character == 0x20AC && !Utf8DecoderPending(&decoder))
+    _, status = Utf8DecoderPush(&decoder, 0xC0)
+    testing.expect_value(t, status, Utf8Status.ERROR)
+    _, status = Utf8DecoderPush(&decoder, 0x80)
+    testing.expect_value(t, status, Utf8Status.ERROR)
+}

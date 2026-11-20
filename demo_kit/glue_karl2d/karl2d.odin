@@ -51,9 +51,11 @@ Run :: proc(title: string, demos: []kit.Demo, width: int = 1280, height: int = 7
         }
     }
     when kit.DEMO_CAPTURE { karl2d.r3d_init() }
-    state: State
+    // on the heap: a State holds the text system of the font library, whose fonts are 34 KB each: too much for a stack
+    state: ^State = new(State)
+    defer free(state)
     backend: kit.Backend
-    Init(&backend, &state)
+    Init(&backend, state)
     when kit.DEMO_TEST {
         passed: bool = kit.RunTests(demos, &backend)
         backend.shutdown(&backend)

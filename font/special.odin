@@ -38,8 +38,11 @@ FontHasGlyph :: proc(font: ^Font, character: rune) -> bool {
 
 // How many characters of a text the font cannot draw
 FontCountMissing :: proc(font: ^Font, text: string) -> (count: int) {
-    for character in text {
+    i: int
+    for i < len(text) {
+        character, size := fontNext(text, i)
         if character != '\n' && character != '\t' && !FontHasGlyph(font, character) { count += 1 }
+        i += size
     }
     return
 }

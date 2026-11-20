@@ -65,9 +65,11 @@ Run :: proc(title: string, demos: []kit.Demo, width: i32 = 1280, height: i32 = 7
     rl.SetTargetFPS(60)
     rl.SetExitKey(.KEY_NULL)        // the runner closes on escape, like with the other backends
 
-    state: State
+    // on the heap: a State holds a parsed font (34 KB) for every font the demos load, far more than a stack has room for
+    state: ^State = new(State)
+    defer free(state)
     backend: kit.Backend
-    Init(&backend, &state)
+    Init(&backend, state)
     when kit.DEMO_TEST {
         passed: bool = kit.RunTests(demos, &backend)
         backend.shutdown(&backend)

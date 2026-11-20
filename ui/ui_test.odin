@@ -5136,3 +5136,26 @@ test_the_screen_is_described_by_roles_names_and_states :: proc(t: ^testing.T) {
     cut: string = UiAccessDescribe(&harness.ctx, tiny[:])
     testing.expect(t, len(cut) <= len(tiny), "a small buffer is never overrun")
 }
+
+// Text that comes from the clipboard is checked at the edge: bad parts become U+FFFD, so a field never holds a broken character
+@(test)
+test_a_paste_of_bad_utf8_is_cleaned_at_the_edge :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    buffer: [64]u8
+    length: int
+    for _ in 0 ..< 2 { fieldFrame(harness, pointerAt({20, 10}), buffer[:], &length) }
+    fieldFrame(harness, pointerAt({20, 10}, true, true), buffer[:], &length)
+    fieldFrame(harness, pointerAt({20, 10}, false, false, true), buffer[:], &length)
+    paste: Input = pointerAt({20, 10})
+    paste.actions = {.PASTE}
+    UiClipboardSet(&harness.ctx, "ab\xE2\x82cd\xFF\xC3\xA9")        // a cut euro sign, a stray byte, a good letter
+    fieldFrame(harness, paste, buffer[:], &length)
+    testing.expect_value(t, fieldText(buffer[:], length), "ab�cd�é")
+    // good text is untouched
+    length = 0
+    UiClipboardSet(&harness.ctx, "café 日本 \U0001F600")
+    fieldFrame(harness, paste, buffer[:], &length)
+    testing.expect_value(t, fieldText(buffer[:], length), "café 日本 \U0001F600")
+}

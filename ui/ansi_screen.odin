@@ -111,9 +111,7 @@ AnsiScreen :: struct {
     palette: ^[16]Color,        // nil: ANSI_COLORS_DARK
     sequence: [48]u8,           // an escape sequence that is not whole yet
     sequence_length: int,
-    letter: [4]u8,              // a UTF-8 letter that is not whole yet
-    letter_length: int,
-    letter_needed: int,
+    decoder: su.Utf8Decoder,    // a UTF-8 letter that is not whole yet (a write may end in the middle of one)
     history: []AnsiCell,        // the lines that scrolled off the top: a ring of history_rows rows
     history_rows: int,          // how many rows the ring has room for (0: no history)
     history_count: int,         // how many of them are filled
@@ -159,7 +157,7 @@ AnsiScreenClear :: proc(screen: ^AnsiScreen) {
     screen.column, screen.row = 0, 0
     screen.style, screen.saved_style = {}, {}
     screen.saved_column, screen.saved_row = 0, 0
-    screen.sequence_length, screen.letter_length = 0, 0
+    screen.sequence_length, screen.decoder = 0, {}
     screen.history_count, screen.history_head, screen.back = 0, 0, 0
     screen.alternate_active = false
     screen.pushed, screen.select_active, screen.select_dragging, screen.grapheme = 0, false, false, {}
@@ -577,21 +575,17 @@ screenByte :: proc(screen: ^AnsiScreen, byte: u8) {
         }
         return
     }
-    // inside of a letter of several bytes
-    if screen.letter_length > 0 {
-        if su.Utf8ContinuationOk(screen.letter[0], screen.letter_length, byte) {
-            screen.letter[screen.letter_length] = byte
-            screen.letter_length += 1
-            if screen.letter_length == screen.letter_needed {
-                character, _ := utf8.decode_rune(screen.letter[:screen.letter_length])
-                screenPut(screen, character)
-                screen.letter_length = 0
-            }
+    // inside of a letter of several bytes: the decoder of the simd library keeps the bytes and the rule (a bad part is one replacement character)
+    if su.Utf8DecoderPending(&screen.decoder) {
+        character, status := su.Utf8DecoderPush(&screen.decoder, byte)
+        switch status {
+        case .MORE: return
+        case .CHARACTER:
+            screenPut(screen, character)
             return
+        case .CUT: screenPut(screen, utf8.RUNE_ERROR)                         // the byte cannot go on with it: one replacement for the part, and the byte starts over
+        case .ASCII, .ERROR:
         }
-        // a byte that cannot go on with the sequence cuts it: one replacement character for the part (its maximal subpart), and the byte starts over
-        screenPut(screen, utf8.RUNE_ERROR)
-        screen.letter_length = 0
     }
     if byte < 0x20 || byte == 0x7f { screen.grapheme = {} }          // the cursor moves or a sequence starts: the text before is not a cluster to join
     switch {
@@ -604,11 +598,10 @@ screenByte :: proc(screen: ^AnsiScreen, byte: u8) {
     case byte == '\t': screen.column = min((min(screen.column, screen.columns - 1) / 8 + 1) * 8, screen.columns - 1)
     case byte < 0x20 || byte == 0x7f:
     case byte < 0x80: screenPut(screen, rune(byte))
-    case su.Utf8SequenceLength(byte) == 0: screenPut(screen, utf8.RUNE_ERROR)      // a lone continuation byte, C0, C1, F5 and above: one replacement character each
     case:
-        screen.letter[0] = byte
-        screen.letter_length = 1
-        screen.letter_needed = su.Utf8SequenceLength(byte)
+        // a lead byte starts a letter; a byte that starts nothing (a lone continuation byte, C0, C1, F5 and above) is one replacement character
+        character, status := su.Utf8DecoderPush(&screen.decoder, byte)
+        if status == .ERROR { screenPut(screen, character) }
     }
 }
 
@@ -619,7 +612,7 @@ AnsiScreenWrite :: proc(screen: ^AnsiScreen, bytes: []u8) {
         byte: u8 = bytes[i]
         // in the ground state (no escape sequence and no letter of several bytes under way) a run of printable ASCII needs no state machine: it goes into the cells of a row in one loop.
         // Text is mostly this (ghostty finds the run with a vector scan and fills a row at a time: batching is most of its speed)
-        if byte >= 0x20 && byte < 0x7f && screen.sequence_length == 0 && screen.letter_length == 0 && !screen.bytewise && screen.grapheme.previous != .PREPEND {
+        if byte >= 0x20 && byte < 0x7f && screen.sequence_length == 0 && !su.Utf8DecoderPending(&screen.decoder) && !screen.bytewise && screen.grapheme.previous != .PREPEND {
             end: int = i + su.AsciiRun(bytes[i:])
             screenPutRun(screen, bytes[i:end])
             i = end
@@ -627,7 +620,7 @@ AnsiScreenWrite :: proc(screen: ^AnsiScreen, bytes: []u8) {
         }
         // a letter of several bytes that is whole in this slice is decoded at once; a bad sequence is one replacement character for its maximal subpart (Unicode table 3-7); a sequence that
         // reaches the end of the slice goes through the byte machine, which keeps it for the next write when it is valid so far (and replaces it at once when it is not)
-        if byte >= 0x80 && screen.sequence_length == 0 && screen.letter_length == 0 && !screen.bytewise {
+        if byte >= 0x80 && screen.sequence_length == 0 && !su.Utf8DecoderPending(&screen.decoder) && !screen.bytewise {
             character, size, valid := su.Utf8Decode(bytes, i)
             if valid {
                 screenPut(screen, character)

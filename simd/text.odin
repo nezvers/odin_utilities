@@ -188,6 +188,50 @@ Utf8ContinuationOk :: proc "contextless" (lead: u8, position: int, b: u8) -> boo
     return b >= 0x80 && b <= 0xBF
 }
 
+// ---- a decoder that takes the bytes of a stream one at a time ---------------------------------------------------------------------------------------------------
+
+// For a reader that gets text in pieces (a terminal screen, a log, a chat): the few bytes of a character that a piece ended in the middle of. The rule is the one of Utf8Next: a sequence
+// that is valid so far waits for the next byte, one that is not is an error at once, with one replacement for its maximal subpart. The zero value is the start.
+Utf8Decoder :: struct {
+    bytes: [4]u8,
+    count: u8,                  // the bytes of an unfinished sequence that are held
+    needed: u8,                 // how many it has
+}
+
+Utf8Status :: enum u8 {
+    MORE,                       // the byte was taken, the character is not whole yet
+    CHARACTER,                  // the byte finished a character: `character` is it
+    ASCII,                      // an ASCII byte with nothing pending: `character` is it
+    ERROR,                      // the byte is bad (it starts nothing: a continuation byte, C0, C1, F5 and above): one replacement character, the byte is taken
+    CUT,                        // the byte is NOT taken: it cannot go on with the unfinished sequence, which is one replacement character; push the same byte again
+}
+
+Utf8DecoderPending :: proc "contextless" (decoder: ^Utf8Decoder) -> bool {
+    return decoder.count > 0
+}
+
+Utf8DecoderPush :: proc "contextless" (decoder: ^Utf8Decoder, b: u8) -> (character: rune, status: Utf8Status) {
+    if decoder.count > 0 {
+        if Utf8ContinuationOk(decoder.bytes[0], int(decoder.count), b) {
+            decoder.bytes[decoder.count] = b
+            decoder.count += 1
+            if decoder.count == decoder.needed {
+                character, _ = utf8.decode_rune(decoder.bytes[:decoder.count])
+                decoder.count = 0
+                return character, .CHARACTER
+            }
+            return 0, .MORE
+        }
+        decoder.count = 0
+        return utf8.RUNE_ERROR, .CUT
+    }
+    if b < 0x80 { return rune(b), .ASCII }
+    needed: int = Utf8SequenceLength(b)
+    if needed == 0 { return utf8.RUNE_ERROR, .ERROR }
+    decoder.bytes[0], decoder.count, decoder.needed = b, 1, u8(needed)
+    return 0, .MORE
+}
+
 // Where a chunk of a stream can be cut so that no character is split: the length to process now. The tail that is the start of a well formed character and is only cut short by the
 // end of the chunk (valid so far) stays for the next chunk; a bad byte (C0, C1, F5 and above, a continuation byte, a lead followed by a byte that cannot continue it) is an error
 // now and is not kept. Put the kept bytes in front of the next chunk.

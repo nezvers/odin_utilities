@@ -33,6 +33,11 @@ Font :: struct {
     loca: []u8,                 // where each glyph is in glyf
     loca_long: bool,            // 32 bit places, else 16 bit halves
     cff: FontCff,
+    // The tables of the ASCII characters (ascii_cache.odin): the glyph a character resolves to and its advance, filled by FontInit, and the kerning of the pairs, a row at a time
+    ascii_glyph: [128]u32,
+    ascii_advance: [128]f32,
+    ascii_kern: [128 * 128]i16,         // font units
+    ascii_kern_row: [128]u32,           // 1 when the row of the left character is filled
 }
 
 // Parses the font. `index` picks one font of a collection (.ttc), 0 for a plain file. False when the bytes are not a font.
@@ -79,6 +84,7 @@ FontInit :: proc(font: ^Font, data: []u8, index: int = 0) -> bool {
     if len(gpos) >= 10 && readU16(gpos, 0) == 1 && readU16(gpos, 2) <= 1 && readU16(gpos, 8) <= len(gpos) { font.gpos = gpos[readU16(gpos, 8):] }
     kern: []u8 = sfntTable(data, start, "kern")
     if len(kern) >= 10 && readU16(kern, 2) >= 1 && readU16(kern, 8) == 1 { font.kern = kern }
+    fontFillAscii(font)
     return true
 }
 
