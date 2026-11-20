@@ -12,6 +12,7 @@ package demo_common
 import "core:fmt"
 import "core:math"
 import "core:reflect"
+import "core:strings"
 import ui ".."
 import ui_default "../default_style"
 import ui_kit "../kit"
@@ -2214,6 +2215,28 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { state.app.ctx.time = 0; return true }, "the cursor shows"),
     kit.Capture("examples_terminal_screen"),
     kit.Wait(2),
+    // a drag over the cells selects them (the text of the rows, without the empty end), a click lets go
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target(" top - 3 tasks, load 0.42", 0.05) }, "the start of the header"),
+    kit.MoveAt(&target),
+    kit.Wait(2),
+    kit.MouseDownStep(),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target("compiler", 0.4) }, "a place in the next row"),
+    kit.MoveAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        buffer: [128]u8
+        text: string = ui.AnsiScreenSelected(&state.screen, buffer[:])
+        return strings.contains(text, "load 0.42\n") && strings.contains(text, "comp")
+    }, "the cells between the ends are selected"),
+    kit.Capture("examples_terminal_screen_selected"),
+    kit.Wait(2),
+    kit.MouseUpStep(),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target("compiler", 0.4) }, "a place to click"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !state.screen.select_active }, "a click lets the selection go"),
     // Lines logs twelve lines: the header and the rest of the page scroll into the history; the wheel over the screen goes back to them, and forward again
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.lines_id != 0 && ui_element_center(state.lines_id) }, "the Lines button"),
     kit.ClickAt(&target),

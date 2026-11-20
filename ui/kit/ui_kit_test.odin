@@ -1,9 +1,14 @@
 #+build !js
 package ui_kit
 
+import "core:sync"
 import "core:testing"
 import ui ".."
 import kit "../../demo_kit"
+
+// The tests run on several threads and two of them rebind the one table of the kit
+@(private = "file")
+table_lock: sync.Mutex
 
 @(private = "file")
 actionsOf :: proc(keys: kit.KeySet, mouse: kit.MouseButtons = {}) -> ui.Actions {
@@ -17,6 +22,8 @@ actionsOf :: proc(keys: kit.KeySet, mouse: kit.MouseButtons = {}) -> ui.Actions 
 // One test: the table of the kit is a global
 @(test)
 test_the_default_hotkeys_are_the_keys_that_were_fixed_before_and_can_be_rebound :: proc(t: ^testing.T) {
+    sync.mutex_lock(&table_lock)
+    defer sync.mutex_unlock(&table_lock)
     KeyMapOf()^ = KeyMapDefault()
     defer KeyMapOf()^ = KeyMapDefault()
     testing.expect_value(t, actionsOf({.ENTER}), ui.Actions{.ACCEPT})
@@ -90,6 +97,8 @@ test_the_glyphs_of_the_kit_name_keys_and_pad_buttons_and_take_a_texture_when_set
 
 @(test)
 test_the_pressed_binding_is_the_pad_then_the_key_then_the_mouse_and_a_pad_button_does_a_ui_action :: proc(t: ^testing.T) {
+    sync.mutex_lock(&table_lock)
+    defer sync.mutex_unlock(&table_lock)
     input: kit.Input
     testing.expect_value(t, BindingPressed(&input), ui.Binding{})
     input.keys_pressed = {.K}

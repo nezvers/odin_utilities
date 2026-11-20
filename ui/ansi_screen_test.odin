@@ -654,3 +654,137 @@ test_the_alternate_screen_starts_and_ends_with_the_whole_screen_as_its_region ::
     write(&screen, "\x1b[3;5r\x1b[?1049l")
     testing.expect_value(t, [2]int{screen.margin_top, screen.margin_bottom}, [2]int{0, 4})
 }
+
+@(private = "file")
+selected :: proc(screen: ^AnsiScreen) -> string {
+    @(thread_local) buffer: [256]u8
+    return AnsiScreenSelected(screen, buffer[:])
+}
+
+@(test)
+test_selected_cells_are_read_as_text_without_the_empty_end_of_a_row :: proc(t: ^testing.T) {
+    cells: [10 * 4]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 10, 4)
+    write(&screen, "hello\r\nworld\r\n\r\nend")
+    testing.expect_value(t, selected(&screen), "")
+    AnsiScreenSelect(&screen, 1, 0, 2, 1)
+    testing.expect_value(t, selected(&screen), "ello\nwor")
+    AnsiScreenSelect(&screen, 2, 1, 1, 0)                                                 // the ends in the other order
+    testing.expect_value(t, selected(&screen), "ello\nwor")
+    AnsiScreenSelect(&screen, 3, 0, 9, 3)                                                 // an empty row in the middle is an empty line
+    testing.expect_value(t, selected(&screen), "lo\nworld\n\nend")
+    AnsiScreenSelect(&screen, 7, 0, 9, 0)
+    testing.expect_value(t, selected(&screen), "")                                        // only empty cells
+    first, last := AnsiScreenSelectionOfRow(&screen, 0)
+    testing.expect_value(t, [2]int{first, last}, [2]int{7, 9})
+    first, last = AnsiScreenSelectionOfRow(&screen, 1)
+    testing.expect(t, last < first, "the other rows are not in it")
+    AnsiScreenSelectClear(&screen)
+    testing.expect_value(t, selected(&screen), "")
+    // a wide letter is one character, whichever of its two cells the ends are on; a mark goes with its letter
+    AnsiScreenClear(&screen)
+    write(&screen, "a日本éz")
+    AnsiScreenSelect(&screen, 2, 0, 3, 0)                                                 // the second half of 日 to the first half of 本
+    testing.expect_value(t, selected(&screen), "日本")
+    AnsiScreenSelect(&screen, 5, 0, 6, 0)
+    testing.expect_value(t, selected(&screen), "éz")
+}
+
+@(test)
+test_a_selection_stays_on_its_text_when_the_screen_scrolls_and_goes_with_the_alternate_screen :: proc(t: ^testing.T) {
+    cells: [6 * 3]AnsiCell
+    history: [6 * 10]AnsiCell
+    alternate: [6 * 3]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 6, 3, history[:], alternate[:])
+    write(&screen, "one\r\ntwo\r\nthree")
+    AnsiScreenSelect(&screen, 0, 1, 2, 1)
+    testing.expect_value(t, selected(&screen), "two")
+    write(&screen, "\r\nfour\r\nfive")                                                    // two lines scroll off the top: "two" is on row 0 now
+    testing.expect_value(t, row(&screen, 0), "three")
+    testing.expect_value(t, selected(&screen), "two")
+    first, last := AnsiScreenSelectionOfRow(&screen, 0)
+    testing.expect(t, last < first, "the live rows do not show it")
+    AnsiScreenScroll(&screen, 1)                                                          // the view is one row back: "two" is on its top row
+    first, last = AnsiScreenSelectionOfRow(&screen, 0)
+    testing.expect_value(t, [2]int{first, last}, [2]int{0, 2})
+    AnsiScreenFollow(&screen)
+    // without a history the text is gone and so is what is selected of it
+    cells2: [6 * 3]AnsiCell
+    plain: AnsiScreen = AnsiScreenMake(cells2[:], 6, 3)
+    write(&plain, "one\r\ntwo\r\nthree")
+    AnsiScreenSelect(&plain, 0, 0, 2, 0)
+    write(&plain, "\r\nfour")
+    testing.expect_value(t, selected(&plain), "")
+    // the alternate screen is other cells: the selection of the first is let go
+    write(&screen, "\x1b[?1049h")
+    testing.expect(t, !screen.select_active)
+    testing.expect_value(t, selected(&screen), "")
+}
+
+@(test)
+test_the_pointer_selects_cells_of_the_screen_and_copy_takes_them :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 4096),
+        ctx: Context,
+        style: Style,
+        cells: [10 * 4]AnsiCell,
+        history: [10 * 20]AnsiCell,
+        screen: AnsiScreen,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    test.screen = AnsiScreenMake(test.cells[:], 10, 4, test.history[:])
+    write(&test.screen, "hello\r\nworld\r\nthird\r\nfourth")
+    frame :: proc(test: ^Test, input: Input) {
+        UiBegin(&test.ctx, input, 1.0 / 60, {800, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(300), {}}) {
+            UiAnsiScreen(&test.ctx, &test.screen, false)
+        }
+        UiEnd(&test.ctx)
+    }
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 3 { frame(test, away) }
+    area, found := UiElementRect(&test.ctx, UiIdPath("window", "ansi screen"))
+    testing.expect(t, found && area.z > 0)
+    cell: Vec2 = {area.z / 10, area.w / 4}
+    at :: proc(area: Rect, cell: Vec2, column: int, row: int) -> Vec2 {
+        return {area.x + (f32(column) + 0.5) * cell.x, area.y + (f32(row) + 0.5) * cell.y}
+    }
+    start: Vec2 = at(area, cell, 1, 0)
+    frame(test, {mouse_position = start})
+    frame(test, {mouse_position = start, mouse_down = true, mouse_pressed = true})
+    testing.expect(t, !test.screen.select_active, "a press alone selects nothing")
+    end: Vec2 = at(area, cell, 2, 1)
+    frame(test, {mouse_position = end, mouse_down = true})
+    frame(test, {mouse_position = end, mouse_down = true})
+    testing.expect_value(t, selected(&test.screen), "ello\nwor")
+    frame(test, {mouse_position = end, mouse_released = true})
+    testing.expect(t, !test.screen.select_dragging)
+    testing.expect_value(t, selected(&test.screen), "ello\nwor")
+    // the highlight is declared: one rectangle per row
+    rectangles: int
+    for command in UiCommands(&test.ctx) {
+        if command.kind == .DRAW && command.info.kind == .TEXT_SELECTION { rectangles += 1 }
+    }
+    testing.expect_value(t, rectangles, 2)
+    // Copy takes it (the screen has the focus after the press)
+    frame(test, {mouse_position = end, actions = {.COPY}})
+    buffer: [64]u8
+    count: int = UiClipboardGet(&test.ctx, buffer[:])
+    testing.expect_value(t, string(buffer[:count]), "ello\nwor")
+    // a drag past the bottom edge scrolls the view back into the history only above it: here there is none, so nothing moves but the end stays in the last row
+    below: Vec2 = {area.x + area.z + 5, area.y + area.w + 30}
+    frame(test, {mouse_position = at(area, cell, 0, 2)})
+    frame(test, {mouse_position = at(area, cell, 0, 2), mouse_down = true, mouse_pressed = true})
+    frame(test, {mouse_position = below, mouse_down = true})
+    testing.expect_value(t, selected(&test.screen), "third\nfourth")
+    frame(test, {mouse_position = below, mouse_released = true})
+    // a click on a cell lets the selection go
+    frame(test, {mouse_position = at(area, cell, 5, 3)})
+    frame(test, {mouse_position = at(area, cell, 5, 3), mouse_down = true, mouse_pressed = true})
+    frame(test, {mouse_position = at(area, cell, 5, 3), mouse_released = true})
+    testing.expect_value(t, selected(&test.screen), "")
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

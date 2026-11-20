@@ -24,8 +24,13 @@ import "core:unicode/utf8"
 //
 // Limits: a fixed grid (no resize: make another screen and write the output again), no origin or wrap modes, no tab stops that are set; a scroll region feeds no history unless it is the whole screen
 //     the width of a character is a table of the ranges that matter: ambiguous widths are 1, no grapheme clusters, no emoji sequences, no right-to-left text; a mark goes on the cell before it and one mark only
-//     the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; no selection of cells, no mouse or paste modes, no cursor shapes or hiding
+//     the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; a selection is by cells (a press and a drag, one word or line at a time is not there: no double click selection), no mouse or paste modes, no cursor shapes or hiding
 //     it only draws: nothing reads the keyboard or talks to a process; a cell is as wide as the code face's M, and a wide letter takes two of them whatever the font does
+//
+// Selection: a press on the screen and a drag select the cells between the two ends (the ends are included, a wide letter whole), the highlight is a TEXT_SELECTION per row, a drag past the
+// top or bottom edge scrolls the view, Copy (the action, with the screen focused) puts the text on the clipboard: the rows with a line feed between them, the empty end of a row left out.
+// The ends are named by the number of their row, which stays with the text when the screen scrolls or goes into the history (`AnsiScreenSelect`, `AnsiScreenSelected`,
+// `AnsiScreenSelectionOfRow`, `AnsiScreenSelectClear`); the alternate screen lets it go.
 //
 // Baldr's terminal screen (examples/25_terminal) was the reason to have it; the code is written for this library.
 
@@ -65,6 +70,13 @@ AnsiScreen :: struct {
     alternate_style: AnsiState,
     margin_top: int,            // the scroll region: the first and the last row of it (the whole screen unless a program sets it)
     margin_bottom: int,
+    pushed: int,                // the lines the whole screen scrolled up (down: fewer): `pushed + row` is the number of a live row that stays with its text, see AnsiScreenSelect
+    select_active: bool,        // a selection of cells exists
+    select_dragging: bool,      // the pointer holds it
+    select_from_row: int,       // where it began: the number of the row (history rows are negative) and the column
+    select_from_column: int,
+    select_to_row: int,         // and where it ends now (either may come first)
+    select_to_column: int,
 }
 
 // A screen over `cells` (at least columns * rows of them), cleared. `history`: room for the lines that scroll off the top, as many rows as it has room for (nil: none).
@@ -88,6 +100,7 @@ AnsiScreenClear :: proc(screen: ^AnsiScreen) {
     screen.sequence_length, screen.letter_length = 0, 0
     screen.history_count, screen.history_head, screen.back = 0, 0, 0
     screen.alternate_active = false
+    screen.pushed, screen.select_active, screen.select_dragging = 0, false, false
     for &cell in screen.alternate { cell = {} }
     screen.margin_top, screen.margin_bottom = 0, screen.rows - 1
 }
@@ -120,6 +133,7 @@ screenScroll :: proc "contextless" (screen: ^AnsiScreen, top: int, bottom: int, 
     if shift <= 0 { return }
     columns: int = screen.columns
     blank: AnsiCell = screenBlank(screen)
+    if top == 0 && bottom == screen.rows - 1 { screen.pushed += shift if count > 0 else -shift }
     if count > 0 {
         copy(screen.cells[top * columns:(bottom + 1 - shift) * columns], screen.cells[(top + shift) * columns:(bottom + 1) * columns])
         for i in (bottom + 1 - shift) * columns ..< (bottom + 1) * columns { screen.cells[i] = blank }
@@ -228,6 +242,7 @@ screenAlternate :: proc "contextless" (screen: ^AnsiScreen, mode: int, enter: bo
     swap :: proc "contextless" (screen: ^AnsiScreen) {
         for i in 0 ..< len(screen.cells) { screen.cells[i], screen.alternate[i] = screen.alternate[i], screen.cells[i] }
     }
+    screen.select_active, screen.select_dragging = false, false          // the cells it was on are another screen now
     if enter {
         if mode == 1049 { screen.alternate_column, screen.alternate_row, screen.alternate_style = screen.column, screen.row, screen.style }
         swap(screen)
@@ -495,6 +510,103 @@ AnsiScreenViewCell :: proc(screen: ^AnsiScreen, column: int, row: int) -> ^AnsiC
     return screenCell(screen, column, absolute - screen.history_count)
 }
 
+// ---- selection of cells ---------------------------------------------------------------------------------------------------------------------------------
+// A selection is two cells, named by the number of their row, which does not change when the screen scrolls (the live rows are `pushed + row`, the history rows are
+// before them: a text that scrolls up into the history keeps its selection), and their columns. The pointer makes one in UiAnsiScreen (press and drag, the wheel
+// and a drag past the edge scroll the view); a program makes one with `AnsiScreenSelect`.
+
+// The number of a row of the view
+@(private)
+screenRowId :: proc "contextless" (screen: ^AnsiScreen, view_row: int) -> int {
+    return screen.pushed - screen.back + view_row
+}
+
+// The cell of a row number, nil when that row is gone (scrolled out of the history) or not there
+@(private)
+screenIdCell :: proc "contextless" (screen: ^AnsiScreen, row_id: int, column: int) -> ^AnsiCell {
+    if column < 0 || column >= screen.columns { return nil }
+    live: int = row_id - screen.pushed
+    if live >= 0 {
+        if live >= screen.rows { return nil }
+        return screenCell(screen, column, live)
+    }
+    behind: int = -live                                  // rows above the live screen
+    if behind > screen.history_count || screen.alternate_active { return nil }
+    ring: int = (screen.history_head + screen.history_rows - behind) % screen.history_rows
+    return &screen.history[ring * screen.columns + column]
+}
+
+// The two ends in reading order, the first column on a continuation moved to its letter and the last one to the end of its wide letter
+@(private)
+screenSelectionOrdered :: proc(screen: ^AnsiScreen) -> (from_row: int, from_column: int, to_row: int, to_column: int) {
+    from_row, from_column, to_row, to_column = screen.select_from_row, screen.select_from_column, screen.select_to_row, screen.select_to_column
+    if from_row > to_row || (from_row == to_row && from_column > to_column) {
+        from_row, from_column, to_row, to_column = to_row, to_column, from_row, from_column
+    }
+    if cell: ^AnsiCell = screenIdCell(screen, from_row, from_column); cell != nil && cell.continuation && from_column > 0 { from_column -= 1 }
+    if cell: ^AnsiCell = screenIdCell(screen, to_row, to_column); cell != nil && cell.wide && to_column < screen.columns - 1 { to_column += 1 }
+    return
+}
+
+// Selects the cells from one place of the view to another (the ends are included); the cells are named by column and row of the view.
+AnsiScreenSelect :: proc(screen: ^AnsiScreen, from_column: int, from_row: int, to_column: int, to_row: int) {
+    screen.select_from_row, screen.select_from_column = screenRowId(screen, clamp(from_row, 0, screen.rows - 1)), clamp(from_column, 0, screen.columns - 1)
+    screen.select_to_row, screen.select_to_column = screenRowId(screen, clamp(to_row, 0, screen.rows - 1)), clamp(to_column, 0, screen.columns - 1)
+    screen.select_active = true
+}
+
+AnsiScreenSelectClear :: proc(screen: ^AnsiScreen) {
+    screen.select_active, screen.select_dragging = false, false
+}
+
+// The columns of a row of the view that are selected: [first, last], or last < first when none are
+AnsiScreenSelectionOfRow :: proc(screen: ^AnsiScreen, view_row: int) -> (first: int, last: int) {
+    if !screen.select_active { return 0, -1 }
+    from_row, from_column, to_row, to_column := screenSelectionOrdered(screen)
+    id: int = screenRowId(screen, view_row)
+    if id < from_row || id > to_row { return 0, -1 }
+    first = from_column if id == from_row else 0
+    last = to_column if id == to_row else screen.columns - 1
+    return
+}
+
+// The selected text into `out`: the rows one after the other with a line feed between them, the empty cells at the end of a row left out, the second half of a wide
+// letter skipped. A row that is gone from the history is skipped. Empty when nothing is selected.
+AnsiScreenSelected :: proc(screen: ^AnsiScreen, out: []u8) -> string {
+    if !screen.select_active { return "" }
+    from_row, from_column, to_row, to_column := screenSelectionOrdered(screen)
+    count: int
+    for id in from_row ..= to_row {
+        first: int = from_column if id == from_row else 0
+        last: int = to_column if id == to_row else screen.columns - 1
+        end: int = -1
+        for column in first ..= last {
+            cell: ^AnsiCell = screenIdCell(screen, id, column)
+            if cell != nil && cell.character != 0 { end = column }
+        }
+        if id > from_row && count < len(out) {
+            out[count] = '\n'
+            count += 1
+        }
+        for column in first ..= end {
+            cell: ^AnsiCell = screenIdCell(screen, id, column)
+            if cell == nil || cell.continuation { continue }
+            character: rune = cell.character if cell.character != 0 else ' '
+            encoded, width := utf8.encode_rune(character)
+            if count + width > len(out) { return string(out[:count]) }
+            copy(out[count:], encoded[:width])
+            count += width
+            if cell.mark != 0 {
+                encoded, width = utf8.encode_rune(cell.mark)
+                if count + width > len(out) { return string(out[:count]) }
+                copy(out[count:], encoded[:width])
+                count += width
+            }
+        }
+    }
+    return string(out[:count])
+}
+
 // The screen as texts in the code face: a row at a time, the cells of one style in a row are one text, the empty cells take their room, a ground is a FILL behind its
 // cells. The cursor is drawn as a block over its cell while `cursor` is true (a program that blinks it passes the phase) and the view is the live screen. The wheel over
 // the screen scrolls the view through the history. A wide letter is a text of its own, two cells wide, so that what follows it stays on the grid. The text lives in the
@@ -515,7 +627,33 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, na
         if steps == 0 { steps = 1 if ctx.input.wheel.y > 0 else -1 }
         AnsiScreenScroll(screen, steps)
     }
-    ElementOpen(ctx, {id = id, layout = {size = {Fixed(cell.x * f32(screen.columns)), Fixed(cell.y * f32(screen.rows))}, direction = .TOP_TO_BOTTOM}, hit = {.SCROLL}})
+    // the pointer selects cells: a press starts it, a drag extends it (past the edge it scrolls the view), Copy takes the text
+    interaction: Interaction = widgetBehavior(ctx, id)
+    area: Rect = interaction.rect                  // where it was at the end of the last frame (0 the first time)
+    if area.z > 0 {
+        point: Vec2 = ctx.input.mouse_position
+        column: int = clamp(int((point.x - area.x) / cell.x), 0, screen.columns - 1)
+        view_row: int = clamp(int((point.y - area.y) / cell.y), 0, screen.rows - 1)
+        if interaction.pressed && ctx.input.mouse_pressed {
+            AnsiScreenSelectClear(screen)
+            screen.select_dragging = true
+            screen.select_from_row, screen.select_from_column = screenRowId(screen, view_row), column
+            screen.select_to_row, screen.select_to_column = screen.select_from_row, column
+        } else if screen.select_dragging && ctx.active == id && ctx.input.mouse_down {
+            if point.y < area.y { AnsiScreenScroll(screen, 1) }
+            if point.y > area.y + area.w { AnsiScreenScroll(screen, -1) }
+            view_row = clamp(int((point.y - area.y) / cell.y), 0, screen.rows - 1)
+            screen.select_to_row, screen.select_to_column = screenRowId(screen, view_row), column
+            screen.select_active = screen.select_to_row != screen.select_from_row || screen.select_to_column != screen.select_from_column
+        } else if screen.select_dragging {
+            screen.select_dragging = false
+        }
+    }
+    if screen.select_active && ctx.focus == id && .COPY in ctx.input.actions {
+        free_space: []u8 = ctx.text_buffer[ctx.text_used:]
+        UiClipboardSet(ctx, AnsiScreenSelected(screen, free_space))
+    }
+    ElementOpen(ctx, {id = id, layout = {size = {Fixed(cell.x * f32(screen.columns)), Fixed(cell.y * f32(screen.rows))}, direction = .TOP_TO_BOTTOM}, hit = {.SCROLL, .INTERACTIVE, .NO_FOCUS}})
     for row in 0 ..< screen.rows {
         ElementOpen(ctx, {layout = {size = {Grow(), Fixed(cell.y)}, direction = .LEFT_TO_RIGHT}})
         // the end of the row: after the last cell that has anything, the empty cells with no ground are not declared
@@ -595,6 +733,18 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, na
             column = stop
         }
         ElementClose(ctx)
+    }
+    if screen.select_active {
+        for view_row in 0 ..< screen.rows {
+            first, last := AnsiScreenSelectionOfRow(screen, view_row)
+            if last < first { continue }
+            ElementOpen(ctx, {
+                layout = {size = {Fixed(cell.x * f32(last - first + 1)), Fixed(cell.y)}},
+                absolute = {enabled = true, offset = {cell.x * f32(first), cell.y * f32(view_row)}},
+                draw = {kind = .TEXT_SELECTION},
+            })
+            ElementClose(ctx)
+        }
     }
     if cursor && screen.back == 0 {
         column: int = min(screen.column, screen.columns - 1)
