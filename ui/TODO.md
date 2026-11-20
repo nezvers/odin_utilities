@@ -42,6 +42,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] A text is measured with the tags it is drawn with (a title in the strong face, code in the code face): `ctx.measure_tags`, `UiMeasureHasTag`
 - [x] Rich text: `UiRichText`, used by `UiMarkdown` (strong, italic, code, links)
 - [x] Tables in `UiMarkdown`
+- [x] A drag that rests over a widget (`UiDragRest`) and Baldr's 35_spring
 - [x] Markdown that arrives (Baldr's 26_reply): shown at every length of the text, a test over every prefix
 - [x] A completion list in a text area (`UiComplete`) and Baldr's 34_mentions
 - [x] `UiComplete` for the one line text field, and an undo step for an inserted item

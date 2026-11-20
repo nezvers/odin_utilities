@@ -531,3 +531,73 @@ test_a_text_area_keeps_the_state_of_its_rows :: proc(t: ^testing.T) {
     testing.expect(t, keyword_found && DrawInfoHasTag(&keyword, SYNTAX_KEYWORD))
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_a_drag_that_rests_over_a_widget_fires_once :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(64, 128, 32, 1024),
+        ctx: Context,
+        style: Style,
+        source, folder, other: Id,
+        fired: int,
+        fired_other: int,
+        payload: int,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measureFaces)
+    frame :: proc(test: ^Test, input: Input, delta_time: f32 = 0.1) {
+        UiBegin(&test.ctx, input, delta_time, {800, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(400), {}}) {
+            test.source = UiId(&test.ctx, "file")
+            UiButton(&test.ctx, "file", {Fixed(300), {}})
+            UiDragSourceValue(&test.ctx, "file", &test.payload)
+            test.folder = UiId(&test.ctx, "folder")
+            UiButton(&test.ctx, "folder", {Fixed(300), {}})
+            if UiDragRest(&test.ctx, "file", 0.5) { test.fired += 1 }
+            test.other = UiId(&test.ctx, "other")
+            UiButton(&test.ctx, "other", {Fixed(300), {}})
+            if UiDragRest(&test.ctx, "picture", 0.5) { test.fired_other += 1 }
+        }
+        UiEnd(&test.ctx)
+    }
+    center :: proc(test: ^Test, id: Id) -> Vec2 {
+        rect, _ := UiElementRect(&test.ctx, id)
+        return {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    }
+    for _ in 0 ..< 2 { frame(test, {mouse_position = {-100, -100}}) }
+    from: Vec2 = center(test, test.source)
+    over: Vec2 = center(test, test.folder)
+    // the pointer rests over the folder without a drag: nothing
+    for _ in 0 ..< 10 { frame(test, {mouse_position = over}) }
+    testing.expect_value(t, test.fired, 0)
+    // a drag from the file to the folder
+    frame(test, {mouse_position = from})
+    frame(test, {mouse_position = from, mouse_down = true, mouse_pressed = true})
+    frame(test, {mouse_position = from + {20, 0}, mouse_down = true})
+    _, dragging := UiDragging(&test.ctx)
+    testing.expect(t, dragging)
+    // it moves over the folder: no rest while it moves
+    for i in 0 ..< 10 { frame(test, {mouse_position = over + {f32(i % 2) * 30, 0}, mouse_down = true}) }
+    testing.expect_value(t, test.fired, 0)
+    // it stands: after half a second it fires, once
+    for _ in 0 ..< 4 { frame(test, {mouse_position = over, mouse_down = true}) }
+    testing.expect_value(t, test.fired, 0)
+    for _ in 0 ..< 4 { frame(test, {mouse_position = over, mouse_down = true}) }
+    testing.expect_value(t, test.fired, 1)
+    for _ in 0 ..< 20 { frame(test, {mouse_position = over + {1, 1}, mouse_down = true}) }
+    testing.expect_value(t, test.fired, 1)
+    // it moves and stands again: again
+    frame(test, {mouse_position = over + {40, 0}, mouse_down = true})
+    for _ in 0 ..< 10 { frame(test, {mouse_position = over + {40, 0}, mouse_down = true}) }
+    testing.expect_value(t, test.fired, 2)
+    // over a widget that waits for another kind: nothing
+    for _ in 0 ..< 12 { frame(test, {mouse_position = center(test, test.other), mouse_down = true}) }
+    testing.expect_value(t, test.fired_other, 0)
+    testing.expect_value(t, test.fired, 2)
+    frame(test, {mouse_position = {-100, -100}, mouse_released = true})
+    frame(test, {mouse_position = {-100, -100}})
+    _, dragging = UiDragging(&test.ctx)
+    testing.expect(t, !dragging)
+}

@@ -23,6 +23,10 @@ DragState :: struct {
     kind: Id,
     data: [DRAG_PAYLOAD_BYTES]u8,
     size: int,
+    rest_id: Id,                // UiDragRest: the widget the drag stands over, where and for how long
+    rest_position: Vec2,
+    rest_time: f32,
+    rest_fired: bool,
 }
 
 // Call right after the widget that can be dragged. True while this widget is the one being dragged (a style or the program can draw it differently).
@@ -69,6 +73,30 @@ dropTarget :: proc(ctx: ^Context, kind: string) -> (payload: []u8, dropped: bool
 // Something of this kind is being dragged and the pointer is over the widget declared just before
 UiDropHover :: proc(ctx: ^Context, kind: string) -> bool {
     return ctx.drag.active && ctx.drag.kind == IdFromString(kind) && ctx.hover == ctx.last_id
+}
+
+// A drag that moves less than this many pixels stands still
+DRAG_REST_DISTANCE :: 4
+
+// The drag stood still over the widget declared just before: true once, when something of this kind has been held over it without moving for `seconds`. For what
+// opens under a drag (a folder that springs open, a tab that comes to the front): the widget is not asked to take what is dragged, it is asked to get out of the
+// way. It fires again after the pointer moved or came back.
+UiDragRest :: proc(ctx: ^Context, kind: string, seconds: f32 = 0.75) -> bool {
+    id: Id = ctx.last_id
+    drag: ^DragState = &ctx.drag
+    if id == 0 || !drag.active || drag.kind != IdFromString(kind) || ctx.hover != id {
+        if drag.rest_id == id { drag.rest_id = 0 }
+        return false
+    }
+    moved: Vec2 = ctx.input.mouse_position - drag.rest_position
+    if drag.rest_id != id || moved.x * moved.x + moved.y * moved.y > DRAG_REST_DISTANCE * DRAG_REST_DISTANCE {
+        drag.rest_id, drag.rest_position, drag.rest_time, drag.rest_fired = id, ctx.input.mouse_position, 0, false
+        return false
+    }
+    drag.rest_time += ctx.delta_time
+    if drag.rest_fired || drag.rest_time < seconds { return false }
+    drag.rest_fired = true
+    return true
 }
 
 // Is something dragged, and which widget it comes from

@@ -59,6 +59,9 @@ Click :: proc "contextless" (position: Vec2, button: MouseButton = .LEFT) -> Ste
 // A click at a place that is only known while the script runs: a Check before it finds a widget (by its rectangle of the last frame) and writes the point into `target`.
 // For layouts that depend on the widths of texts, where a fixed number would be right for one font only.
 ClickAt :: proc "contextless" (target: ^Vec2, button: MouseButton = .LEFT) -> Step { return {kind = .MOUSE_CLICK, target = target, button = button} }
+// The pointer goes to a place that is only known while the script runs (see ClickAt): with MouseDownStep and MouseUpStep around it, a drag between widgets that a
+// Check found.
+MoveAt :: proc "contextless" (target: ^Vec2) -> Step { return {kind = .MOUSE_MOVE, target = target} }
 // Hold a button and move from one point to another over `frames` frames
 Drag :: proc "contextless" (from: Vec2, to: Vec2, frames: u32, button: MouseButton = .LEFT) -> Step { return {kind = .MOUSE_DRAG, from = from, position = to, frames = frames, button = button} }
 // The mouse moves by this much in this frame (a captured mouse, a first person look) without a position
@@ -181,7 +184,7 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
             player.active = true
             player.wait_left = max(step.frames, 1)
         case .MOUSE_MOVE:
-            player.mouse_position = step.position
+            player.mouse_position = step.target^ if step.target != nil else step.position
         case .MOUSE_DOWN:
             player.held_buttons += {step.button}
         case .MOUSE_UP:

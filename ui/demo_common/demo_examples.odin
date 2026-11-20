@@ -1,7 +1,7 @@
 #+private file
 package demo_common
 
-// Fifteen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Sixteen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
 // a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
@@ -97,6 +97,12 @@ State :: struct {
     mention_id: ui.Id,
     mentions: int,
     mentioned: int,
+    // 35_spring
+    folder: int,                // the folder that is open
+    file_parents: [len(SPRING_FILES)]int,
+    spring_seconds: f32,
+    spring_over: int,           // the folder a drag was over in the last frame (-1: none)
+    spring_target: int,         // for the script: a row to find
     // 37_custom
     ratings: [2]int,
     rating_ids: [2]ui.Id,
@@ -124,7 +130,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [15]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code", "Custom", "Mentions"}
+EXAMPLES: [16]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code", "Custom", "Mentions", "Spring"}
 NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
@@ -153,6 +159,7 @@ init :: proc(ctx: ^kit.Context) {
     state.arrived = -1
     state.paper, state.page = 1, 0
     state.ratings = {3, 0}
+    state.folder, state.file_parents, state.spring_seconds, state.spring_over = 0, {0, 0, 1}, 0.75, -1
     state.mention_length, state.mentions, state.mentioned = 0, 0, -1
     state.code_length = copy(state.code[:], CODE_SAMPLE)
     state.chords = {{{.CTRL}, u16(kit.Key.S)}, {{.CTRL}, u16(kit.Key.O)}, {{.CTRL}, u16(kit.Key.F)}, {{.CTRL, .SHIFT}, u16(kit.Key.B)}, {}}
@@ -727,6 +734,63 @@ mentions :: proc(c: ^ui.Context) {
     }
 }
 
+// 35_spring: folders that spring open. A file that is dragged and held over a folder for a moment opens the folder under the drag, and the drag goes on
+// inside of it; let go and the file lands in the folder that is open then (or in the folder it is let go over).
+SPRING_FOLDERS: [5]string = {"Home", "Projects", "Archive", "2026", "Reports"}
+SPRING_FOLDER_PARENTS: [5]int = {-1, 0, 0, 1, 3}
+SPRING_FILES: [3]string = {"report.pdf", "notes.txt", "budget.xlsx"}
+
+spring :: proc(c: ^ui.Context) {
+    if stage(c, "spring", {480, 420}, {direction = .TOP_TO_BOTTOM, gap = 10, padding = ui.PaddingAll(24)}) {
+        ui.UiTitle(c, "Spring-loaded folders", 1.6)
+        ui.UiLabelDim(c, "Drag a file and hold it over a folder: the folder opens under it.", .WORDS)
+        // the way to the open folder; Up takes a drop and springs like a folder
+        parent: int = SPRING_FOLDER_PARENTS[state.folder]
+        took: bool
+        over: int = -1
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 8, align = {y = .CENTER}}})
+        if ui.UiTagged(c, "secondary" if state.spring_over == parent && parent >= 0 else "ghost") {
+            if ui.UiButton(c, "Up", {}, parent < 0, .CHEVRON_UP) { state.folder = parent }
+        }
+        if parent >= 0 {
+            if ui.UiDropHover(c, "file") { over = parent }
+            if ui.UiDragRest(c, "file", state.spring_seconds) { state.folder = parent }
+            if payload, dropped := ui.UiDropTarget(c, "file"); dropped {
+                state.file_parents[(cast(^int)raw_data(payload))^] = parent
+                took = true
+            }
+        }
+        ui.UiLabel(c, SPRING_FOLDERS[state.folder])
+        ui.ElementClose(c)
+        ui.UiSeparator(c)
+        for name, i in SPRING_FOLDERS {
+            if SPRING_FOLDER_PARENTS[i] != state.folder { continue }
+            if ui.UiTagged(c, "secondary" if state.spring_over == i else "ghost") {
+                if ui.UiButton(c, ui.UiFormat(c, "%s##folder", name), {ui.Grow(), {}}, false, .FOLDER) { state.folder = i }
+            }
+            if ui.UiDropHover(c, "file") { over = i }
+            if ui.UiDragRest(c, "file", state.spring_seconds) { state.folder = i }
+            if payload, dropped := ui.UiDropTarget(c, "file"); dropped {
+                state.file_parents[(cast(^int)raw_data(payload))^] = i
+                took = true
+            }
+        }
+        for name, i in SPRING_FILES {
+            if state.file_parents[i] != state.folder { continue }
+            index: int = i
+            if ui.UiTagged(c, "ghost") { ui.UiButton(c, ui.UiFormat(c, "%s##file", name), {ui.Grow(), {}}, false, .FILE) }
+            ui.UiDragSourceValue(c, "file", &index)
+        }
+        state.spring_over = over
+        // let go anywhere else: the file lands in the folder that is open
+        if _, dragging := ui.UiDragging(c); dragging {
+            dragged: int = (cast(^int)raw_data(ui.UiDragPayload(c)))^
+            ui.UiDragPreview(c, SPRING_FILES[dragged])
+            if c.input.mouse_released && !took { state.file_parents[dragged] = state.folder }
+        }
+    }
+}
+
 // 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
 charts :: proc(c: ^ui.Context) {
     if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
@@ -955,6 +1019,8 @@ draw :: proc(ctx: ^kit.Context) {
         custom(c)
     case 14:
         mentions(c)
+    case 15:
+        spring(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -1421,5 +1487,50 @@ script: []kit.Step = {
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.mention[:state.mention_length]) == "Look at @render.odin " && state.mentions == 1 }, "Enter writes the chosen name in"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !drawn(.DROPDOWN_ITEM, "render.odin") && shown("1 mentioned, the last one: render.odin", "dim") }, "the list is closed"),
+
+    // spring: a file is dragged over a folder and held there: the folder opens under the drag; let go on the empty part and the file is in that folder
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(15) }, "the Spring tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        state.spring_seconds = 1000                         // not while the picture is taken: the time of a frame differs between machines
+        return drawn(.BUTTON, "report.pdf")
+    }, "the file is in Home"),
+    kit.MoveAt(&target),
+    kit.Wait(2),
+    kit.MouseDownStep(),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.BUTTON, "Projects") }, "the folder is in Home"),
+    kit.MoveAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        _, dragging := ui.UiDragging(&state.app.ctx)
+        return dragging && state.spring_over == 1 && state.folder == 0
+    }, "the file is dragged over the folder"),
+    kit.Capture("examples_spring"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        state.spring_seconds = 0.02
+        return true
+    }, "now it springs"),
+    kit.Wait(60),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        _, dragging := ui.UiDragging(&state.app.ctx)
+        // the folder under the pointer in Projects is 2026, in there Reports: held still, the drag goes as deep as there are folders under it
+        return dragging && state.folder == 4 && !drawn(.BUTTON, "budget.xlsx")
+    }, "the folders opened under the drag, one after the other"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        // the empty part of the page, under the rows
+        found: bool = drawn(.BUTTON, "Up")
+        target.x += 150
+        target.y += 150
+        state.spring_seconds = 1000
+        return found
+    }, "the page"),
+    kit.MoveAt(&target),
+    kit.Wait(2),
+    kit.MouseUpStep(),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.file_parents[0] == 4 && state.folder == 4 && drawn(.BUTTON, "report.pdf") }, "the file landed in the folder that is open"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
