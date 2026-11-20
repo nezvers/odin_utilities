@@ -1,7 +1,6 @@
 package ui_default
 
 import ui ".."
-import icons "../../icons"
 
 // An icon of the ui: the Lucide picture through the painter (the icons the library names itself, and every one made with LucideIcon). A painter without icons draws the
 // file and folder pictures with rectangles on a grid of 16 x 16, so a tree still has them.
@@ -10,25 +9,8 @@ DrawIcon :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     color: ui.Color = info.color if info.color.a > 0 else painter.theme.text_dim
     icon: ui.Icon = cast(ui.Icon)clamp(int(info.actual), 0, 0xffff)
     if painter.draw_icon != nil {
-        lucide: icons.Icon = IconToLucide(icon)
-        #partial switch icon {
-        case .CLOSE:
-            lucide = .X
-        case .CHECK:
-            lucide = .CHECK
-        case .SEARCH:
-            lucide = .SEARCH
-        case .CHEVRON_UP:
-            lucide = .CHEVRON_UP
-        case .CHEVRON_DOWN:
-            lucide = .CHEVRON_DOWN
-        case .CHEVRON_LEFT:
-            lucide = .CHEVRON_LEFT
-        case .CHEVRON_RIGHT:
-            lucide = .CHEVRON_RIGHT
-        }
         side: f32 = min(info.rect.z, info.rect.w)
-        IconAt(painter, lucide, ui.RectCenter(info.rect), side, color)
+        IconAt(painter, IconToLucide(icon), ui.RectCenter(info.rect), side, color)
         return
     }
     soft: ui.Color = ui.ColorLerp(color, painter.theme.track, 0.55)

@@ -1,9 +1,10 @@
 #+private file
 package demo_common
 
-// Five examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Six examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
-// that a click takes away) and 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page). The texts and the sample data are the ones of the originals. There a `view` builds a tree and an `update` answers messages; here the page is
+// that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) and 05_overlays (a select,
+// a menu that opens from a button, tooltips, a card that takes a click, a dialog). The texts and the sample data are the ones of the originals. There a `view` builds a tree and an `update` answers messages; here the page is
 // declared every frame and a widget hands back what happened: the counter is `if ui.UiButton(...) { count += 1 }`.
 
 import ui ".."
@@ -45,11 +46,20 @@ State :: struct {
     search_length: int,
     lab_switch: bool,
     swatch_ids: [len(ACCENTS)]ui.Id,        // for the script
+    // 05_overlays
+    fruit: int,
+    confirm: bool,
+    deleted: int,
+    last: string,
+    duplicate_id: ui.Id,            // for the script: the entry of the menu and the cross of the card, as they were declared
+    dismiss_id: ui.Id,
+    note_id: ui.Id,
 }
 
 state: State
 
-EXAMPLES: [5]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab"}
+EXAMPLES: [6]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays"}
+FRUIT: [5]string = {"Apple", "Banana", "Cherry", "Dragon fruit", "Elderberry"}
 MODES: [2]string = {"Dark", "Light"}
 // the tiles of the original (red, amber, green, blue, violet, pink) and a grey, which gives a theme without a hue
 ACCENTS: [7]ui.Color = {{229, 72, 77, 255}, {242, 181, 68, 255}, {34, 197, 94, 255}, {59, 130, 246, 255}, {139, 92, 246, 255}, {236, 72, 153, 255}, {128, 128, 128, 255}}
@@ -69,6 +79,7 @@ init :: proc(ctx: ^kit.Context) {
     state.accent = ACCENTS[3]
     _, _, state.hue = ui_default.ColorToOklch(state.accent)
     state.lab_switch = true
+    state.fruit = 2
     ctx.background = kit.Color(state.app.painter.theme.background)
 }
 
@@ -229,6 +240,80 @@ toasts :: proc(c: ^ui.Context, screen: ui.Vec2) {
     }
 }
 
+// 05_overlays: what lies over the page. The select, the tooltips and the menu keep their own state; the dialog is open while the program says so.
+overlays :: proc(c: ^ui.Context) {
+    if stage(c, "overlays", {640, 560}, {direction = .TOP_TO_BOTTOM, gap = 14, padding = ui.PaddingAll(24)}) {
+        ui.UiTitle(c, "Overlays", 1.6)
+        if ui.UiTagged(c, "flat") {
+            if ui.UiCard(c, "Select") {
+                if row(c) {
+                    ui.UiLabelDim(c, "Favourite fruit")
+                    ui.UiDropdown(c, "##fruit", FRUIT[:], &state.fruit, {ui.Fixed(220), {}})
+                }
+                ui.UiLabelDim(c, ui.UiFormat(c, "You picked %s.", FRUIT[state.fruit]), scale = 0.9)
+            }
+            if ui.UiCard(c, "Popover menu") {
+                if row(c) {
+                    ui.UiPushTag(c, "outline")
+                    if ui.UiMenu(c, "Actions...") {
+                        if ui.UiMenuItem(c, "Rename", "F2") { state.last = "Rename" }
+                        state.duplicate_id = ui.UiId(c, "Duplicate")
+                        if ui.UiMenuItem(c, "Duplicate", "Ctrl+D") { state.last = "Duplicate" }
+                        ui.UiSeparator(c)
+                        if ui.UiMenuItem(c, "Delete...", "Del") { state.confirm = true }
+                    }
+                    ui.UiPopTag(c)
+                    ui.UiLabelDim(c, "Nothing chosen yet." if state.last == "" else ui.UiFormat(c, "Last: %s", state.last))
+                }
+            }
+            if ui.UiCard(c, "Dialog") {
+                if row(c) {
+                    if ui.UiTagged(c, "danger") {
+                        if ui.UiButton(c, "Delete file...") { state.confirm = true }
+                    }
+                    ui.UiTooltip(c, "Asks first: nothing is deleted without confirming")
+                    ui.UiLabelDim(c, ui.UiFormat(c, "Deleted %d file(s).", state.deleted))
+                }
+            }
+            if ui.UiCard(c, "Clickable card") {
+                // the whole note takes a click, the cross in it keeps its own
+                state.note_id = ui.UiId(c, "note")
+                if ui.UiInteract(c, state.note_id).clicked { state.last = "Opened the message" }
+                ui.ElementOpen(c, {
+                    id = state.note_id,
+                    layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 8, padding = ui.PaddingAll(12), align = {y = .CENTER}},
+                    hit = {.INTERACTIVE},
+                    draw = {kind = .SELECTABLE},
+                })
+                ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .TOP_TO_BOTTOM, gap = 2}})
+                ui.UiTitle(c, "Ada", 1)
+                ui.UiLabelDim(c, "Lunch at one?")
+                ui.ElementClose(c)
+                state.dismiss_id = ui.UiId(c, "##dismiss")
+                if ui.UiTagged(c, "ghost") {
+                    if ui.UiButton(c, "##dismiss", icon = .CLOSE) { state.last = "Dismissed the message" }
+                }
+                ui.ElementClose(c)
+            }
+        }
+    }
+    if ui.UiModal(c, "Delete this file?", &state.confirm, {ui.Fixed(380), {}}) {
+        ui.UiTitle(c, "Delete this file?")
+        ui.UiLabel(c, "The file is moved to the bin. You can restore it from there for 30 days.", .WORDS)
+        if row(c, 8, .RIGHT) {
+            if ui.UiTagged(c, "outline") {
+                if ui.UiButton(c, "Cancel") { state.confirm = false }
+            }
+            if ui.UiTagged(c, "danger") {
+                if ui.UiButton(c, "Delete") {
+                    state.deleted += 1
+                    state.confirm = false
+                }
+            }
+        }
+    }
+}
+
 // 02_theme_lab: the accent is picked by a tile or by its hue, the theme of the page is made from it (ui_default.ThemeFromAccent); a side bar, a card with every kind of
 // button, chips, a field and a disabled button show what the theme does with them
 themeLab :: proc(c: ^ui.Context) {
@@ -328,6 +413,8 @@ draw :: proc(ctx: ^kit.Context) {
         toasts(c, ctx.screen)
     case 4:
         themeLab(c)
+    case 5:
+        overlays(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -459,5 +546,52 @@ script: []kit.Step = {
     kit.Wait(4),
     kit.Capture("examples_theme_violet_light"),
     kit.Wait(2),
+
+    // overlays: the menu from its button, the card and its cross, the dialog
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        state.mode, state.accent = 0, ACCENTS[3]
+        return tab(5)
+    }, "the Overlays tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("overlays", "Popover menu", "Actions...")) }, "the button of the menu is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(state.duplicate_id) }, "the menu is open: its Duplicate entry is on the screen"),
+    kit.MoveTo({900, 650}),
+    kit.Wait(3),
+    kit.Capture("examples_overlays_menu"),
+    kit.Wait(2),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.last == "Duplicate" }, "the entry of the menu was used"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        _, open := ui.UiElementRect(&state.app.ctx, state.duplicate_id)
+        return !open
+    }, "using an entry closes the menu"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        rect, found := ui.UiElementRect(&state.app.ctx, state.note_id)
+        target = {rect.x + 40, rect.y + rect.w * 0.5}
+        return found
+    }, "the note is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.last == "Opened the message" }, "a click on the note opens the message"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(state.dismiss_id) }, "the cross of the note is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.last == "Dismissed the message" }, "the cross keeps its own click"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("overlays", "Dialog", "Delete file...")) }, "the Delete file button is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.confirm && state.deleted == 0 }, "the dialog asks first"),
+    kit.MoveTo({900, 650}),
+    kit.Wait(3),
+    kit.Capture("examples_overlays_dialog"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("Delete this file?", "Delete")) }, "the Delete button of the dialog is on the screen"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !state.confirm && state.deleted == 1 }, "Delete in the dialog deletes and closes it"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

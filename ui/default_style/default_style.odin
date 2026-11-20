@@ -160,6 +160,20 @@ IconToLucide :: proc "contextless" (icon: ui.Icon) -> icons.Icon {
         return .FILE_IMAGE
     case .AUDIO:
         return .FILE_MUSIC
+    case .CLOSE:
+        return .X
+    case .CHECK:
+        return .CHECK
+    case .SEARCH:
+        return .SEARCH
+    case .CHEVRON_UP:
+        return .CHEVRON_UP
+    case .CHEVRON_DOWN:
+        return .CHEVRON_DOWN
+    case .CHEVRON_LEFT:
+        return .CHEVRON_LEFT
+    case .CHEVRON_RIGHT:
+        return .CHEVRON_RIGHT
     }
     return .NONE
 }
@@ -845,10 +859,23 @@ DrawMenuBar :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter.fill_rect(painter, {info.rect.x, info.rect.y + info.rect.w - 1, info.rect.z, 1}, theme.border_soft)
 }
 
+// The title of a menu: its name with a wash while it is open or under the pointer. With a button tag around it ("outline", "primary"...) it is that button: a menu that
+// opens from a button, not from a bar.
 DrawMenu :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
     FocusRing(painter, info)
+    if info.actual != 1 {
+        for tag in ([?]string{"outline", "primary", "secondary", "danger"}) {
+            if !ui.DrawInfoHasTag(info, tag) { continue }
+            pressed: ui.DrawInfo = info^
+            if .OPEN in info.flags { pressed.press = 1 }
+            fill, ink, border := ButtonColors(theme, &pressed)
+            FillRoundedBorder(painter, info.rect, theme.rounding, fill, border, theme.border_width if border.a > 0 else 0, theme.max_radius)
+            IconAndLabel(painter, info, ink)
+            return
+        }
+    }
     wash: ui.Color = StateWash(theme, theme.text, info, theme.press if .OPEN in info.flags else 0)
     if wash.a > 2 { FillRounded(painter, info.rect, theme.rounding, wash, 6) }
     if info.actual == 1 {
