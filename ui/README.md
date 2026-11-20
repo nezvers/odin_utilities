@@ -171,7 +171,7 @@ library does not do (frosted glass: the blur of what is behind a card) is left o
 (`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
 
 ## Examples of Baldr, remade
-`demo_common/demo_examples.odin` has seventeen of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
+`demo_common/demo_examples.odin` has eighteen of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
 `update`), `04_controls` (check boxes, a switch and thin sliders that change the state of the program in place; the switch turns the page to the light theme), `03_scroll` (forty
 cards in a scrolling region, a ghost button on each), `17_toasts` (raised cards at the top right that a click takes away: floating elements with `ui.UiInteract`) and
 `02_theme_lab` (a page to judge a theme by: here its accent is picked by a tile or a hue and the theme is made on the spot with `ThemeFromAccent`) and `05_overlays` (a select,
@@ -186,7 +186,7 @@ controls in the same colors, inside of a window that keeps its theme: a theme ar
 `ui.UiInteract`, an element of the kind CUSTOM whose draw proc uses `ui_default.PainterOf(ctx)`, and `ui.UiNavBlock` for the arrows it takes itself) `34_mentions` (a text whose `@` offers the files of a project) and `35_spring` (folders that open under a file that is dragged and held over them:
 `ui.UiDragRest(&ctx, kind, seconds)` after a widget is true once when a drag has stood still over it) and `28_lines` (the overlays of an image editor in one
 CUSTOM element: a selection in dashes that march, a crop frame with its thirds, a transform box turned with its layer; `ui_default.LineDashed`, `PathDashed`,
-`PathLines`, `RectCorners` in `default_style/lines.odin`). The texts
+`PathLines`, `RectCorners` in `default_style/lines.odin`) and `25_terminal` (the output of a program in its colors, with a prompt). The texts
 and the sample data are the originals'. Each has its part of the script and a stored picture.
 
 ## The demo of Dear ImGui, remade
@@ -318,6 +318,14 @@ default style has the colors of the tags `ui.SYNTAX_KEYWORD`, `_TYPE`, `_STRING`
 look like C or Odin by a `HighlightLanguage` (keywords, types, the marks of comments, the quote of raw strings). What goes over several lines (a block comment, nested
 in Odin, a raw string) is carried from row to row in a `state` number: the area runs the highlighter over all rows once when the text changed and keeps the state of every
 row with its cached rows, so a frame only asks for the rows in view. A string in quotes ends with its row. Nothing is allocated; at most `AREA_SPANS` (96) spans a row.
+
+## The output of a program
+`ansi.odin`: `ui.UiAnsiText(&ctx, output)` draws a text with the colors and styles its escape sequences ask for (what a compiler, a test runner or git writes): bold, dim,
+italic, the 16 colors (`ANSI_COLORS_DARK` / `ANSI_COLORS_LIGHT`, or a palette of the program), the 256 colors and a color by its parts. `ui.UiAnsiLine` draws one line and
+carries the style to the next (`AnsiState`): for a long log declare only the lines in view with it. `AnsiNext` is the reader, run by run, for a program that wants the
+runs. The text is read every frame it is shown, nothing is kept or allocated. Bold and italic are the tags "strong" and "italic" on a text in the code face: the default style has one code face (JetBrains Mono Regular), so they
+look like the rest until a style gives them faces. A background color is not drawn and every other escape sequence (moving the cursor,
+clearing) is skipped: it shows a log, it is not a screen of cells.
 
 ## Editing commands for a text
 `textformat.odin`: what the buttons of an editor do to the text of a `ui.UiTextArea` or `ui.UiTextField` from outside of it. `ui.UiTextWrap(&ctx, id, buffer[:], &length,

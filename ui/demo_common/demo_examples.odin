@@ -1,7 +1,7 @@
 #+private file
 package demo_common
 
-// Seventeen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Eighteen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
 // a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
@@ -105,6 +105,13 @@ State :: struct {
     spring_seconds: f32,
     spring_over: int,           // the folder a drag was over in the last frame (-1: none)
     spring_target: int,         // for the script: a row to find
+    // 25_terminal
+    term_lines: [TERM_LINES]TermLine,
+    term_count: int,
+    command: [48]u8,
+    command_length: int,
+    command_id: ui.Id,
+    term_follow: int,
     // 28_lines
     turn: f32,                  // the angle of the transform box, degrees
     march: bool,
@@ -135,7 +142,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [17]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code", "Custom", "Mentions", "Spring", "Lines"}
+EXAMPLES: [18]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code", "Custom", "Mentions", "Spring", "Lines", "Terminal"}
 NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
@@ -164,6 +171,8 @@ init :: proc(ctx: ^kit.Context) {
     state.arrived = -1
     state.paper, state.page = 1, 0
     state.ratings = {3, 0}
+    state.term_count, state.command_length = 0, 0
+    for line in TERM_SEED { term_add(line) }
     state.turn, state.march = 12, false
     state.folder, state.file_parents, state.spring_seconds, state.spring_over = 0, {0, 0, 1}, 0.75, -1
     state.mention_length, state.mentions, state.mentioned = 0, 0, -1
@@ -892,6 +901,74 @@ lines :: proc(c: ^ui.Context) {
     }
 }
 
+// 25_terminal: what a program wrote, as a terminal shows it: the colors and the styles of its escape sequences. The lines are kept as they came (fixed storage,
+// the oldest goes when it is full) and read into colored texts every frame; a prompt adds lines. It is a log, not a screen: nothing moves a cursor.
+TERM_LINES :: 24
+TermLine :: struct {
+    text: [112]u8,
+    length: int,
+}
+TERM_SEED: [9]string = {
+    "\x1b[2m$\x1b[0m odin test ui -strict-style -vet",
+    "\x1b[1;32m   Compiling\x1b[0m ui (247 tests)",
+    "\x1b[33mwarning\x1b[0m: \x1b[3mtext_storage\x1b[0m may be kept after the procedure returns",
+    "  \x1b[2m--> ui/shortcut.odin:76:5\x1b[0m",
+    "\x1b[36m[INFO ]\x1b[0m starting test runner with \x1b[1m12\x1b[0m threads",
+    "\x1b[32mok\x1b[0m   test_markdown_is_read_block_by_block \x1b[2m(0.4 ms)\x1b[0m",
+    "\x1b[32mok\x1b[0m   test_a_link_of_a_rich_text_is_clicked \x1b[2m(0.9 ms)\x1b[0m",
+    "\x1b[1;31mFAIL\x1b[0m test_a_completion_list_writes_the_item_in: expected \x1b[38;5;214m2\x1b[0m, got \x1b[38;5;214m1\x1b[0m",
+    "Finished 247 tests in \x1b[1m51 ms\x1b[0m. \x1b[31m1 test failed.\x1b[0m",
+}
+
+term_add :: proc(text: string) {
+    if state.term_count == TERM_LINES {
+        copy(state.term_lines[:TERM_LINES - 1], state.term_lines[1:])
+        state.term_count -= 1
+    }
+    line: ^TermLine = &state.term_lines[state.term_count]
+    line.length = copy(line.text[:], text)
+    state.term_count += 1
+    state.term_follow = 3
+}
+
+terminal :: proc(c: ^ui.Context) {
+    if stage(c, "terminal", {700, 440}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(20)}) {
+        ui.UiTitle(c, "Terminal", 1.25)
+        screen: ui.Id = ui.UiId(c, "##screen")
+        if state.term_follow > 0 {
+            ui.UiScrollSet(c, screen, 1e9)
+            state.term_follow -= 1
+        }
+        // the colors for the ground of the theme
+        palette: ^[16]ui.Color = &ui.ANSI_COLORS_DARK if state.app.painter.theme.dark else &ui.ANSI_COLORS_LIGHT
+        ui.UiPushTag(c, "flat")
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, padding = ui.PaddingAll(10)}, draw = {kind = .PANEL, name = "code"}})
+        ui.UiPopTag(c)
+        if ui.UiTagged(c, ui.TEXT_SELECTABLE) {
+            if ui.UiScroll(c, "##screen", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, gap = 3, padding = {0, 14, 0, 0}}) {
+                // the style goes on from line to line: a color that a line leaves on is the color of the next
+                style: ui.AnsiState
+                for &line in state.term_lines[:state.term_count] { ui.UiAnsiLine(c, string(line.text[:line.length]), &style, palette) }
+            }
+        }
+        ui.ElementClose(c)
+        state.command_id = ui.UiId(c, "Command##term")
+        if ui.UiTagged(c, "mono") {
+            _, entered := ui.UiTextField(c, "Command##term", state.command[:], &state.command_length, {ui.Grow(), {}})
+            if entered && state.command_length > 0 {
+                command: string = string(state.command[:state.command_length])
+                term_add(ui.UiFormat(c, "\x1b[2m$\x1b[0m %s", command))
+                if command == "test" {
+                    term_add("\x1b[1;32mok\x1b[0m   247 tests")
+                } else {
+                    term_add(ui.UiFormat(c, "\x1b[31merror\x1b[0m: no command \x1b[1m%s\x1b[0m", command))
+                }
+                state.command_length = 0
+            }
+        }
+    }
+}
+
 // 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
 charts :: proc(c: ^ui.Context) {
     if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
@@ -1124,6 +1201,8 @@ draw :: proc(ctx: ^kit.Context) {
         spring(c)
     case 16:
         lines(c)
+    case 17:
+        terminal(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -1725,5 +1804,33 @@ script: []kit.Step = {
     kit.Tap(.RIGHT),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.turn > 0 && state.turn != 12 }, "the slider turns the box"),
+
+    // terminal: the output in its colors and styles; a command adds its line and an answer, the screen follows
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(17) }, "the Terminal tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("   Compiling", "strong") && shown("text_storage", "italic") && shown("FAIL", "strong") && shown("1 test failed.", "mono") }, "the output has its styles"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        for command in ui.UiCommands(&state.app.ctx) {
+            info: ui.DrawInfo = command.info
+            if command.kind == .DRAW && info.kind == .LABEL && info.text == "warning" { return info.color == ui.ANSI_COLORS_DARK[3] }
+        }
+        return false
+    }, "and its colors"),
+    kit.Capture("examples_terminal"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        rect, found := ui.UiElementRect(&state.app.ctx, state.command_id)
+        target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+        return found
+    }, "the prompt is on the page"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(2),
+    kit.Type("test"),
+    kit.Tap(.ENTER),
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.term_count == len(TERM_SEED) + 2 && state.command_length == 0 && shown("   247 tests", "mono") }, "the command and its answer are on the screen, which followed"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
