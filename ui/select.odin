@@ -22,7 +22,7 @@ import "core:unicode/utf8"
 // Limits: one selection for the whole ui; a text outside of a list is a place by its index among the elements, right only while the texts before it stay the same
 //     a list needs UiSelectRows and a row_text proc (at most UI_SELECT_GROUPS, 8, lists in a frame); a row has a cell for each selectable text and a copy has a tab between them (columns in column order for a table)
 //     a copy is cut at UI_SELECT_BYTES (4096); letters are runes (a mark or an emoji sequence is several); no right-to-left text, no touch, no menu; the end follows the pointer one frame behind
-//     no selection in an icon, an image or a text of a widget (a field has its own selection); Shift + arrows move the end of a selection by letters, lines and pages, a word or a paragraph only by the clicks
+//     no selection in an icon, an image or a text of a widget (a field has its own selection); Shift + arrows move the end of a selection by letters, lines and pages; a double click selects a word and a drag from it goes on by words, a triple click a paragraph (no drag by paragraphs)
 //
 // Baldr's selection scope (examples/27_conversation) was the reason to have it; the code is written for this library.
 
@@ -80,6 +80,9 @@ TextSelect :: struct {
     press_time: f64,            // the last press on a text and where it was: a press at the same place soon after is a double click
     press_place: SelectPoint,
     presses: int,
+    by_word: bool,              // a drag that started with a double click: the end goes by whole words
+    word_low: SelectPoint,      // the word that the double click selected
+    word_high: SelectPoint,
     groups: [UI_SELECT_GROUPS]SelectGroup,
     group_count: int,
     row_group: Id,              // while a row is declared (UiSelectRow): the list and the row of the texts that are declared
@@ -371,7 +374,9 @@ selectAfterLayout :: proc(ctx: ^Context) {
                 // the word under the pointer
                 from, to := textWordAt(whole, int(place.offset))
                 select.anchor, select.cursor = selectPointOf(ctx, best.element, i32(from)), selectPointOf(ctx, best.element, i32(to))
-                select.dragging = false
+                // held and moved, the selection goes on by words from this one
+                select.word_low, select.word_high = select.anchor, select.cursor
+                select.by_word, select.dragging = true, true
             case:
                 // the whole paragraph: the texts before and after this one that stand in its row or go on from its line (the runs and lines of a rich text)
                 first, final: i32 = best.element, best.element
@@ -392,8 +397,10 @@ selectAfterLayout :: proc(ctx: ^Context) {
             select.active, select.dragging = false, false
         }
     } else if select.dragging {
-        if best.found { select.cursor = place }
-        if !input.mouse_down { select.dragging = false }
+        if best.found {
+            if select.by_word { selectWordDrag(ctx, best.element, place) } else { select.cursor = place }
+        }
+        if !input.mouse_down { select.dragging, select.by_word = false, false }
     }
     // select all, when the keys are not a text field's and the pointer is over the text or a part of it is selected: every selectable text of the frame
     focused: ^WidgetState = stateFind(ctx, ctx.focus)
@@ -453,6 +460,32 @@ selectAfterLayout :: proc(ctx: ^Context) {
     // copy, unless a text field that is edited has the keys
     if .COPY in input.actions && select.copied_length > 0 && !editing {
         UiClipboardSet(ctx, string(select.copied[:select.copied_length]))
+    }
+}
+
+// A place is before another (their texts or rows in order, then the byte)
+@(private)
+selectPointLess :: proc "contextless" (select: ^TextSelect, a: SelectPoint, b: SelectPoint) -> bool {
+    key_a, _ := selectKeyOf(select, a)
+    key_b, _ := selectKeyOf(select, b)
+    if key_a != key_b { return selectKeyLess(key_a, key_b) }
+    return a.offset < b.offset
+}
+
+// The drag that started with a double click, the pointer at `place` in the text `element`: the selection is the word of the double click and every word from it to the
+// one under the pointer. Dragging before the first word the anchor is the end of it, so the first word stays selected on either side.
+@(private)
+selectWordDrag :: proc(ctx: ^Context, element: i32, place: SelectPoint) {
+    select: ^TextSelect = &ctx.select
+    text: string = ctx.elements[element].text.text
+    probe: int = int(place.offset)
+    low, high := textWordAt(text, probe)
+    if low == high && probe > 0 { low, high = textWordAt(text, probe - 1) }           // at the end of the text: the last word
+    here_low, here_high := selectPointOf(ctx, element, i32(low)), selectPointOf(ctx, element, i32(high))
+    switch {
+    case selectPointLess(select, here_low, select.word_low): select.anchor, select.cursor = select.word_high, here_low
+    case selectPointLess(select, select.word_high, here_high): select.anchor, select.cursor = select.word_low, here_high
+    case: select.anchor, select.cursor = select.word_low, select.word_high
     }
 }
 

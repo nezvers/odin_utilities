@@ -51,7 +51,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Reverse video (SGR 7, 27) in the log view and the screen of cells
 - [x] Scroll regions of the screen of cells (DECSTBM, `S`, `T`)
 - [x] Completion: the part of an item that matched is drawn, items are ranked (prefix, start of a part, elsewhere)
-- [ ] (low) Selection of read text: a double click and a drag select by words, as editors do
+- [x] Selection of read text: a double click and a drag select by words
+- [ ] (low) Selection of read text: a triple click and a drag select by paragraphs; a word that is over two texts (the runs of a paragraph) is two words to the drag
 - [ ] (medium) Screen of cells: selection of cells, a width table that follows Unicode more closely (ambiguous widths, grapheme clusters, emoji sequences)
 - [x] Editing commands for a text (`UiTextWrap`, `UiTextLinePrefix`) and Baldr's 08_rich as a toolbar over the Markdown source
 - [x] Dashed lines and paths for overlays (`default_style/lines.odin`) and Baldr's 28_lines

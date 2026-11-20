@@ -987,3 +987,63 @@ test_a_selection_stays_while_the_scroll_bar_of_its_list_is_dragged :: proc(t: ^t
     testing.expect_value(t, selected, "")
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_a_drag_after_a_double_click_selects_by_words :: proc(t: ^testing.T) {
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 3 { frame(test, away) }
+    selected :: proc(test: ^Test) -> string {
+        text, _ := UiTextSelected(&test.ctx)
+        return text
+    }
+    // a click, a second press held and moved, the button let go
+    double_drag :: proc(test: ^Test, from: Vec2, to: Vec2, steps: int = 3) {
+        for _ in 0 ..< 40 { frame(test, {mouse_position = {-100, -100}}) }
+        frame(test, {mouse_position = from})
+        frame(test, {mouse_position = from, mouse_down = true, mouse_pressed = true})
+        frame(test, {mouse_position = from, mouse_released = true})
+        frame(test, {mouse_position = from, mouse_down = true, mouse_pressed = true})
+        for step in 1 ..= steps { frame(test, {mouse_position = from + (to - from) * (f32(step) / f32(steps)), mouse_down = true}) }
+        frame(test, {mouse_position = to, mouse_released = true})
+        frame(test, {mouse_position = {-100, -100}})
+    }
+    // the word of the double click, held still: that word
+    in_line: Vec2 = letter(test, "second line here", 9)
+    double_drag(test, in_line, in_line)
+    testing.expect_value(t, selected(test), "line")
+    // dragged forward into the next word: both, whole, also when the pointer is only in the middle of it
+    double_drag(test, in_line, letter(test, "second line here", 14))
+    testing.expect_value(t, selected(test), "line here")
+    // dragged within the word: the word
+    double_drag(test, in_line, letter(test, "second line here", 10))
+    testing.expect_value(t, selected(test), "line")
+    // dragged back before it: the first word stays selected, the end is the start of the word the pointer is in
+    double_drag(test, in_line, letter(test, "second line here", 3))
+    testing.expect_value(t, selected(test), "second line")
+    // dragged over to a text further on and back to a text before: by words across texts, the new line between them
+    in_world: Vec2 = letter(test, "hello world", 8)
+    double_drag(test, in_world, letter(test, "second line here", 3))
+    testing.expect_value(t, selected(test), "world\nsecond")
+    double_drag(test, letter(test, "second line here", 9), letter(test, "hello world", 8))
+    testing.expect_value(t, selected(test), "world\nsecond line")
+    // after the drag the next press is a plain one: by letters
+    for _ in 0 ..< 40 { frame(test, away) }
+    drag(test, letter(test, "hello world", 2), letter(test, "hello world", 4))
+    testing.expect_value(t, selected(test), "ll")
+    // a double click and no drag is still the word, and the third click the whole text
+    for _ in 0 ..< 40 { frame(test, away) }
+    frame(test, {mouse_position = in_line})
+    frame(test, {mouse_position = in_line, mouse_down = true, mouse_pressed = true})
+    frame(test, {mouse_position = in_line, mouse_released = true})
+    frame(test, {mouse_position = in_line, mouse_down = true, mouse_pressed = true})
+    frame(test, {mouse_position = in_line, mouse_released = true})
+    testing.expect_value(t, selected(test), "line")
+    frame(test, {mouse_position = in_line, mouse_down = true, mouse_pressed = true})
+    frame(test, {mouse_position = in_line, mouse_released = true})
+    testing.expect_value(t, selected(test), "second line here")
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

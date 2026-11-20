@@ -359,7 +359,7 @@ between the ends of the selection, in view or not, are copied from `row_text(use
 `cells` of `UiSelectRows`; the selectable texts of a row are its cells in the order they are declared, in a `UiTableCell` the cell is the column, so the selection stays on
 its columns when they are moved: give `cells` the number of columns and `row_text` the text of a column; a copy has the columns in column order) and `row_text(user, row, cell)` gives the text of one of them: a copy has
 a tab between the cells of a row and a new line between the rows. With the id of the scrolling list and the height of its rows (`UiSelectRows(..., cells, scroll, row_height)`) Shift with the up and down arrows, the left and right arrows (over the border of a cell into the next cell, of a row into the
-next row) and Page up and down also moves the end to rows that are out of view and scrolls the list to show it. A double click selects the word under the pointer, a third click the whole text (a label, or the
+next row) and Page up and down also moves the end to rows that are out of view and scrolls the list to show it. A double click selects the word under the pointer (held and moved it goes on by words), a third click the whole text (a label, or the
 paragraph with all of its runs and lines). Shift and a click extend the selection to there; the select all action takes every selectable text (while the pointer is over the
 text or a part is selected, and no text field is edited). The selection follows the pointer one frame behind. Shift with the arrows, Home or End moves its end by a letter, a line or to the end of its line (not while a text field is edited).
 
@@ -465,7 +465,7 @@ ticked off in `TODO.md`. Look here before relying on a widget for something it m
   - one selection for the whole ui; a text outside of a list is a place by its index among the elements, right only while the texts before it stay the same
   - a list needs UiSelectRows and a row_text proc (at most UI_SELECT_GROUPS, 8, lists in a frame); a row has a cell for each selectable text and a copy has a tab between them (columns in column order for a table)
   - a copy is cut at UI_SELECT_BYTES (4096); letters are runes (a mark or an emoji sequence is several); no right-to-left text, no touch, no menu; the end follows the pointer one frame behind
-  - no selection in an icon, an image or a text of a widget (a field has its own selection); Shift + arrows move the end of a selection by letters, lines and pages, a word or a paragraph only by the clicks
+  - no selection in an icon, an image or a text of a widget (a field has its own selection); Shift + arrows move the end of a selection by letters, lines and pages; a double click selects a word and a drag from it goes on by words, a triple click a paragraph (no drag by paragraphs)
 - **UiComplete** (`complete.odin`):
   - one trigger character, ASCII letters only match without regard to case, one match of the word in an item (the first) and a ranking by where it is, not by how often an item
   - is used; at most COMPLETE_ROWS (8) rows and no scrolling of a longer list
