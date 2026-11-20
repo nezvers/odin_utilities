@@ -82,6 +82,7 @@ Inspector :: struct {
     command_list: VirtualList,
     begin: time.Tick,           // UiBegin: the time of the frame (declaring and layout) is the time to UiEnd
     build_ms: [INSPECTOR_HISTORY]f32,       // the last frames, the newest at the end
+    fixed_ms: f32,              // more than 0: the build time that is recorded instead of the measured one (UiInspectorFixedTime)
     element_history: [INSPECTOR_HISTORY]f32,
     command_history: [INSPECTOR_HISTORY]f32,
     cut_off: bool,              // the frame had more elements than the table has rows
@@ -105,6 +106,15 @@ UiInspectorPick :: proc(ctx: ^Context, on: bool = true) {
 // Chooses what the inspector shows: the draw commands of the frame instead of the tree of the elements, the plots of the last frames above.
 UiInspectorView :: proc(ctx: ^Context, commands: bool, history: bool) {
     ctx.inspector.show_commands, ctx.inspector.show_history = commands, history
+}
+
+// For a picture that is compared with a stored one: the build time of every frame, the ones in the history too, is `milliseconds` from now on and not the measured
+// time, which differs from run to run. 0 measures again.
+UiInspectorFixedTime :: proc(ctx: ^Context, milliseconds: f32) {
+    ctx.inspector.fixed_ms = milliseconds
+    if milliseconds > 0 {
+        for &value in ctx.inspector.build_ms { value = milliseconds }
+    }
 }
 
 // The draw commands of the last snapshot (valid until the next UiEnd).
@@ -149,7 +159,7 @@ inspectorCapture :: proc(ctx: ^Context) {
     copy(inspector.build_ms[:INSPECTOR_HISTORY - 1], inspector.build_ms[1:])
     copy(inspector.element_history[:INSPECTOR_HISTORY - 1], inspector.element_history[1:])
     copy(inspector.command_history[:INSPECTOR_HISTORY - 1], inspector.command_history[1:])
-    inspector.build_ms[INSPECTOR_HISTORY - 1] = f32(time.duration_microseconds(time.tick_since(inspector.begin))) / 1000
+    inspector.build_ms[INSPECTOR_HISTORY - 1] = inspector.fixed_ms if inspector.fixed_ms > 0 else f32(time.duration_microseconds(time.tick_since(inspector.begin))) / 1000
     inspector.element_history[INSPECTOR_HISTORY - 1] = f32(ctx.element_count)
     inspector.command_history[INSPECTOR_HISTORY - 1] = f32(ctx.command_count)
     // the commands

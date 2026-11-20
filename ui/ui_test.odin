@@ -3564,6 +3564,11 @@ test_the_inspector_lists_commands_keeps_a_history_and_collapses_elements :: proc
     // the view of the commands and the plots is declared without problems
     UiInspectorView(ctx, true, true)
     for _ in 0 ..< 3 { inspectorFrame(ctx, &style, pointerAt({-10, -10})) }
+    // a fixed time for stored pictures: the whole history and the frames after it
+    UiInspectorFixedTime(ctx, 0.25)
+    inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+    testing.expect(t, ctx.inspector.build_ms[0] == 0.25 && ctx.inspector.build_ms[INSPECTOR_HISTORY - 1] == 0.25)
+    UiInspectorFixedTime(ctx, 0)
     testing.expect_value(t, ctx.problems, Problems{})
     UiInspectorView(ctx, false, false)
     // collapsing: the element that has children, closed, hides what is under it

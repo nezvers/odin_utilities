@@ -69,6 +69,8 @@ script: []kit.Step = {
     // the draw commands of the frame as a list, and the plots of the last frames
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         ui.UiInspectorView(&state.app.ctx, true, true)
+        // the plot of the build time is in the picture: the time of a frame differs from run to run
+        ui.UiInspectorFixedTime(&state.app.ctx, 0.25)
         return true
     }, "show the commands and the history"),
     kit.Wait(5),
