@@ -1,0 +1,25 @@
+# The categories next to each other: when the one that is being worked on has nothing left, the report looks here. `category: neighbour neighbour ...`
+# A category without a line has every other category that has a TODO file as its neighbour.
+ui: font icons demo_kit reports
+font: ui icons atlas_packer
+icons: ui font
+atlas_packer: font sprite tilemap
+demo_kit: ui reports input
+reports: ui demo_kit
+input: ui demo_kit fps_controller
+p2p: ai_messaging web_serve
+ai_messaging: p2p web_serve
+web_serve: web_build p2p browser_extension
+web_build: web_serve browser_extension
+browser_extension: web_build web_serve
+tilemap: sprite atlas_packer grid_collision_map
+sprite: tilemap atlas_packer
+tween: timer signal spring
+timer: tween signal
+signal: tween scene
+spring: tween timer
+scene: signal serial
+serial: scene save_file
+save_file: serial scene
+box2d_odin: grid_collision_map geometry2d
+grid_collision_map: tilemap box2d_odin geometry2d

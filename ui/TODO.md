@@ -47,7 +47,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] ANSI output: a screen of cells for programs that move the cursor (`AnsiScreen`)
 - [x] Screen of cells: scrollback (a caller owned ring) and wide characters (two cells, combining marks)
 - [x] Screen of cells: the alternate screen (`?1049`, `?47`, `?1047`)
-- [ ] Screen of cells: selection of cells, a width table that follows Unicode more closely (ambiguous widths, grapheme clusters, emoji sequences)
+- [ ] (medium) Screen of cells: selection of cells, a width table that follows Unicode more closely (ambiguous widths, grapheme clusters, emoji sequences)
 - [x] Editing commands for a text (`UiTextWrap`, `UiTextLinePrefix`) and Baldr's 08_rich as a toolbar over the Markdown source
 - [x] Dashed lines and paths for overlays (`default_style/lines.odin`) and Baldr's 28_lines
 - [x] Text that is read can be selected and copied (`TEXT_SELECTABLE`, select.odin) and Baldr's 27_conversation in the chat example
