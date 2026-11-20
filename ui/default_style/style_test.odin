@@ -4,6 +4,7 @@ package ui_default
 // The style without a window: a frame with the widgets of the library is rendered into a painter that only writes down what it was asked to draw. The pictures of the
 // demos check how it looks; this checks that every kind draws, with and without icons, in both themes, and leaves the painter as it found it.
 
+import "core:math"
 import "core:testing"
 import ui ".."
 import icons "../../icons"
@@ -429,4 +430,44 @@ test_the_style_draws_the_texts_with_styles_inside :: proc(t: ^testing.T) {
         testing.expect_value(t, e.painter.face, Face.REGULAR)
         testing.expect_value(t, e.painter.theme.text, theme.text)
     }
+}
+
+@(test)
+test_dashed_lines_keep_their_pattern_around_corners :: proc(t: ^testing.T) {
+    painter: Painter
+    recorder: Recorder
+    recorderPainter(&painter, &recorder, THEME_DARK, false)
+    // 100 long, dashes of 6 with gaps of 4: ten dashes
+    after: f32 = LineDashed(&painter, {0, 0}, {100, 0}, 1, 6, 4, {255, 255, 255, 255})
+    testing.expect_value(t, recorder.polygons, 10)
+    testing.expect_value(t, after, 100)
+    // moved by half a period: a part of a dash at the start, ten whole ones... the last one is cut by the end
+    recorder.polygons = 0
+    LineDashed(&painter, {0, 0}, {100, 0}, 1, 6, 4, {255, 255, 255, 255}, 5)
+    testing.expect_value(t, recorder.polygons, 11)
+    // a phase the other way moves the pattern back: by half of its period it is the same picture
+    recorder.polygons = 0
+    LineDashed(&painter, {0, 0}, {100, 0}, 1, 6, 4, {255, 255, 255, 255}, -5)
+    testing.expect_value(t, recorder.polygons, 11)
+    // nothing to draw: no length, no dash
+    recorder.polygons = 0
+    testing.expect_value(t, LineDashed(&painter, {5, 5}, {5, 5}, 1, 6, 4, {255, 255, 255, 255}, 3), 3)
+    LineDashed(&painter, {0, 0}, {100, 0}, 1, 0, 4, {255, 255, 255, 255})
+    testing.expect_value(t, recorder.polygons, 0)
+    // a square of 4 x 25: the pattern goes around the corners, as many dashes as the line of 100 (a dash that is cut by a corner is two pieces)
+    square: [4]ui.Vec2 = {{0, 0}, {25, 0}, {25, 25}, {0, 25}}
+    PathDashed(&painter, square[:], true, 1, 6, 4, {255, 255, 255, 255})
+    testing.expect(t, recorder.polygons >= 10 && recorder.polygons <= 13)
+    recorder.polygons = 0
+    PathDashed(&painter, square[:], false, 1, 6, 4, {255, 255, 255, 255})
+    testing.expect(t, recorder.polygons >= 7 && recorder.polygons <= 10)
+    testing.expect(t, !recorder.bad_rect)
+    // the corners of a turned rectangle: a quarter turn puts the top left at the top right
+    corners: [4]ui.Vec2 = RectCorners({0, 0, 20, 10}, 0)
+    testing.expect(t, corners[0] == ui.Vec2{0, 0} && corners[2] == ui.Vec2{20, 10})
+    corners = RectCorners({0, 0, 20, 20}, math.PI / 2)
+    testing.expect(t, abs(corners[0].x - 20) < 0.001 && abs(corners[0].y) < 0.001)
+    recorder.polygons = 0
+    PathLines(&painter, corners[:], true, 1, {255, 255, 255, 255})
+    testing.expect_value(t, recorder.polygons, 4)
 }

@@ -1,7 +1,7 @@
 #+private file
 package demo_common
 
-// Sixteen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Seventeen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
 // a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
@@ -103,6 +103,9 @@ State :: struct {
     spring_seconds: f32,
     spring_over: int,           // the folder a drag was over in the last frame (-1: none)
     spring_target: int,         // for the script: a row to find
+    // 28_lines
+    turn: f32,                  // the angle of the transform box, degrees
+    march: bool,
     // 37_custom
     ratings: [2]int,
     rating_ids: [2]ui.Id,
@@ -130,7 +133,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [16]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code", "Custom", "Mentions", "Spring"}
+EXAMPLES: [17]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code", "Custom", "Mentions", "Spring", "Lines"}
 NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
@@ -159,6 +162,7 @@ init :: proc(ctx: ^kit.Context) {
     state.arrived = -1
     state.paper, state.page = 1, 0
     state.ratings = {3, 0}
+    state.turn, state.march = 12, false
     state.folder, state.file_parents, state.spring_seconds, state.spring_over = 0, {0, 0, 1}, 0.75, -1
     state.mention_length, state.mentions, state.mentioned = 0, 0, -1
     state.code_length = copy(state.code[:], CODE_SAMPLE)
@@ -798,6 +802,68 @@ spring :: proc(c: ^ui.Context) {
     }
 }
 
+// 28_lines: lines over a picture, the overlays of an image editor, none of which is a box. A selection with a hole in it in dashes that can march, a crop frame
+// with its thirds, a transform box that is turned with its layer. All of it is one CUSTOM element: its draw proc uses the lines of the default style.
+lines_draw :: proc(c: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^ui_default.Painter = ui_default.PainterOf(c)
+    theme: ^ui_default.Theme = &painter.theme
+    area: ui.Rect = info.rect
+    // the picture: a sheet with a layer on it
+    painter.fill_rect(painter, area, theme.track)
+    layer: ui.Rect = {area.x + area.z * 0.56, area.y + area.w * 0.2, area.z * 0.3, area.w * 0.42}
+    corners: [4]ui.Vec2 = ui_default.RectCorners(layer, state.turn * math.PI / 180)
+    painter.fill_polygon(painter, corners[:], theme.accent_soft)
+    // the transform box of the layer: its frame, a handle at every corner and in the middle of every side, the handle that turns it above the top
+    ui_default.PathLines(painter, corners[:], true, 1.5, theme.accent)
+    handle :: proc(painter: ^ui_default.Painter, at: ui.Vec2, theme: ^ui_default.Theme) {
+        painter.fill_rect(painter, {at.x - 4, at.y - 4, 8, 8}, theme.accent)
+        painter.fill_rect(painter, {at.x - 2.5, at.y - 2.5, 5, 5}, theme.panel)
+    }
+    for corner, i in corners {
+        handle(painter, corner, theme)
+        handle(painter, (corner + corners[(i + 1) % 4]) * 0.5, theme)
+    }
+    top: ui.Vec2 = (corners[0] + corners[1]) * 0.5
+    up: ui.Vec2 = top + (top - (corners[2] + corners[3]) * 0.5) * 0.22
+    ui_default.Line(painter, top, up, 1.5, theme.accent)
+    handle(painter, up, theme)
+    // a selection with a hole: two paths of dashes, light over dark so that they show on any picture; with March they move by the time
+    phase: f32 = f32(c.time) * 24 if state.march else 0
+    outer: ui.Rect = {area.x + area.z * 0.08, area.y + area.w * 0.14, area.z * 0.38, area.w * 0.5}
+    hole: ui.Rect = {outer.x + outer.z * 0.3, outer.y + outer.w * 0.3, outer.z * 0.4, outer.w * 0.4}
+    for rect in ([2]ui.Rect{outer, hole}) {
+        path: [4]ui.Vec2 = ui_default.RectCorners(rect, 0)
+        ui_default.PathLines(painter, path[:], true, 1, {0, 0, 0, 200})
+        ui_default.PathDashed(painter, path[:], true, 1, 5, 5, {255, 255, 255, 255}, phase)
+    }
+    // a crop frame: the frame, its thirds, a corner mark at every corner
+    crop: ui.Rect = {area.x + area.z * 0.2, area.y + area.w * 0.58, area.z * 0.6, area.w * 0.34}
+    frame: [4]ui.Vec2 = ui_default.RectCorners(crop, 0)
+    ui_default.PathLines(painter, frame[:], true, 1, theme.text)
+    for third in 1 ..< 3 {
+        x: f32 = crop.x + crop.z * f32(third) / 3
+        y: f32 = crop.y + crop.w * f32(third) / 3
+        ui_default.LineDashed(painter, {x, crop.y}, {x, crop.y + crop.w}, 1, 3, 4, theme.text_dim)
+        ui_default.LineDashed(painter, {crop.x, y}, {crop.x + crop.z, y}, 1, 3, 4, theme.text_dim)
+    }
+    for corner, i in frame {
+        inward: ui.Vec2 = {1 if i == 0 || i == 3 else -1, 1 if i < 2 else -1}
+        ui_default.Line(painter, corner, {corner.x + inward.x * 14, corner.y}, 3, theme.text)
+        ui_default.Line(painter, corner, {corner.x, corner.y + inward.y * 14}, 3, theme.text)
+    }
+}
+
+lines :: proc(c: ^ui.Context) {
+    if stage(c, "lines", {640, 480}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(20)}) {
+        ui.UiTitle(c, "Lines", 1.25)
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 16, align = {y = .CENTER}}})
+        ui.UiSlider(c, "Turn", &state.turn, -45, 45, {ui.Fixed(260), {}}, "%.0f")
+        ui.UiToggle(c, "March", &state.march)
+        ui.ElementClose(c)
+        ui.UiCustom(c, "##canvas", lines_draw, {ui.Grow(), ui.Grow()})
+    }
+}
+
 // 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
 charts :: proc(c: ^ui.Context) {
     if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
@@ -1028,6 +1094,8 @@ draw :: proc(ctx: ^kit.Context) {
         mentions(c)
     case 15:
         spring(c)
+    case 16:
+        lines(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -1589,5 +1657,23 @@ script: []kit.Step = {
     kit.MouseUpStep(),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.file_parents[0] == 4 && state.folder == 4 && drawn(.BUTTON, "report.pdf") }, "the file landed in the folder that is open"),
+
+    // lines: the overlays are drawn (the picture is taken with the dashes standing still); the slider turns the box
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(16) }, "the Lines tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.turn == 12 && !state.march && drawn(.TOGGLE, "March") }, "the page is shown"),
+    kit.Capture("examples_lines"),
+    kit.Wait(2),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.march }, "the toggle makes the dashes march"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.SLIDER, "Turn") }, "the slider"),
+    kit.ClickAt(&target),
+    kit.Tap(.RIGHT),
+    kit.Tap(.RIGHT),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.turn > 0 && state.turn != 12 }, "the slider turns the box"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

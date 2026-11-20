@@ -171,7 +171,7 @@ library does not do (frosted glass: the blur of what is behind a card) is left o
 (`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
 
 ## Examples of Baldr, remade
-`demo_common/demo_examples.odin` has sixteen of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
+`demo_common/demo_examples.odin` has seventeen of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
 `update`), `04_controls` (check boxes, a switch and thin sliders that change the state of the program in place; the switch turns the page to the light theme), `03_scroll` (forty
 cards in a scrolling region, a ghost button on each), `17_toasts` (raised cards at the top right that a click takes away: floating elements with `ui.UiInteract`) and
 `02_theme_lab` (a page to judge a theme by: here its accent is picked by a tile or a hue and the theme is made on the spot with `ThemeFromAccent`) and `05_overlays` (a select,
@@ -184,7 +184,9 @@ as it arrives, some characters a frame) and `32_chat` with the bubbles of `29_st
 `27_conversation`; the panel tags "bubble" and "mine" of the default style) and `33_reading` (a page in Paper, Sepia, Dusk or Night with its
 controls in the same colors, inside of a window that keeps its theme: a theme area) `20_shortcuts` (shortcuts that are set by pressing them) `07_code` (the text area with a highlighter for Odin) and `37_custom` (a star rating made in the demo: the pattern for a widget of one's own, with
 `ui.UiInteract`, an element of the kind CUSTOM whose draw proc uses `ui_default.PainterOf(ctx)`, and `ui.UiNavBlock` for the arrows it takes itself) `34_mentions` (a text whose `@` offers the files of a project) and `35_spring` (folders that open under a file that is dragged and held over them:
-`ui.UiDragRest(&ctx, kind, seconds)` after a widget is true once when a drag has stood still over it). The texts
+`ui.UiDragRest(&ctx, kind, seconds)` after a widget is true once when a drag has stood still over it) and `28_lines` (the overlays of an image editor in one
+CUSTOM element: a selection in dashes that march, a crop frame with its thirds, a transform box turned with its layer; `ui_default.LineDashed`, `PathDashed`,
+`PathLines`, `RectCorners` in `default_style/lines.odin`). The texts
 and the sample data are the originals'. Each has its part of the script and a stored picture.
 
 ## The demo of Dear ImGui, remade
