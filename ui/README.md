@@ -179,7 +179,7 @@ a menu that opens from a button: `ui.UiMenu` inside of a button tag, tooltips, a
 same numbers as a line, an area, bars and a scatter with `ui.UiChart`) and `09_jobs` (three downloads with their progress while the page stays live: the original
 runs each on a thread that posts messages, here a download is a number that grows with the time of the frame) and `19_markdown` (a text in Markdown and how it reads, side
 by side, with `ui.UiTextArea` and `ui.UiMarkdown`; the original is an editor that shows the styles while one types; its Stream button is `26_reply`: the note shown
-as it arrives, some characters a frame) and `32_chat` with the bubbles of `29_styled_text`
+as it arrives, some characters a frame; the buttons over the source are `08_rich`: Bold, Italic, Code, Link, Heading and List write their marks into the text) and `32_chat` with the bubbles of `29_styled_text`
 (bubbles as wide as their text with styles inside, a list that stays at its newest message, a field that sends; the messages are one selectable text, which is
 `27_conversation`; the panel tags "bubble" and "mine" of the default style) and `33_reading` (a page in Paper, Sepia, Dusk or Night with its
 controls in the same colors, inside of a window that keeps its theme: a theme area) `20_shortcuts` (shortcuts that are set by pressing them) `07_code` (the text area with a highlighter for Odin) and `37_custom` (a star rating made in the demo: the pattern for a widget of one's own, with
@@ -318,6 +318,12 @@ default style has the colors of the tags `ui.SYNTAX_KEYWORD`, `_TYPE`, `_STRING`
 look like C or Odin by a `HighlightLanguage` (keywords, types, the marks of comments, the quote of raw strings). What goes over several lines (a block comment, nested
 in Odin, a raw string) is carried from row to row in a `state` number: the area runs the highlighter over all rows once when the text changed and keeps the state of every
 row with its cached rows, so a frame only asks for the rows in view. A string in quotes ends with its row. Nothing is allocated; at most `AREA_SPANS` (96) spans a row.
+
+## Editing commands for a text
+`textformat.odin`: what the buttons of an editor do to the text of a `ui.UiTextArea` or `ui.UiTextField` from outside of it. `ui.UiTextWrap(&ctx, id, buffer[:], &length,
+"**", "**")` puts marks around the selection (around the cursor when nothing is selected, the cursor between them) and takes them away when they are already there;
+`ui.UiTextLinePrefix(&ctx, id, buffer[:], &length, "- ")` does the same with a mark at the start of the line of the cursor; `ui.UiTextSelectionOf(&ctx, id)` gives the
+selection. The widget gets the focus back, so the typing goes on, and the change is a step of its undo history.
 
 ## Selecting text that is read
 `select.odin`: everything declared inside of `ui.UiTagged(&ctx, ui.TEXT_SELECTABLE)` (labels, wrapped texts, the paragraphs of rich text and Markdown) is one text to the

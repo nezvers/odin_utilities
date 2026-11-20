@@ -15,6 +15,7 @@ import "core:reflect"
 import ui ".."
 import ui_default "../default_style"
 import kit "../../demo_kit"
+import icons "../../icons"
 
 @(private="package")
 demo_examples: kit.Demo = {
@@ -76,6 +77,7 @@ State :: struct {
     note: [1024]u8,
     note_length: int,
     source_id: ui.Id,
+    format_ids: [len(FORMATS)]ui.Id,
     arrived: int,               // the note is shown as it arrives (26_reply): how much of it is there, -1 when it is all shown
     opened: [64]u8,             // the address of the link that was clicked last
     opened_length: int,
@@ -406,6 +408,14 @@ jobs :: proc(c: ^ui.Context, delta_time: f32) {
     }
 }
 
+// What a button of the editor writes: marks around the selection, or (no `after`) a mark at the start of the line
+Format :: struct {
+    icon: icons.Icon,
+    before: string,
+    after: string,
+}
+FORMATS: [6]Format = {{.BOLD, "**", "**"}, {.ITALIC, "*", "*"}, {.CODE, "`", "`"}, {.LINK, "[", "](address)"}, {.HEADING_2, "## ", ""}, {.LIST, "- ", ""}}
+
 // 19_markdown: the source on the left, how it reads on the right. Every change of the text is on the right in the same frame: the view reads the text again each time.
 markdown :: proc(c: ^ui.Context) {
     // 26_reply: Stream shows the note as a reply arrives, some characters a frame (a fixed number: the page has no clock). The view reads what is there every
@@ -427,7 +437,25 @@ markdown :: proc(c: ^ui.Context) {
         ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, gap = 16}})
         state.source_id = ui.UiId(c, "Markdown source##note")
         // the source in the code face: its lines are measured in that face too, so they wrap where they are drawn
-        if ui.UiTagged(c, "mono") { ui.UiTextArea(c, "Markdown source##note", state.note[:], &state.note_length, {ui.Percent(0.45), ui.Grow()}) }
+        // 08_rich: the buttons of an editor. The document is the Markdown text: a button writes its marks around the selection or at the start of the line, the
+        // same button takes them away again, and the view on the right shows the result.
+        ui.ElementOpen(c, {layout = {size = {ui.Percent(0.45), ui.Grow()}, direction = .TOP_TO_BOTTOM, gap = 6}})
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 2}})
+        if ui.UiTagged(c, "ghost") {
+            for format, i in FORMATS {
+                name: string = ui.UiFormat(c, "##format %d", i)
+                state.format_ids[i] = ui.UiId(c, name)
+                if !ui.UiButton(c, name, {}, false, ui_default.LucideIcon(format.icon)) { continue }
+                if format.after != "" {
+                    ui.UiTextWrap(c, state.source_id, state.note[:], &state.note_length, format.before, format.after)
+                } else {
+                    ui.UiTextLinePrefix(c, state.source_id, state.note[:], &state.note_length, format.before)
+                }
+            }
+        }
+        ui.ElementClose(c)
+        if ui.UiTagged(c, "mono") { ui.UiTextArea(c, "Markdown source##note", state.note[:], &state.note_length, {ui.Grow(), ui.Grow()}) }
+        ui.ElementClose(c)
         if ui.UiScroll(c, "##preview", {ui.Grow(), ui.Grow()}, {direction = .TOP_TO_BOTTOM, padding = {0, 14, 0, 0}}) {
             // a clicked link gives its address: a program opens it, here it is shown (it is a part of the note, so it is copied before the note changes)
             // what is read can be selected and copied
@@ -1104,6 +1132,13 @@ draw :: proc(ctx: ^kit.Context) {
 // The script finds the widgets by where they were in the last frame: the pages are laid out by the widths of their texts
 target: ui.Vec2
 
+// `target` is the middle of a button of the editor
+format_target :: proc(index: int) -> bool {
+    rect, found := ui.UiElementRect(&state.app.ctx, state.format_ids[index])
+    target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    return found
+}
+
 // `target` is the middle of the shortcut field of a row
 chord_target :: proc(row: int) -> bool {
     rect, found := ui.UiElementRect(&state.app.ctx, state.chord_ids[row])
@@ -1412,6 +1447,21 @@ script: []kit.Step = {
     kit.Type(" Typed."),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown(". Typed.", "") }, "what is typed into the source is read on the right"),
+    // the buttons of the editor: Bold writes its marks at the caret and the typing goes on between them
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return format_target(0) }, "the Bold button"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Type("new"),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("new", "strong") && ui.UiIsFocused(&state.app.ctx, state.source_id) }, "the typed word is strong, the source kept the focus"),
+    // Heading makes the line of the caret a heading, and a line again
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return format_target(4) }, "the Heading button"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("See the README. Typed.new", "title") }, "the line is a heading"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !shown("See the README. Typed.new", "title") && shown("the README", "link") }, "and a line again"),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         for command in ui.UiCommands(&state.app.ctx) {
             info: ui.DrawInfo = command.info
