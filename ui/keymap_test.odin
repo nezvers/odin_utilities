@@ -73,3 +73,43 @@ test_a_key_map_turns_what_went_down_into_actions_by_its_modifiers :: proc(t: ^te
     _, found = KeyMapConflict(&table, {}, .CANCEL)
     testing.expect(t, !found, "an empty binding conflicts with nothing")
 }
+
+@(test)
+test_the_default_table_is_made_from_the_key_numbers_of_a_framework :: proc(t: ^testing.T) {
+    keys: DefaultKeys = {
+        enter = 10, keypad_enter = 11, space = 12, escape = 13, tab = 14, up = 20, down = 21, left = 22, right = 23, page_up = 24, page_down = 25, home = 26, end = 27,
+        f2 = 30, c = 31, x = 32, v = 33, a = 34, d = 35, z = 36, y = 37, i = 38, r = 39,
+    }
+    table: KeyMap = KeyMapFromCodes(keys, {present = true, up = 0, down = 1, left = 2, right = 3, accept = 4, cancel = 5, previous = 6, next = 7})
+    down: Down
+    actions :: proc(table: ^KeyMap, down: ^Down, modifiers: Modifiers = {}) -> Actions {
+        return KeyMapActions(table, probe, down, modifiers)
+    }
+    down = {keys = {0 = 11}, count = 1}
+    testing.expect_value(t, actions(&table, &down), Actions{.ACCEPT})                               // the keypad enter
+    down = {keys = {0 = 12}, count = 1}
+    testing.expect_value(t, actions(&table, &down), Actions{.ACCEPT, .SELECT})
+    down = {pad = {0 = 4}, pad_count = 1}
+    testing.expect_value(t, actions(&table, &down), Actions{.ACCEPT, .SELECT})                      // A of a pad is both
+    down = {pad = {0 = 0}, pad_count = 1}
+    testing.expect_value(t, actions(&table, &down), Actions{.UP})                                   // pad button 0 is a real button
+    down = {pad = {0 = 6}, pad_count = 1}
+    testing.expect_value(t, actions(&table, &down), Actions{.FOCUS_PREV})
+    down = {keys = {0 = 22}, count = 1}
+    testing.expect_value(t, actions(&table, &down), Actions{.LEFT})
+    testing.expect_value(t, actions(&table, &down, {.ALT}), Actions{.ROTATE_LEFT})                   // Alt turns, it is no arrow
+    testing.expect_value(t, actions(&table, &down, {.ALT, .CTRL}), Actions{.LEFT})
+    down = {keys = {0 = 36}, count = 1}
+    testing.expect_value(t, actions(&table, &down, {.CTRL}), Actions{.UNDO})
+    testing.expect_value(t, actions(&table, &down, {.CTRL, .SHIFT}), Actions{.REDO})
+    down = {keys = {0 = 35}, count = 1}
+    testing.expect_value(t, actions(&table, &down, {.ALT}), Actions{.REPEAT})
+    testing.expect_value(t, actions(&table, &down, {.CTRL}), Actions{.DUPLICATE})
+    // no keypad enter and no pad: those bindings are left out, and key 0 never matches
+    keys.keypad_enter = 0
+    plain: KeyMap = KeyMapFromCodes(keys)
+    down = {keys = {0 = 0}, count = 1, pad = {0 = 4}, pad_count = 1}
+    testing.expect_value(t, actions(&plain, &down), Actions{})
+    testing.expect_value(t, KeyMapFreeSlot(&plain, .ACCEPT), 2)                                     // enter and space only
+    testing.expect_value(t, KeyMapFreeSlot(&table, .ACCEPT), -1)                                    // the four slots of a table with everything are used
+}

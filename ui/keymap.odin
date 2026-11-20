@@ -105,3 +105,78 @@ KeyMapConflict :: proc "contextless" (map_: ^KeyMap, binding: Binding, except: A
     }
     return
 }
+
+// The key numbers of a framework for the keys the default table needs; 0 is a key the framework does not have (it is left out)
+DefaultKeys :: struct {
+    enter, keypad_enter, space, escape, tab: u16,
+    up, down, left, right, page_up, page_down, home, end: u16,
+    f2, c, x, v, a, d, z, y, i, r: u16,
+}
+
+// The buttons of a gamepad for the default table: the d-pad, the confirm and cancel buttons and the two shoulders. `present` is false for a framework or a program
+// without a pad (button number 0 is a real button).
+DefaultPad :: struct {
+    present: bool,
+    up, down, left, right, accept, cancel, previous, next: u16,
+}
+
+// The table that was fixed in the glues before it was data: Godot's default input map and the shortcuts of the editors, for the key numbers of one framework. Every glue and the
+// kit make theirs with it, so they all start the same and a program changes the one it uses.
+KeyMapFromCodes :: proc "contextless" (keys: DefaultKeys, pad: DefaultPad = {}) -> KeyMap {
+    table: KeyMap
+    next: [Action]int
+    put :: proc "contextless" (table: ^KeyMap, next: ^[Action]int, action: Action, binding: Binding) {
+        if (binding.code == 0 && binding.device == .KEYBOARD) || next[action] >= KEYMAP_SLOTS { return }
+        table.slots[action][next[action]] = binding
+        next[action] += 1
+    }
+    key :: proc "contextless" (table: ^KeyMap, next: ^[Action]int, action: Action, code: u16, ctrl: Tri = .ANY, alt: Tri = .ANY, shift: Tri = .ANY) {
+        put(table, next, action, {device = .KEYBOARD, code = code, ctrl = ctrl, alt = alt, shift = shift})
+    }
+    button :: proc "contextless" (table: ^KeyMap, next: ^[Action]int, action: Action, code: u16, present: bool) {
+        if !present { return }
+        put(table, next, action, {device = .GAMEPAD, code = code})
+    }
+    key(&table, &next, .ACCEPT, keys.enter)
+    key(&table, &next, .ACCEPT, keys.keypad_enter)
+    key(&table, &next, .ACCEPT, keys.space)
+    button(&table, &next, .ACCEPT, pad.accept, pad.present)
+    key(&table, &next, .SELECT, keys.space)
+    button(&table, &next, .SELECT, pad.accept, pad.present)
+    key(&table, &next, .CANCEL, keys.escape)
+    button(&table, &next, .CANCEL, pad.cancel, pad.present)
+    key(&table, &next, .FOCUS_NEXT, keys.tab, shift = .NO)
+    button(&table, &next, .FOCUS_NEXT, pad.next, pad.present)
+    key(&table, &next, .FOCUS_PREV, keys.tab, shift = .YES)
+    button(&table, &next, .FOCUS_PREV, pad.previous, pad.present)
+    key(&table, &next, .UP, keys.up)
+    button(&table, &next, .UP, pad.up, pad.present)
+    key(&table, &next, .DOWN, keys.down)
+    button(&table, &next, .DOWN, pad.down, pad.present)
+    // Alt + left and right turn (the timeline); with Ctrl as well they are plain arrows again
+    key(&table, &next, .LEFT, keys.left, alt = .NO)
+    key(&table, &next, .LEFT, keys.left, ctrl = .YES, alt = .YES)
+    button(&table, &next, .LEFT, pad.left, pad.present)
+    key(&table, &next, .RIGHT, keys.right, alt = .NO)
+    key(&table, &next, .RIGHT, keys.right, ctrl = .YES, alt = .YES)
+    button(&table, &next, .RIGHT, pad.right, pad.present)
+    key(&table, &next, .PAGE_UP, keys.page_up)
+    key(&table, &next, .PAGE_DOWN, keys.page_down)
+    key(&table, &next, .HOME, keys.home)
+    key(&table, &next, .END, keys.end)
+    key(&table, &next, .RENAME, keys.f2)
+    key(&table, &next, .COPY, keys.c, ctrl = .YES)
+    key(&table, &next, .CUT, keys.x, ctrl = .YES)
+    key(&table, &next, .PASTE, keys.v, ctrl = .YES)
+    key(&table, &next, .SELECT_ALL, keys.a, ctrl = .YES)
+    key(&table, &next, .DUPLICATE, keys.d, ctrl = .YES)
+    key(&table, &next, .UNDO, keys.z, ctrl = .YES, shift = .NO)
+    key(&table, &next, .REDO, keys.z, ctrl = .YES, shift = .YES)
+    key(&table, &next, .REDO, keys.y, ctrl = .YES)
+    key(&table, &next, .INVERT, keys.i, ctrl = .NO, alt = .YES)
+    key(&table, &next, .REVERSE, keys.r, ctrl = .NO, alt = .YES)
+    key(&table, &next, .REPEAT, keys.d, ctrl = .NO, alt = .YES)
+    key(&table, &next, .ROTATE_LEFT, keys.left, ctrl = .NO, alt = .YES)
+    key(&table, &next, .ROTATE_RIGHT, keys.right, ctrl = .NO, alt = .YES)
+    return table
+}

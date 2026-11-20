@@ -129,6 +129,14 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
             scale: f32 = ui_default.PainterScale(painter)
             return rl.MeasureTextEx(fontOf(painter), cstringInto(&buffer, text), size * scale, spacingOf(painter, size * scale)) / scale
         },
+        draw_texture = proc(painter: ^ui_default.Painter, texture: u32, source: ui.Rect, destination: ui.Rect, tint: ui.Color) {
+            if texture == 0 || int(texture) > texture_count { return }
+            ui_default.PainterFlush(painter)
+            picture: rl.Texture2D = textures[texture - 1]
+            from: ui.Rect = source
+            if from.z <= 0 || from.w <= 0 { from = {0, 0, f32(picture.width), f32(picture.height)} }
+            rl.DrawTexturePro(picture, transmute(rl.Rectangle)from, transmute(rl.Rectangle)ui_default.PaintRect(painter, destination), {}, 0, rl.Color(tint))
+        },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             ui_default.PainterFlush(painter)
             if begin {
@@ -236,57 +244,77 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
     for key in ui.Key {
         if rl.IsKeyPressed(keys[key]) || rl.IsKeyPressedRepeat(keys[key]) { input.keys += {key} }
     }
-    input.actions = actionsPoll()
-    if rl.IsKeyPressed(.F2) { input.actions += {.RENAME} }
-    if ctrl {
-        if rl.IsKeyPressed(.C) { input.actions += {.COPY} }
-        if rl.IsKeyPressed(.X) { input.actions += {.CUT} }
-        if rl.IsKeyPressed(.V) { input.actions += {.PASTE} }
-        if rl.IsKeyPressed(.A) { input.actions += {.SELECT_ALL} }
-        if rl.IsKeyPressed(.D) { input.actions += {.DUPLICATE} }
-        if rl.IsKeyPressed(.Z) { input.actions += {.REDO} if .SHIFT in input.modifiers else {.UNDO} }
-        if rl.IsKeyPressed(.Y) { input.actions += {.REDO} }
-    }
-    if .ALT in input.modifiers && !ctrl {
-        if rl.IsKeyPressed(.I) { input.actions += {.INVERT} }
-        if rl.IsKeyPressed(.R) { input.actions += {.REVERSE} }
-        if rl.IsKeyPressed(.D) { input.actions += {.REPEAT} }
-        if rl.IsKeyPressed(.LEFT) || rl.IsKeyPressedRepeat(.LEFT) { input.actions = input.actions + {.ROTATE_LEFT} - {.LEFT} }
-        if rl.IsKeyPressed(.RIGHT) || rl.IsKeyPressedRepeat(.RIGHT) { input.actions = input.actions + {.ROTATE_RIGHT} - {.RIGHT} }
-    }
+    input.actions = ui.KeyMapActions(KeyMapOf(), inputProbe, nil, input.modifiers)
     return input
 }
 
-// The default actions of Godot's input map from the keyboard and the first gamepad (d-pad, A accepts, B cancels, the shoulders are next / previous)
+// The hotkeys of the ui as data, in the numbers of raylib (a key is `u16(rl.KeyboardKey)`, a pad button `u16(rl.GamepadButton)`): Godot's default input map from the keyboard and the
+// first gamepad (d-pad, A accepts, B cancels, the shoulders are next and previous) and the shortcuts of the editors. A program changes the table with `ui.KeyMapSet(ui_raylib.KeyMapOf(), ...)`.
+KeyMapDefault :: proc() -> ui.KeyMap {
+    k :: proc(key: rl.KeyboardKey) -> u16 { return u16(key) }
+    p :: proc(button: rl.GamepadButton) -> u16 { return u16(button) }
+    return ui.KeyMapFromCodes(
+        {
+            enter = k(.ENTER), keypad_enter = k(.KP_ENTER), space = k(.SPACE), escape = k(.ESCAPE), tab = k(.TAB),
+            up = k(.UP), down = k(.DOWN), left = k(.LEFT), right = k(.RIGHT), page_up = k(.PAGE_UP), page_down = k(.PAGE_DOWN), home = k(.HOME), end = k(.END),
+            f2 = k(.F2), c = k(.C), x = k(.X), v = k(.V), a = k(.A), d = k(.D), z = k(.Z), y = k(.Y), i = k(.I), r = k(.R),
+        },
+        {
+            present = true, up = p(.LEFT_FACE_UP), down = p(.LEFT_FACE_DOWN), left = p(.LEFT_FACE_LEFT), right = p(.LEFT_FACE_RIGHT),
+            accept = p(.RIGHT_FACE_DOWN), cancel = p(.RIGHT_FACE_RIGHT), previous = p(.LEFT_TRIGGER_1), next = p(.RIGHT_TRIGGER_1),
+        },
+    )
+}
+
 @(private)
-actionsPoll :: proc() -> ui.Actions {
-    actions: ui.Actions
-    again :: proc(key: rl.KeyboardKey) -> bool { return rl.IsKeyPressed(key) || rl.IsKeyPressedRepeat(key) }
-    if rl.IsKeyPressed(.ENTER) || rl.IsKeyPressed(.KP_ENTER) || rl.IsKeyPressed(.SPACE) { actions += {.ACCEPT} }
-    if rl.IsKeyPressed(.SPACE) { actions += {.SELECT} }
-    if rl.IsKeyPressed(.ESCAPE) { actions += {.CANCEL} }
-    if rl.IsKeyPressed(.TAB) {
-        actions += {.FOCUS_PREV} if rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT) else {.FOCUS_NEXT}
+keymap: ui.KeyMap
+@(private)
+keymap_ready: bool
+
+// The table every call of InputPoll goes through; the default one until a program changes it
+KeyMapOf :: proc() -> ^ui.KeyMap {
+    if !keymap_ready {
+        keymap, keymap_ready = KeyMapDefault(), true
     }
-    if again(.UP) { actions += {.UP} }
-    if again(.DOWN) { actions += {.DOWN} }
-    if again(.LEFT) { actions += {.LEFT} }
-    if again(.RIGHT) { actions += {.RIGHT} }
-    if again(.PAGE_UP) { actions += {.PAGE_UP} }
-    if again(.PAGE_DOWN) { actions += {.PAGE_DOWN} }
-    if rl.IsKeyPressed(.HOME) { actions += {.HOME} }
-    if rl.IsKeyPressed(.END) { actions += {.END} }
-    if rl.IsGamepadAvailable(0) {
-        if rl.IsGamepadButtonPressed(0, .LEFT_FACE_UP) { actions += {.UP} }
-        if rl.IsGamepadButtonPressed(0, .LEFT_FACE_DOWN) { actions += {.DOWN} }
-        if rl.IsGamepadButtonPressed(0, .LEFT_FACE_LEFT) { actions += {.LEFT} }
-        if rl.IsGamepadButtonPressed(0, .LEFT_FACE_RIGHT) { actions += {.RIGHT} }
-        if rl.IsGamepadButtonPressed(0, .RIGHT_FACE_DOWN) { actions += {.ACCEPT, .SELECT} }
-        if rl.IsGamepadButtonPressed(0, .RIGHT_FACE_RIGHT) { actions += {.CANCEL} }
-        if rl.IsGamepadButtonPressed(0, .LEFT_TRIGGER_1) { actions += {.FOCUS_PREV} }
-        if rl.IsGamepadButtonPressed(0, .RIGHT_TRIGGER_1) { actions += {.FOCUS_NEXT} }
+    return &keymap
+}
+
+// What went down in this frame, for the table. The arrows and the page keys repeat while held, like in a text editor.
+@(private)
+inputProbe :: proc(user: rawptr, device: ui.InputDevice, code: u16) -> bool {
+    switch device {
+    case .KEYBOARD:
+        key: rl.KeyboardKey = rl.KeyboardKey(code)
+        if rl.IsKeyPressed(key) { return true }
+        #partial switch key {
+        case .UP, .DOWN, .LEFT, .RIGHT, .PAGE_UP, .PAGE_DOWN: return rl.IsKeyPressedRepeat(key)
+        }
+    case .MOUSE:
+        return rl.IsMouseButtonPressed(rl.MouseButton(code))
+    case .GAMEPAD:
+        return rl.IsGamepadAvailable(0) && rl.IsGamepadButtonPressed(0, rl.GamepadButton(code))
+    case .NONE:
     }
-    return actions
+    return false
+}
+
+// Pictures of the program's own for `ui.Glyph.texture` (a button of a pad): register a raylib texture and put the number it gives in the glyph. The textures stay the program's.
+TEXTURE_SLOTS :: 32
+
+@(private)
+textures: [TEXTURE_SLOTS]rl.Texture2D
+@(private)
+texture_count: int
+
+// The number of a texture for `ui.Glyph.texture` (0 when all TEXTURE_SLOTS are taken). The same texture gets the same number.
+TextureRegister :: proc(texture: rl.Texture2D) -> u32 {
+    for i in 0 ..< texture_count {
+        if textures[i].id == texture.id { return u32(i + 1) }
+    }
+    if texture_count >= TEXTURE_SLOTS { return 0 }
+    textures[texture_count] = texture
+    texture_count += 1
+    return u32(texture_count)
 }
 
 @(private)

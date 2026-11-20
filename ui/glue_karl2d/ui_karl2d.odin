@@ -152,6 +152,17 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^karl2d.Font = nil) {
             scale: f32 = ui_default.PainterScale(painter)
             return karl2d.measure_text(text, size * scale, fontOf(painter)) / scale
         },
+        draw_texture = proc(painter: ^ui_default.Painter, texture: u32, source: ui.Rect, destination: ui.Rect, tint: ui.Color) {
+            if texture == 0 || int(texture) > texture_count { return }
+            ui_default.PainterFlush(painter)
+            picture: karl2d.Texture = textures[texture - 1]
+            from: ui.Rect = source
+            if from.z <= 0 || from.w <= 0 {
+                size: karl2d.Vec2 = karl2d.get_texture_size(picture)
+                from = {0, 0, size.x, size.y}
+            }
+            karl2d.draw_texture_fit(picture, transmute(karl2d.Rect)from, transmute(karl2d.Rect)ui_default.PaintRect(painter, destination), {}, 0, tint)
+        },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             ui_default.PainterFlush(painter)
             if begin {
@@ -212,56 +223,77 @@ InputPoll :: proc(scale: f32 = 1) -> ui.Input {
     for key in ui.Key {
         if karl2d.key_went_down(keys[key], allow_repeat = true) { input.keys += {key} }
     }
-    input.actions = actionsPoll()
-    if karl2d.key_went_down(.F2) { input.actions += {.RENAME} }
-    if ctrl {
-        if karl2d.key_went_down(.C) { input.actions += {.COPY} }
-        if karl2d.key_went_down(.X) { input.actions += {.CUT} }
-        if karl2d.key_went_down(.V) { input.actions += {.PASTE} }
-        if karl2d.key_went_down(.A) { input.actions += {.SELECT_ALL} }
-        if karl2d.key_went_down(.D) { input.actions += {.DUPLICATE} }
-        if karl2d.key_went_down(.Z) { input.actions += {.REDO} if .SHIFT in input.modifiers else {.UNDO} }
-        if karl2d.key_went_down(.Y) { input.actions += {.REDO} }
-    }
-    if .ALT in input.modifiers && !ctrl {
-        if karl2d.key_went_down(.I) { input.actions += {.INVERT} }
-        if karl2d.key_went_down(.R) { input.actions += {.REVERSE} }
-        if karl2d.key_went_down(.D) { input.actions += {.REPEAT} }
-        if karl2d.key_went_down(.Left, allow_repeat = true) { input.actions = input.actions + {.ROTATE_LEFT} - {.LEFT} }
-        if karl2d.key_went_down(.Right, allow_repeat = true) { input.actions = input.actions + {.ROTATE_RIGHT} - {.RIGHT} }
-    }
+    input.actions = ui.KeyMapActions(KeyMapOf(), inputProbe, nil, input.modifiers)
     return input
 }
 
-// The default actions of Godot's input map from the keyboard and the first gamepad (d-pad, A accepts, B cancels, the shoulders are next / previous)
+// The hotkeys of the ui as data, in the numbers of Karl2D (a key is `u16(karl2d.Keyboard_Key)`, a pad button `u16(karl2d.Gamepad_Button)`): Godot's default input map from the keyboard and
+// the first gamepad (d-pad, A accepts, B cancels, the shoulders are next and previous) and the shortcuts of the editors. A program changes the table with `ui.KeyMapSet(ui_karl2d.KeyMapOf(), ...)`.
+KeyMapDefault :: proc() -> ui.KeyMap {
+    k :: proc(key: karl2d.Keyboard_Key) -> u16 { return u16(key) }
+    p :: proc(button: karl2d.Gamepad_Button) -> u16 { return u16(button) }
+    return ui.KeyMapFromCodes(
+        {
+            enter = k(.Enter), space = k(.Space), escape = k(.Escape), tab = k(.Tab),
+            up = k(.Up), down = k(.Down), left = k(.Left), right = k(.Right), page_up = k(.Page_Up), page_down = k(.Page_Down), home = k(.Home), end = k(.End),
+            f2 = k(.F2), c = k(.C), x = k(.X), v = k(.V), a = k(.A), d = k(.D), z = k(.Z), y = k(.Y), i = k(.I), r = k(.R),
+        },
+        {
+            present = true, up = p(.Left_Face_Up), down = p(.Left_Face_Down), left = p(.Left_Face_Left), right = p(.Left_Face_Right),
+            accept = p(.Right_Face_Down), cancel = p(.Right_Face_Right), previous = p(.Left_Shoulder), next = p(.Right_Shoulder),
+        },
+    )
+}
+
 @(private)
-actionsPoll :: proc() -> ui.Actions {
-    actions: ui.Actions
-    if karl2d.key_went_down(.Enter) || karl2d.key_went_down(.Space) { actions += {.ACCEPT} }
-    if karl2d.key_went_down(.Space) { actions += {.SELECT} }
-    if karl2d.key_went_down(.Escape) { actions += {.CANCEL} }
-    if karl2d.key_went_down(.Tab) {
-        actions += {.FOCUS_PREV} if karl2d.key_is_held(.Left_Shift) || karl2d.key_is_held(.Right_Shift) else {.FOCUS_NEXT}
+keymap: ui.KeyMap
+@(private)
+keymap_ready: bool
+
+// The table every call of InputPoll goes through; the default one until a program changes it
+KeyMapOf :: proc() -> ^ui.KeyMap {
+    if !keymap_ready {
+        keymap, keymap_ready = KeyMapDefault(), true
     }
-    if karl2d.key_went_down(.Up, allow_repeat = true) { actions += {.UP} }
-    if karl2d.key_went_down(.Down, allow_repeat = true) { actions += {.DOWN} }
-    if karl2d.key_went_down(.Left, allow_repeat = true) { actions += {.LEFT} }
-    if karl2d.key_went_down(.Right, allow_repeat = true) { actions += {.RIGHT} }
-    if karl2d.key_went_down(.Page_Up, allow_repeat = true) { actions += {.PAGE_UP} }
-    if karl2d.key_went_down(.Page_Down, allow_repeat = true) { actions += {.PAGE_DOWN} }
-    if karl2d.key_went_down(.Home) { actions += {.HOME} }
-    if karl2d.key_went_down(.End) { actions += {.END} }
-    if karl2d.is_gamepad_active(0) {
-        if karl2d.gamepad_button_went_down(0, .Left_Face_Up) { actions += {.UP} }
-        if karl2d.gamepad_button_went_down(0, .Left_Face_Down) { actions += {.DOWN} }
-        if karl2d.gamepad_button_went_down(0, .Left_Face_Left) { actions += {.LEFT} }
-        if karl2d.gamepad_button_went_down(0, .Left_Face_Right) { actions += {.RIGHT} }
-        if karl2d.gamepad_button_went_down(0, .Right_Face_Down) { actions += {.ACCEPT, .SELECT} }
-        if karl2d.gamepad_button_went_down(0, .Right_Face_Right) { actions += {.CANCEL} }
-        if karl2d.gamepad_button_went_down(0, .Left_Shoulder) { actions += {.FOCUS_PREV} }
-        if karl2d.gamepad_button_went_down(0, .Right_Shoulder) { actions += {.FOCUS_NEXT} }
+    return &keymap
+}
+
+// What went down in this frame, for the table. The arrows and the page keys repeat while held, like in a text editor.
+@(private)
+inputProbe :: proc(user: rawptr, device: ui.InputDevice, code: u16) -> bool {
+    switch device {
+    case .KEYBOARD:
+        key: karl2d.Keyboard_Key = karl2d.Keyboard_Key(code)
+        #partial switch key {
+        case .Up, .Down, .Left, .Right, .Page_Up, .Page_Down: return karl2d.key_went_down(key, allow_repeat = true)
+        }
+        return karl2d.key_went_down(key)
+    case .MOUSE:
+        return karl2d.mouse_button_went_down(karl2d.Mouse_Button(code))
+    case .GAMEPAD:
+        return karl2d.is_gamepad_active(0) && karl2d.gamepad_button_went_down(0, karl2d.Gamepad_Button(code))
+    case .NONE:
     }
-    return actions
+    return false
+}
+
+// Pictures of the program's own for `ui.Glyph.texture` (a button of a pad): register a Karl2D texture and put the number it gives in the glyph. The textures stay the program's.
+TEXTURE_SLOTS :: 32
+
+@(private)
+textures: [TEXTURE_SLOTS]karl2d.Texture
+@(private)
+texture_count: int
+
+// The number of a texture for `ui.Glyph.texture` (0 when all TEXTURE_SLOTS are taken). The same texture gets the same number.
+TextureRegister :: proc(texture: karl2d.Texture) -> u32 {
+    for i in 0 ..< texture_count {
+        if textures[i] == texture { return u32(i + 1) }
+    }
+    if texture_count >= TEXTURE_SLOTS { return 0 }
+    textures[texture_count] = texture
+    texture_count += 1
+    return u32(texture_count)
 }
 
 @(private)

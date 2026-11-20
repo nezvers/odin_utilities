@@ -138,42 +138,19 @@ fillRounded :: proc(painter: ^ui_default.Painter, rect: ui.Rect, radius: f32, co
 // The table of hotkeys of the kit: which key, mouse button or button of a gamepad does which action of the ui. KeyMapDefault is what the keys were before they were a
 // table (Godot's default input map and the shortcuts of the editors); a program changes it with `ui.KeyMapSet` on `KeyMapOf()`.
 KeyMapDefault :: proc() -> ui.KeyMap {
-    table: ui.KeyMap
-    key :: proc(table: ^ui.KeyMap, action: ui.Action, slot: int, key: kit.Key, ctrl: ui.Tri = .ANY, alt: ui.Tri = .ANY, shift: ui.Tri = .ANY) {
-        ui.KeyMapSet(table, action, slot, {device = .KEYBOARD, code = u16(key), ctrl = ctrl, alt = alt, shift = shift})
-    }
-    key(&table, .ACCEPT, 0, .ENTER)
-    key(&table, .ACCEPT, 1, .SPACE)
-    key(&table, .SELECT, 0, .SPACE)
-    key(&table, .CANCEL, 0, .ESCAPE)
-    key(&table, .FOCUS_NEXT, 0, .TAB, shift = .NO)
-    key(&table, .FOCUS_PREV, 0, .TAB, shift = .YES)
-    key(&table, .UP, 0, .UP)
-    key(&table, .DOWN, 0, .DOWN)
-    // Alt + left and right turn (the timeline); with Ctrl as well they are plain arrows again
-    key(&table, .LEFT, 0, .LEFT, alt = .NO)
-    key(&table, .LEFT, 1, .LEFT, ctrl = .YES, alt = .YES)
-    key(&table, .RIGHT, 0, .RIGHT, alt = .NO)
-    key(&table, .RIGHT, 1, .RIGHT, ctrl = .YES, alt = .YES)
-    key(&table, .PAGE_UP, 0, .PAGE_UP)
-    key(&table, .PAGE_DOWN, 0, .PAGE_DOWN)
-    key(&table, .HOME, 0, .HOME)
-    key(&table, .END, 0, .END)
-    key(&table, .RENAME, 0, .F2)
-    key(&table, .COPY, 0, .C, ctrl = .YES)
-    key(&table, .CUT, 0, .X, ctrl = .YES)
-    key(&table, .PASTE, 0, .V, ctrl = .YES)
-    key(&table, .SELECT_ALL, 0, .A, ctrl = .YES)
-    key(&table, .DUPLICATE, 0, .D, ctrl = .YES)
-    key(&table, .UNDO, 0, .Z, ctrl = .YES, shift = .NO)
-    key(&table, .REDO, 0, .Z, ctrl = .YES, shift = .YES)
-    key(&table, .REDO, 1, .Y, ctrl = .YES)
-    key(&table, .INVERT, 0, .I, ctrl = .NO, alt = .YES)
-    key(&table, .REVERSE, 0, .R, ctrl = .NO, alt = .YES)
-    key(&table, .REPEAT, 0, .D, ctrl = .NO, alt = .YES)
-    key(&table, .ROTATE_LEFT, 0, .LEFT, ctrl = .NO, alt = .YES)
-    key(&table, .ROTATE_RIGHT, 0, .RIGHT, ctrl = .NO, alt = .YES)
-    return table
+    k :: proc(key: kit.Key) -> u16 { return u16(key) }
+    p :: proc(button: kit.PadButton) -> u16 { return u16(button) }
+    return ui.KeyMapFromCodes(
+        {
+            enter = k(.ENTER), space = k(.SPACE), escape = k(.ESCAPE), tab = k(.TAB),
+            up = k(.UP), down = k(.DOWN), left = k(.LEFT), right = k(.RIGHT), page_up = k(.PAGE_UP), page_down = k(.PAGE_DOWN), home = k(.HOME), end = k(.END),
+            f2 = k(.F2), c = k(.C), x = k(.X), v = k(.V), a = k(.A), d = k(.D), z = k(.Z), y = k(.Y), i = k(.I), r = k(.R),
+        },
+        {
+            present = true, up = p(.DPAD_UP), down = p(.DPAD_DOWN), left = p(.DPAD_LEFT), right = p(.DPAD_RIGHT),
+            accept = p(.FACE_DOWN), cancel = p(.FACE_RIGHT), previous = p(.LEFT_SHOULDER), next = p(.RIGHT_SHOULDER),
+        },
+    )
 }
 
 @(private)
