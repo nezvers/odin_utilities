@@ -138,6 +138,12 @@ Files), the same sample data, dark and light. Baldr is retained (a view builds a
 widget for (a date and a time field, frosted glass) is left out. A second page shows every icon with its name. Its script finds the widgets by their rectangles of the last frame
 (`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
 
+## Examples of Baldr, remade
+`demo_common/demo_examples.odin` has four of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
+`update`), `04_controls` (check boxes, a switch and thin sliders that change the state of the program in place; the switch turns the page to the light theme), `03_scroll` (forty
+cards in a scrolling region, a ghost button on each) and `17_toasts` (raised cards at the top right that a click takes away: floating elements with `ui.UiInteract`). The texts
+and the sample data are the originals'. Each has its part of the script and a stored picture.
+
 ## The demo of Dear ImGui, remade
 `demo_common/demo_imgui.odin` is the layout of `ShowDemoWindow` (`imgui_demo.cpp` of ocornut/imgui): a window with a title bar and
 a menu bar (Menu with submenus, Examples, Tools), collapsing headers (Help, Configuration, Window options, Widgets, Layout & Scrolling, Popups & Modal windows, Tables, Inputs & Focus)
