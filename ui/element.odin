@@ -386,6 +386,7 @@ WidgetState :: struct {
     column: f32,                    // a text area: the distance from the start of the row the cursor keeps while it goes up and down
     last_cursor: int,               // a text area: where the cursor was when the column was taken
     shown_cursor: int,              // a text area: where the cursor was when the view last followed it
+    caret: Vec2,                    // a text area: where the caret is inside of the area, the bottom of its row
     anchor: int,                    // a text field: the other end of the selection (the cursor is one end; the same as the cursor: nothing is selected)
     hsv: [3]f32,                    // a color picker: hue, saturation and value as the person set them (a gray has no hue in RGB: this keeps it)
     drag: Vec2,                     // where the pointer was in the last frame of a drag (a drag widget, a window title)

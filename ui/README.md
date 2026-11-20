@@ -171,7 +171,7 @@ library does not do (frosted glass: the blur of what is behind a card) is left o
 (`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
 
 ## Examples of Baldr, remade
-`demo_common/demo_examples.odin` has fourteen of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
+`demo_common/demo_examples.odin` has fifteen of Baldr's examples, one per tab: `01_hello` (a counter: `if ui.UiButton(...) { count += 1 }` where the original sends a message to an
 `update`), `04_controls` (check boxes, a switch and thin sliders that change the state of the program in place; the switch turns the page to the light theme), `03_scroll` (forty
 cards in a scrolling region, a ghost button on each), `17_toasts` (raised cards at the top right that a click takes away: floating elements with `ui.UiInteract`) and
 `02_theme_lab` (a page to judge a theme by: here its accent is picked by a tile or a hue and the theme is made on the spot with `ThemeFromAccent`) and `05_overlays` (a select,
@@ -181,7 +181,7 @@ runs each on a thread that posts messages, here a download is a number that grow
 by side, with `ui.UiTextArea` and `ui.UiMarkdown`; the original is an editor that shows the styles while one types) and `32_chat` with the bubbles of `29_styled_text`
 (bubbles as wide as their text with styles inside, a list that stays at its newest message, a field that sends; the panel tags "bubble" and "mine" of the default style) and `33_reading` (a page in Paper, Sepia, Dusk or Night with its
 controls in the same colors, inside of a window that keeps its theme: a theme area) `20_shortcuts` (shortcuts that are set by pressing them) `07_code` (the text area with a highlighter for Odin) and `37_custom` (a star rating made in the demo: the pattern for a widget of one's own, with
-`ui.UiInteract`, an element of the kind CUSTOM whose draw proc uses `ui_default.PainterOf(ctx)`, and `ui.UiNavBlock` for the arrows it takes itself). The texts
+`ui.UiInteract`, an element of the kind CUSTOM whose draw proc uses `ui_default.PainterOf(ctx)`, and `ui.UiNavBlock` for the arrows it takes itself) and `34_mentions` (a text whose `@` offers the files of a project). The texts
 and the sample data are the originals'. Each has its part of the script and a stored picture.
 
 ## The demo of Dear ImGui, remade
@@ -313,6 +313,13 @@ default style has the colors of the tags `ui.SYNTAX_KEYWORD`, `_TYPE`, `_STRING`
 look like C or Odin by a `HighlightLanguage` (keywords, types, the marks of comments, the quote of raw strings). What goes over several lines (a block comment, nested
 in Odin, a raw string) is carried from row to row in a `state` number: the area runs the highlighter over all rows once when the text changed and keeps the state of every
 row with its cached rows, so a frame only asks for the rows in view. A string in quotes ends with its row. Nothing is allocated; at most `AREA_SPANS` (96) spans a row.
+
+## Completion in a text area
+`complete.odin`: `inserted, item := ui.UiComplete(&ctx, "Message", buffer[:], &length, items[:])` right before the `ui.UiTextArea` of the same name: after a trigger
+(`@` by default) at the start of a word, the items that contain what was typed since are offered in a list under the caret (at most `COMPLETE_ROWS`, 8). The arrows
+choose, Enter or a click writes the item in place of the typed word with a space after it, Escape closes the list for that word. It is declared before the area because
+it takes the keys of the open list out of the input, so the area does not move its caret or break the line by them. The items are looked through every frame the list
+is open; `CompleteQuery` finds the word at the caret for a program that searches by itself. For the text area (the text field has no caret position to open at yet).
 
 ## Shortcut field
 `shortcut.odin`: `changed, listening := ui.UiShortcutField(&ctx, name, &chord, pressed, key_name)` is a shortcut that is set by pressing it. A click or the confirm key makes it

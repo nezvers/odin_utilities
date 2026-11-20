@@ -1,7 +1,7 @@
 #+private file
 package demo_common
 
-// Fourteen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Fifteen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
 // a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
@@ -90,6 +90,12 @@ State :: struct {
     // 33_reading
     paper: int,
     page: int,
+    // 34_mentions
+    mention: [256]u8,
+    mention_length: int,
+    mention_id: ui.Id,
+    mentions: int,
+    mentioned: int,
     // 37_custom
     ratings: [2]int,
     rating_ids: [2]ui.Id,
@@ -117,7 +123,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [14]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code", "Custom"}
+EXAMPLES: [15]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code", "Custom", "Mentions"}
 NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
@@ -145,6 +151,7 @@ init :: proc(ctx: ^kit.Context) {
     state.note_length = copy(state.note[:], NOTE)
     state.paper, state.page = 1, 0
     state.ratings = {3, 0}
+    state.mention_length, state.mentions, state.mentioned = 0, 0, -1
     state.code_length = copy(state.code[:], CODE_SAMPLE)
     state.chords = {{{.CTRL}, u16(kit.Key.S)}, {{.CTRL}, u16(kit.Key.O)}, {{.CTRL}, u16(kit.Key.F)}, {{.CTRL, .SHIFT}, u16(kit.Key.B)}, {}}
     state.chord_changes = 0
@@ -677,6 +684,30 @@ custom :: proc(c: ^ui.Context) {
     }
 }
 
+// 34_mentions: a text whose @ offers the files of a project. The list opens under the caret, the letters after the @ narrow it, the arrows choose, Enter or a
+// click writes the name in.
+PROJECT_FILES: [8]string = {"context.odin", "layout.odin", "markdown.odin", "render.odin", "richtext.odin", "style.odin", "widgets.odin", "README.md"}
+
+mentions :: proc(c: ^ui.Context) {
+    if stage(c, "mentions", {560, 380}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(24)}) {
+        ui.UiTitle(c, "Mentions", 1.6)
+        ui.UiLabelDim(c, "Type @ and some letters of a file of the project.", .WORDS)
+        state.mention_id = ui.UiId(c, "Message##mention")
+        // before the area: the keys of the open list are its own
+        inserted, item := ui.UiComplete(c, "Message##mention", state.mention[:], &state.mention_length, PROJECT_FILES[:])
+        if inserted {
+            state.mentions += 1
+            state.mentioned = item
+        }
+        ui.UiTextArea(c, "Message##mention", state.mention[:], &state.mention_length, {ui.Grow(), ui.Fixed(140)})
+        if state.mentioned >= 0 {
+            ui.UiLabelDim(c, ui.UiFormat(c, "%d mentioned, the last one: %s", state.mentions, PROJECT_FILES[state.mentioned]))
+        } else {
+            ui.UiLabelDim(c, "Nothing is mentioned yet.")
+        }
+    }
+}
+
 // 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
 charts :: proc(c: ^ui.Context) {
     if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
@@ -903,6 +934,8 @@ draw :: proc(ctx: ^kit.Context) {
         code(c)
     case 13:
         custom(c)
+    case 14:
+        mentions(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -1331,5 +1364,29 @@ script: []kit.Step = {
     kit.Tap(.LEFT),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.ratings[1] == 3 && state.ratings[0] == 3 }, "the other arrow takes stars away"),
+
+    // mentions: the list opens at the @, the letters narrow it, the arrow chooses, Enter writes the name in
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(14) }, "the Mentions tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        rect, found := ui.UiElementRect(&state.app.ctx, state.mention_id)
+        target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+        return found
+    }, "the text is on the page"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(2),
+    kit.Type("Look at @r"),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.DROPDOWN_ITEM, "render.odin") && drawn(.DROPDOWN_ITEM, "README.md") && !drawn(.DROPDOWN_ITEM, "layout.odin") }, "the files with the letter are offered"),
+    kit.Tap(.DOWN),
+    kit.Wait(2),
+    kit.Capture("examples_mentions"),
+    kit.Wait(2),
+    kit.Tap(.ENTER),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.mention[:state.mention_length]) == "Look at @render.odin " && state.mentions == 1 }, "Enter writes the chosen name in"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !drawn(.DROPDOWN_ITEM, "render.odin") && shown("1 mentioned, the last one: render.odin", "dim") }, "the list is closed"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

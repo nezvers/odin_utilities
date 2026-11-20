@@ -42,6 +42,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] A text is measured with the tags it is drawn with (a title in the strong face, code in the code face): `ctx.measure_tags`, `UiMeasureHasTag`
 - [x] Rich text: `UiRichText`, used by `UiMarkdown` (strong, italic, code, links)
 - [x] Tables in `UiMarkdown`
+- [x] A completion list in a text area (`UiComplete`) and Baldr's 34_mentions
+- [ ] `UiComplete` for the one line text field (it needs the place of the caret of the field), and an undo step for an inserted item
 - [x] Colors in a text area (`TextHighlight`, `HighlightCode`) and Baldr's 07_code
 - [x] Highlighting that knows the lines before a row (block comments, raw strings): a state per row that the area keeps while the text does not change
 - [x] A shortcut field (`UiShortcutField`, `Chord`) and Baldr's 20_shortcuts

@@ -310,6 +310,8 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
     state.shown_cursor = state.cursor
     limit: f32 = max(content - view_height, 0)
     state.scroll.y = clamp(state.scroll.y, -limit, 0)
+    // where the caret is in the view, under its row: a list that opens at the caret (UiComplete) is placed by it
+    state.caret = {cursor_position.x, cursor_position.y + state.scroll.y + line_height}
 
     default_size: Size = {Fixed(metrics.control_width * 2), Fixed(metrics.control_height * 4)}
     ElementOpen(ctx, {
