@@ -174,6 +174,10 @@ IconToLucide :: proc "contextless" (icon: ui.Icon) -> icons.Icon {
         return .CHEVRON_LEFT
     case .CHEVRON_RIGHT:
         return .CHEVRON_RIGHT
+    case .CALENDAR:
+        return .CALENDAR
+    case .CLOCK:
+        return .CLOCK
     }
     return .NONE
 }
@@ -703,7 +707,12 @@ DrawDropdown :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     if .DISABLED in info.flags { fill = Faded(theme, fill) }
     FillRoundedBorder(painter, info.rect, theme.rounding, fill, theme.accent if .OPEN in info.flags else theme.border, theme.border_width, theme.max_radius)
     TextLeft(painter, info.text, info.rect, info.font_size, ctx.style.metrics.padding.x, textColor(theme, info))
-    Chevron(painter, {info.rect.x + info.rect.z - info.rect.w * 0.5, info.rect.y + info.rect.w * 0.5}, info.font_size, 0 if .OPEN in info.flags else 1, theme.text_dim)
+    mark: ui.Vec2 = {info.rect.x + info.rect.z - info.rect.w * 0.5, info.rect.y + info.rect.w * 0.5}
+    if info.icon != .NONE && painter.draw_icon != nil {
+        IconAt(painter, IconToLucide(info.icon), mark, info.font_size, theme.text_dim)
+    } else {
+        Chevron(painter, mark, info.font_size, 0 if .OPEN in info.flags else 1, theme.text_dim)
+    }
 }
 
 // A row that can be chosen (an option of a list, a row of a table, a menu entry): the soft accent when it is chosen (what a row is made of, texts and icons of their own, stays

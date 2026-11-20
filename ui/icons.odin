@@ -19,6 +19,8 @@ Icon :: enum u16 {
     CHEVRON_DOWN,
     CHEVRON_LEFT,
     CHEVRON_RIGHT,
+    CALENDAR,
+    CLOCK,
     USER,               // the program's own icons are USER and the numbers above it (cast(Icon)(u16(Icon.USER) + n)), up to 0x0fff: the default style has its Lucide icons above
 }
 

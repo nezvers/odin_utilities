@@ -14,6 +14,7 @@ ExtraStyleInstall :: proc(style: ^ui.Style) {
     style.procs[.SEGMENT] = DrawSegment
     style.procs[.BREADCRUMB] = DrawBreadcrumb
     style.procs[.SPINNER] = DrawSpinner
+    style.procs[.DATE_CELL] = DrawDateCell
 }
 
 // The color of a tone as a fill, and the color of what is written on it: a wash of the tone with the tone as ink (the accent has its soft pair in the theme)
@@ -159,4 +160,19 @@ DrawSpinner :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
         position: ui.Vec2 = center + {math.cos(angle), math.sin(angle)} * radius
         FillRounded(painter, {position.x - dot * 0.5, position.y - dot * 0.5, dot, dot}, 1, {accent.r, accent.g, accent.b, u8(alpha * 255)})
     }
+}
+
+// A day of the month of a date field: its number in a round cell, the accent for the day of the date, a wash under the pointer
+DrawDateCell :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    cell: ui.Rect = ui.RectShrink(info.rect, 2)
+    selected: bool = .SELECTED in info.flags
+    if selected {
+        FillRounded(painter, cell, 1, StateColor(theme, theme.accent, theme.accent_text, info))
+    } else if info.hover > 0.01 || info.press > 0.01 {
+        FillRounded(painter, cell, 1, StateWash(theme, theme.text, info))
+    }
+    if .FOCUSED in info.flags { RingRounded(painter, cell, min(cell.z, cell.w) * 0.5, 2, theme.focus) }
+    TextCentered(painter, info.name, info.rect, info.font_size, theme.accent_text if selected else theme.text, .STRONG if selected else .REGULAR)
 }

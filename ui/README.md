@@ -136,6 +136,11 @@ in a pill, with a check mark when it is on), `UiTag` (a pill with a cross: it te
 few options in one track), `UiBreadcrumbs` (the parts of a path, the index of the one that was clicked), `UiSpinner`, `UiTitle`, `UiLabelDim`, `UiCard` (a panel with a title), and
 `UiInteract` (the pointer and the keyboard for an element the program declares itself: a row of an icon and texts that can be clicked).
 
+## Date and time
+`date.odin`: `ui.UiDateField(&ctx, name, &date)` shows a `Date` (day/month/year) and opens a month of days: arrows go a month back and on, a click on a day takes it. The
+calendar math is in the library (`DateDaysInMonth`, `DateWeekday` with Monday as 0, `DateAddMonths`, `DateIsValid`, `DateFormat`). `ui.UiTimeField(&ctx, name, &minutes, step)`
+is a list of the times of a day in steps (a combo: typing "07" finds the time); the time is minutes after midnight.
+
 ## Charts
 `chart.odin`: `ui.UiChart(&ctx, name, &view, series, kind, x_labels, size)` draws one or more series of points as a LINE, an AREA, BARs or a SCATTER. The axes pick round
 numbers (`ChartStep`: 1, 2 or 5 times a power of ten), bars and areas stand on 0. The pointer finds the nearest point (a bar: the one under it), a click picks it, the arrows
@@ -147,8 +152,8 @@ in `default_style/chart.odin`). A style of your own draws with `ChartPlotRect`, 
 
 ## The gallery of Baldr, remade
 `demo_common/demo_gallery.odin` is the first page of Baldr's gallery (`examples/00_gallery`) with this library: the same cards (Buttons, Inputs, Menus, Choices, Project, Badges,
-Files), the same sample data, dark and light. Baldr is retained (a view builds a tree, messages change a state); here the page is declared every frame. What this library has no
-widget for (a date and a time field, frosted glass) is left out. A second page shows every icon with its name. Its script finds the widgets by their rectangles of the last frame
+Date and time, Files), the same sample data, dark and light. Baldr is retained (a view builds a tree, messages change a state); here the page is declared every frame. What this
+library does not do (frosted glass: the blur of what is behind a card) is left out. A second page shows every icon with its name. Its script finds the widgets by their rectangles of the last frame
 (`ui.UiElementRect`, `kit.ClickAt`), because the page is laid out by the widths of its texts.
 
 ## Examples of Baldr, remade

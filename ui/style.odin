@@ -28,7 +28,7 @@ StyleKind :: enum u8 {
     PROGRESS,           // value 0..1, actual: the number it shows
     TEXT_FIELD,         // text: the content, cursor: byte offset, FOCUSED flag
     SEPARATOR,
-    DROPDOWN,           // the closed box: text: the selected option, OPEN flag
+    DROPDOWN,           // the closed box: text: the selected option, OPEN flag; icon: a picture instead of the arrow (a date field)
     DROPDOWN_ITEM,      // one option of the open list: SELECTED flag
     SCROLL_AREA,        // the background of a scrolling container
     SCROLLBAR,          // value: position 0..1, ratio: how much of the content is visible 0..1
@@ -73,6 +73,7 @@ StyleKind :: enum u8 {
     SEGMENT,            // one option in it: name, SELECTED flag
     BREADCRUMB,         // a part of a path: name, SELECTED flag for the last one (where the user is)
     SPINNER,            // something is going on: value is the time in seconds
+    DATE_CELL,          // a day of the month a date field shows: name the number, SELECTED flag for the day of the date
     CHART,              // a chart: user is the ^ChartView (the series, the range of the axes, the hovered and the picked point); the style draws with ChartPlotRect, ChartPosition, ChartBarRect
     CUSTOM,             // DrawInfo.custom is called instead of a table entry
 }

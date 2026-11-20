@@ -4,7 +4,7 @@ package demo_common
 // The gallery: the first page of the gallery of Baldr (https://github.com/BuLEEto/Baldr, examples/00_gallery, by Lee Fry and the Baldr contributors, zlib License) made
 // again with this library. Baldr is a retained toolkit (a view builds a tree, messages change a state); here the same page is immediate mode: every frame declares the
 // widgets and reads what they gave back. The cards, their order and their sample data are the ones of the original, so the two can be put next to each other; what this
-// library has no widget for yet (a date and a time field, frosted glass) is left out.
+// library does not do (frosted glass: the blur of what is behind a card) is left out.
 //
 // The second page shows every icon of the icons library with its name.
 
@@ -48,6 +48,10 @@ State :: struct {
     plan: int,
     density: int,
     platforms: [4]bool,
+    // date, time and colour
+    due: ui.Date,
+    alarm: int,                     // minutes after midnight
+    accent: int,                    // which of ACCENTS
     // tags
     tags: [4]bool,                  // which of TAGS are still there
     what_open: bool,
@@ -69,6 +73,7 @@ DENSITIES: [3]string = {"Compact", "Comfortable", "Spacious"}
 PLATFORMS: [4]string = {"Wayland", "X11", "Windows", "macOS"}
 TAGS: [4]string = {"odin", "vulkan", "wayland", "retained"}
 CRUMBS: [3]string = {"baldr", "examples", "00_gallery"}
+ACCENTS: [5]ui.Color = {{56, 129, 243, 255}, {34, 197, 94, 255}, {242, 181, 68, 255}, {229, 72, 77, 255}, {139, 92, 246, 255}}
 
 File :: struct {
     name: string,
@@ -109,6 +114,8 @@ init :: proc(ctx: ^kit.Context) {
     state.platforms = {true, false, true, false}
     state.tags = {true, true, true, true}
     state.last_action = "Nothing chosen yet."
+    state.due = {2026, 11, 12}
+    state.alarm = 7 * 60 + 30
     state.files_selected = -1
 
     ui.TreeInit(&state.tree)
@@ -246,6 +253,23 @@ cardChoices :: proc(c: ^ui.Context) {
     }
 }
 
+cardDate :: proc(c: ^ui.Context) {
+    if ui.UiCard(c, "Date, time and colour") {
+        if field(c, "Due date") { ui.UiDateField(c, "##due", &state.due, {ui.Fixed(170), {}}) }
+        if field(c, "Alarm") { ui.UiTimeField(c, "##alarm", &state.alarm, 30, {ui.Fixed(150), {}}) }
+        if field(c, "Accent") {
+            for accent, i in ACCENTS {
+                if ui.UiColorButton(c, ui.UiFormat(c, "##accent%d", i), {f32(accent.r) / 255, f32(accent.g) / 255, f32(accent.b) / 255}, 26) { state.accent = i }
+            }
+            accent: ui.Color = ACCENTS[state.accent]
+            ui.UiPushTag(c, "mono")
+            ui.UiLabelf(c, "#%02x%02x%02x", accent.r, accent.g, accent.b)
+            ui.UiPopTag(c)
+        }
+        ui.UiLabelDim(c, ui.UiFormat(c, "Due %d %s %d at %02d:%02d.", state.due.day, ui.DATE_MONTH_NAMES[clamp(state.due.month, 1, 12) - 1], state.due.year, state.alarm / 60, state.alarm % 60), scale = 0.9)
+    }
+}
+
 cardProject :: proc(c: ^ui.Context) {
     if ui.UiCard(c, "Project") {
         ui.UiBreadcrumbs(c, "##crumbs", CRUMBS[:])
@@ -337,6 +361,7 @@ pageOverview :: proc(c: ^ui.Context) {
     }
     if column(c) {
         cardChoices(c)
+        cardDate(c)
         cardProject(c)
     }
     if column(c) {
@@ -456,6 +481,20 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(12),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.notifications }, "the switch was flipped"),
+    // the date field: its month opens, a click on a day takes it
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("Date, time and colour", "##due")) }, "the date field is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        return aim(ui.IdFromIndex(24, ui.IdFromString("popup", ui.UiIdPath("Date, time and colour", "##due"))))
+    }, "the month is open: the 24th is on the screen"),
+    kit.MoveTo({1000, 690}),
+    kit.Wait(3),
+    kit.Capture("gallery_date_open"),
+    kit.Wait(2),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.due == ui.Date{2026, 11, 24} }, "a click on a day sets the date"),
     // the light theme, then the page of the icons
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         state.theme = 1
