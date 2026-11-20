@@ -33,7 +33,7 @@ fontsEnsure :: proc(painter: ^ui_default.Painter, ctx: ^kit.Context) {
         fonts.faces[.STRONG] = kit.FontLoad(ctx, INTER_SEMIBOLD, 32, 1280)
         fonts.faces[.ITALIC] = kit.FontLoad(ctx, INTER_ITALIC, 32, 1280)
         fonts.faces[.MONO] = kit.FontLoad(ctx, JETBRAINS_MONO, 32, 1280)
-        fonts.icons = kit.FontLoad(ctx, icons.LUCIDE_FONT, 32, len(icons.Icon), int(icons.ICON_FIRST_CHARACTER))
+        fonts.icons = kit.FontLoad(ctx, icons.LUCIDE_FONT, 32, len(icons.Icon) - 1, int(icons.ICON_FIRST_CHARACTER))       // without NONE, which has no glyph
     }
     for face in ui_default.Face { painter.glue_fonts[face] = u32(fonts.faces[face]) }
     painter.glue_icon_font = u32(fonts.icons)

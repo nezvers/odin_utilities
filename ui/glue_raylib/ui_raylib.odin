@@ -49,8 +49,9 @@ FontsLoad :: proc(fonts: ^Fonts, size: i32 = 32, glyph_count: int = 1280) {
     fonts.faces[.STRONG] = load(INTER_SEMIBOLD, size, codepoints[:glyph_count])
     fonts.faces[.ITALIC] = load(INTER_ITALIC, size, codepoints[:glyph_count])
     fonts.faces[.MONO] = load(JETBRAINS_MONO, size, codepoints[:glyph_count])
-    for i in 0 ..< len(icons.Icon) { codepoints[i] = icons.ICON_FIRST_CHARACTER + rune(i) }
-    fonts.icons = load(icons.LUCIDE_FONT, size, codepoints[:len(icons.Icon)])
+    // the icons without NONE, which has no glyph
+    for i in 0 ..< len(icons.Icon) - 1 { codepoints[i] = icons.ICON_FIRST_CHARACTER + rune(i) }
+    fonts.icons = load(icons.LUCIDE_FONT, size, codepoints[:len(icons.Icon) - 1])
 }
 
 FontsUnload :: proc(fonts: ^Fonts) {
