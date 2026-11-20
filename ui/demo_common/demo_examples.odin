@@ -1,7 +1,7 @@
 #+private file
 package demo_common
 
-// Thirteen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
+// Fourteen examples of Baldr (https://github.com/BuLEEto/Baldr, by Lee Fry and the Baldr contributors, zlib License) made again with this library, one per tab:
 // 01_hello (a counter), 04_controls (check boxes, a switch and sliders bound to a state), 03_scroll (a list of cards that scrolls) and 17_toasts (cards at the top right
 // that a click takes away), 02_theme_lab (a page of widgets to judge a theme by; here the theme is made from an accent that is picked on the page) 05_overlays (a select,
 // a menu that opens from a button, tooltips, a card that takes a click, a dialog) 21_charts (the same numbers as a line, an area, bars and a scatter) and 09_jobs (three downloads with their progress while the page stays live; the original runs each on
@@ -90,6 +90,9 @@ State :: struct {
     // 33_reading
     paper: int,
     page: int,
+    // 37_custom
+    ratings: [2]int,
+    rating_ids: [2]ui.Id,
     // 07_code
     code: [1536]u8,
     code_length: int,
@@ -114,7 +117,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [13]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code"}
+EXAMPLES: [14]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code", "Custom"}
 NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
@@ -141,6 +144,7 @@ init :: proc(ctx: ^kit.Context) {
     state.fruit = 2
     state.note_length = copy(state.note[:], NOTE)
     state.paper, state.page = 1, 0
+    state.ratings = {3, 0}
     state.code_length = copy(state.code[:], CODE_SAMPLE)
     state.chords = {{{.CTRL}, u16(kit.Key.S)}, {{.CTRL}, u16(kit.Key.O)}, {{.CTRL}, u16(kit.Key.F)}, {{.CTRL, .SHIFT}, u16(kit.Key.B)}, {}}
     state.chord_changes = 0
@@ -598,6 +602,81 @@ code :: proc(c: ^ui.Context) {
     }
 }
 
+// 37_custom: a widget of one's own. The library has no star rating: this one is made of what a widget of the library is made of. `UiInteract` gives it the
+// pointer and the focus, an element with the draw kind CUSTOM and a proc of the program draws it with the painter in the colors of the theme, the arrows change
+// it while it has the focus (UiNavBlock keeps them from moving the focus).
+RATING_STAR :: 30
+
+rating :: proc(c: ^ui.Context, name: string, value: ^int, stars: int = 5) -> (changed: bool) {
+    id: ui.Id = ui.UiId(c, name)
+    interaction: ui.Interaction = ui.UiInteract(c, id)
+    // the stars up to the pointer are a preview of what a click gives
+    preview: int
+    if interaction.hovered { preview = clamp(int((c.input.mouse_position.x - interaction.rect.x) / RATING_STAR) + 1, 1, stars) }
+    before: int = value^
+    if interaction.clicked && preview > 0 { value^ = 0 if value^ == preview else preview }       // the same star again takes the rating away
+    focused: bool = ui.UiIsFocused(c, id)
+    if focused {
+        if .LEFT in c.input.actions { value^ = max(value^ - 1, 0) }
+        if .RIGHT in c.input.actions { value^ = min(value^ + 1, stars) }
+    }
+    ui.ElementOpen(c, {
+        id = id,
+        layout = {size = {ui.Fixed(f32(RATING_STAR * stars)), ui.Fixed(RATING_STAR)}},
+        hit = {.INTERACTIVE},
+        cursor = .HAND,
+        draw = {kind = .CUSTOM, custom = rating_draw, name = ui.IdSplitName(name), actual = f32(value^), maximum = f32(stars), cursor = preview, flags = {.FOCUSED} if focused else {}},
+    })
+    ui.ElementClose(c)
+    ui.UiNavBlock(c, .LEFT)
+    ui.UiNavBlock(c, .RIGHT)
+    return value^ != before
+}
+
+// The draw proc of the rating: `actual` stars are full, the ones up to `cursor` (the preview) are faint, the rest is the color of a track
+rating_draw :: proc(c: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^ui_default.Painter = ui_default.PainterOf(c)
+    theme: ^ui_default.Theme = &painter.theme
+    for star in 0 ..< int(info.maximum) {
+        color: ui.Color = theme.track_strong
+        if star < int(info.actual) {
+            color = theme.warning
+        } else if star < info.cursor {
+            color = ui.ColorLerp(theme.track_strong, theme.warning, 0.45)
+        }
+        // a star is ten triangles around its middle: a painter fills polygons that have no dents
+        center: ui.Vec2 = {info.rect.x + (f32(star) + 0.5) * RATING_STAR, info.rect.y + info.rect.w * 0.5}
+        corner :: proc(center: ui.Vec2, index: int) -> ui.Vec2 {
+            radius: f32 = RATING_STAR * (0.42 if index % 2 == 0 else 0.18)
+            angle: f32 = f32(index) * math.PI / 5 - math.PI / 2
+            return {center.x + math.cos(angle) * radius, center.y + math.sin(angle) * radius}
+        }
+        for index in 0 ..< 10 {
+            triangle: [3]ui.Vec2 = {center, corner(center, index), corner(center, index + 1)}
+            painter.fill_polygon(painter, triangle[:], color)
+        }
+    }
+    ui_default.FocusRing(painter, info)
+}
+
+custom :: proc(c: ^ui.Context) {
+    if stage(c, "custom", {460, 300}, {direction = .TOP_TO_BOTTOM, gap = 14, padding = ui.PaddingAll(24)}) {
+        ui.UiTitle(c, "A widget of your own", 1.6)
+        ui.UiLabelDim(c, "A star rating that the library does not have: click a star, or use the arrows while it has the focus.", .WORDS)
+        for label, i in ([2]string{"The food", "The service"}) {
+            ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 12, align = {y = .CENTER}}})
+            ui.ElementOpen(c, {layout = {size = {ui.Fixed(110), ui.Fit()}}})
+            ui.UiLabel(c, label)
+            ui.ElementClose(c)
+            name: string = ui.UiFormat(c, "%s##rating", label)
+            state.rating_ids[i] = ui.UiId(c, name)
+            rating(c, name, &state.ratings[i])
+            ui.UiLabelDim(c, ui.UiFormat(c, "%d of 5", state.ratings[i]) if state.ratings[i] > 0 else "not rated")
+            ui.ElementClose(c)
+        }
+    }
+}
+
 // 21_charts: the same numbers as a line, an area, bars and a scatter. A click picks a point, the arrows walk the points when the chart has the focus; the value is read out.
 charts :: proc(c: ^ui.Context) {
     if stage(c, "charts", {820, 520}, {direction = .TOP_TO_BOTTOM, gap = 12, padding = ui.PaddingAll(16)}) {
@@ -822,6 +901,8 @@ draw :: proc(ctx: ^kit.Context) {
         shortcuts(c, &ctx.input)
     case 12:
         code(c)
+    case 13:
+        custom(c)
     }
     ui.ElementClose(c)
     ui_demo_end(&state.app)
@@ -1225,5 +1306,30 @@ script: []kit.Step = {
     kit.Type(" // typed"),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("// typed", ui.SYNTAX_COMMENT) }, "what is typed is a comment at once"),
+
+    // custom: a star rating made in the demo; a click on a star rates, the arrows change it while it has the focus
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(13) }, "the Custom tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("3 of 5", "dim") && shown("not rated", "dim") }, "the ratings are shown"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        rect, found := ui.UiElementRect(&state.app.ctx, state.rating_ids[1])
+        target = {rect.x + RATING_STAR * 3.5, rect.y + rect.w * 0.5}
+        return found
+    }, "the rating of the service is on the page"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.ratings[1] == 4 }, "a click on the fourth star rates four"),
+    kit.MoveTo({640, 700}),
+    kit.Tap(.RIGHT),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.ratings[1] == 5 && ui.UiIsFocused(&state.app.ctx, state.rating_ids[1]) }, "the arrow adds a star and the focus stays"),
+    kit.Capture("examples_custom"),
+    kit.Wait(2),
+    kit.Tap(.LEFT),
+    kit.Tap(.LEFT),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.ratings[1] == 3 && state.ratings[0] == 3 }, "the other arrow takes stars away"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }

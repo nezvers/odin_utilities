@@ -246,6 +246,12 @@ PainterFlush :: proc(painter: ^Painter) {
     if painter.flush != nil { painter.flush(painter) }
 }
 
+// The painter of a context that was made with one (ui.UiInit(..., &painter)): what a draw proc of the program's own (a CUSTOM element) draws with, in the colors
+// of `painter.theme`.
+PainterOf :: proc(ctx: ^ui.Context) -> ^Painter {
+    return painterOf(ctx)
+}
+
 @(private)
 painterOf :: proc(ctx: ^ui.Context) -> ^Painter {
     return cast(^Painter)ctx.user
