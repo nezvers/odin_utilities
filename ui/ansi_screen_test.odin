@@ -158,13 +158,13 @@ test_styles_and_erasing_with_a_ground :: proc(t: ^testing.T) {
     screen: AnsiScreen = AnsiScreenMake(cells[:], 8, 2)
     dark: [16]Color = ANSI_COLORS_DARK
     write(&screen, "\x1b[1;32mab\x1b[0mc\x1b[41md")
-    testing.expect_value(t, cells[0].style, AnsiState{color = dark[2], bold = true})
-    testing.expect_value(t, cells[2].style, AnsiState{})
-    testing.expect_value(t, cells[3].style, AnsiState{background = dark[1]})
+    testing.expect_value(t, AnsiCellStyle(&cells[0]), AnsiState{color = dark[2], bold = true})
+    testing.expect_value(t, AnsiCellStyle(&cells[2]), AnsiState{})
+    testing.expect_value(t, AnsiCellStyle(&cells[3]), AnsiState{background = dark[1]})
     // erasing a line keeps the ground that is set, not the colors of the text
     write(&screen, "\x1b[33m\x1b[2K")
-    testing.expect_value(t, cells[0].character, rune(0))
-    testing.expect_value(t, cells[0].style, AnsiState{background = dark[1]})
+    testing.expect_value(t, cells[0].character, u32(0))
+    testing.expect_value(t, AnsiCellStyle(&cells[0]), AnsiState{background = dark[1]})
     // the style is saved with the cursor
     AnsiScreenClear(&screen)
     write(&screen, "\x1b[4m\x1b[s\x1b[0mx\x1b[u")
@@ -173,7 +173,7 @@ test_styles_and_erasing_with_a_ground :: proc(t: ^testing.T) {
     light: [16]Color = ANSI_COLORS_LIGHT
     screen.palette = &light
     write(&screen, "\x1b[32mq")
-    testing.expect_value(t, cells[0].style.color, light[2])
+    testing.expect_value(t, AnsiCellStyle(&cells[0]).color, light[2])
 }
 
 @(test)
@@ -312,12 +312,12 @@ test_wide_letters_take_two_cells_and_marks_go_on_the_cell_before :: proc(t: ^tes
     AnsiScreenClear(&screen)
     write(&screen, "e\u0301x")
     testing.expect_value(t, screen.column, 2)
-    testing.expect(t, cells[0].character == 'e' && cells[0].extra[0] == 0x301 && cells[1].character == 'x')
+    testing.expect(t, cells[0].character == 'e' && cells[0].extra0 == 0x301 && cells[1].character == 'x')
     testing.expect_value(t, row(&screen, 0), "e\u0301x")
     // a mark of a wide letter goes on its first cell; a mark with nothing before it is dropped
     AnsiScreenClear(&screen)
     write(&screen, "\u0301\u6f22\u0301")
-    testing.expect(t, cells[0].extra[0] == 0x301 && cells[0].wide)
+    testing.expect(t, cells[0].extra0 == 0x301 && cells[0].wide)
     // a wide letter that does not fit in the last cell goes to the next line and leaves the cell empty
     AnsiScreenClear(&screen)
     write(&screen, "abcde\u6f22")
@@ -443,7 +443,7 @@ test_the_alternate_screen_is_drawn_on_and_left_as_it_was :: proc(t: ^testing.T) 
     testing.expect_value(t, row(&screen, 0), "main")
     testing.expect_value(t, row(&screen, 1), "lines")
     testing.expect_value(t, [2]int{screen.column, screen.row}, [2]int{3, 2})
-    testing.expect(t, cells[0].style.bold)
+    testing.expect(t, AnsiCellStyle(&cells[0]).bold)
     // a second visit starts clean again (1049), the main screen is untouched by what was drawn on the other
     write(&screen, "\x1b[?1049h")
     testing.expect_value(t, row(&screen, 0), "")
@@ -521,11 +521,11 @@ test_reverse_video_on_the_screen_splits_runs_and_survives_erasing :: proc(t: ^te
     test.screen = AnsiScreenMake(test.cells[:], 12, 2)
     dark: [16]Color = ANSI_COLORS_DARK
     write(&test.screen, "ab\x1b[7mcd\x1b[27mef\x1b[2;1H\x1b[31;7mrev\x1b[0m")
-    testing.expect(t, !test.cells[1].style.reverse && test.cells[2].style.reverse && test.cells[3].style.reverse && !test.cells[4].style.reverse)
-    testing.expect_value(t, test.cells[12].style, AnsiState{color = dark[1], reverse = true})
+    testing.expect(t, !AnsiCellStyle(&test.cells[1]).reverse && AnsiCellStyle(&test.cells[2]).reverse && AnsiCellStyle(&test.cells[3]).reverse && !AnsiCellStyle(&test.cells[4]).reverse)
+    testing.expect_value(t, AnsiCellStyle(&test.cells[12]), AnsiState{color = dark[1], reverse = true})
     // erasing keeps the ground that is set and not the reverse of the style that was on
     write(&test.screen, "\x1b[1;1H\x1b[7m\x1b[K\x1b[0m")
-    testing.expect_value(t, test.cells[0].style, AnsiState{})
+    testing.expect_value(t, AnsiCellStyle(&test.cells[0]), AnsiState{})
     write(&test.screen, "ab\x1b[7mcd\x1b[0mef\x1b[2;1H\x1b[31;7mrev\x1b[0m")
     for _ in 0 ..< 2 {
         UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 600}, &test.style)
@@ -825,13 +825,13 @@ test_emoji_sequences_and_flags_are_one_group_of_cells :: proc(t: ^testing.T) {
     write(&screen, "a👨‍👩‍👧‍👦b")
     testing.expect_value(t, [2]int{screen.column, screen.row}, [2]int{4, 0})
     testing.expect(t, cells[1].wide && cells[1].character == '👨' && cells[2].continuation)
-    testing.expect_value(t, cells[1].extra, [ANSI_EXTRA]rune{0x200D, '👩', 0x200D, '👧'})   // what does not fit in a cell is dropped
+    testing.expect_value(t, [2]u32{cells[1].extra0, cells[1].extra1}, [2]u32{0x200D, '👩'})   // a cell keeps two more characters: the rest of the family is dropped
     testing.expect_value(t, cells[3].character, 'b')
     // a flag: two regional indicators
     AnsiScreenClear(&screen)
     write(&screen, "x🇩🇪y")
     testing.expect_value(t, [2]int{screen.column, screen.row}, [2]int{4, 0})
-    testing.expect(t, cells[1].wide && cells[1].extra[0] == '🇪')
+    testing.expect(t, cells[1].wide && cells[1].extra0 == '🇪')
     testing.expect_value(t, cells[3].character, 'y')
     // two flags next to each other are two groups: the third indicator starts a new cell
     AnsiScreenClear(&screen)
@@ -842,7 +842,7 @@ test_emoji_sequences_and_flags_are_one_group_of_cells :: proc(t: ^testing.T) {
     AnsiScreenClear(&screen)
     write(&screen, "👍\U0001F3FDz")
     testing.expect_value(t, screen.column, 3)
-    testing.expect_value(t, cells[0].extra[0], '\U0001F3FD')
+    testing.expect_value(t, cells[0].extra0, '\U0001F3FD')
     testing.expect_value(t, cells[2].character, 'z')
     AnsiScreenClear(&screen)
     write(&screen, "a‍z")
@@ -856,7 +856,7 @@ test_emoji_sequences_and_flags_are_one_group_of_cells :: proc(t: ^testing.T) {
     AnsiScreenClear(&screen)
     write(&screen, "ab")
     write(&screen, "\x1b[12G❤️")                                                   // on the last column
-    testing.expect(t, !cells[11].wide && cells[11].character == '❤' && cells[11].extra[0] == 0xFE0F)
+    testing.expect(t, !cells[11].wide && cells[11].character == '❤' && cells[11].extra0 == 0xFE0F)
     // the text of the row and of a selection has the whole group, in order
     AnsiScreenClear(&screen)
     write(&screen, "👨‍👩 ok")
@@ -974,4 +974,82 @@ test_the_ring_of_rows_keeps_the_lines_in_order_through_many_scrolls :: proc(t: ^
     testing.expect_value(t, row(&screen, 2), "")
     testing.expect_value(t, row(&screen, 3), "line 105")
     testing.expect_value(t, AnsiScreenSelected(&screen, first[:]), "")
+}
+
+@(test)
+test_a_cell_is_16_bytes_and_packs_characters_and_style_without_loss :: proc(t: ^testing.T) {
+    testing.expect_value(t, size_of(AnsiCell), 16)
+    testing.expect_value(t, align_of(AnsiCell), 8)
+    // every code point fits in its 21 bits, in all three places, and the neighbours do not change
+    for character in ([?]rune{0, 'a', 0xFF, 0x7FF, 0xFFFF, 0x10000, 0x1F600, 0x10FFFF}) {
+        cell: AnsiCell = AnsiCellMake(character, {bold = true})
+        cell.extra0, cell.extra1 = u32(character), u32(0x10FFFF - character)
+        cell.wide = true
+        testing.expect_value(t, cell.character, u32(character))
+        testing.expect_value(t, cell.extra0, u32(character))
+        testing.expect_value(t, cell.extra1, u32(0x10FFFF - character))
+        testing.expect(t, cell.bold && cell.wide && !cell.continuation)
+    }
+    // a style goes in and comes out: colors with their alpha as set or not set, every attribute alone and together
+    cases := [?]AnsiState{
+        {}, {color = {1, 2, 3, 255}}, {background = {250, 251, 252, 255}}, {color = {255, 0, 128, 255}, background = {0, 255, 7, 255}},
+        {bold = true}, {dim = true}, {italic = true}, {underline = true}, {reverse = true},
+        {color = {9, 8, 7, 255}, background = {6, 5, 4, 255}, bold = true, dim = true, italic = true, underline = true, reverse = true},
+    }
+    for state in cases {
+        cell: AnsiCell = AnsiCellMake('x', state)
+        testing.expect_value(t, AnsiCellStyle(&cell), state)
+        // the wide flags are not part of the style
+        other: AnsiCell = cell
+        other.wide, other.continuation = true, true
+        testing.expect(t, AnsiCellSameStyle(&cell, &other))
+        testing.expect_value(t, AnsiCellStyle(&other), state)
+    }
+    plain: AnsiCell = AnsiCellMake('a', {})
+    bold: AnsiCell = AnsiCellMake('a', {bold = true})
+    colored: AnsiCell = AnsiCellMake('a', {color = {1, 2, 3, 255}})
+    other_color: AnsiCell = AnsiCellMake('a', {color = {1, 2, 4, 255}})
+    testing.expect(t, !AnsiCellSameStyle(&plain, &bold) && !AnsiCellSameStyle(&plain, &colored) && !AnsiCellSameStyle(&colored, &other_color))
+    // a color of 0, 0, 0 that is set is not the same as a color that is not set
+    black: AnsiCell = AnsiCellMake('a', {color = {0, 0, 0, 255}})
+    testing.expect(t, !AnsiCellSameStyle(&plain, &black))
+}
+
+// The word at a time scan of a run of printable ASCII agrees with the byte loop: every kind of byte that ends a run (below 0x20, 0x7f, 0x80 and above), at every place of a buffer, from
+// every start (unaligned words), and in runs that are all text.
+@(test)
+test_the_ascii_run_scan_stops_at_the_first_byte_that_is_not_printable_ascii :: proc(t: ^testing.T) {
+    naive :: proc(bytes: []u8) -> int {
+        at: int
+        for at < len(bytes) && bytes[at] >= 0x20 && bytes[at] < 0x7f { at += 1 }
+        return at
+    }
+    buffer: [48]u8
+    bad := [?]u8{0x00, 0x09, 0x0a, 0x0d, 0x1b, 0x1f, 0x7f, 0x80, 0x81, 0xc3, 0xe2, 0xf0, 0xff}
+    fill_text :: proc(buffer: []u8) {
+        for i in 0 ..< len(buffer) { buffer[i] = u8(0x20 + (i * 7) % 0x5f) }       // 0x20 to 0x7e, all of them
+    }
+    for start in 0 ..< 9 {
+        for length in 0 ..= len(buffer) - start {
+            fill_text(buffer[:])
+            testing.expect_value(t, asciiRunLength(buffer[start:start + length]), length)
+            for value in bad {
+                for position in 0 ..< length {
+                    fill_text(buffer[:])
+                    buffer[start + position] = value
+                    got: int = asciiRunLength(buffer[start:start + length])
+                    expected: int = naive(buffer[start:start + length])
+                    if got != expected {
+                        testing.expectf(t, false, "start %d, length %d, byte 0x%x at %d: %d, expected %d", start, length, value, position, got, expected)
+                        return
+                    }
+                }
+            }
+        }
+    }
+    // the bytes next to the limits are text
+    for value in ([?]u8{0x20, 0x21, 0x7d, 0x7e}) {
+        for i in 0 ..< len(buffer) { buffer[i] = value }
+        testing.expect_value(t, asciiRunLength(buffer[:]), len(buffer))
+    }
 }

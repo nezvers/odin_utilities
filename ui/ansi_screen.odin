@@ -14,8 +14,8 @@ import "core:unicode/utf8"
 //     ui.AnsiScreenWrite(&screen, output)
 //     ui.UiAnsiScreen(&ctx, &screen)
 //
-// Speed: printable ASCII goes into a row in one loop (`screenPutRun`), and the rows are a ring, so scrolling the whole screen copies nothing: 379 MB/s on long lines, 143 on `ls` like
-// output, 254 with colors (`odin run ui/tool/ansi_bench -o:speed`; `AnsiScreen.bytewise` is the byte at a time reference the fast path is tested against).
+// Speed: printable ASCII goes into a row in one loop (`screenPutRun`), and the rows are a ring, so scrolling the whole screen copies nothing: 780 MB/s on long lines, 300 on `ls` like
+// output, 430 with colors (`odin run ui/tool/ansi_bench -o:speed`; `AnsiScreen.bytewise` is the byte at a time reference the fast path is tested against).
 //
 // What is read: the printable characters (UTF-8; a wide letter (Chinese, Japanese, Korean, emoji) takes two cells, a combining mark goes on the cell before it: see
 // `AnsiRuneWidth`), \r \n \b \t, the cursor moves (A B C D E F G H f d, s u, ESC 7 and
@@ -26,7 +26,7 @@ import "core:unicode/utf8"
 // hidden cursor, the mouse) and every other sequence is skipped.
 //
 // Limits: a fixed grid (no resize: make another screen and write the output again), no origin or wrap modes, no tab stops that are set; a scroll region feeds no history unless it is the whole screen
-//     the width of a character is a table of the ranges that matter (Unicode 15, written by hand: a rare script may be wrong), ambiguous widths are 1 unless `ambiguous_wide`, a cell keeps ANSI_EXTRA (4) characters besides its own so a longer emoji sequence loses its tail, a flag or a family is one cell group only when its parts arrive in order, no right-to-left text; marks go on the cell before it and one mark only
+//     the width of a character is a table of the ranges that matter (Unicode 15, written by hand: a rare script may be wrong), ambiguous widths are 1 unless `ambiguous_wide`, a cell keeps ANSI_EXTRA (2) characters besides its own so a longer emoji sequence loses its tail, a flag or a family is one cell group only when its parts arrive in order, no right-to-left text; marks go on the cell before it and one mark only
 //     the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; a selection is by cells (a press and a drag, one word or line at a time is not there: no double click selection), no mouse or paste modes, no cursor shapes or hiding
 //     it only draws: nothing reads the keyboard or talks to a process; a cell is as wide as the code face's M, and a wide letter takes two of them whatever the font does
 //
@@ -38,14 +38,62 @@ import "core:unicode/utf8"
 // Baldr's terminal screen (examples/25_terminal) was the reason to have it; the code is written for this library.
 
 // How many characters a cell keeps besides its own
-ANSI_EXTRA :: 4
+ANSI_EXTRA :: 2
 
+// One cell: 16 bytes (it was 36). The character and two more (a combining mark, a joiner and the emoji it joins, a skin tone, a flag's second letter: 21 bits each, the size of a
+// code point), the colors as three bytes each (a color that is not set has its flag cleared), the attributes and the two flags of a wide letter. A scroll of a region, the history
+// and a write all move or store cells, so the size is the speed (ghostty's cell is 8 bytes: its style is a number into a table of the styles in use, here the style is in the cell).
+// Make one with `AnsiCellMake`, read the style with `AnsiCellStyle`; the fields that are not the packed ones (`character`, the flags) are read and written as they are.
 AnsiCell :: struct {
-    character: rune,            // 0: empty
-    extra: [ANSI_EXTRA]rune,    // what is drawn with the character in this cell, in order: combining marks, a joiner and the emoji it joins, a skin tone, a flag's second letter (0: none)
-    style: AnsiState,
-    wide: bool,                 // the character takes this cell and the next one, which is its continuation
-    continuation: bool,         // the second cell of a wide character (it has no character of its own)
+    using characters: bit_field u64 {
+        character: u32 | 21,        // 0: empty
+        extra0: u32 | 21,           // what is drawn with the character in this cell, in order (0: none)
+        extra1: u32 | 21,
+    },
+    color: [3]u8,
+    ground: [3]u8,
+    using attributes: bit_field u16 {
+        bold: bool | 1,
+        dim: bool | 1,
+        italic: bool | 1,
+        underline: bool | 1,
+        reverse: bool | 1,
+        color_set: bool | 1,        // the text has a color of its own (else the style's)
+        ground_set: bool | 1,       // there is a ground
+        wide: bool | 1,             // the character takes this cell and the next one, which is its continuation
+        continuation: bool | 1,     // the second cell of a wide character (it has no character of its own)
+    },
+}
+
+#assert(size_of(AnsiCell) == 16 && align_of(AnsiCell) == 8)       // screenPutRun writes a cell as two words
+
+ANSI_CELL_STYLE_BITS :: u16(0x7f)       // the attribute bits that are the style: the wide flags are not
+
+// A cell with a character and a style
+AnsiCellMake :: proc "contextless" (character: rune, style: AnsiState) -> (cell: AnsiCell) {
+    cell.character = u32(character)
+    AnsiCellSetStyle(&cell, style)
+    return
+}
+
+// The style of a cell as the state the ui draws (colors with the alpha of a color that is set)
+AnsiCellStyle :: proc "contextless" (cell: ^AnsiCell) -> AnsiState {
+    state: AnsiState = {bold = cell.bold, dim = cell.dim, italic = cell.italic, underline = cell.underline, reverse = cell.reverse}
+    if cell.color_set { state.color = {cell.color[0], cell.color[1], cell.color[2], 255} }
+    if cell.ground_set { state.background = {cell.ground[0], cell.ground[1], cell.ground[2], 255} }
+    return state
+}
+
+AnsiCellSetStyle :: proc "contextless" (cell: ^AnsiCell, style: AnsiState) {
+    cell.color = {style.color.r, style.color.g, style.color.b}
+    cell.ground = {style.background.r, style.background.g, style.background.b}
+    cell.bold, cell.dim, cell.italic, cell.underline, cell.reverse = style.bold, style.dim, style.italic, style.underline, style.reverse
+    cell.color_set, cell.ground_set = style.color.a > 0, style.background.a > 0
+}
+
+// Two cells in the same style (the wide flags do not count)
+AnsiCellSameStyle :: proc "contextless" (a: ^AnsiCell, b: ^AnsiCell) -> bool {
+    return a.color == b.color && a.ground == b.ground && transmute(u16)a.attributes & ANSI_CELL_STYLE_BITS == transmute(u16)b.attributes & ANSI_CELL_STYLE_BITS
 }
 
 AnsiScreen :: struct {
@@ -135,7 +183,7 @@ screenCell :: proc "contextless" (screen: ^AnsiScreen, column: int, row: int) ->
 // An empty cell keeps the ground of the style that erased it (a cleared line in a colored ground stays colored)
 @(private)
 screenBlank :: proc "contextless" (screen: ^AnsiScreen) -> AnsiCell {
-    return {style = {background = screen.style.background}}
+    return AnsiCellMake(0, {background = screen.style.background})
 }
 
 @(private)
@@ -150,7 +198,7 @@ screenClearRange :: proc "contextless" (screen: ^AnsiScreen, from_row: int, from
         first: int = from - row * columns
         last: int = min(to - row * columns, columns)
         cells: []AnsiCell = screenRowCells(screen, row)
-        for i in first ..< last { cells[i] = blank }
+        screenFillCells(cells[first:last], blank)
         from = (row + 1) * columns
     }
 }
@@ -167,19 +215,19 @@ screenScroll :: proc "contextless" (screen: ^AnsiScreen, top: int, bottom: int, 
         screen.pushed += shift if count > 0 else -shift
         if count > 0 {
             screen.top = (screen.top + shift) % screen.rows
-            for i in screen.rows - shift ..< screen.rows { for &cell in screenRowCells(screen, i) { cell = blank } }
+            for i in screen.rows - shift ..< screen.rows { screenFillCells(screenRowCells(screen, i), blank) }
         } else {
             screen.top = (screen.top - shift + screen.rows) % screen.rows
-            for i in 0 ..< shift { for &cell in screenRowCells(screen, i) { cell = blank } }
+            for i in 0 ..< shift { screenFillCells(screenRowCells(screen, i), blank) }
         }
         return
     }
     if count > 0 {
         for row in top ..< bottom + 1 - shift { copy(screenRowCells(screen, row), screenRowCells(screen, row + shift)) }
-        for row in bottom + 1 - shift ..< bottom + 1 { for &cell in screenRowCells(screen, row) { cell = blank } }
+        for row in bottom + 1 - shift ..< bottom + 1 { screenFillCells(screenRowCells(screen, row), blank) }
     } else {
         for row := bottom; row >= top + shift; row -= 1 { copy(screenRowCells(screen, row), screenRowCells(screen, row - shift)) }
-        for row in top ..< top + shift { for &cell in screenRowCells(screen, row) { cell = blank } }
+        for row in top ..< top + shift { screenFillCells(screenRowCells(screen, row), blank) }
     }
 }
 
@@ -264,17 +312,24 @@ ansiEmojiText :: proc "contextless" (character: rune) -> bool {
     return false
 }
 
+// An empty cell with the ground that the cell had
+@(private)
+ansiCellCleared :: proc "contextless" (cell: ^AnsiCell) -> (result: AnsiCell) {
+    result.ground, result.ground_set = cell.ground, cell.ground_set
+    return
+}
+
 // A cell that is the half of a wide character, or has one, loses its other half when it is written over or cut
 @(private)
 screenBreakPair :: proc "contextless" (screen: ^AnsiScreen, column: int, row: int) {
     cell: ^AnsiCell = screenCell(screen, column, row)
     if cell.continuation && column > 0 {
         previous: ^AnsiCell = screenCell(screen, column - 1, row)
-        if previous.wide { previous^ = {style = {background = previous.style.background}} }
+        if previous.wide { previous^ = ansiCellCleared(previous) }
     }
     if cell.wide && column + 1 < screen.columns {
         next: ^AnsiCell = screenCell(screen, column + 1, row)
-        if next.continuation { next^ = {style = {background = next.style.background}} }
+        if next.continuation { next^ = ansiCellCleared(next) }
     }
 }
 
@@ -283,8 +338,8 @@ screenBreakPair :: proc "contextless" (screen: ^AnsiScreen, column: int, row: in
 screenFixRow :: proc "contextless" (screen: ^AnsiScreen, row: int) {
     for column in 0 ..< screen.columns {
         cell: ^AnsiCell = screenCell(screen, column, row)
-        if cell.continuation && (column == 0 || !screenCell(screen, column - 1, row).wide) { cell^ = {style = {background = cell.style.background}} }
-        if cell.wide && (column == screen.columns - 1 || !screenCell(screen, column + 1, row).continuation) { cell^ = {style = {background = cell.style.background}} }
+        if cell.continuation && (column == 0 || !screenCell(screen, column - 1, row).wide) { cell^ = ansiCellCleared(cell) }
+        if cell.wide && (column == screen.columns - 1 || !screenCell(screen, column + 1, row).continuation) { cell^ = ansiCellCleared(cell) }
     }
 }
 
@@ -301,11 +356,10 @@ screenBefore :: proc "contextless" (screen: ^AnsiScreen) -> ^AnsiCell {
 
 @(private)
 cellAddExtra :: proc "contextless" (cell: ^AnsiCell, character: rune) {
-    for &slot in cell.extra {
-        if slot == 0 {
-            slot = character
-            return
-        }
+    if cell.extra0 == 0 {
+        cell.extra0 = u32(character)
+    } else if cell.extra1 == 0 {
+        cell.extra1 = u32(character)
     }
 }
 
@@ -317,15 +371,17 @@ screenPut :: proc "contextless" (screen: ^AnsiScreen, character: rune) {
     joins: bool = width == 0
     if before != nil && !joins {
         if screen.join_at == 1 + screen.row * screen.columns + screen.column && (width == 2 || ansiEmojiText(character)) { joins = true }
-        if before.character >= 0x1F1E6 && before.character <= 0x1F1FF && before.extra[0] == 0 && character >= 0x1F1E6 && character <= 0x1F1FF { joins = true }
+        if before.character >= 0x1F1E6 && before.character <= 0x1F1FF && before.extra0 == 0 && character >= 0x1F1E6 && character <= 0x1F1FF { joins = true }
     }
     if joins {
         if before == nil { return }
         // the variation selector 16 asks for the picture of an emoji: a narrow one takes the next cell
-        if character == 0xFE0F && !before.wide && ansiEmojiText(before.character) && before.extra[0] == 0 && screen.column < screen.columns {
+        if character == 0xFE0F && !before.wide && ansiEmojiText(rune(before.character)) && before.extra0 == 0 && screen.column < screen.columns {
             before.wide = true
             screenBreakPair(screen, screen.column, screen.row)
-            screenCell(screen, screen.column, screen.row)^ = {style = before.style, continuation = true}
+            continuation: AnsiCell = AnsiCellMake(0, AnsiCellStyle(before))
+            continuation.continuation = true
+            screenCell(screen, screen.column, screen.row)^ = continuation
             screen.column += 1
         }
         cellAddExtra(before, character)
@@ -339,8 +395,14 @@ screenPut :: proc "contextless" (screen: ^AnsiScreen, character: rune) {
         screenLineFeed(screen)
     }
     for offset in 0 ..< width { screenBreakPair(screen, screen.column + offset, screen.row) }
-    screenCell(screen, screen.column, screen.row)^ = {character = character, style = screen.style, wide = width == 2}
-    if width == 2 { screenCell(screen, screen.column + 1, screen.row)^ = {style = screen.style, continuation = true} }
+    put: AnsiCell = AnsiCellMake(character, screen.style)
+    put.wide = width == 2
+    screenCell(screen, screen.column, screen.row)^ = put
+    if width == 2 {
+        second: AnsiCell = AnsiCellMake(0, screen.style)
+        second.continuation = true
+        screenCell(screen, screen.column + 1, screen.row)^ = second
+    }
     screen.column += width
 }
 
@@ -584,8 +646,7 @@ AnsiScreenWrite :: proc(screen: ^AnsiScreen, bytes: []u8) {
         // in the ground state (no escape sequence and no letter of several bytes under way) a run of printable ASCII needs no state machine: it goes into the cells of a row in one loop.
         // Text is mostly this (ghostty finds the run with a vector scan and fills a row at a time: batching is most of its speed)
         if byte >= 0x20 && byte < 0x7f && screen.sequence_length == 0 && screen.letter_length == 0 && !screen.bytewise {
-            end: int = i + 1
-            for end < len(bytes) && bytes[end] >= 0x20 && bytes[end] < 0x7f { end += 1 }
+            end: int = i + asciiRunLength(bytes[i:])
             screenPutRun(screen, bytes[i:end])
             i = end
             continue
@@ -595,12 +656,42 @@ AnsiScreenWrite :: proc(screen: ^AnsiScreen, bytes: []u8) {
     }
 }
 
+// Every cell of `cells` set to `value`, written as two words each
+@(private)
+screenFillCells :: proc "contextless" (cells: []AnsiCell, value: AnsiCell) {
+    words: [2]u64 = transmute([2]u64)value
+    for &cell in cells {
+        target: ^[2]u64 = cast(^[2]u64)&cell
+        target[0], target[1] = words[0], words[1]
+    }
+}
+
+// How many bytes from the start of `bytes` are printable ASCII (0x20 to 0x7e): eight at a time (a word with a byte of 0x80 or more, below 0x20, or 0x7f is not all text), then one
+// at a time for the byte that ends the run. The `simd` library's scan (`simd/TODO.md`, ScanText) will do 16 to 64 at a time.
+@(private)
+asciiRunLength :: proc "contextless" (bytes: []u8) -> int {
+    ONES :: u64(0x0101010101010101)
+    HIGH :: u64(0x8080808080808080)
+    at: int
+    for at + 8 <= len(bytes) {
+        word: u64 = (cast(^u64)&bytes[at])^                       // x86, arm64 and wasm read an unaligned word as it is
+        below: u64 = (word - ONES * 0x20) & ~word & HIGH          // a byte below 0x20 (the borrow only goes up from a byte that is already below)
+        del: u64 = word ~ (ONES * 0x7f)
+        is_del: u64 = (del - ONES) & ~del & HIGH                  // a byte of 0x7f
+        if (word & HIGH) | below | is_del != 0 { break }
+        at += 8
+    }
+    for at < len(bytes) && bytes[at] >= 0x20 && bytes[at] < 0x7f { at += 1 }
+    return at
+}
+
 // A run of printable ASCII (0x20 to 0x7e) written at the cursor: the same cells as one `screenPut` per character, without the join test, the width and the wrap test per
 // character. The cursor after the last cell of a row waits (the next character wraps first), as it does for a single character.
 @(private)
 screenPutRun :: proc "contextless" (screen: ^AnsiScreen, run: []u8) {
     columns: int = screen.columns
-    style: AnsiState = screen.style
+    prototype: AnsiCell = AnsiCellMake(0, screen.style)          // the style packed once for the whole run
+    prototype_words: [2]u64 = transmute([2]u64)prototype
     i: int
     for i < len(run) {
         if screen.column >= columns {
@@ -614,7 +705,10 @@ screenPutRun :: proc "contextless" (screen: ^AnsiScreen, run: []u8) {
             cell: ^AnsiCell = &row_cells[at + k]
             // half of a wide letter that this character lands on: the other half becomes empty (screenBreakPair does it for a single character)
             if cell.wide || cell.continuation { screenBreakPair(screen, at + k, screen.row) }
-            cell^ = {character = rune(run[i + k]), style = style}
+            // two whole words, no read after the write (setting the character of a cell that was just stored waits for the store)
+            words: ^[2]u64 = cast(^[2]u64)cell
+            words[0] = u64(run[i + k])
+            words[1] = prototype_words[1]
         }
         screen.column += count
         i += count
@@ -626,17 +720,15 @@ screenPutRun :: proc "contextless" (screen: ^AnsiScreen, run: []u8) {
 @(private)
 cellEncode :: proc(cell: ^AnsiCell, character: rune, out: []u8, count: ^int) -> bool {
     needed: int = utf8.rune_size(character)
-    for extra in cell.extra {
-        if extra == 0 { break }
-        needed += utf8.rune_size(extra)
-    }
+    if cell.extra0 != 0 { needed += utf8.rune_size(rune(cell.extra0)) }
+    if cell.extra1 != 0 { needed += utf8.rune_size(rune(cell.extra1)) }
     if count^ + needed > len(out) { return false }
     encoded, width := utf8.encode_rune(character)
     copy(out[count^:], encoded[:width])
     count^ += width
-    for extra in cell.extra {
+    for extra in ([ANSI_EXTRA]u32{cell.extra0, cell.extra1}) {
         if extra == 0 { break }
-        encoded, width = utf8.encode_rune(extra)
+        encoded, width = utf8.encode_rune(rune(extra))
         copy(out[count^:], encoded[:width])
         count^ += width
     }
@@ -653,7 +745,7 @@ AnsiScreenRow :: proc(screen: ^AnsiScreen, row: int, out: []u8) -> string {
     for column in 0 ..= last {
         cell: AnsiCell = screenCell(screen, column, row)^
         if cell.continuation { continue }                     // the second half of a wide letter
-        character: rune = cell.character
+        character: rune = rune(cell.character)
         if character == 0 { character = ' ' }
         if !cellEncode(&cell, character, out, &count) { break }
     }
@@ -766,7 +858,7 @@ AnsiScreenSelected :: proc(screen: ^AnsiScreen, out: []u8) -> string {
         for column in first ..= end {
             cell: ^AnsiCell = screenIdCell(screen, id, column)
             if cell == nil || cell.continuation { continue }
-            character: rune = cell.character if cell.character != 0 else ' '
+            character: rune = rune(cell.character) if cell.character != 0 else ' '
             if !cellEncode(cell, character, out, &count) { return string(out[:count]) }
         }
     }
@@ -826,7 +918,7 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, na
         end: int = screen.columns
         for end > 0 {
             last: ^AnsiCell = AnsiScreenViewCell(screen, end - 1, row)
-            if last.character != 0 || last.continuation || last.style.background.a != 0 { break }
+            if last.character != 0 || last.continuation || last.ground_set { break }
             end -= 1
         }
         column: int
@@ -838,7 +930,7 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, na
             } else {
                 for stop < end {
                     next: AnsiCell = AnsiScreenViewCell(screen, stop, row)^
-                    if next.style != first.style || next.wide { break }
+                    if !AnsiCellSameStyle(&next, &first) || next.wide { break }
                     stop += 1
                 }
             }
@@ -847,7 +939,7 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, na
             for at in column ..< stop {
                 cell: AnsiCell = AnsiScreenViewCell(screen, at, row)^
                 if cell.continuation && at > column { continue }
-                character: rune = cell.character
+                character: rune = rune(cell.character)
                 if character == 0 { character = ' ' }
                 if !cellEncode(&cell, character, ctx.text_buffer[:], &ctx.text_used) {
                     ctx.problems += {.TEXT_FULL}
@@ -855,7 +947,7 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, na
                 }
             }
             run: string = string(ctx.text_buffer[start:ctx.text_used])
-            style: AnsiState = first.style
+            style: AnsiState = AnsiCellStyle(&first)
             pushed: int
             if style.bold {
                 UiPushTag(ctx, "strong")

@@ -88,12 +88,18 @@ Tick an item when it is done and verified (tests pass, committed).
       batching) gained only 20 percent: the cost was per line, not per byte, 2 microseconds a line, which was the `copy` of the whole screen (360 KB) at every scroll. The rows are a ring now
       (`AnsiScreen.top`, `screenRowCells`): a scroll of the whole screen turns the ring and clears one row. `AnsiScreen.bytewise` keeps the byte at a time path as the reference: a test compares
       both on 400 random streams (controls, escapes, wide letters, emoji sequences, regions, the alternate screen, pieces cut anywhere), and a model test checks the ring through 102 scrolls.
-- [ ] (medium) The cell screen: what is left. Plain ASCII is at 2.6 ns per byte, about 14 GB/s of cell stores: the 36 byte cell is the limit now (next item). Cursor movement and erase run at
-      10 ns per byte (95 MB/s): `screenSequence` splits the parameters again for every sequence; a table of the common sequences (`ESC [ K`, `ESC [ row ; column H`, `ESC [ m` with one
-      number) and no `[]int` parse for them. Then the run scan with the `simd` library (`ScanText`, `simd/TODO.md`): the scan is a byte loop today.
-- [ ] (medium) Shrink `AnsiCell` (36 bytes; ghostty's is 8): the four extra characters (16 bytes) are used by almost no cell: keep them in a small side table of the screen (a caller owned
-      array of `(cell number, characters)` entries, a free list) and leave a flag and an index in the cell; the style (13 bytes) becomes an index into a table of the styles in use. A
-      scroll copies cells, so size is speed. Measure the scroll and the write before and after; the history ring grows by the same factor.
+- [x] The cell is 16 bytes (it was 36) and the write path is at 780 MB/s on long lines (MB/s, 200 x 50 with a history, `odin run ui/tool/ansi_bench -o:speed`; the number before the
+      16 byte cell, then after it and the two fixes below): long lines 379 -> 362 -> 779, `ls` like 143 -> 146 -> 296, colors 254 -> 246 -> 431, wide and emoji 207 -> 193 -> 246. The size alone
+      gained nothing (my guess that the 36 byte stores were the limit was wrong); what did: (1) the run fill writes a cell as two words and not a struct copy and a read modify write of the
+      bit field (store forwarding waited on the store just made), 513 without a history; (2) rows are cleared with the same word stores (`screenFillCells`), and the run of printable ASCII is
+      found eight bytes at a time (`asciiRunLength`, a word at a time test for bytes below 0x20, 0x7f and 0x80 and above), 966 without a history. Layout: the character and two more
+      characters of 21 bits in one u64 (`AnsiCell.characters`), the colors three bytes each, the attributes and the wide flags in a u16 (`attributes`); `AnsiCellMake`, `AnsiCellStyle`,
+      `AnsiCellSetStyle`, `AnsiCellSameStyle` are the way to make and read a style. Two extra characters instead of four: a family of four people is shown with its first two (and copied
+      so); the ghostty answer (a side table of the long sequences) needs a lifetime for the entries (a history row that holds a reference): take it up only if a program needs the tail.
+- [ ] (medium) The cell screen: what is left. A cell write is 1 ns now; cursor movement and erase run at 7 ns per byte (136 MB/s) and wide letters and emoji at 3.7: `screenSequence`
+      splits the parameters again for every sequence (a table of the common sequences: `ESC [ K`, `ESC [ row ; column H`, `ESC [ m` with one number, and no `[]int` parse for them), and a
+      wide letter is a `screenPut` with the join tests (decode a UTF-8 run of non ASCII letters in one loop, as ghostty does). Then the `simd` library's `ScanText` for the run scan
+      (8 bytes a time today).
 - [ ] (medium) Invalid UTF-8 in `AnsiScreenWrite`: one U+FFFD per maximal subpart and a partial sequence at the end of a write carried only when it is valid so far (an invalid start byte is an
       error at once). See `font/TODO.md` for the shared decoder.
 - [ ] (low) Print by slices in the demo and the pager: a program that writes a line at a time can call `AnsiScreenWrite` once per chunk (it is already how the demo does it): document

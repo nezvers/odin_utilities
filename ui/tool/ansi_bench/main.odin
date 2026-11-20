@@ -1,7 +1,7 @@
 package main
 
 // How fast the cell screen takes output: `odin run ui/tool/ansi_bench -o:speed` (a debug build says nothing). Fixed data (no random numbers: two revisions run the same bytes), a
-// screen of 200 x 50 with a history, best of five runs, MB per second and ns per byte. `-- --bytewise` runs the same data through the byte at a time state machine (the reference path
+// screen of 200 x 50 with a history, best of five runs, MB per second and ns per byte. `-- --no-history` leaves the history out (what a line feed costs without the copy of the row), `-- --bytewise` runs the same data through the byte at a time state machine (the reference path
 // of the fast one) to show what the run fill gains.
 
 import "core:fmt"
@@ -31,10 +31,15 @@ main :: proc() {
     cells: []ui.AnsiCell = make([]ui.AnsiCell, 200 * 50)
     history: []ui.AnsiCell = make([]ui.AnsiCell, 200 * 1000)
     alternate: []ui.AnsiCell = make([]ui.AnsiCell, 200 * 50)
-    screen: ui.AnsiScreen = ui.AnsiScreenMake(cells, 200, 50, history, alternate)
+    no_history: bool
+    for argument in os.args[1:] {
+        if argument == "--no-history" { no_history = true }
+    }
+    screen: ui.AnsiScreen = ui.AnsiScreenMake(cells, 200, 50, nil if no_history else history, alternate)
     for argument in os.args[1:] {
         if argument == "--bytewise" { screen.bytewise = true }
     }
+    if no_history { fmt.println("without a history") }
     fmt.println(len(os.args) > 1 && os.args[1] == "--bytewise" ? "byte at a time (the reference path)" : "run fill")
 
     lines: [dynamic]u8 = fill({"The quick brown fox jumps over the lazy dog 0123456789 and again and again and again until the line is long enough to wrap\r\n"}, SIZE)
