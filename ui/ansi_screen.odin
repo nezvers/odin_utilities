@@ -2,6 +2,7 @@ package ui
 
 import "core:unicode/utf8"
 import ud "../unicode_data"
+import su "../simd"
 
 // A screen of cells for programs that move the cursor (a pager, a progress bar that redraws its line, a full screen tool): the caller gives the cells, bytes go in
 // with `AnsiScreenWrite` in any pieces (an escape sequence or a letter may be cut between two writes), `UiAnsiScreen` draws the grid. Nothing is allocated; the grid never
@@ -578,9 +579,7 @@ screenByte :: proc(screen: ^AnsiScreen, byte: u8) {
     }
     // inside of a letter of several bytes
     if screen.letter_length > 0 {
-        if byte & 0xC0 != 0x80 {
-            screen.letter_length = 0                                    // it was cut: the new byte starts over
-        } else {
+        if su.Utf8ContinuationOk(screen.letter[0], screen.letter_length, byte) {
             screen.letter[screen.letter_length] = byte
             screen.letter_length += 1
             if screen.letter_length == screen.letter_needed {
@@ -590,6 +589,9 @@ screenByte :: proc(screen: ^AnsiScreen, byte: u8) {
             }
             return
         }
+        // a byte that cannot go on with the sequence cuts it: one replacement character for the part (its maximal subpart), and the byte starts over
+        screenPut(screen, utf8.RUNE_ERROR)
+        screen.letter_length = 0
     }
     if byte < 0x20 || byte == 0x7f { screen.grapheme = {} }          // the cursor moves or a sequence starts: the text before is not a cluster to join
     switch {
@@ -602,10 +604,11 @@ screenByte :: proc(screen: ^AnsiScreen, byte: u8) {
     case byte == '\t': screen.column = min((min(screen.column, screen.columns - 1) / 8 + 1) * 8, screen.columns - 1)
     case byte < 0x20 || byte == 0x7f:
     case byte < 0x80: screenPut(screen, rune(byte))
-    case byte >= 0xC0:
+    case su.Utf8SequenceLength(byte) == 0: screenPut(screen, utf8.RUNE_ERROR)      // a lone continuation byte, C0, C1, F5 and above: one replacement character each
+    case:
         screen.letter[0] = byte
         screen.letter_length = 1
-        screen.letter_needed = 2 if byte < 0xE0 else (3 if byte < 0xF0 else 4)
+        screen.letter_needed = su.Utf8SequenceLength(byte)
     }
 }
 
@@ -617,29 +620,24 @@ AnsiScreenWrite :: proc(screen: ^AnsiScreen, bytes: []u8) {
         // in the ground state (no escape sequence and no letter of several bytes under way) a run of printable ASCII needs no state machine: it goes into the cells of a row in one loop.
         // Text is mostly this (ghostty finds the run with a vector scan and fills a row at a time: batching is most of its speed)
         if byte >= 0x20 && byte < 0x7f && screen.sequence_length == 0 && screen.letter_length == 0 && !screen.bytewise && screen.grapheme.previous != .PREPEND {
-            end: int = i + asciiRunLength(bytes[i:])
+            end: int = i + su.AsciiRun(bytes[i:])
             screenPutRun(screen, bytes[i:end])
             i = end
             continue
         }
-        // a letter of several bytes that is all in this slice is decoded at once (it only goes through the byte at a time letter buffer when it is cut by the end of the slice, or
-        // is not well formed: the state machine then does what it always did with it)
-        if byte >= 0xC0 && screen.sequence_length == 0 && screen.letter_length == 0 && !screen.bytewise {
-            needed: int = 2 if byte < 0xE0 else (3 if byte < 0xF0 else 4)
-            if i + needed <= len(bytes) {
-                whole: bool = true
-                for k in 1 ..< needed {
-                    if bytes[i + k] & 0xC0 != 0x80 {
-                        whole = false
-                        break
-                    }
-                }
-                if whole {
-                    character, _ := utf8.decode_rune(bytes[i:i + needed])
-                    screenPut(screen, character)
-                    i += needed
-                    continue
-                }
+        // a letter of several bytes that is whole in this slice is decoded at once; a bad sequence is one replacement character for its maximal subpart (Unicode table 3-7); a sequence that
+        // reaches the end of the slice goes through the byte machine, which keeps it for the next write when it is valid so far (and replaces it at once when it is not)
+        if byte >= 0x80 && screen.sequence_length == 0 && screen.letter_length == 0 && !screen.bytewise {
+            character, size, valid := su.Utf8Decode(bytes, i)
+            if valid {
+                screenPut(screen, character)
+                i += size
+                continue
+            }
+            if i + size < len(bytes) {
+                screenPut(screen, utf8.RUNE_ERROR)
+                i += size
+                continue
             }
         }
         screenByte(screen, byte)
@@ -655,25 +653,6 @@ screenFillCells :: proc "contextless" (cells: []AnsiCell, value: AnsiCell) {
         target: ^[2]u64 = cast(^[2]u64)&cell
         target[0], target[1] = words[0], words[1]
     }
-}
-
-// How many bytes from the start of `bytes` are printable ASCII (0x20 to 0x7e): eight at a time (a word with a byte of 0x80 or more, below 0x20, or 0x7f is not all text), then one
-// at a time for the byte that ends the run. The `simd` library's scan (`simd/TODO.md`, ScanText) will do 16 to 64 at a time.
-@(private)
-asciiRunLength :: proc "contextless" (bytes: []u8) -> int {
-    ONES :: u64(0x0101010101010101)
-    HIGH :: u64(0x8080808080808080)
-    at: int
-    for at + 8 <= len(bytes) {
-        word: u64 = (cast(^u64)&bytes[at])^                       // x86, arm64 and wasm read an unaligned word as it is
-        below: u64 = (word - ONES * 0x20) & ~word & HIGH          // a byte below 0x20 (the borrow only goes up from a byte that is already below)
-        del: u64 = word ~ (ONES * 0x7f)
-        is_del: u64 = (del - ONES) & ~del & HIGH                  // a byte of 0x7f
-        if (word & HIGH) | below | is_del != 0 { break }
-        at += 8
-    }
-    for at < len(bytes) && bytes[at] >= 0x20 && bytes[at] < 0x7f { at += 1 }
-    return at
 }
 
 // A run of printable ASCII (0x20 to 0x7e) written at the cursor: the same cells as one `screenPut` per character, without the join test, the width and the wrap test per

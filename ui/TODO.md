@@ -101,10 +101,8 @@ Tick an item when it is done and verified (tests pass, committed).
       sequence zeroed a 128 byte array of numbers; a letter of several bytes that is whole in the slice is decoded at once (the byte at a time letter buffer is for a letter cut by the end of
       a write). The width function tests the big wide blocks first. A test checks that no half of a wide letter is left on random streams (broken on purpose: it fails at round 183), and an
       exhaustive test compares the reordered width function with the previous one for every code point, both modes (it found a block that started 12 code points too early).
-- [ ] (low) The cell screen: what is left is about 2 to 3 ns per byte on every kind of output; the next real gain is vector work (the `simd` library's `ScanText` for the run scan, 16 to 64 bytes a
-      step) and a lookup table for the width of the BMP instead of the chain of ranges (64 KB built on first use: the `font` task that generates the tables from the Unicode files).
-- [ ] (medium) Invalid UTF-8 in `AnsiScreenWrite`: one U+FFFD per maximal subpart and a partial sequence at the end of a write carried only when it is valid so far (an invalid start byte is an
-      error at once). See `font/TODO.md` for the shared decoder.
+- [x] The run scan uses the `simd` library (`AsciiRun`: 16, 32 or 64 bytes a step by level). No speed gain on this data (the scan was not the limit: 1.3 ns per byte is the cell stores and the line feeds); it removed the hand written word scan from `ui`. What is left is 1 to 3 ns per byte on every kind of output
+- [x] Invalid UTF-8 in `AnsiScreenWrite`: one U+FFFD per maximal subpart (Unicode table 3-7) by `simd_utils.Utf8Decode` / `Utf8ContinuationOk`, a sequence that is valid so far at the end of a write waits for the next one, an invalid one (a start byte C0, C1, F5 and above, a continuation byte alone, a start that the next byte cannot continue) is replaced at once; the same in one write, in pieces and a byte at a time (a test of ten cases in the three modes, and the random stream equivalence test). It used to drop the bad bytes without a trace
 - [ ] (low) Print by slices in the demo and the pager: a program that writes a line at a time can call `AnsiScreenWrite` once per chunk (it is already how the demo does it): document
       that the cost is per byte and per control sequence, not per call.
 - [ ] Baldr examples that are not remade: 14_bar_applets (an applet slot of a compositor), 23_chrome and 38_windows (several windows of one program: the kit has one window)

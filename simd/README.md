@@ -42,7 +42,7 @@ kernel, level, ok := simd_utils.TablePick(&sum_table, simd_utils.CpuLevel())    
 ## Text kernels
 
 `text.odin`: `AsciiPrefix`, `AsciiRun`, `IndexOfByte`, `IndexOfAny`, `ScanText`, `RuneCount`, `Utf8Valid`, `Utf8ValidUpTo`, and the scalar pieces `Utf8Next` (the character at a place; a bad
-sequence is ONE error the size of its maximal subpart, as in the Unicode standard, table 3-7), `Utf8TrimPartial` (where a chunk of a stream can be cut) and `Utf8Clean` (a copy with U+FFFD
+sequence is ONE error the size of its maximal subpart, as in the Unicode standard, table 3-7), `Utf8Decode`, `Utf8SequenceLength`, `Utf8ContinuationOk` (the pieces of a byte at a time decoder), `Utf8TrimPartial` (where a chunk of a stream can be cut) and `Utf8Clean` (a copy with U+FFFD
 for every bad subpart). A kernel per level (`TextLevel(level)` gives the table of a level, the plain procedures use `CpuLevel()` and follow `CpuForce` and `SIMD_LEVEL`): 16 bytes for SSE2, NEON
 and SIMD128 from one source of `core:simd`, 32 for AVX2, 64 for AVX-512; the UTF-8 validator is the lookup method of Keiser and Lemire (nibble tables and a byte shuffle, 16 byte vectors, ASCII
 groups skipped with one test, the exact place of an error from the scalar rule). 40 to 170 GB/s for the scans and 20 to 25 GB/s for the validator on mixed text (4 to 5 times the scalar one).

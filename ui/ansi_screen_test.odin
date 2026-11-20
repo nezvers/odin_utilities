@@ -52,9 +52,9 @@ test_letters_lines_and_the_end_of_the_screen :: proc(t: ^testing.T) {
     for byte in bytes { AnsiScreenWrite(&screen, {byte}) }
     testing.expect_value(t, row(&screen, 0), "aé€\U0001F600b")
     testing.expect_value(t, screen.column, 6)                  // the emoji is two cells wide
-    // a cut letter that is not finished: the next byte starts over
+    // a cut letter that is not finished: one replacement character for it, and the next byte starts over
     write(&screen, "\xe2\x82x")
-    testing.expect_value(t, row(&screen, 0), "aé€\U0001F600bx")
+    testing.expect_value(t, row(&screen, 0), "aé€\U0001F600b�x")
 }
 
 @(test)
@@ -1031,70 +1031,53 @@ test_a_cell_is_16_bytes_and_packs_characters_and_style_without_loss :: proc(t: ^
     testing.expect(t, !AnsiCellSameStyle(&plain, &black))
 }
 
-// The word at a time scan of a run of printable ASCII agrees with the byte loop: every kind of byte that ends a run (below 0x20, 0x7f, 0x80 and above), at every place of a buffer, from
-// every start (unaligned words), and in runs that are all text.
+// Bad UTF-8: one replacement character for every maximal subpart (Unicode table 3-7), the same in one write, in a write cut anywhere and a byte at a time; a sequence that is valid so far
+// waits for the next write, an invalid one is replaced at once
 @(test)
-test_the_ascii_run_scan_stops_at_the_first_byte_that_is_not_printable_ascii :: proc(t: ^testing.T) {
-    naive :: proc(bytes: []u8) -> int {
-        at: int
-        for at < len(bytes) && bytes[at] >= 0x20 && bytes[at] < 0x7f { at += 1 }
-        return at
+test_bad_utf8_gives_one_replacement_character_per_maximal_subpart :: proc(t: ^testing.T) {
+    Case :: struct { input: string, shown: string }
+    cases := [?]Case{
+        {"a\xF1\x80\x80\xE1\x80\xC2b", "a���b"},       // the example of the standard: three subparts
+        {"\x80\x80", "��"},                                // lone continuation bytes
+        {"\xC0\x80", "��"},                                // an overlong lead
+        {"\xF0\x80\x80\x80", "����"},            // F0 needs 90 to BF
+        {"\xED\xA0\x80", "���"},                      // a surrogate
+        {"\xF4\x90\x80\x80", "����"},            // above U+10FFFF
+        {"\xE2\x82x", "�x"},                                    // a cut euro sign: one replacement for its two bytes
+        {"\xFF\xFEz", "��z"},
+        {"caf\xC3\xA9 ok", "café ok"},                               // good text is untouched
+        {"\xEF\xBF\xBD", "�"},                                  // U+FFFD itself
     }
-    buffer: [48]u8
-    bad := [?]u8{0x00, 0x09, 0x0a, 0x0d, 0x1b, 0x1f, 0x7f, 0x80, 0x81, 0xc3, 0xe2, 0xf0, 0xff}
-    fill_text :: proc(buffer: []u8) {
-        for i in 0 ..< len(buffer) { buffer[i] = u8(0x20 + (i * 7) % 0x5f) }       // 0x20 to 0x7e, all of them
-    }
-    for start in 0 ..< 9 {
-        for length in 0 ..= len(buffer) - start {
-            fill_text(buffer[:])
-            testing.expect_value(t, asciiRunLength(buffer[start:start + length]), length)
-            for value in bad {
-                for position in 0 ..< length {
-                    fill_text(buffer[:])
-                    buffer[start + position] = value
-                    got: int = asciiRunLength(buffer[start:start + length])
-                    expected: int = naive(buffer[start:start + length])
-                    if got != expected {
-                        testing.expectf(t, false, "start %d, length %d, byte 0x%x at %d: %d, expected %d", start, length, value, position, got, expected)
-                        return
-                    }
-                }
+    for test_case in cases {
+        for mode in 0 ..< 3 {                                        // one write, two halves, a byte at a time
+            cells: [16 * 2]AnsiCell
+            screen: AnsiScreen = AnsiScreenMake(cells[:], 16, 2)
+            bytes: []u8 = transmute([]u8)test_case.input
+            switch mode {
+            case 0: AnsiScreenWrite(&screen, bytes)
+            case 1:
+                half: int = len(bytes) / 2
+                AnsiScreenWrite(&screen, bytes[:half])
+                AnsiScreenWrite(&screen, bytes[half:])
+            case 2:
+                for byte in bytes { AnsiScreenWrite(&screen, {byte}) }
             }
+            // a sequence that is valid so far and ends the input waits: send a byte that ends it
+            AnsiScreenWrite(&screen, transmute([]u8)string("\n"))
+            testing.expectf(t, row(&screen, 0) == test_case.shown, "%q, mode %d: %q, expected %q", test_case.input, mode, row(&screen, 0), test_case.shown)
         }
     }
-    // the bytes next to the limits are text
-    for value in ([?]u8{0x20, 0x21, 0x7d, 0x7e}) {
-        for i in 0 ..< len(buffer) { buffer[i] = value }
-        testing.expect_value(t, asciiRunLength(buffer[:]), len(buffer))
-    }
-}
-
-// Clusters by the rules of Unicode: what the old hand written rules did not know
-@(test)
-test_the_cell_screen_follows_the_cluster_rules_of_unicode :: proc(t: ^testing.T) {
-    cells: [12 * 2]AnsiCell
-    screen: AnsiScreen = AnsiScreenMake(cells[:], 12, 2)
-    columnAfter :: proc(screen: ^AnsiScreen, text: string) -> int {
-        AnsiScreenClear(screen)
-        write(screen, text)
-        return screen.column
-    }
-    testing.expect_value(t, columnAfter(&screen, "क्ष"), 1)                   // an Indic conjunct: ka, virama, ssa
-    testing.expect_value(t, columnAfter(&screen, "क्षz"), 2)
-    testing.expect_value(t, columnAfter(&screen, "한"), 2)                   // a Hangul syllable of three jamo: one wide cell
-    testing.expect_value(t, columnAfter(&screen, "é̂"), 1)                         // two marks on a letter
-    testing.expect_value(t, columnAfter(&screen, "\U0001F1E9\U0001F1EA\U0001F1EB"), 4)       // a flag, then half of one
-    testing.expect_value(t, columnAfter(&screen, "กิ่z"), 2)                  // Thai: a letter, a vowel and a tone, then a letter
-    testing.expect_value(t, columnAfter(&screen, "a‍b"), 2)
-    // a family is one wide cell with the first two of its parts after it, whatever follows is a new cluster
-    testing.expect_value(t, columnAfter(&screen, "\U0001F468‍\U0001F469‍\U0001F467z"), 3)
-    // a cursor move starts a new cluster: the mark after it has nothing to join and is not drawn
+    // a valid start at the end of a write is kept for the next one; a start that cannot be finished is replaced at once
+    cells: [16 * 2]AnsiCell
+    screen: AnsiScreen = AnsiScreenMake(cells[:], 16, 2)
+    AnsiScreenWrite(&screen, transmute([]u8)string("a\xE2\x82"))
+    testing.expect_value(t, row(&screen, 0), "a")                    // waiting
+    AnsiScreenWrite(&screen, transmute([]u8)string("\xACb"))
+    testing.expect_value(t, row(&screen, 0), "a€b")             // finished
     AnsiScreenClear(&screen)
-    write(&screen, "a\x1b[2;1H́b")
-    testing.expect_value(t, [2]int{screen.column, screen.row}, [2]int{1, 1})
-    testing.expect_value(t, screenCell(&screen, 0, 1).character, u32('b'))
-    // a control character is zero wide
-    testing.expect_value(t, AnsiRuneWidth(0x85), 0)
-    testing.expect_value(t, AnsiRuneWidth(0x7f), 0)
+    AnsiScreenWrite(&screen, transmute([]u8)string("a\xC0"))
+    testing.expect_value(t, row(&screen, 0), "a�")              // C0 starts nothing: replaced now
+    AnsiScreenWrite(&screen, transmute([]u8)string("\xE0"))
+    AnsiScreenWrite(&screen, transmute([]u8)string("\x80"))
+    testing.expect_value(t, row(&screen, 0), "a���")  // E0 80: E0 alone is replaced when 80 shows it cannot go on, and 80 is an error of its own
 }

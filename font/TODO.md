@@ -25,7 +25,7 @@ user interface is almost all ASCII, and the ui measures text through here (`ui_d
       area use them), the width of a text is its character count times the advance: count the bytes that are not continuation bytes (`(b & 0xC0) != 0x80`, a vector compare and a
       population count, 32 or 64 bytes per step) and wrapping finds the column by the same count. `AnsiScreen` and `UiTextArea` measure monospace text all the time. Needs a per face
       `monospace: bool` found at init (compare the advances of the glyphs of the ASCII table, check that the font has no kerning pair for them) and a test against `TextMeasure`.
-- [ ] (medium) Say what the library does with invalid UTF-8 and make every path do it: today `utf8.decode_rune_in_string` gives `RUNE_ERROR` with width 1 per bad byte, so a bad
+- [ ] (medium) (the cell screen does it already, see `ui/TODO.md`: the font library is next) Say what the library does with invalid UTF-8 and make every path do it: today `utf8.decode_rune_in_string` gives `RUNE_ERROR` with width 1 per bad byte, so a bad
       three byte sequence draws three missing glyph boxes, and `ansi_screen` has its own decoder. The usual rule (the "maximal subpart" of the Unicode standard, what Go, the web and
       the simdutf8 compat error length follow) is one U+FFFD per invalid prefix. Write it once (`Utf8Next(text, at) -> (rune, size)`), use it in `layout.odin`, `rich.odin`,
       `atlas.odin`, `special.odin` and the ansi decoder, and test it on the sequences of simdutf8's tests (overlong 2, 3 and 4 byte forms, surrogates, above U+10FFFF, a continuation

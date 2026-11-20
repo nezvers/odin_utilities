@@ -44,7 +44,13 @@ TextProcs :: struct {
 
 // The kernels of a level (the best kernel at or below it for each procedure: a level that has no kernel of its own for a procedure runs the one under it)
 TextLevel :: proc "contextless" (level: Level) -> ^TextProcs {
-    textInit()
+    if !text_ready { textInit() }
+    return textPick(level)
+}
+
+// The table of a level without the start up check (the filling of the tables uses it)
+@(private)
+textPick :: proc "contextless" (level: Level) -> ^TextProcs {
     at: Level = LevelClamp(level, CpuBest())
     for {
         if text_filled[at] { return &text_tables[at] }
@@ -57,10 +63,16 @@ TextLevel :: proc "contextless" (level: Level) -> ^TextProcs {
 @(private) text_filled: [Level]bool
 @(private) text_ready: bool
 
+// Filled at program start (before main and before any thread of a test runner: the tables are plain data after that); also by the first use, for a program that
+// calls it before the init procedures have run
+@(init, private)
+textInitAtStart :: proc "contextless" () {
+    textInit()
+}
+
 @(private)
 textInit :: proc "contextless" () {
     if text_ready { return }
-    text_ready = true
     textFillScalar(&text_tables[.SCALAR])
     text_filled[.SCALAR] = true
     textFillPortable(&text_tables)
@@ -70,12 +82,13 @@ textInit :: proc "contextless" () {
         if !text_filled[level] { text_tables[level] = text_tables[LevelBelow(level)] ; text_filled[level] = true }
     }
     textSelect()
+    text_ready = true                       // last: another thread that sees it ready sees the tables
 }
 
 // Chooses the kernels of the level in use. Called at start up and by CpuForce.
 @(private)
 textSelect :: proc "contextless" () {
-    text_current = TextLevel(CpuLevel())
+    text_current = textPick(CpuLevel())
 }
 
 @(private)
@@ -134,6 +147,45 @@ Utf8Next :: proc "contextless" (bytes: []u8, at: int) -> (character: rune, size:
     case 4: character = rune(b0 & 0x07) << 18 | rune(bytes[at + 1] & 0x3F) << 12 | rune(bytes[at + 2] & 0x3F) << 6 | rune(bytes[at + 3] & 0x3F)
     }
     return
+}
+
+// The same as Utf8Next, and whether the character is well formed (RUNE_ERROR comes back for an error and for U+FFFD itself, which is a character of three bytes)
+Utf8Decode :: proc "contextless" (bytes: []u8, at: int) -> (character: rune, size: int, valid: bool) {
+    character, size = Utf8Next(bytes, at)
+    if character == utf8.RUNE_ERROR {
+        valid = size == 3 && bytes[at] == 0xEF && bytes[at + 1] == 0xBF && bytes[at + 2] == 0xBD
+    } else {
+        valid = size > 0
+    }
+    return
+}
+
+// How many bytes the sequence that starts with `lead` has: 1 for ASCII, 2 to 4 for a lead byte, 0 for a byte that starts nothing (a continuation byte, C0, C1, F5 and above)
+Utf8SequenceLength :: proc "contextless" (lead: u8) -> int {
+    switch {
+    case lead < 0x80: return 1
+    case lead < 0xC2: return 0
+    case lead <= 0xDF: return 2
+    case lead <= 0xEF: return 3
+    case lead <= 0xF4: return 4
+    }
+    return 0
+}
+
+// Can the byte `b` be the byte number `position` (1 for the first continuation byte) of the sequence that starts with `lead`: the ranges of table 3-7, for a byte at a time decoder
+Utf8ContinuationOk :: proc "contextless" (lead: u8, position: int, b: u8) -> bool {
+    if position == 1 {
+        low: u8 = 0x80
+        high: u8 = 0xBF
+        switch lead {
+        case 0xE0: low = 0xA0
+        case 0xED: high = 0x9F
+        case 0xF0: low = 0x90
+        case 0xF4: high = 0x8F
+        }
+        return b >= low && b <= high
+    }
+    return b >= 0x80 && b <= 0xBF
 }
 
 // Where a chunk of a stream can be cut so that no character is split: the length to process now. The tail that is the start of a well formed character and is only cut short by the
