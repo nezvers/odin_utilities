@@ -35,6 +35,7 @@ INTER_REGULAR :: #load("../../assets/fonts/inter/Inter-Regular.ttf")
 INTER_SEMIBOLD :: #load("../../assets/fonts/inter/Inter-SemiBold.ttf")
 INTER_ITALIC :: #load("../../assets/fonts/inter/Inter-Italic.ttf")
 JETBRAINS_MONO :: #load("../../assets/fonts/jetbrains_mono/JetBrainsMono-Regular.ttf")
+JETBRAINS_MONO_BOLD :: #load("../../assets/fonts/jetbrains_mono/JetBrainsMono-Bold.ttf")
 
 // Loads the fonts of the style (the window has to be open). `size` is the height the glyphs are made in: text of that size is the sharpest.
 FontsLoad :: proc(fonts: ^Fonts, size: i32 = 32, glyph_count: int = 1280) {
@@ -49,6 +50,7 @@ FontsLoad :: proc(fonts: ^Fonts, size: i32 = 32, glyph_count: int = 1280) {
     fonts.faces[.STRONG] = load(INTER_SEMIBOLD, size, codepoints[:glyph_count])
     fonts.faces[.ITALIC] = load(INTER_ITALIC, size, codepoints[:glyph_count])
     fonts.faces[.MONO] = load(JETBRAINS_MONO, size, codepoints[:glyph_count])
+    fonts.faces[.MONO_STRONG] = load(JETBRAINS_MONO_BOLD, size, codepoints[:glyph_count])
     // the icons without NONE, which has no glyph
     for i in 0 ..< len(icons.Icon) - 1 { codepoints[i] = icons.ICON_FIRST_CHARACTER + rune(i) }
     fonts.icons = load(icons.LUCIDE_FONT, size, codepoints[:len(icons.Icon) - 1])
@@ -83,7 +85,8 @@ PainterUseVectorFonts :: proc(painter: ^ui_default.Painter, system: ^font_raylib
     for bytes, i in sources {
         if !font_raylib.TextSystemAddFace(system, FIRST_FACE + i, bytes) { return false }
     }
-    painter.vector_faces = {.REGULAR = 0, .STRONG = FIRST_FACE, .ITALIC = FIRST_FACE + 1, .MONO = FIRST_FACE + 2}
+    // the atlas has no face left for strong code: it is drawn in the code face
+    painter.vector_faces = {.REGULAR = 0, .STRONG = FIRST_FACE, .ITALIC = FIRST_FACE + 1, .MONO = FIRST_FACE + 2, .MONO_STRONG = FIRST_FACE + 2}
     painter.vector_icon_face = FIRST_FACE + 3
     painter.glue_fonts[.MONO] = 1
     painter.draw_icon = proc(painter: ^ui_default.Painter, icon: icons.Icon, rect: ui.Rect, color: ui.Color) {

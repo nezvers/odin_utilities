@@ -134,6 +134,12 @@ Face :: enum u8 {
     STRONG,             // the labels of controls, titles (Inter SemiBold)
     ITALIC,
     MONO,               // code, numbers that line up
+    MONO_STRONG,        // code that is strong (JetBrains Mono Bold): a glue without a font for it draws it in MONO (FaceFallback)
+}
+
+// The face a glue draws in when it has no font for a face
+FaceFallback :: proc(face: Face) -> Face {
+    return .MONO if face == .MONO_STRONG else .REGULAR
 }
 
 // The first number of the Lucide icons among the icons of the ui (ui.Icon): LucideIcon(.SAVE) is an icon for ui.UiIcon, a button, a tree node
@@ -257,9 +263,11 @@ painterOf :: proc(ctx: ^ui.Context) -> ^Painter {
     return cast(^Painter)ctx.user
 }
 
-// The face a text with the tags of the style is drawn in: "title" and "strong" strong, "mono" the code face, "italic" italic, else regular
+// The face a text with the tags of the style is drawn in: "title" and "strong" strong, "mono" the code face (strong code has a face of its own), "italic"
+// italic, else regular
 TagFace :: proc(strong: bool, mono: bool, italic: bool = false) -> Face {
-    return .MONO if mono else (.STRONG if strong else (.ITALIC if italic else .REGULAR))
+    if mono { return .MONO_STRONG if strong else .MONO }
+    return .STRONG if strong else (.ITALIC if italic else .REGULAR)
 }
 
 // The measure proc for ui.UiInit when the painter is the user pointer. A text is measured in the face DrawLabel draws it in (by the tags it was declared with), so a title

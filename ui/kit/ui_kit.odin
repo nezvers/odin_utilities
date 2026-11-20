@@ -13,6 +13,7 @@ INTER_REGULAR :: #load("../../assets/fonts/inter/Inter-Regular.ttf")
 INTER_SEMIBOLD :: #load("../../assets/fonts/inter/Inter-SemiBold.ttf")
 INTER_ITALIC :: #load("../../assets/fonts/inter/Inter-Italic.ttf")
 JETBRAINS_MONO :: #load("../../assets/fonts/jetbrains_mono/JetBrainsMono-Regular.ttf")
+JETBRAINS_MONO_BOLD :: #load("../../assets/fonts/jetbrains_mono/JetBrainsMono-Bold.ttf")
 
 @(private)
 Fonts :: struct {
@@ -33,6 +34,7 @@ fontsEnsure :: proc(painter: ^ui_default.Painter, ctx: ^kit.Context) {
         fonts.faces[.STRONG] = kit.FontLoad(ctx, INTER_SEMIBOLD, 32, 1280)
         fonts.faces[.ITALIC] = kit.FontLoad(ctx, INTER_ITALIC, 32, 1280)
         fonts.faces[.MONO] = kit.FontLoad(ctx, JETBRAINS_MONO, 32, 1280)
+        fonts.faces[.MONO_STRONG] = kit.FontLoad(ctx, JETBRAINS_MONO_BOLD, 32, 1280)
         fonts.icons = kit.FontLoad(ctx, icons.LUCIDE_FONT, 32, len(icons.Icon) - 1, int(icons.ICON_FIRST_CHARACTER))       // without NONE, which has no glyph
     }
     for face in ui_default.Face { painter.glue_fonts[face] = u32(fonts.faces[face]) }
@@ -44,6 +46,7 @@ fontsEnsure :: proc(painter: ^ui_default.Painter, ctx: ^kit.Context) {
 @(private)
 fontOf :: proc(painter: ^ui_default.Painter) -> kit.Font {
     font: kit.Font = kit.Font(painter.glue_fonts[painter.face])
+    if font == kit.FONT_DEFAULT { font = kit.Font(painter.glue_fonts[ui_default.FaceFallback(painter.face)]) }
     return font if font != kit.FONT_DEFAULT else kit.Font(painter.glue_fonts[.REGULAR])
 }
 
