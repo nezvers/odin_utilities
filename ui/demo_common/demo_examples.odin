@@ -14,6 +14,7 @@ import "core:math"
 import "core:reflect"
 import ui ".."
 import ui_default "../default_style"
+import ui_kit "../kit"
 import kit "../../demo_kit"
 import icons "../../icons"
 
@@ -21,6 +22,7 @@ import icons "../../icons"
 demo_examples: kit.Demo = {
     name = "examples",
     init = init,
+    finit = finit,
     draw = draw,
     script = script,
 }
@@ -141,6 +143,15 @@ State :: struct {
     chords: [len(SHORTCUT_ACTIONS)]ui.Chord,
     chord_ids: [len(SHORTCUT_ACTIONS)]ui.Id,
     chord_changes: int,
+    // 18_rebind: what each action of a game is bound to (two inputs each: a keyboard key and a gamepad button), how often it was done, and the pictures of the pad
+    binds: [len(GAME_ACTIONS)][2]ui.Binding,
+    bind_ids: [len(GAME_ACTIONS)][2]ui.Id,
+    bind_done: [len(GAME_ACTIONS)]int,
+    bind_last: int,
+    bind_listening: bool,           // a field listened in the last frame: the actions of the game are off
+    bind_changes: int,
+    bind_pictures: bool,
+    pad_texture: kit.Texture,
 }
 
 Download :: struct {
@@ -157,7 +168,7 @@ DOWNLOAD_RATE :: f32(96 * 1024 * 50)
 
 state: State
 
-EXAMPLES: [18]string = {"Hello", "Controls", "Scroll", "Toasts", "Theme lab", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Shortcuts", "Code", "Custom", "Mentions", "Spring", "Lines", "Terminal"}
+EXAMPLES: [19]string = {"Rebind", "Hello", "Controls", "Scroll", "Toasts", "Theme", "Overlays", "Charts", "Jobs", "Markdown", "Chat", "Reading", "Keys", "Code", "Custom", "Mentions", "Spring", "Lines", "Terminal"}
 NOTE :: "# Release notes\n\nThe **look** of the ui follows *Baldr*: its themes, its typeface, its icons.\n\n## What is new\n- a theme from one accent color\n- charts and a date field\n  - with a month to pick from\n1. write Markdown\n2. read it on the right\n\n> Quotes are dim, with a bar.\n\n| Block | Shown as |\n|---|---|\n| `# Title` | a title |\n| a table | **this** |\n\n```\nui.UiMarkdown(&ctx, source)\n```\n\n---\nSee [the README](ui/README.md)."
 MONTHS: [12]string = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 CHART_KINDS: [4]string = {"Line", "Area", "Bar", "Scatter"}
@@ -171,6 +182,12 @@ MESSAGES :: 40
 controlsReset :: proc() {
     state.remember, state.notify, state.two_factor = false, false, false
     state.dark, state.size, state.volume = true, 15, 0.4
+}
+
+finit :: proc(ctx: ^kit.Context) {
+    ui_kit.GlyphTextures = {}
+    kit.TextureUnload(ctx, state.pad_texture)
+    state.pad_texture = kit.TEXTURE_NONE
 }
 
 init :: proc(ctx: ^kit.Context) {
@@ -201,6 +218,8 @@ init :: proc(ctx: ^kit.Context) {
     state.code_length = copy(state.code[:], CODE_SAMPLE)
     state.chords = {{{.CTRL}, u16(kit.Key.S)}, {{.CTRL}, u16(kit.Key.O)}, {{.CTRL}, u16(kit.Key.F)}, {{.CTRL, .SHIFT}, u16(kit.Key.B)}, {}}
     state.chord_changes = 0
+    rebindReset()
+    state.bind_last, state.bind_done, state.bind_changes, state.bind_pictures = -1, {}, 0, false
     state.message_count = 0
     state.replies = 0
     for seed, i in CHAT_SEED { chat_add(seed, i % 2 == 1) }
@@ -240,6 +259,114 @@ stage :: proc(c: ^ui.Context, name: string, size: ui.Vec2, layout: ui.Layout) ->
 stageEnd :: proc(c: ^ui.Context, name: string, size: ui.Vec2, layout: ui.Layout) {
     ui.ElementClose(c)
     ui.ElementClose(c)
+}
+
+// 00_rebind: the controls page of a game. Every action has two inputs, a key and a gamepad button, shown as the picture of the input (a keycap, a face button in the colors of
+// a pad, a shoulder button ...). A click on a picture makes the field listen, the next key or button becomes the binding, Backspace takes it away. One input does one action:
+// binding it to a second one takes it from the first. The switch hands the pad buttons pictures of the program's own (a texture) instead of the drawn shapes.
+GAME_ACTIONS: [6]string = {"Move left", "Move right", "Jump", "Shoot", "Dash", "Pause"}
+
+rebindReset :: proc() {
+    key :: proc(code: kit.Key) -> ui.Binding { return {device = .KEYBOARD, code = u16(code)} }
+    pad :: proc(code: kit.PadButton) -> ui.Binding { return {device = .GAMEPAD, code = u16(code)} }
+    state.binds = {
+        {key(.A), pad(.DPAD_LEFT)},
+        {key(.D), pad(.DPAD_RIGHT)},
+        {key(.SPACE), pad(.FACE_DOWN)},
+        {key(.J), pad(.FACE_LEFT)},
+        {key(.LEFT_SHIFT), pad(.RIGHT_TRIGGER)},
+        {key(.ESCAPE), pad(.START)},
+    }
+}
+
+// Four little pictures for the face buttons, made in memory: a diamond in the color of each, so that the switch has something to show that the shapes are not
+padPictures :: proc(ctx: ^kit.Context) {
+    if state.pad_texture != kit.TEXTURE_NONE { return }
+    SIDE :: 32
+    pixels: [SIDE * 4 * SIDE * 4]u8
+    colors: [4][3]u8 = {{76, 160, 92}, {206, 70, 64}, {66, 120, 210}, {214, 170, 50}}
+    for cell in 0 ..< 4 {
+        for y in 0 ..< SIDE {
+            for x in 0 ..< SIDE {
+                distance: f32 = abs(f32(x) - 15.5) + abs(f32(y) - 15.5)
+                if distance > 15 { continue }
+                at: int = (y * SIDE * 4 + cell * SIDE + x) * 4
+                shade: u8 = 255 if distance < 11 else 190
+                pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3] = colors[cell][0], colors[cell][1], colors[cell][2], shade
+            }
+        }
+    }
+    state.pad_texture = kit.TextureFromPixels(ctx, SIDE * 4, SIDE, pixels[:])
+}
+
+rebindUsePictures :: proc(on: bool) {
+    ui_kit.GlyphTextures = {}
+    if !on { return }
+    faces: [4]kit.PadButton = {.FACE_DOWN, .FACE_RIGHT, .FACE_LEFT, .FACE_UP}
+    for button, i in faces {
+        ui_kit.GlyphTextures[button] = {state.pad_texture, {f32(i * 32), 0, 32, 32}}
+    }
+}
+
+rebind :: proc(c: ^ui.Context, ctx: ^kit.Context) {
+    // the input of this frame: a mouse press is how a field is reached, so it is not an input to bind
+    pressed: ui.Binding = ui_kit.BindingPressed(&ctx.input)
+    if pressed.device == .MOUSE { pressed = {} }
+    if !state.bind_listening {
+        for action in 0 ..< len(GAME_ACTIONS) {
+            for binding in state.binds[action] {
+                if binding.device != .NONE && binding == pressed {
+                    state.bind_done[action] += 1
+                    state.bind_last = action
+                }
+            }
+        }
+    }
+    padPictures(ctx)
+    rebindUsePictures(state.bind_pictures)
+    listening: bool
+    if stage(c, "rebind", {560, 520}, {direction = .TOP_TO_BOTTOM, gap = 10, padding = ui.PaddingAll(24)}) {
+        ui.UiTitle(c, "Controls", 1.6)
+        ui.UiLabelDim(c, "Click an input and press a key or a button of the gamepad. Escape lets go, Backspace takes the input away.", .WORDS)
+        for name, action in GAME_ACTIONS {
+            ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 8, align = {y = .CENTER}}})
+            ui.UiLabel(c, name)
+            ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}}})
+            ui.ElementClose(c)
+            if state.bind_done[action] > 0 {
+                ui.UiBadge(c, ui.UiFormat(c, "%d", state.bind_done[action]), .SUCCESS if state.bind_last == action else .NEUTRAL)
+            }
+            for slot in 0 ..< 2 {
+                field: string = ui.UiFormat(c, "##bind %d %d", action, slot)
+                state.bind_ids[action][slot] = ui.UiId(c, field)
+                changed, here := ui.UiBindingField(c, field, &state.binds[action][slot], pressed, ui_kit.GlyphOf, nil, {ui.Fixed(124), {}})
+                listening ||= here
+                if changed {
+                    state.bind_changes += 1
+                    // one input does one thing: the others lose it
+                    taken: ui.Binding = state.binds[action][slot]
+                    for &others, k in state.binds {
+                        for &other, j in others {
+                            if (k != action || j != slot) && taken.device != .NONE && other == taken { other = {} }
+                        }
+                    }
+                }
+            }
+            ui.ElementClose(c)
+        }
+        ui.UiSeparator(c)
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 12, align = {y = .CENTER}}})
+        ui.UiSwitch(c, "Pictures for the face buttons", &state.bind_pictures)
+        ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Fit()}}})
+        ui.ElementClose(c)
+        if ui.UiButton(c, "Defaults") {
+            rebindReset()
+            state.bind_changes += 1
+        }
+        ui.ElementClose(c)
+        ui.UiLabelDim(c, "The numbers count how often an action was done: try the keys or the buttons of a pad.", .WORDS)
+    }
+    state.bind_listening = listening
 }
 
 // 01_hello: a heading, a count, and minus, Reset and plus
@@ -1299,7 +1426,7 @@ themeLab :: proc(c: ^ui.Context) {
 
 draw :: proc(ctx: ^kit.Context) {
     state.app.painter.theme = ui_default.THEME_DARK if state.dark else ui_default.THEME_LIGHT
-    if state.example == 4 { state.app.painter.theme = ui_default.ThemeFromAccent(state.accent, state.mode == 0) }
+    if state.example == 5 { state.app.painter.theme = ui_default.ThemeFromAccent(state.accent, state.mode == 0) }
     ui_default.ThemeAreaSet(&state.app.painter, 0, reading_theme(state.paper))
     ctx.background = kit.Color(state.app.painter.theme.background)
     ui_demo_begin(&state.app, ctx)
@@ -1315,40 +1442,42 @@ draw :: proc(ctx: ^kit.Context) {
     ui.ElementClose(c)
     switch state.example {
     case 0:
-        hello(c)
+        rebind(c, ctx)
     case 1:
-        controls(c)
+        hello(c)
     case 2:
-        scroll(c)
+        controls(c)
     case 3:
-        toasts(c, ctx.screen)
+        scroll(c)
     case 4:
-        themeLab(c)
+        toasts(c, ctx.screen)
     case 5:
-        overlays(c)
+        themeLab(c)
     case 6:
-        charts(c)
+        overlays(c)
     case 7:
-        jobs(c, ctx.delta_time)
+        charts(c)
     case 8:
-        markdown(c)
+        jobs(c, ctx.delta_time)
     case 9:
-        chat(c)
+        markdown(c)
     case 10:
-        reading(c)
+        chat(c)
     case 11:
-        shortcuts(c, &ctx.input)
+        reading(c)
     case 12:
-        code(c)
+        shortcuts(c, &ctx.input)
     case 13:
-        custom(c)
+        code(c)
     case 14:
-        mentions(c)
+        custom(c)
     case 15:
-        spring(c)
+        mentions(c)
     case 16:
-        lines(c)
+        spring(c)
     case 17:
+        lines(c)
+    case 18:
         terminal(c)
     }
     ui.ElementClose(c)
@@ -1393,6 +1522,22 @@ chord_target :: proc(row: int) -> bool {
     rect, found := ui.UiElementRect(&state.app.ctx, state.chord_ids[row])
     target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
     return found
+}
+
+// `target` is the middle of the field of a slot of an action in the rebinding page
+bind_target :: proc(action: int, slot: int) -> bool {
+    rect, found := ui.UiElementRect(&state.app.ctx, state.bind_ids[action][slot])
+    target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    return found && rect.z > 0
+}
+
+// A glyph with this label was drawn in the last frame with a picture of the program's own (a texture)
+glyph_picture :: proc(label: string) -> bool {
+    for command in ui.UiCommands(&state.app.ctx) {
+        info: ui.DrawInfo = command.info
+        if command.kind == .DRAW && info.kind == .GLYPH && info.text == label { return info.texture != 0 }
+    }
+    return false
 }
 
 // `target` is a place in a line of text that was drawn in the last frame: `part` of its width from its start
@@ -1448,6 +1593,59 @@ tab :: proc(index: u32) -> bool {
 
 script: []kit.Step = {
     kit.Wait(4),
+    // rebind: the inputs are pictures; a click makes a field listen and the next key or pad button is the binding; one input does one thing; Backspace takes it away;
+    // the switch gives the face buttons pictures of the program's own
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.GLYPH, "Space") && drawn(.GLYPH, "Start") && drawn(.GLYPH, "R") }, "the bindings are drawn as pictures of the inputs"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return bind_target(2, 1) }, "the pad field of Jump"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return shown(ui.SHORTCUT_LISTENING, "") && state.bind_listening }, "the field listens"),
+    kit.Capture("examples_rebind"),
+    kit.Wait(2),
+    kit.PadTap(.FACE_UP),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.binds[2][1] == ui.Binding{device = .GAMEPAD, code = u16(kit.PadButton.FACE_UP)} && drawn(.GLYPH, "Y") }, "the button that was pressed is the binding"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return bind_target(3, 0) }, "the key field of Shoot"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Tap(.K),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.binds[3][0].code == u16(kit.Key.K) && drawn(.GLYPH, "K") }, "Shoot is on K"),
+    // the same key for another action: the first one loses it
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return bind_target(4, 0) }, "the key field of Dash"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Tap(.K),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.binds[4][0].code == u16(kit.Key.K) && state.binds[3][0].device == .NONE }, "an input belongs to one action"),
+    // an action is done by its input, but not while a field listens
+    kit.Tap(.K),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.bind_done[4] == 1 && state.bind_last == 4 }, "the key does the action"),
+    kit.PadTap(.FACE_UP),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.bind_done[2] == 1 }, "the pad button does the action"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return bind_target(0, 0) }, "the key field of Move left"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Tap(.BACKSPACE),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.binds[0][0].device == .NONE && state.bind_done[0] == 0 && drawn(.LABEL, "None") }, "Backspace takes the input away"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("rebind", "Pictures for the face buttons")) }, "the pictures switch"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.bind_pictures && glyph_picture("Y") && !glyph_picture("Start") }, "the face buttons are pictures now, the others stay shapes"),
+    kit.Capture("examples_rebind_pictures"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("rebind", "Defaults")) }, "the Defaults button"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.binds[0][0].code == u16(kit.Key.A) && state.binds[3][0].code == u16(kit.Key.J) }, "Defaults bring the first inputs back"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(1) }, "the Hello tab is in the bar"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
     // hello: plus twice, minus once, reset
     kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("hello", "##plus")) }, "the plus button is on the page"),
     kit.ClickAt(&target),
@@ -1469,7 +1667,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.count == 0 }, "Reset sets the count to 0"),
 
     // controls: a check box, the switch (the theme of the page follows it), a slider, Reset
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(1) }, "the Controls tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(2) }, "the Controls tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("controls", "Account", "Remember me on this device")) }, "the first check box is on the page"),
@@ -1502,7 +1700,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.dark && !state.remember && state.volume == 0.4 }, "Reset puts every value back"),
 
     // scroll: a pick, then the wheel
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(2) }, "the Scroll tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(3) }, "the Scroll tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(state.pick_id) }, "the Pick button of the second card is on the page"),
@@ -1518,7 +1716,7 @@ script: []kit.Step = {
     kit.Wait(2),
 
     // toasts: one goes with a click, the button brings it back
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(3) }, "the Toasts tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(4) }, "the Toasts tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
     kit.Capture("examples_toasts"),
@@ -1533,7 +1731,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.toasts == [3]bool{true, true, true} }, "the toasts are back"),
 
     // theme lab: the page is in the blue of the style, a tile makes it green, the other mode makes it light
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(4) }, "the Theme lab tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(5) }, "the Theme tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.app.painter.theme.accent == ui_default.THEME_DARK.accent }, "the blue tile gives the dark theme of the style"),
@@ -1563,7 +1761,7 @@ script: []kit.Step = {
     // overlays: the menu from its button, the card and its cross, the dialog
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         state.mode, state.accent = 0, ACCENTS[3]
-        return tab(5)
+        return tab(6)
     }, "the Overlays tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
@@ -1608,7 +1806,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !state.confirm && state.deleted == 1 }, "Delete in the dialog deletes and closes it"),
 
     // charts: a point of the line is picked by a click and the arrows walk on, then the bars
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(6) }, "the Charts tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(7) }, "the Charts tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
@@ -1638,7 +1836,7 @@ script: []kit.Step = {
     kit.Wait(2),
 
     // jobs: all three start, the small one is done at once, the page takes clicks meanwhile, the big one is cancelled
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(7) }, "the Jobs tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(8) }, "the Jobs tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return aim(ui.UiIdPath("jobs", "Download all")) }, "the Download all button is on the page"),
@@ -1676,7 +1874,7 @@ script: []kit.Step = {
     kit.Wait(2),
 
     // markdown: the note is shown as titles, a list and a code block; what is typed into the source is on the right at once
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(8) }, "the Markdown tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(9) }, "the Markdown tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
     kit.Wait(4),
@@ -1733,7 +1931,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.arrived == -1 && shown("the README", "link") && ui.UiProblems(&state.app.ctx) == ui.Problems{} }, "the whole note arrived"),
 
     // chat: bubbles with styles inside, the list at its newest message; a sent message and its answer are added and the list follows
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(9) }, "the Chat tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(10) }, "the Chat tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
     kit.Wait(5),
@@ -1788,7 +1986,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.draft[:state.draft_length]) == "@Ada " && state.message_count == len(CHAT_SEED) + 2 }, "the name is in the field, nothing was sent"),
 
     // reading: the page has a theme of its own inside of the window; another paper and the next page
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(10) }, "the Reading tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(11) }, "the Reading tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
     kit.Wait(5),
@@ -1808,7 +2006,7 @@ script: []kit.Step = {
     kit.Wait(2),
 
     // shortcuts: a row listens after a click and takes the next key; a shortcut another row had is taken from it; Backspace takes one away
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(11) }, "the Shortcuts tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(12) }, "the Keys tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
     kit.Wait(4),
@@ -1838,7 +2036,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.chords[0] == ui.Chord{} && state.chord_changes == 3 }, "Backspace takes the shortcut away"),
 
     // code: the words of the rows are drawn by what they are; what is typed is colored in the same frame
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(12) }, "the Code tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(13) }, "the Code tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
     kit.Wait(4),
@@ -1860,7 +2058,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("// typed", ui.SYNTAX_COMMENT) }, "what is typed is a comment at once"),
 
     // custom: a star rating made in the demo; a click on a star rates, the arrows change it while it has the focus
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(13) }, "the Custom tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(14) }, "the Custom tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
     kit.Wait(4),
@@ -1885,7 +2083,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.ratings[1] == 3 && state.ratings[0] == 3 }, "the other arrow takes stars away"),
 
     // mentions: the list opens at the @, the letters narrow it, the arrow chooses, Enter writes the name in
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(14) }, "the Mentions tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(15) }, "the Mentions tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
@@ -1913,7 +2111,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !drawn(.DROPDOWN_ITEM, "render.odin") && shown("1 mentioned, the last one: richtext.odin", "dim") }, "the list is closed"),
 
     // spring: a file is dragged over a folder and held there: the folder opens under the drag; let go on the empty part and the file is in that folder
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(15) }, "the Spring tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(16) }, "the Spring tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
@@ -1958,7 +2156,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.file_parents[0] == 4 && state.folder == 4 && drawn(.BUTTON, "report.pdf") }, "the file landed in the folder that is open"),
 
     // lines: the overlays are drawn (the picture is taken with the dashes standing still); the slider turns the box
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(16) }, "the Lines tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(17) }, "the Lines tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
     kit.Wait(4),
@@ -1976,7 +2174,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.turn > 0 && state.turn != 12 }, "the slider turns the box"),
 
     // terminal: the output in its colors and styles; a command adds its line and an answer, the screen follows
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(17) }, "the Terminal tab is in the bar"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(18) }, "the Terminal tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
     kit.Wait(5),

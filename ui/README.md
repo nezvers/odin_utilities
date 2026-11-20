@@ -456,11 +456,20 @@ the inputs that went down in a frame into `Input.actions`. The kit (`ui_kit`) ke
 `ui_kit.KeyMapDefault()`, the keys that were fixed before: `ui.KeyMapSet(ui_kit.KeyMapOf(), .COPY, 0, {device = .KEYBOARD, code = u16(kit.Key.K), ctrl = .YES})`.
 The raylib and Karl2D glues of this library still have their keys fixed (see `TODO.md`).
 
+Pictures of inputs (`glyph.odin`): `ui.UiGlyph(&ctx, glyph)` draws a keycap, a face button, a bumper, a trigger, a d-pad, a stick or a mouse button; `UiBindingGlyph` asks a
+`GlyphProc` (binding to glyph; the kit has `ui_kit.GlyphOf`) and `UiBindingField(&ctx, name, &binding, pressed, lookup)` is the button of a rebinding page: it shows the picture,
+a click makes it listen, the next input the program reports (`ui_kit.BindingPressed(&input)`) is the binding, Backspace takes it away, Escape lets go. A `Glyph` can carry a texture of the
+program's own (`texture`, `source`): the style draws it through `Painter.draw_texture` (the kit sets it; `ui_kit.GlyphTextures[.FACE_DOWN] = {texture, source}` replaces the shape of a pad
+button). The first example tab, Rebind, is a controls page of a game with two inputs per action (a key and a gamepad button), conflicts, a count of the actions done and the switch
+that gives the face buttons pictures. The kit has gamepad input now: `kit.PadButton`, `Input.pad_down` / `pad_pressed` (the first pad, raylib and Karl2D), `kit.PadTap` in scripts.
+
 ## Known limits
 a text field edits one line of UTF-8 (a text area several, wrapped by words);
 an element that is declared after the floating element that names it as parent is not found (declare the parent first).
 
 - **Settings and hotkeys** (`settings.odin`, `keymap.odin`): plain numbers and a table read every frame, nothing is saved and nothing tells the program that they changed; a double click is by time and place, not by the button; a binding is one input with modifiers (no sequences, no two inputs at once, no hold); two actions on one input both fire unless the program checks `KeyMapConflict`; only the kit uses the table, the raylib and Karl2D glues have fixed keys.
+
+- **Input glyphs** (`glyph.odin`): the strings of a glyph have to live until the frame is drawn; a glyph is one picture (no "Ctrl + C" made of two caps); textures only through a painter with `draw_texture` (the kit; the raylib and Karl2D glues draw the shapes); the field takes one input and Backspace cannot be bound; a stick direction or a trigger axis has to be reported by the program as a button press; the kit reads the first gamepad only.
 
 ### Widgets
 

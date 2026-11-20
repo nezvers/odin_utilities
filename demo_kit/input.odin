@@ -27,6 +27,16 @@ MouseButton :: enum u8 {
 }
 MouseButtons :: bit_set[MouseButton; u8]
 
+// The buttons of the first gamepad, named by where they are (a face button is "down" for the A of an Xbox pad and the cross of a PlayStation pad)
+PadButton :: enum u8 {
+    DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT,
+    FACE_DOWN, FACE_RIGHT, FACE_LEFT, FACE_UP,
+    LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_TRIGGER, RIGHT_TRIGGER,
+    LEFT_STICK, RIGHT_STICK,
+    BACK, START,
+}
+PadButtons :: bit_set[PadButton; u32]
+
 TEXT_CAPACITY :: 16
 
 Input :: struct {
@@ -39,6 +49,8 @@ Input :: struct {
     mouse_down: MouseButtons,
     mouse_pressed: MouseButtons,
     mouse_released: MouseButtons,
+    pad_down: PadButtons,               // buttons of the first gamepad: held now
+    pad_pressed: PadButtons,            // went down this frame
     text: [TEXT_CAPACITY]u8,            // characters typed this frame (ASCII), for text fields
     text_count: u8,
 }

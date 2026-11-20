@@ -220,6 +220,18 @@ beginFrame :: proc(backend: ^kit.Backend, input: ^kit.Input) -> (running: bool, 
         if rl.IsKeyPressed(raylib_key) { input.keys_pressed += {key} }
         if rl.IsKeyReleased(raylib_key) { input.keys_released += {key} }
     }
+    if rl.IsGamepadAvailable(0) {
+        pad_buttons: [kit.PadButton]rl.GamepadButton = {
+            .DPAD_UP = .LEFT_FACE_UP, .DPAD_DOWN = .LEFT_FACE_DOWN, .DPAD_LEFT = .LEFT_FACE_LEFT, .DPAD_RIGHT = .LEFT_FACE_RIGHT,
+            .FACE_UP = .RIGHT_FACE_UP, .FACE_DOWN = .RIGHT_FACE_DOWN, .FACE_LEFT = .RIGHT_FACE_LEFT, .FACE_RIGHT = .RIGHT_FACE_RIGHT,
+            .LEFT_SHOULDER = .LEFT_TRIGGER_1, .RIGHT_SHOULDER = .RIGHT_TRIGGER_1, .LEFT_TRIGGER = .LEFT_TRIGGER_2, .RIGHT_TRIGGER = .RIGHT_TRIGGER_2,
+            .LEFT_STICK = .LEFT_THUMB, .RIGHT_STICK = .RIGHT_THUMB, .BACK = .MIDDLE_LEFT, .START = .MIDDLE_RIGHT,
+        }
+        for button in kit.PadButton {
+            if rl.IsGamepadButtonDown(0, pad_buttons[button]) { input.pad_down += {button} }
+            if rl.IsGamepadButtonPressed(0, pad_buttons[button]) { input.pad_pressed += {button} }
+        }
+    }
     mouse_buttons: [kit.MouseButton]rl.MouseButton = {.LEFT = .LEFT, .RIGHT = .RIGHT, .MIDDLE = .MIDDLE}
     for button in kit.MouseButton {
         if rl.IsMouseButtonDown(mouse_buttons[button]) { input.mouse_down += {button} }

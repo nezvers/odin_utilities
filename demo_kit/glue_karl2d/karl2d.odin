@@ -242,6 +242,16 @@ beginFrame :: proc(backend: ^kit.Backend, input: ^kit.Input) -> (running: bool, 
         if karl2d.key_went_down(karl2d_key) { input.keys_pressed += {key} }
         if karl2d.key_went_up(karl2d_key) { input.keys_released += {key} }
     }
+    pad_buttons: [kit.PadButton]karl2d.Gamepad_Button = {
+        .DPAD_UP = .Left_Face_Up, .DPAD_DOWN = .Left_Face_Down, .DPAD_LEFT = .Left_Face_Left, .DPAD_RIGHT = .Left_Face_Right,
+        .FACE_UP = .Right_Face_Up, .FACE_DOWN = .Right_Face_Down, .FACE_LEFT = .Right_Face_Left, .FACE_RIGHT = .Right_Face_Right,
+        .LEFT_SHOULDER = .Left_Shoulder, .RIGHT_SHOULDER = .Right_Shoulder, .LEFT_TRIGGER = .Left_Trigger, .RIGHT_TRIGGER = .Right_Trigger,
+        .LEFT_STICK = .Left_Stick_Press, .RIGHT_STICK = .Right_Stick_Press, .BACK = .Middle_Face_Left, .START = .Middle_Face_Right,
+    }
+    for button in kit.PadButton {
+        if karl2d.gamepad_button_is_held(0, pad_buttons[button]) { input.pad_down += {button} }
+        if karl2d.gamepad_button_went_down(0, pad_buttons[button]) { input.pad_pressed += {button} }
+    }
     mouse_buttons: [kit.MouseButton]karl2d.Mouse_Button = {.LEFT = .Left, .RIGHT = .Right, .MIDDLE = .Middle}
     for button in kit.MouseButton {
         if karl2d.mouse_button_is_held(mouse_buttons[button]) { input.mouse_down += {button} }

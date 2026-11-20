@@ -21,6 +21,7 @@ StepKind :: enum u8 {
     KEY_UP,
     KEY_TAP,
     KEY_HOLD,
+    PAD_TAP,
     MOUSE_MOVE,
     MOUSE_DOWN,
     MOUSE_UP,
@@ -38,6 +39,7 @@ Step :: struct {
     frames: u32,                // Wait, Hold, Drag
     key: Key,
     button: MouseButton,
+    pad: PadButton,             // PadTap
     position: Vec2,             // MoveTo, Click, Drag: where it goes
     from: Vec2,                 // Drag: where it starts
     amount: f32,                // Scroll
@@ -51,6 +53,8 @@ Wait :: proc "contextless" (frames: u32) -> Step { return {kind = .WAIT, frames 
 KeyDownStep :: proc "contextless" (key: Key) -> Step { return {kind = .KEY_DOWN, key = key} }
 KeyUpStep :: proc "contextless" (key: Key) -> Step { return {kind = .KEY_UP, key = key} }
 Tap :: proc "contextless" (key: Key) -> Step { return {kind = .KEY_TAP, key = key} }
+// A gamepad button pressed for one frame (a script has no pad: the input says it went down)
+PadTap :: proc "contextless" (button: PadButton) -> Step { return {kind = .PAD_TAP, pad = button} }
 Hold :: proc "contextless" (key: Key, frames: u32) -> Step { return {kind = .KEY_HOLD, key = key, frames = frames} }
 MoveTo :: proc "contextless" (position: Vec2) -> Step { return {kind = .MOUSE_MOVE, position = position} }
 MouseDownStep :: proc "contextless" (button: MouseButton = .LEFT) -> Step { return {kind = .MOUSE_DOWN, button = button} }
@@ -102,6 +106,7 @@ Player :: struct {
     active: bool,               // a step that takes time is running
     held_keys: KeySet,
     held_buttons: MouseButtons,
+    pad_now: PadButtons,        // a PadTap of this frame
     mouse_position: Vec2,
     release_next: KeySet,       // taps end on the frame after they began
     release_buttons_next: MouseButtons,
@@ -134,6 +139,7 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
     player.held_buttons -= player.release_buttons_next
     player.release_next = {}
     player.release_buttons_next = {}
+    player.pad_now = {}
 
     // a step that takes time is counted down first. When it ends by letting go of something, the next step waits for the next
     // frame: let go and press again in one frame would be no press at all
@@ -179,6 +185,10 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
             player.release_next += {step.key}
             player.active = true
             player.wait_left = 2        // pressed in this frame, let go in the next: the next step starts after that, so two taps are two presses
+        case .PAD_TAP:
+            player.pad_now += {step.pad}
+            player.active = true
+            player.wait_left = 2
         case .KEY_HOLD:
             player.held_keys += {step.key}
             player.active = true
@@ -227,6 +237,8 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
         }
     }
 
+    input.pad_pressed = player.pad_now
+    input.pad_down = player.pad_now
     input.keys_down = player.held_keys
     input.mouse_down = player.held_buttons
     input.mouse_position = player.mouse_position

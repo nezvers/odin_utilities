@@ -224,6 +224,7 @@ Painter :: struct {
     measure_text: proc(painter: ^Painter, text: string, size: f32) -> ui.Vec2,
     draw_icon: proc(painter: ^Painter, icon: icons.Icon, rect: ui.Rect, color: ui.Color),      // a Lucide icon in a square; nil: the style draws what it can with rectangles and triangles
     clip: proc(painter: ^Painter, rect: ui.Rect, begin: bool),
+    draw_texture: proc(painter: ^Painter, texture: u32, source: ui.Rect, destination: ui.Rect, tint: ui.Color),    // a picture of the program's own (a glyph of a gamepad button); nil: the glyph is drawn from shapes
 }
 
 // The scale of a painter, 1 when it was left at 0. For the glue: every coordinate and size that goes to the framework is multiplied by it, the size of a measured
@@ -388,6 +389,7 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.HIGHLIGHT] = DrawHighlight
     style.procs[.FILL] = DrawFill
     style.procs[.ICON] = DrawIcon
+    style.procs[.GLYPH] = DrawGlyph
     style.procs[.TEXT_SELECTION] = DrawTextSelection
     style.procs[.TEXT_CARET] = DrawTextCaret
     GraphStyleInstall(&style)

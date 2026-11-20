@@ -2,6 +2,8 @@
 // So a demo written against the kit has the ui on raylib, on Karl2D and headless (the scripts of the tests click real widgets).
 package ui_kit
 
+import "core:reflect"
+
 import ui ".."
 import ui_default "../default_style"
 import kit "../../demo_kit"
@@ -92,6 +94,16 @@ PainterInit :: proc(painter: ^ui_default.Painter) {
             text, length := icons.IconText(icon)
             box: ui.Rect = ui_default.PaintRect(painter, rect)
             kit.DrawTextFont(contextOf(painter), kit.Font(painter.glue_icon_font), icons.IconString(&text, length), {box.x, box.y}, min(box.z, box.w), kit.Color(color))
+        },
+        draw_texture = proc(painter: ^ui_default.Painter, texture: u32, source: ui.Rect, destination: ui.Rect, tint: ui.Color) {
+            ctx: ^kit.Context = contextOf(painter)
+            handle: kit.Texture = kit.Texture(texture)
+            from: kit.Rect = kit.Rect(source)
+            if from.z <= 0 || from.w <= 0 {
+                size: kit.Vec2 = kit.TextureSize(ctx, handle)
+                from = {0, 0, size.x, size.y}
+            }
+            kit.DrawTextureRect(ctx, handle, from, kit.Rect(ui_default.PaintRect(painter, destination)), {}, 0, kit.Color(tint))
         },
         clip = proc(painter: ^ui_default.Painter, rect: ui.Rect, begin: bool) {
             if begin {
@@ -184,9 +196,107 @@ inputProbe :: proc(user: rawptr, device: ui.InputDevice, code: u16) -> bool {
     switch device {
     case .KEYBOARD: return kit.Key(u8(code)) in source.keys_pressed
     case .MOUSE: return kit.MouseButton(u8(code)) in source.mouse_pressed
-    case .GAMEPAD, .NONE: return false
+    case .GAMEPAD: return kit.PadButton(u8(code)) in source.pad_pressed
+    case .NONE: return false
     }
     return false
+}
+
+// A picture of the program's own per gamepad button (the art of the pad in use): set an entry and `GlyphOf` draws that texture instead of the vector shape. A zero texture
+// keeps the shape. `source` is the part of the texture (zero size: all of it).
+GlyphTexture :: struct {
+    texture: kit.Texture,
+    source: ui.Rect,
+}
+GlyphTextures: [kit.PadButton]GlyphTexture
+
+// How the kit's inputs look (a `ui.GlyphProc`): keys by their names, the buttons of a gamepad as the shapes of an Xbox pad (the face buttons in its colors), the mouse buttons
+// as "LMB", "RMB", "MMB". The names of keys are the names of `kit.Key` ("LEFT_BRACKET"); a program that wants nicer words passes its own proc.
+GlyphOf :: proc(user: rawptr, binding: ui.Binding) -> ui.Glyph {
+    switch binding.device {
+    case .NONE:
+        return {}
+    case .KEYBOARD:
+        return {shape = .KEY, label = keyLabel(kit.Key(u8(binding.code)))}
+    case .MOUSE:
+        switch kit.MouseButton(u8(binding.code)) {
+        case .LEFT: return {shape = .MOUSE, label = "LMB"}
+        case .RIGHT: return {shape = .MOUSE, label = "RMB"}
+        case .MIDDLE: return {shape = .MOUSE, label = "MMB"}
+        }
+    case .GAMEPAD:
+        button: kit.PadButton = kit.PadButton(u8(binding.code))
+        glyph: ui.Glyph
+        switch button {
+        case .FACE_DOWN: glyph = {shape = .FACE, label = "A", color = {76, 160, 92, 255}}
+        case .FACE_RIGHT: glyph = {shape = .FACE, label = "B", color = {206, 70, 64, 255}}
+        case .FACE_LEFT: glyph = {shape = .FACE, label = "X", color = {66, 120, 210, 255}}
+        case .FACE_UP: glyph = {shape = .FACE, label = "Y", color = {214, 170, 50, 255}}
+        case .LEFT_SHOULDER: glyph = {shape = .SHOULDER, label = "LB"}
+        case .RIGHT_SHOULDER: glyph = {shape = .SHOULDER, label = "RB"}
+        case .LEFT_TRIGGER: glyph = {shape = .TRIGGER, label = "LT"}
+        case .RIGHT_TRIGGER: glyph = {shape = .TRIGGER, label = "RT"}
+        case .DPAD_UP: glyph = {shape = .DPAD, label = "U"}
+        case .DPAD_DOWN: glyph = {shape = .DPAD, label = "D"}
+        case .DPAD_LEFT: glyph = {shape = .DPAD, label = "L"}
+        case .DPAD_RIGHT: glyph = {shape = .DPAD, label = "R"}
+        case .LEFT_STICK: glyph = {shape = .STICK, label = "L"}
+        case .RIGHT_STICK: glyph = {shape = .STICK, label = "R"}
+        case .BACK: glyph = {shape = .KEY, label = "Back"}
+        case .START: glyph = {shape = .KEY, label = "Start"}
+        }
+        if GlyphTextures[button].texture != kit.TEXTURE_NONE {
+            glyph.texture, glyph.source = u32(GlyphTextures[button].texture), GlyphTextures[button].source
+        }
+        return glyph
+    }
+    return {}
+}
+
+// The label of a key on its cap: letters and digits as they are, the others by a short name
+@(private)
+keyLabel :: proc(key: kit.Key) -> string {
+    #partial switch key {
+    case .N0: return "0"
+    case .N1: return "1"
+    case .N2: return "2"
+    case .N3: return "3"
+    case .N4: return "4"
+    case .N5: return "5"
+    case .N6: return "6"
+    case .N7: return "7"
+    case .N8: return "8"
+    case .N9: return "9"
+    case .SPACE: return "Space"
+    case .ENTER: return "Enter"
+    case .ESCAPE: return "Esc"
+    case .BACKSPACE: return "Back"
+    case .LEFT: return "Left"
+    case .RIGHT: return "Right"
+    case .UP: return "Up"
+    case .DOWN: return "Down"
+    case .LEFT_SHIFT, .RIGHT_SHIFT: return "Shift"
+    case .LEFT_CTRL, .RIGHT_CTRL: return "Ctrl"
+    case .LEFT_ALT, .RIGHT_ALT: return "Alt"
+    case .PAGE_UP: return "PgUp"
+    case .PAGE_DOWN: return "PgDn"
+    }
+    return reflect.enum_string(key)
+}
+
+// The input that went down in this frame as a binding of the kit (device NONE: nothing did): the first key (a modifier alone counts: a game binds Shift), mouse
+// button or gamepad button. For `ui.UiBindingField`.
+BindingPressed :: proc(input: ^kit.Input) -> ui.Binding {
+    for button in kit.PadButton {
+        if button in input.pad_pressed { return {device = .GAMEPAD, code = u16(button)} }
+    }
+    for key in kit.Key {
+        if key != .None && key in input.keys_pressed { return {device = .KEYBOARD, code = u16(key)} }
+    }
+    for button in kit.MouseButton {
+        if button in input.mouse_pressed { return {device = .MOUSE, code = u16(button)} }
+    }
+    return {}
 }
 
 // The input of a kit frame for the ui. A pointer over the menu of the kit (ctx.ui_hover) is not for the ui. `scale` is the UI scale: the pointer is given in logical units.

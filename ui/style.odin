@@ -75,6 +75,7 @@ StyleKind :: enum u8 {
     SPINNER,            // something is going on: value is the time in seconds
     DATE_CELL,          // a day of the month a date field shows: name the number, SELECTED flag for the day of the date
     CHART,              // a chart: user is the ^ChartView (the series, the range of the axes, the hovered and the picked point); the style draws with ChartPlotRect, ChartPosition, ChartBarRect
+    GLYPH,              // the picture of an input (glyph.odin): text the label, actual the GlyphShape, color (alpha 0: the theme's), texture + source: the program's picture
     CUSTOM,             // DrawInfo.custom is called instead of a table entry
     FILL,               // a plain rectangle in `color` (the ground of a piece of text)
 }
@@ -119,6 +120,8 @@ DrawInfo :: struct {
     tags: [DRAW_TAGS]Id,    // the tags that were pushed when the widget was declared, the innermost first (UiPushTag); DrawInfoHasTag
     values: []f32,          // plots: the numbers (they have to live until the frame is rendered)
     color: Color,           // swatches and colored text
+    texture: u32,           // GLYPH: the program's picture (a handle of the glue), 0: none
+    source: Rect,           // GLYPH: the part of the texture
     icon: Icon,             // buttons, chips: a picture before the name (NONE: no picture)
     custom: StyleProc,      // kind == .CUSTOM: the user's own draw proc
     user: rawptr,           // anything of the user: it is passed through to the style
