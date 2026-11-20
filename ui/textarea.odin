@@ -21,6 +21,9 @@ AreaCache :: struct {
     key: u64,
     count: int,
     used: u32,              // the frame it was used in last
+    states_key: u64,        // the key the highlight states of the rows were found for (0: they are not), by which highlighter
+    states_for: TextHighlight,
+    states_user: rawptr,
     rows: [UI_TEXT_AREA_LINES]AreaLine,
 }
 
@@ -80,12 +83,35 @@ areaLinesCached :: proc(ctx: ^Context, owner: Id, text: string, max_width: f32, 
     return count
 }
 
+// The highlight state of every row of the area `owner` (in `ctx.area_lines`): one run of the highlighter over all rows when the text, the rows or the highlighter
+// changed, kept with the rows after that.
+@(private)
+areaStates :: proc(ctx: ^Context, owner: Id, text: string, count: int, highlight: TextHighlight, user: rawptr) {
+    slot: ^AreaCache
+    for &entry in ctx.area_caches.entries {
+        if entry.id == owner { slot = &entry }
+    }
+    if slot != nil && slot.count == count && slot.states_key == slot.key && slot.states_for == highlight && slot.states_user == user { return }
+    spans: [AREA_SPANS]TextSpan
+    state: u32
+    for i in 0 ..< count {
+        line: ^AreaLine = &ctx.area_lines[i]
+        line.state = state
+        highlight(text, int(line.start), int(line.end), spans[:], user, &state)
+    }
+    if slot != nil && slot.count == count {
+        copy(slot.rows[:count], ctx.area_lines[:count])
+        slot.states_key, slot.states_for, slot.states_user = slot.key, highlight, user
+    }
+}
+
 // One row of the text on the screen: a part of a line of the text that fits the width (or the whole line), `hard` when it ends at a new line.
 @(private)
 AreaLine :: struct {
     start: u32,
     end: u32,               // without the new line
     hard: bool,
+    state: u32,             // what the highlighter has open at the start of the row (areaStates)
 }
 
 // Finds the rows of `text` for a width: the table of the context. Returns how many. Words are not broken unless one alone is wider than the width.
@@ -95,7 +121,7 @@ areaLines :: proc(ctx: ^Context, text: string, max_width: f32, wrap: bool) -> in
     count: int
     emit :: proc(lines: []AreaLine, count: ^int, start: int, end: int, hard: bool) {
         if count^ < len(lines) {
-            lines[count^] = {u32(start), u32(end), hard}
+            lines[count^] = {u32(start), u32(end), hard, 0}
             count^ += 1
         }
     }
@@ -294,6 +320,7 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
         clip = {horizontal = true, vertical = true, cut = true, offset = state.scroll},
         draw = {kind = .TEXT_AREA, name = IdSplitName(name), text = text, font_size = metrics.font_size, flags = ({.DISABLED} if disabled else {}) + ({.FOCUSED} if ctx.focus == id else {})},
     })
+    if highlight != nil { areaStates(ctx, id, text, count, highlight, highlight_user) }
     // only the rows in view become elements
     first: int = clamp(int(-state.scroll.y / line_height), 0, count - 1)
     last: int = min(first + int(view_height / line_height) + 2, count - 1)
@@ -324,7 +351,8 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
         } else if line.end > line.start {
             // a text per span, each where the text before it ends (the same measure the caret and the selection are placed by)
             spans: [AREA_SPANS]TextSpan
-            span_count: int = clamp(highlight(text, int(line.start), int(line.end), spans[:], highlight_user), 0, AREA_SPANS)
+            row_state: u32 = line.state
+            span_count: int = clamp(highlight(text, int(line.start), int(line.end), spans[:], highlight_user, &row_state), 0, AREA_SPANS)
             at: int = int(line.start)
             for index in 0 ..= span_count {
                 // after the spans: what they did not cover, plain

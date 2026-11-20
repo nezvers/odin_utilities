@@ -43,7 +43,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Rich text: `UiRichText`, used by `UiMarkdown` (strong, italic, code, links)
 - [x] Tables in `UiMarkdown`
 - [x] Colors in a text area (`TextHighlight`, `HighlightCode`) and Baldr's 07_code
-- [ ] Highlighting that knows the lines before a row (block comments, strings over several lines): a state per line start that the area keeps while the text does not change
+- [x] Highlighting that knows the lines before a row (block comments, raw strings): a state per row that the area keeps while the text does not change
 - [x] A shortcut field (`UiShortcutField`, `Chord`) and Baldr's 20_shortcuts
 - [x] A part of the ui in a theme of its own (`ThemeAreaSet`, `Style.before_draw`) and Baldr's 33_reading
 - [x] Links of a rich text can be clicked (`address, clicked := UiRichText(...)`, the same from `UiMarkdown`)

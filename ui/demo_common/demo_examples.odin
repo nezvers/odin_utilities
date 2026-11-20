@@ -564,7 +564,8 @@ CODE_SAMPLE :: `package counter
 
 import "core:fmt"
 
-// Counts the words of a text
+/* Counts the words of a text.
+   The longest one is kept. */
 Counter :: struct {
     words: int,
     longest: string,
@@ -1209,7 +1210,7 @@ script: []kit.Step = {
     kit.MoveTo({640, 700}),
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
-        return shown("package", ui.SYNTAX_KEYWORD) && shown("// Counts the words of a text", ui.SYNTAX_COMMENT) && shown("\"core:fmt\"", ui.SYNTAX_STRING) && shown("0x10", ui.SYNTAX_NUMBER) && shown("string", ui.SYNTAX_TYPE)
+        return shown("package", ui.SYNTAX_KEYWORD) && shown("   The longest one is kept. */", ui.SYNTAX_COMMENT) && shown("\"core:fmt\"", ui.SYNTAX_STRING) && shown("0x10", ui.SYNTAX_NUMBER) && shown("string", ui.SYNTAX_TYPE)
     }, "keywords, comments, strings, numbers and types have their tags"),
     kit.Capture("examples_code"),
     kit.Wait(2),

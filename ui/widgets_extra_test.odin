@@ -429,3 +429,105 @@ test_a_text_area_draws_its_rows_in_spans :: proc(t: ^testing.T) {
     testing.expect_value(t, text.rect.x - keyword.rect.x, size * 7)
     testing.expect(t, type.rect.y == name.rect.y && plain.rect.y > name.rect.y && keyword.rect.y > plain.rect.y)
 }
+
+@(test)
+test_comments_and_raw_strings_go_over_rows :: proc(t: ^testing.T) {
+    // the rows of a text, each highlighted with the state the one before left
+    Row :: struct { text: string, tags: [3]string, pieces: [3]string }
+    check :: proc(t: ^testing.T, rows: []Row, language: ^HighlightLanguage = nil) {
+        state: u32
+        for row, r in rows {
+            spans: [8]TextSpan
+            count: int = HighlightCode(row.text, 0, len(row.text), spans[:], language, &state)
+            at: int
+            for i in 0 ..< 3 {
+                if row.pieces[i] == "" {
+                    testing.expectf(t, count <= i, "row %d %q has %d spans", r, row.text, count)
+                    break
+                }
+                testing.expectf(t, i < count && row.text[at:at + spans[i].length] == row.pieces[i] && spans[i].tag == row.tags[i], "row %d %q: span %d", r, row.text, i)
+                if i < count { at += spans[i].length }
+            }
+        }
+        testing.expect_value(t, state, 0)
+    }
+    check(t, {
+        {"a /* one", {"", SYNTAX_COMMENT, ""}, {"a ", "/* one", ""}},
+        {"still /* deeper */ in", {SYNTAX_COMMENT, "", ""}, {"still /* deeper */ in", "", ""}},
+        {"", {}, {}},
+        {"end */ b := 1", {SYNTAX_COMMENT, "", SYNTAX_NUMBER}, {"end */", " b := ", "1"}},
+        {"s := `raw", {"", SYNTAX_STRING, ""}, {"s := ", "`raw", ""}},
+        {"// not a comment \\", {SYNTAX_STRING, "", ""}, {"// not a comment \\", "", ""}},
+        {"end` + 2", {SYNTAX_STRING, "", SYNTAX_NUMBER}, {"end`", " + ", "2"}},
+        {"/* a */ /* b */ x", {SYNTAX_COMMENT, "", SYNTAX_COMMENT}, {"/* a */", " ", "/* b */"}},
+    })
+    // C: the first end closes the comment, a backtick is nothing
+    c: HighlightLanguage = {keywords = {"int"}, line_comment = "//", block_open = "/*", block_close = "*/"}
+    check(t, {
+        {"/* a /* b", {SYNTAX_COMMENT, "", ""}, {"/* a /* b", "", ""}},
+        {"c */ int x", {SYNTAX_COMMENT, "", SYNTAX_KEYWORD}, {"c */", " ", "int"}},
+        {"` int", {"", SYNTAX_KEYWORD, ""}, {"` ", "int", ""}},
+    }, &c)
+    // the state is right also when the spans have no room
+    state: u32
+    none: [1]TextSpan
+    HighlightCode("a b 1 2 /* open", 0, 15, none[:], nil, &state)
+    testing.expect_value(t, state, 1)
+    HighlightCode("x", 0, 1, nil, nil, &state)
+    testing.expect_value(t, state, 1)
+}
+
+@(test)
+test_a_text_area_keeps_the_state_of_its_rows :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 2048),
+        ctx: Context,
+        style: Style,
+        text: [128]u8,
+        length: int,
+        calls: int,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measureFaces)
+    test.length = copy(test.text[:], "a := 1 /* note\nreturn inside\nend */ return b")
+    // a highlighter that counts how often it is asked
+    counting :: proc(text: string, row_start: int, row_end: int, spans: []TextSpan, user: rawptr, state: ^u32) -> int {
+        (cast(^int)user)^ += 1
+        return HighlightCode(text, row_start, row_end, spans, nil, state)
+    }
+    frame :: proc(test: ^Test) {
+        UiBegin(&test.ctx, {mouse_position = {-100, -100}}, 1.0 / 60, {1200, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(1000), {}}) {
+            UiTextArea(&test.ctx, "code", test.text[:], &test.length, {Fixed(900), Fixed(200)}, false, false, counting, &test.calls)
+        }
+        UiEnd(&test.ctx)
+    }
+    find :: proc(ctx: ^Context, text: string) -> (info: DrawInfo, found: bool) {
+        for command in UiCommands(ctx) {
+            if command.kind == .DRAW && command.info.kind == .LABEL && command.info.text == text { return command.info, true }
+        }
+        return
+    }
+    frame(test)
+    frame(test)
+    inside, inside_found := find(&test.ctx, "return inside")
+    testing.expect(t, inside_found && DrawInfoHasTag(&inside, SYNTAX_COMMENT), "the row inside of the comment is a comment, its keyword too")
+    end, end_found := find(&test.ctx, "end */")
+    keyword, keyword_found := find(&test.ctx, "return")
+    testing.expect(t, end_found && DrawInfoHasTag(&end, SYNTAX_COMMENT) && keyword_found && DrawInfoHasTag(&keyword, SYNTAX_KEYWORD), "after the end of the comment it is code again")
+    // while the text is the same a frame only asks for the rows in view (3), the states are kept
+    before: int = test.calls
+    frame(test)
+    testing.expect_value(t, test.calls - before, 3)
+    // the text changes: the comment is closed in its first row, the second row is code
+    test.length = copy(test.text[:], "a := 1 /* note */\nreturn inside\nend")
+    frame(test)
+    testing.expect_value(t, test.calls - before, 3 + 6)         // all rows for the states, then the rows in view
+    _, inside_found = find(&test.ctx, "return inside")
+    testing.expect(t, !inside_found)
+    keyword, keyword_found = find(&test.ctx, "return")
+    testing.expect(t, keyword_found && DrawInfoHasTag(&keyword, SYNTAX_KEYWORD))
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

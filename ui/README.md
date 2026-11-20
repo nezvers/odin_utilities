@@ -309,8 +309,9 @@ clips, to markers and to the playhead when they are within `view.snap_pixels` (8
 `highlight.odin`: `ui.UiTextArea(..., highlight = ui.HighlightCode, highlight_user = &ui.HIGHLIGHT_ODIN)` draws the words of every row in view in the colors of what they
 are. A highlighter (`ui.TextHighlight`) cuts a row into `ui.TextSpan`s, each with a tag; the area declares a text per span, placed by the same measure as the caret. The
 default style has the colors of the tags `ui.SYNTAX_KEYWORD`, `_TYPE`, `_STRING`, `_NUMBER`, `_COMMENT` (`ui_default.SyntaxColor`). `HighlightCode` reads languages that
-look like C or Odin by a `HighlightLanguage` (keywords, types, the mark of a line comment); it reads a row on its own, so a comment or a string over several lines is
-only colored on its first, and it is meant for an area without `wrap`. Nothing is kept between frames and nothing is allocated; at most `AREA_SPANS` (96) spans a row.
+look like C or Odin by a `HighlightLanguage` (keywords, types, the marks of comments, the quote of raw strings). What goes over several lines (a block comment, nested
+in Odin, a raw string) is carried from row to row in a `state` number: the area runs the highlighter over all rows once when the text changed and keeps the state of every
+row with its cached rows, so a frame only asks for the rows in view. A string in quotes ends with its row. Nothing is allocated; at most `AREA_SPANS` (96) spans a row.
 
 ## Shortcut field
 `shortcut.odin`: `changed, listening := ui.UiShortcutField(&ctx, name, &chord, pressed, key_name)` is a shortcut that is set by pressing it. A click or the confirm key makes it
