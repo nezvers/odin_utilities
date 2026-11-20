@@ -874,7 +874,18 @@ RowBox :: proc(painter: ^Painter, info: ^ui.DrawInfo, selected: bool) -> (ink: u
 DrawDropdownItem :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     ink: ui.Color = RowBox(painter, info, .SELECTED in info.flags)
-    TextLeft(painter, info.name, info.rect, info.font_size, ctx.style.metrics.padding.x, ink)
+    padding: f32 = ctx.style.metrics.padding.x
+    // a range of the name that matched what was typed (a completion list: cursor to anchor): in the strong face, in the accent unless the row is the chosen one
+    if info.anchor > info.cursor && info.cursor >= 0 && info.anchor <= len(info.name) {
+        before, matched, after: string = info.name[:info.cursor], info.name[info.cursor:info.anchor], info.name[info.anchor:]
+        width_before: f32 = TextWidth(painter, before, info.font_size)
+        TextLeft(painter, before, info.rect, info.font_size, padding, ink)
+        mark: ui.Color = ink if .SELECTED in info.flags else painter.theme.accent
+        TextLeft(painter, matched, info.rect, info.font_size, padding + width_before, mark, .STRONG)
+        TextLeft(painter, after, info.rect, info.font_size, padding + width_before + TextWidth(painter, matched, info.font_size, .STRONG), ink)
+        return
+    }
+    TextLeft(painter, info.name, info.rect, info.font_size, padding, ink)
 }
 
 // A scrollbar is only its thumb: a round bar that gets stronger under the pointer

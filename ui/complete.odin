@@ -9,7 +9,8 @@ package ui
 // Nothing is kept but the row that is chosen and where the list was closed; the items are the program's, looked through every frame the list is open (a list of
 // thousands wants a search of its own that gives the few that match).
 //
-// Limits: one trigger character, ASCII letters only match without regard to case, no ranking and no highlight of what matched; at most COMPLETE_ROWS (8) rows and no scrolling of a longer list
+// Limits: one trigger character, ASCII letters only match without regard to case, one match of the word in an item (the first) and a ranking by where it is, not by how often an item
+//     is used; at most COMPLETE_ROWS (8) rows and no scrolling of a longer list
 //     the list opens below the caret of the last frame, or above its row when it would not fit below and does; it is declared right before its field or area
 //
 // Baldr's completion (examples/34_mentions, editor_complete) was the reason to have one; the code is written for this library.
@@ -22,11 +23,11 @@ completeLower :: proc "contextless" (character: u8) -> u8 {
     return character + 32 if character >= 'A' && character <= 'Z' else character
 }
 
-// `text` has `part` in it, whatever the case of the letters (ASCII)
+// Where `part` is in `text`, whatever the case of the letters (ASCII): the first place, -1 when it is not there
 @(private)
-completeContains :: proc "contextless" (text: string, part: string) -> bool {
-    if len(part) == 0 { return true }
-    if len(part) > len(text) { return false }
+completeFind :: proc "contextless" (text: string, part: string) -> int {
+    if len(part) == 0 { return 0 }
+    if len(part) > len(text) { return -1 }
     for start in 0 ..= len(text) - len(part) {
         same: bool = true
         for i in 0 ..< len(part) {
@@ -35,9 +36,28 @@ completeContains :: proc "contextless" (text: string, part: string) -> bool {
                 break
             }
         }
-        if same { return true }
+        if same { return start }
     }
-    return false
+    return -1
+}
+
+// `text` has `part` in it
+@(private)
+completeContains :: proc "contextless" (text: string, part: string) -> bool {
+    return completeFind(text, part) >= 0
+}
+
+// How well an item matches, the best first: 0 it starts with the word, 1 the word starts a part of it (after a dot, a dash, a slash, a space, an underscore, or at a
+// capital after a small letter), 2 it is somewhere inside. -1: it does not match.
+@(private)
+completeTier :: proc "contextless" (text: string, part: string) -> int {
+    at: int = completeFind(text, part)
+    if at < 0 { return -1 }
+    if at == 0 { return 0 }
+    before, character: u8 = text[at - 1], text[at]
+    alphanumeric :: proc "contextless" (c: u8) -> bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') }
+    if !alphanumeric(before) || (before >= 'a' && before <= 'z' && character >= 'A' && character <= 'Z') { return 1 }
+    return 2
 }
 
 // The word that is completed: the text from a trigger at the start of a word up to `cursor`, without a space in it. `start` is where it begins (after the trigger).
@@ -87,13 +107,16 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
     }
     // closed by Escape: it stays closed for this word
     if own.anchor == start { return }
+    // the best matches first (an item that starts with the word, then one that has it at the start of a part, then the others), the order of the items within each
     matches: [COMPLETE_ROWS]int
     count: int
-    for candidate, i in items {
-        if count == COMPLETE_ROWS { break }
-        if completeContains(candidate, query) {
-            matches[count] = i
-            count += 1
+    for tier in 0 ..< 3 {
+        for candidate, i in items {
+            if count == COMPLETE_ROWS { break }
+            if completeTier(candidate, query) == tier {
+                matches[count] = i
+                count += 1
+            }
         }
     }
     if count == 0 { return }
@@ -133,11 +156,13 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
         _ = stateGet(ctx, row_id)
         interaction: Interaction = widgetBehavior(ctx, row_id)
         if interaction.clicked { picked = row }
+        // the part of the item that matched is told to the style as a range of the name (cursor to anchor)
+        found: int = completeFind(items[matches[row]], query) if len(query) > 0 else 0
         ElementOpen(ctx, {
             id = row_id,
             layout = {size = {Grow(), Fixed(metrics.control_height)}},
             hit = {.INTERACTIVE, .NO_FOCUS},            // a click on a row leaves the focus in the area
-            draw = {kind = .DROPDOWN_ITEM, name = items[matches[row]], font_size = metrics.font_size, flags = {.SELECTED} if row == own.cursor else {}, value = f32(row), actual = f32(row)},
+            draw = {kind = .DROPDOWN_ITEM, name = items[matches[row]], font_size = metrics.font_size, flags = {.SELECTED} if row == own.cursor else {}, value = f32(row), actual = f32(row), cursor = max(found, 0), anchor = max(found, 0) + len(query)},
         })
         ElementClose(ctx)
     }

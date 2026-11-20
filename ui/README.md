@@ -366,7 +366,9 @@ text or a part is selected, and no text field is edited). The selection follows 
 ## Completion in a text area or field
 `complete.odin`: `inserted, item := ui.UiComplete(&ctx, "Message", buffer[:], &length, items[:])` right before the `ui.UiTextArea` of the same name: after a trigger
 (`@` by default) at the start of a word, the items that contain what was typed since are offered in a list under the caret (at most `COMPLETE_ROWS`, 8). The arrows
-choose, Enter or a click writes the item in place of the typed word with a space after it, Escape closes the list for that word. It is declared before the area because
+choose, Enter or a click writes the item in place of the typed word with a space after it, Escape closes the list for that word. The items that start with the word come
+first, then those that have it at the start of a part (after a dot, a dash, a slash, an underscore, a space or at a capital), then the others, in the order of the items
+within each; the part that matched is drawn in the strong face and the accent color (the range is in `cursor` and `anchor` of the DROPDOWN_ITEM). It is declared before the area because
 it takes the keys of the open list out of the input, so the area does not move its caret or break the line by them. The items are looked through every frame the list
 is open; `CompleteQuery` finds the word at the caret for a program that searches by itself. It works the same before a `ui.UiTextField` (Enter then picks and does not
 submit, the arrows stay in the list). An inserted item is a step of the undo history of the widget.
@@ -465,7 +467,8 @@ ticked off in `TODO.md`. Look here before relying on a widget for something it m
   - a copy is cut at UI_SELECT_BYTES (4096); letters are runes (a mark or an emoji sequence is several); no right-to-left text, no touch, no menu; the end follows the pointer one frame behind
   - no selection in an icon, an image or a text of a widget (a field has its own selection); Shift + arrows move the end of a selection by letters, lines and pages, a word or a paragraph only by the clicks
 - **UiComplete** (`complete.odin`):
-  - one trigger character, ASCII letters only match without regard to case, no ranking and no highlight of what matched; at most COMPLETE_ROWS (8) rows and no scrolling of a longer list
+  - one trigger character, ASCII letters only match without regard to case, one match of the word in an item (the first) and a ranking by where it is, not by how often an item
+  - is used; at most COMPLETE_ROWS (8) rows and no scrolling of a longer list
   - the list opens below the caret of the last frame, or above its row when it would not fit below and does; it is declared right before its field or area
 - **UiShortcutField** (`shortcut.odin`):
   - one chord, no sequences; a modifier alone is not a chord; what the operating system takes (Alt + Tab) never arrives; no conflict check (the program does it, as the demo does)

@@ -1898,7 +1898,7 @@ script: []kit.Step = {
     kit.Wait(2),
     kit.Type("Look at @r"),
     kit.Wait(3),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.DROPDOWN_ITEM, "render.odin") && drawn(.DROPDOWN_ITEM, "README.md") && !drawn(.DROPDOWN_ITEM, "layout.odin") }, "the files with the letter are offered"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.DROPDOWN_ITEM, "render.odin") && drawn(.DROPDOWN_ITEM, "README.md") && !drawn(.DROPDOWN_ITEM, "layout.odin") }, "the files with the letter are offered, those that start with it first"),
     kit.Tap(.DOWN),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
@@ -1909,8 +1909,8 @@ script: []kit.Step = {
     kit.Wait(2),
     kit.Tap(.ENTER),
     kit.Wait(3),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.mention[:state.mention_length]) == "Look at @render.odin " && state.mentions == 1 }, "Enter writes the chosen name in"),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return !drawn(.DROPDOWN_ITEM, "render.odin") && shown("1 mentioned, the last one: render.odin", "dim") }, "the list is closed"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.mention[:state.mention_length]) == "Look at @richtext.odin " && state.mentions == 1 }, "Enter writes the chosen name in (the second of the ones that start with the letter)"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !drawn(.DROPDOWN_ITEM, "render.odin") && shown("1 mentioned, the last one: richtext.odin", "dim") }, "the list is closed"),
 
     // spring: a file is dragged over a folder and held there: the folder opens under the drag; let go on the empty part and the file is in that folder
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(15) }, "the Spring tab is in the bar"),

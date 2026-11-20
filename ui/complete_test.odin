@@ -315,3 +315,72 @@ test_the_completion_list_stands_above_the_caret_where_it_does_not_fit_below :: p
     testing.expect(t, top >= area.y + DEFAULT_METRICS.font_size, "below the caret when there is no room above")
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_the_items_of_a_completion_list_are_ranked_and_tell_the_style_what_matched :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 2048),
+        ctx: Context,
+        style: Style,
+        text: [64]u8,
+        length: int,
+        area: Id,
+        items: []string,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    frame :: proc(test: ^Test, input: Input) {
+        UiBegin(&test.ctx, input, 1.0 / 60, {800, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(500), {}}) {
+            test.area = UiId(&test.ctx, "Message")
+            UiComplete(&test.ctx, "Message", test.text[:], &test.length, test.items)
+            UiTextArea(&test.ctx, "Message", test.text[:], &test.length, {Fixed(400), Fixed(100)})
+        }
+        UiEnd(&test.ctx)
+    }
+    away: Input = {mouse_position = {-100, -100}}
+    type :: proc(test: ^Test, text: string) {
+        input: Input = {mouse_position = {-100, -100}}
+        input.text_count = u8(copy(input.text[:], text))
+        frame(test, input)
+        frame(test, {mouse_position = {-100, -100}})
+    }
+    Row :: struct { name: string, from: int, to: int }
+    rows :: proc(test: ^Test) -> (result: [COMPLETE_ROWS]Row, count: int) {
+        for command in UiCommands(&test.ctx) {
+            if command.kind != .DRAW || command.info.kind != .DROPDOWN_ITEM || count == COMPLETE_ROWS { continue }
+            result[count] = {command.info.name, command.info.cursor, command.info.anchor}
+            count += 1
+        }
+        return
+    }
+    // a prefix first, the start of a part next (after an underscore, a dot), then the rest: each in the order of the items
+    test.items = {"format.odin", "main.odin", "go_main", "mark.md", "Domain", "a.Main"}
+    for _ in 0 ..< 3 { frame(test, away) }
+    UiFocus(&test.ctx, test.area)
+    frame(test, away)
+    type(test, "@")
+    list, count := rows(test)
+    testing.expect_value(t, count, 6)
+    testing.expect(t, list[0].name == "format.odin" && list[0].from == 0 && list[0].to == 0, "no word: all of them in order, nothing marked")
+    type(test, "ma")
+    list, count = rows(test)
+    testing.expect_value(t, count, 6)
+    expected: [6]Row = {{"main.odin", 0, 2}, {"mark.md", 0, 2}, {"go_main", 3, 5}, {"a.Main", 2, 4}, {"format.odin", 3, 5}, {"Domain", 2, 4}}
+    for want, i in expected {
+        testing.expectf(t, list[i] == want, "row %d is %v, not %v", i, list[i], want)
+    }
+    // the first of the items is not the first of the list when an item that starts with the word comes later: more than the rows there are
+    many: [12]string = {"xma0", "xma1", "xma2", "xma3", "xma4", "xma5", "xma6", "xma7", "xma8", "xma9", "ma_late", "Ma_last"}
+    test.items = many[:]
+    test.length = 0
+    UiTextSelectionClear(&test.ctx)
+    type(test, "@ma")
+    list, count = rows(test)
+    testing.expect_value(t, count, COMPLETE_ROWS)
+    testing.expect(t, list[0].name == "ma_late" && list[1].name == "Ma_last" && list[2].name == "xma0", "the prefix matches come first, also from the end of the items")
+    testing.expect(t, list[0].from == 0 && list[0].to == 2 && list[2].from == 1 && list[2].to == 3)
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

@@ -516,3 +516,54 @@ test_a_reversed_run_is_drawn_in_the_colors_of_the_theme_swapped :: proc(t: ^test
         testing.expect_value(t, test.painter.theme.text, theme.text)
     }
 }
+
+@(test)
+test_a_dropdown_item_draws_the_part_that_matched_in_the_strong_face :: proc(t: ^testing.T) {
+    for theme in ([2]Theme{THEME_DARK, THEME_LIGHT}) {
+        test: ^struct {
+            storage: ui.Storage(16, 16, 8, 256),
+            ctx: ui.Context,
+            style: ui.Style,
+            painter: Painter,
+            recorder: Recorder,
+        } = new(struct {
+            storage: ui.Storage(16, 16, 8, 256),
+            ctx: ui.Context,
+            style: ui.Style,
+            painter: Painter,
+            recorder: Recorder,
+        })
+        defer free(test)
+        recorderPainter(&test.painter, &test.recorder, theme, false)
+        test.style = StyleMake()
+        ui.UiInit(&test.ctx, &test.storage, Measure, &test.painter)
+        ui.UiBegin(&test.ctx, {}, 1.0 / 60, {800, 600}, &test.style)                 // the style of the context is set by a frame
+        ui.UiEnd(&test.ctx)
+        info: ui.DrawInfo = {kind = .DROPDOWN_ITEM, name = "main.odin", rect = {0, 0, 200, 28}, font_size = 16, cursor = 0, anchor = 2}
+        test.recorder = {wanted = {0 = "ma", 1 = "in.odin", 2 = "main.odin"}}
+        DrawDropdownItem(&test.ctx, &info)
+        testing.expect(t, test.recorder.found[0] && test.recorder.found[1] && !test.recorder.found[2], "drawn in two parts")
+        testing.expect_value(t, test.recorder.strong_texts, 1)
+        testing.expect_value(t, test.recorder.colors[0], theme.accent)
+        // the chosen row is in the soft accent: the part keeps the ink of the row, in the strong face
+        test.recorder = {wanted = {0 = "ma", 1 = "in.odin"}}
+        info.flags = {.SELECTED}
+        DrawDropdownItem(&test.ctx, &info)
+        testing.expect(t, test.recorder.colors[0] != theme.accent && test.recorder.colors[0] == test.recorder.colors[1])
+        // a range in the middle: three parts; a range that is empty or out of the name is not a range
+        test.recorder = {wanted = {0 = "ma", 1 = "in", 2 = ".odin", 3 = "main.odin"}}
+        info.flags = {}
+        info.cursor, info.anchor = 2, 4
+        info.name = "format"
+        DrawDropdownItem(&test.ctx, &info)
+        test.recorder = {wanted = {0 = "format"}}
+        info.cursor, info.anchor = 3, 3
+        DrawDropdownItem(&test.ctx, &info)
+        testing.expect(t, test.recorder.found[0])
+        test.recorder = {wanted = {0 = "format"}}
+        info.cursor, info.anchor = 3, 30
+        DrawDropdownItem(&test.ctx, &info)
+        testing.expect(t, test.recorder.found[0] && test.recorder.strong_texts == 0)
+        testing.expect_value(t, test.painter.face, Face.REGULAR)
+    }
+}
