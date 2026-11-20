@@ -55,7 +55,8 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Selection of read text: its end moved by Shift + arrows, Home, End
 - [x] Selection of read text inside of a virtual list (`UiSelectRows`, `UiSelectRow`, `VirtualList.text`)
 - [x] Selection in a list: several texts in a row (the cells of `UiTable`)
-- [ ] Selection in a list: the arrows moving the end out of view (the list would scroll it into view)
+- [x] Selection in a list: Shift + up and down move the end out of view, the list scrolls after it
+- [ ] Selection in a list: Shift + left and right and Page up and down across rows that are out of view
 - [x] Strong italic text and italic code faces (`ATLAS_FACES` 16, Inter SemiBold Italic made from Inter Variable Italic)
 - [x] A drag that rests over a widget (`UiDragRest`) and Baldr's 35_spring
 - [x] Markdown that arrives (Baldr's 26_reply): shown at every length of the text, a test over every prefix

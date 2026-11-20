@@ -36,6 +36,8 @@ SelectGroup :: struct {
     base: i32,                  // the elements declared before the list: where the list is among the other texts
     count: int,
     cells: int,                 // the selectable texts of a row
+    scroll: Id,                 // the scrolling list that has the rows (0: the arrows move the end among the rows in view only)
+    row_height: f32,
     row_text: SelectRowText,
     user: rawptr,
 }
@@ -169,12 +171,13 @@ selectRange :: proc "contextless" (select: ^TextSelect, element: ^Element, index
 
 // Tells the selection that the rows of a list are its texts: call it right before the list is declared. `count` rows, `row_text` gives the text of any of them (see
 // SelectRowText) and `cells` selectable texts in each row (a table: one for every column that has text). Returns the list for UiSelectRow. When the lists of a
-// frame are more than UI_SELECT_GROUPS the others are not selectable.
-UiSelectRows :: proc(ctx: ^Context, name: string, count: int, row_text: SelectRowText, user: rawptr = nil, cells: int = 1) -> Id {
+// frame are more than UI_SELECT_GROUPS the others are not selectable. With `scroll`, the id of the scrolling list (the id UiVirtual or UiTable was given), and the
+// height of its rows, Shift and the arrows can move the end of the selection to rows that are out of view: the list is scrolled to show it.
+UiSelectRows :: proc(ctx: ^Context, name: string, count: int, row_text: SelectRowText, user: rawptr = nil, cells: int = 1, scroll: Id = 0, row_height: f32 = 0) -> Id {
     id: Id = UiId(ctx, name)
     select: ^TextSelect = &ctx.select
     if select.group_count < len(select.groups) && selectGroupSlot(select, id) < 0 {
-        select.groups[select.group_count] = {id = id, base = i32(ctx.element_count), count = count, cells = max(cells, 1), row_text = row_text, user = user}
+        select.groups[select.group_count] = {id = id, base = i32(ctx.element_count), count = count, cells = max(cells, 1), scroll = scroll, row_height = row_height, row_text = row_text, user = user}
         select.group_count += 1
     }
     return id
@@ -593,7 +596,14 @@ selectKeys :: proc(ctx: ^Context) {
     actions: Actions = ctx.input.actions
     cursor: SelectPoint = select.cursor
     line, top, x, height, found := selectLineOf(ctx, cursor)
-    if !found { return }
+    if !found {
+        // the end is a row of a list that is out of view (the list was scrolled away): up and down still move it by rows, and bring it back into view
+        if cursor.group != 0 {
+            if .UP in actions { if place, moved := selectGroupStep(ctx, cursor, -1); moved { select.cursor = place } }
+            if .DOWN in actions { if place, moved := selectGroupStep(ctx, select.cursor, 1); moved { select.cursor = place } }
+        }
+        return
+    }
     element: i32 = selectElementOf(ctx, cursor)               // a row that is in view: the text it is (the end of the selection may not move out of view)
     text: string = ctx.elements[element].text.text
     if .LEFT in actions {
@@ -626,11 +636,49 @@ selectKeys :: proc(ctx: ^Context) {
     }
     if .HOME in actions { cursor.offset = line.start }
     if .END in actions { cursor.offset = line.start + line.length }
+    // a line of the same list above or below, else (the row there is out of view, or the next thing is not of the list) the row before or after it
     if .UP in actions {
-        if place, above := selectLineStep(ctx, x, top + height * 0.25, -1); above { cursor = place }
+        place, above := selectLineStep(ctx, x, top + height * 0.25, -1)
+        if cursor.group != 0 && (!above || place.group != cursor.group) { place, above = selectGroupStep(ctx, cursor, -1) }
+        if above { cursor = place }
     }
     if .DOWN in actions {
-        if place, below := selectLineStep(ctx, x, top + height * 0.75, 1); below { cursor = place }
+        place, below := selectLineStep(ctx, x, top + height * 0.75, 1)
+        if cursor.group != 0 && (!below || place.group != cursor.group) { place, below = selectGroupStep(ctx, cursor, 1) }
+        if below { cursor = place }
     }
+    // a row of a list that is declared and cut by the edge of its list (or not declared at all) is scrolled into view
+    if cursor.group != 0 && cursor != select.cursor { selectReveal(ctx, cursor) }
     select.cursor = cursor
+}
+
+// The place in the row before (-1) or after (1) the one of `cursor` in its list, in the same cell and as far in as it is, and the list scrolled to show it
+@(private)
+selectGroupStep :: proc(ctx: ^Context, cursor: SelectPoint, direction: int) -> (place: SelectPoint, moved: bool) {
+    slot: int = selectGroupSlot(&ctx.select, cursor.group)
+    if slot < 0 { return }
+    group: ^SelectGroup = &ctx.select.groups[slot]
+    row: int = int(cursor.element) + direction
+    if row < 0 || row >= group.count || group.row_text == nil { return }
+    text: string = group.row_text(group.user, row, int(cursor.cell))
+    place = {group = cursor.group, element = i32(row), offset = min(cursor.offset, i32(len(text))), cell = cursor.cell}
+    selectReveal(ctx, place)
+    return place, true
+}
+
+// Scrolls the list of a row so that the row is in view (when the list was given for it: UiSelectRows)
+@(private)
+selectReveal :: proc(ctx: ^Context, place: SelectPoint) {
+    slot: int = selectGroupSlot(&ctx.select, place.group)
+    if slot < 0 { return }
+    group: ^SelectGroup = &ctx.select.groups[slot]
+    if group.scroll == 0 || group.row_height <= 0 { return }
+    state: ^WidgetState = stateFind(ctx, group.scroll)
+    if state == nil || state.rect.w <= 0 { return }
+    top: f32 = f32(place.element) * group.row_height + state.scroll.y
+    if top < 0 {
+        state.scroll.y -= top
+    } else if top + group.row_height > state.rect.w {
+        state.scroll.y -= top + group.row_height - state.rect.w
+    }
 }

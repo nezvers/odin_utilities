@@ -350,7 +350,8 @@ rows in view (`UiVirtual`, `UiTable`) is told to the selection: `group := ui.UiS
 group, row) { ... }` around the text of every row it declares. A place in a row is the row and a byte of its text, so it stays right while the list scrolls, and the rows
 between the ends of the selection, in view or not, are copied from `row_text(user, row)` (the text of any row; valid until the end of the frame). A row may have several texts (a table:
 `cells` of `UiSelectRows`; the selectable texts of a row are its cells in the order they are declared) and `row_text(user, row, cell)` gives the text of one of them: a copy has
-a tab between the cells of a row and a new line between the rows. The arrows move the end only among the rows that are in view. A double click selects the word under the pointer, a third click the whole text (a label, or the
+a tab between the cells of a row and a new line between the rows. With the id of the scrolling list and the height of its rows (`UiSelectRows(..., cells, scroll, row_height)`) Shift with the up and down arrows also moves the end to rows that are
+out of view and scrolls the list to show it. A double click selects the word under the pointer, a third click the whole text (a label, or the
 paragraph with all of its runs and lines). Shift and a click extend the selection to there; the select all action takes every selectable text (while the pointer is over the
 text or a part is selected, and no text field is edited). The selection follows the pointer one frame behind. Shift with the arrows, Home or End moves its end by a letter, a line or to the end of its line (not while a text field is edited).
 

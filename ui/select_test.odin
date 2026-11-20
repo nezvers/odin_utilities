@@ -658,3 +658,111 @@ test_a_selection_over_the_cells_of_the_rows_of_a_list :: proc(t: ^testing.T) {
     testing.expect_value(t, text[len(text) - 8:], "19.c-xyz")
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(private = "file")
+RevealTest :: struct {
+    storage: Storage(256, 512, 128, 4096),
+    ctx: Context,
+    style: Style,
+    list: VirtualList,
+    lines: [100][16]u8,
+    list_id: Id,
+}
+
+@(private = "file")
+revealRow :: proc(test: ^RevealTest, row: int) -> string {
+    line: ^[16]u8 = &test.lines[row]
+    copy(line[:], "row 000 text")
+    line[4], line[5], line[6] = u8('0' + row / 100), u8('0' + row / 10 % 10), u8('0' + row % 10)
+    return string(line[:12])
+}
+
+@(private = "file")
+revealText :: proc(user: rawptr, row: int, cell: int) -> string {
+    return revealRow(cast(^RevealTest)user, row)
+}
+
+@(private = "file")
+revealFrame :: proc(test: ^RevealTest, input: Input) {
+    UiBegin(&test.ctx, input, 1.0 / 60, {1000, 700}, &test.style)
+    if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(500), {}}) {
+        test.list_id = UiId(&test.ctx, "list")
+        group: Id = UiSelectRows(&test.ctx, "rows", 100, revealText, test, 1, test.list_id, 20)
+        if UiTagged(&test.ctx, TEXT_SELECTABLE) {
+            if UiVirtual(&test.ctx, "list", &test.list, 100, 20, {Fixed(400), Fixed(100)}) {
+                for row in test.list.first ..< test.list.last {
+                    if UiVirtualRow(&test.ctx, &test.list, row) {
+                        if UiSelectRow(&test.ctx, group, row) { UiLabel(&test.ctx, revealRow(test, row)) }
+                    }
+                }
+            }
+        }
+    }
+    UiEnd(&test.ctx)
+}
+
+@(test)
+test_the_end_of_a_selection_moves_out_of_view_and_the_list_follows :: proc(t: ^testing.T) {
+    test: ^RevealTest = new(RevealTest)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    test.list = {selected = VIRTUAL_NONE, text = true}
+    UiInit(&test.ctx, &test.storage, measure)
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 4 { revealFrame(test, away) }
+    // a drag inside of the first row: the end is at its fourth letter
+    text := "row 000 text"
+    point: Vec2
+    for command in UiCommands(&test.ctx) {
+        info: DrawInfo = command.info
+        if command.kind == .DRAW && info.kind == .LABEL && info.text == text { point = {info.rect.x + 1, info.rect.y + info.rect.w * 0.5} }
+    }
+    revealFrame(test, {mouse_position = point})
+    revealFrame(test, {mouse_position = point, mouse_down = true, mouse_pressed = true})
+    revealFrame(test, {mouse_position = point + {4 * DEFAULT_METRICS.font_size * 0.5, 0}, mouse_down = true})
+    revealFrame(test, {mouse_position = point + {4 * DEFAULT_METRICS.font_size * 0.5, 0}, mouse_released = true})
+    revealFrame(test, away)
+    selected, _ := UiTextSelected(&test.ctx)
+    testing.expect_value(t, selected, "row ")
+    testing.expect_value(t, UiScrollGet(&test.ctx, test.list_id), f32(0))
+    // Shift and down, again and again: the end goes down the rows, one at a time, past the five that are in view, and the list scrolls after it
+    down :: proc(test: ^RevealTest) {
+        revealFrame(test, {mouse_position = {-100, -100}, actions = {.DOWN}, modifiers = {.SHIFT}})
+        revealFrame(test, {mouse_position = {-100, -100}})
+        revealFrame(test, {mouse_position = {-100, -100}})
+    }
+    for _ in 0 ..< 12 { down(test) }
+    selected, _ = UiTextSelected(&test.ctx)
+    lines: int
+    for character in transmute([]u8)selected {
+        if character == '\n' { lines += 1 }
+    }
+    testing.expect_value(t, lines, 12)
+    testing.expect(t, len(selected) > 12 * 12)
+    testing.expect_value(t, selected[len(selected) - 4:], "row ")                  // the end is in row 12, at the fourth letter as the start was
+    offset: f32 = UiScrollGet(&test.ctx, test.list_id)
+    testing.expect(t, offset >= 12 * 20 + 20 - 100 - 0.5, "the list scrolled so that row 12 is the last of the view")
+    testing.expect(t, test.list.first >= 8 && test.list.last > 12)
+    // the list is scrolled away from the end by the wheel: up and down still move the end by a row and bring it back
+    UiScrollSet(&test.ctx, test.list_id, 1000)
+    for _ in 0 ..< 4 { revealFrame(test, away) }
+    testing.expect(t, test.list.first > 40)
+    down(test)
+    selected, _ = UiTextSelected(&test.ctx)
+    lines = 0
+    for character in transmute([]u8)selected {
+        if character == '\n' { lines += 1 }
+    }
+    testing.expect_value(t, lines, 13)
+    testing.expect(t, test.list.last > 12 && test.list.first < 14, "the list came back to row 13")
+    // up goes back, the other way, and not past the first row
+    up :: proc(test: ^RevealTest) {
+        revealFrame(test, {mouse_position = {-100, -100}, actions = {.UP}, modifiers = {.SHIFT}})
+        revealFrame(test, {mouse_position = {-100, -100}})
+        revealFrame(test, {mouse_position = {-100, -100}})
+    }
+    for _ in 0 ..< 30 { up(test) }
+    selected, _ = UiTextSelected(&test.ctx)
+    testing.expect_value(t, selected, "row ")                // the end is in the first row again, at the fourth letter, and went no further up
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}

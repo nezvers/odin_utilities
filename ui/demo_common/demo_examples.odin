@@ -941,7 +941,8 @@ log_row_text :: proc(user: rawptr, row: int, cell: int) -> string {
 }
 
 big_log :: proc(c: ^ui.Context) {
-    group: ui.Id = ui.UiSelectRows(c, "##biglog", LOG_LINES, log_row_text, nil, 3)
+    // the table is told to the selection with its id and its row height: Shift and the arrows can take the end of the selection past the rows in view
+    group: ui.Id = ui.UiSelectRows(c, "##biglog", LOG_LINES, log_row_text, nil, 3, ui.UiId(c, "##biglog table"), 20)
     ui.UiPushTag(c, "flat")
     ui.ElementOpen(c, {layout = {size = {ui.Grow(), ui.Grow()}, padding = ui.PaddingAll(10)}, draw = {kind = .PANEL, name = "code"}})
     ui.UiPopTag(c)
@@ -2019,5 +2020,30 @@ script: []kit.Step = {
     kit.Wait(2),
     kit.Capture("examples_terminal_biglog"),
     kit.Wait(2),
+    // Shift + down, sixteen times: the end goes row by row past the last row in view and the table scrolls after it
+    kit.KeyDownStep(.LEFT_SHIFT),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.Tap(.DOWN),
+    kit.KeyUpStep(.LEFT_SHIFT),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        text, whole := ui.UiTextSelected(&state.app.ctx)
+        // from row 2 to row 52: 50 line breaks, and the table is scrolled to show row 52
+        return whole && count_lines(text) == 50 && contains(text, log_text(45)) && ui.UiScrollGet(&state.app.ctx, state.log_id) > 36 * 20 && shown(log_cell(52, 2), "")
+    }, "the end moved out of view row by row and the table followed it"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
 }
