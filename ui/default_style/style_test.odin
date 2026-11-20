@@ -117,6 +117,9 @@ Everything :: struct {
     plot: [4]f32,                   // kept here: a plot draws from its numbers when the frame is rendered
     open: bool,
     modal: bool,
+    chord: ui.Chord,
+    code: [64]u8,
+    code_length: int,
 }
 
 OPTIONS: [3]string = {"Low", "Medium", "High"}
@@ -131,6 +134,8 @@ everythingInit :: proc(e: ^Everything, theme: Theme, with_icons: bool) {
     e.date = {2026, 11, 12}
     e.minutes = 450
     e.plot = {1, 3, 2, 5}
+    e.chord = {{.CTRL}, 5}
+    e.code_length = copy(e.code[:], "total: int = 42 // sum")
     ui.ChartViewInit(&e.chart)
     e.points = {{0, 10}, {1, 30}, {2, 20}, {3, 45}, {4, 25}}
     e.series = {{name = "Sales", points = e.points[:]}}
@@ -210,6 +215,20 @@ everythingFrame :: proc(e: ^Everything, input: ui.Input = {mouse_position = {-10
         if ui.UiMenuBar(c) {
             if ui.UiMenu(c, "File") { ui.UiMenuItem(c, "New", "Ctrl+N") }
         }
+        // texts with styles inside, a shortcut, code with colors, bubbles
+        ui.UiMarkdown(c, "# Heading\n\nwith **strong**, *slanted*, `inline` and a [link](x)\n\n- entry\n\n> quoted\n\n| Head | Two |\n|---|---|\n| cell | 2 |\n\n```\nfenced\n```\n\n---")
+        ui.UiRichText(c, "rich", "a **bold** bubble text", 1, 200)
+        ui.UiShortcutField(c, "shortcut", &e.chord, {}, proc(key: u16) -> string { return "K" })
+        ui.UiTextArea(c, "code", e.code[:], &e.code_length, {ui.Fixed(300), ui.Fixed(60)}, false, false, ui.HighlightCode)
+        for mine in ([2]bool{false, true}) {
+            ui.UiPushTag(c, "bubble")
+            if mine { ui.UiPushTag(c, "mine") }
+            ui.ElementOpen(c, {layout = {size = {ui.Fit(), ui.Fit()}, padding = ui.PaddingAll(8)}, draw = {kind = .PANEL}})
+            if mine { ui.UiPopTag(c) }
+            ui.UiPopTag(c)
+            ui.UiLabel(c, "a message" if mine else "an answer")
+            ui.ElementClose(c)
+        }
     }
     if ui.UiModal(c, "dialog", &e.modal, {ui.Fixed(300), {}}) { ui.UiLabel(c, "in the dialog") }
     ui.UiEnd(c)
@@ -257,7 +276,9 @@ test_the_style_draws_every_widget_in_both_themes_with_and_without_icons :: proc(
                 // without icons the style still draws: arrows as triangles, check marks as lines, the file pictures as rectangles
                 testing.expect_value(t, recorder.icon_count, 0)
                 testing.expect(t, recorder.polygons > 10)
-                testing.expect_value(t, recorder.mono_texts, 0)
+                // no code face in the glue: numbers stay in the regular one, only the texts that ask for the code face by their tag are in it (the
+                // inline code and the fenced block of the Markdown view)
+                testing.expect_value(t, recorder.mono_texts, 2)
             }
         }
     }
@@ -386,4 +407,26 @@ test_an_area_is_drawn_in_its_own_theme :: proc(t: ^testing.T) {
     testing.expect_value(t, test.recorder.colors[1], THEME_DARK.text)
     testing.expect_value(t, test.recorder.colors[4], THEME_LIGHT.text_dim)
     testing.expect_value(t, ui.UiProblems(&test.ctx), ui.Problems{})
+}
+
+@(test)
+test_the_style_draws_the_texts_with_styles_inside :: proc(t: ^testing.T) {
+    for theme in ([2]Theme{THEME_DARK, THEME_LIGHT}) {
+        e: ^Everything = new(Everything)
+        defer free(e)
+        everythingInit(e, theme, true)
+        e.recorder.wanted = {"Heading", "strong", "slanted", "inline", "link", "entry", "quoted", "Head", "cell", "fenced", "bold", "Ctrl+K", "total: ", "42", "// sum", "a message"}
+        for _ in 0 ..< 3 { everythingFrame(e) }
+        recorder: ^Recorder = &e.recorder
+        testing.expect_value(t, ui.UiProblems(&e.ctx), ui.Problems{})
+        testing.expect(t, !recorder.bad_rect)
+        for wanted, i in recorder.wanted { testing.expectf(t, recorder.found[i], "%q is drawn", wanted) }
+        // a link in the accent, the words of code in their colors, a comment dim
+        testing.expect_value(t, recorder.colors[4], theme.accent)
+        testing.expect_value(t, recorder.colors[13], theme.warning)
+        testing.expect_value(t, recorder.colors[14], theme.text_dim)
+        testing.expect_value(t, recorder.colors[12], theme.text)
+        testing.expect_value(t, e.painter.face, Face.REGULAR)
+        testing.expect_value(t, e.painter.theme.text, theme.text)
+    }
 }
