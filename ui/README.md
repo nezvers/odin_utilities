@@ -331,7 +331,11 @@ clearing) is skipped: `UiAnsiText` shows a log. A program that moves the cursor 
 `ansi_screen.odin`: `screen := ui.AnsiScreenMake(cells[:], 80, 24)`, `ui.AnsiScreenWrite(&screen, bytes)` (in any pieces: an escape sequence or a letter may be cut between two
 writes), `ui.UiAnsiScreen(&ctx, &screen)`. The caller owns the cells (`ui.AnsiCell`: a letter and its style), nothing is allocated. Read: letters (UTF-8, one cell each),
 `\r \n \b \t`, the cursor moves (`A B C D E F G H f d s u`, ESC 7 and 8), erasing (`J K X P @`, an erased cell keeps the ground that is set), inserting and deleting lines
-(`L M`), reverse index, reset, and the styles of `UiAnsiText`. Modes, titles and character sets are skipped. No scrollback, no wide characters, no alternate screen;
+(`L M`), reverse index, reset, and the styles of `UiAnsiText`. Modes, titles and character sets are skipped. The lines that scroll off the top go to a history that the caller gives (`AnsiScreenMake(cells, columns, rows, history)`, a ring of rows: the oldest is lost
+when it is full, `ESC [ 3 J` empties it); the wheel over `UiAnsiScreen` scrolls the view back through it (`AnsiScreenScroll`, `AnsiScreenFollow`, `AnsiScreenViewCell`), and
+a view that is scrolled back stays on what it shows while lines arrive. A wide letter (`AnsiRuneWidth` is 2: Chinese, Japanese, Korean, emoji) takes two cells and is a text
+of its own, two cells wide, so that what follows it stays on the grid; a combining mark goes on the letter before it. Writing or erasing over half of a wide letter
+makes the other half an empty cell. The width table covers the ranges that matter, not all of Unicode; ambiguous widths are 1. No alternate screen;
 the cursor is a block over its cell. `AnsiScreenRow` gives the text of a row (a test, a copy). Selection of the cells is not done.
 
 ## Editing commands for a text

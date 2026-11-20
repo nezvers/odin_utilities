@@ -118,6 +118,9 @@ State :: struct {
     log_ring: [64][80]u8,       // the text of the rows that the selection asks for (it copies each at once)
     log_ring_at: int,
     screen_cells: [SCREEN_COLUMNS * SCREEN_ROWS]ui.AnsiCell,
+    screen_history: [SCREEN_COLUMNS * 100]ui.AnsiCell,       // the lines that scroll off the top: a hundred of them
+    logged: int,
+    lines_id: ui.Id,
     screen: ui.AnsiScreen,
     ticks: int,
     tick_id: ui.Id,
@@ -184,7 +187,8 @@ init :: proc(ctx: ^kit.Context) {
     ui.TableInit(&state.log_table, {{name = "Line", width = 80, unsortable = true}, {name = "Level", width = 70, unsortable = true}, {name = "Message", width = 300, unsortable = true}})
     state.log_table.fill_last = true
     state.log_table.list.text = true                        // the rows are read: the pointer is for the selection of text
-    state.screen = ui.AnsiScreenMake(state.screen_cells[:], SCREEN_COLUMNS, SCREEN_ROWS)
+    state.screen = ui.AnsiScreenMake(state.screen_cells[:], SCREEN_COLUMNS, SCREEN_ROWS, state.screen_history[:])
+    state.logged = 0
     ui.AnsiScreenWrite(&state.screen, transmute([]u8)string(SCREEN_START))
     screen_progress()
     for line in TERM_SEED { term_add(line) }
@@ -996,6 +1000,18 @@ SCREEN_START :: "\x1b[2J\x1b[H\x1b[1;97;44m top - 3 tasks, load 0.42\x1b[K\x1b[0
     "  103\x1b[12Gshell\x1b[32G\x1b[2m  0%\x1b[0m\x1b[42G  8M\r\n" +
     "\x1b[3;12H\x1b[1mcompiler\x1b[0m"
 
+// Six more lines at the bottom of the screen, as a program that logs writes them: the top of the screen scrolls into the history, the wheel over the screen
+// scrolls back to it
+screen_lines :: proc() {
+    bytes: [256]u8
+    count: int = copy(bytes[:], "\x1b[11;1H")
+    for _ in 0 ..< 6 {
+        state.logged += 1
+        count += len(fmt.bprintf(bytes[count:], "\r\nlogged line %d", state.logged))
+    }
+    ui.AnsiScreenWrite(&state.screen, bytes[:count])
+}
+
 // The progress line of the screen: put at the row of the bottom, the old one erased, `ticks` of 20 steps done
 screen_progress :: proc() {
     line: [80]u8
@@ -1024,6 +1040,8 @@ terminal :: proc(c: ^ui.Context) {
                     state.ticks = min(state.ticks + 1, 20)
                     screen_progress()
                 }
+                state.lines_id = ui.UiId(c, "Lines##screen")
+                if ui.UiButton(c, "Lines##screen") { screen_lines() }
             }
         }
         ui.ElementClose(c)
@@ -1974,6 +1992,35 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { state.app.ctx.time = 0; return true }, "the cursor shows"),
     kit.Capture("examples_terminal_screen"),
     kit.Wait(2),
+    // Lines logs twelve lines: the header and the rest of the page scroll into the history; the wheel over the screen goes back to them, and forward again
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.lines_id != 0 && ui_element_center(state.lines_id) }, "the Lines button"),
+    kit.ClickAt(&target),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.screen.history_count == 12 && shown("logged line 12", "") && !shown(" top - 3 tasks, load 0.42", "strong") }, "the header scrolled off the top"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return text_target("logged line 12", 0.5) }, "a place on the screen"),
+    kit.MoveAt(&target),
+    kit.Wait(2),
+    kit.Scroll(1),
+    kit.Wait(2),
+    kit.Scroll(1),
+    kit.Wait(2),
+    kit.Scroll(1),
+    kit.Wait(2),
+    kit.Scroll(1),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.screen.back == 12 && shown(" top - 3 tasks, load 0.42", "strong") && !shown("logged line 12", "") }, "the wheel scrolled back to the header"),
+    kit.Capture("examples_terminal_history"),
+    kit.Wait(2),
+    kit.Scroll(-1),
+    kit.Wait(2),
+    kit.Scroll(-1),
+    kit.Wait(2),
+    kit.Scroll(-1),
+    kit.Wait(2),
+    kit.Scroll(-1),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.screen.back == 0 && shown("logged line 12", "") }, "and forward to the live screen"),
     // the big log: a drag over three rows, the list scrolls away, Shift + click extends the selection to a row that was not there: the rows between are copied
     kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.SEGMENT, "Big log") }, "the Big log segment"),
     kit.ClickAt(&target),

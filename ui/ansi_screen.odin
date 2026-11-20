@@ -3,15 +3,18 @@ package ui
 import "core:unicode/utf8"
 
 // A screen of cells for programs that move the cursor (a pager, a progress bar that redraws its line, a full screen tool): the caller gives the cells, bytes go in
-// with `AnsiScreenWrite` in any pieces (an escape sequence or a letter may be cut between two writes), `UiAnsiScreen` draws the grid. Nothing is allocated; there is no
-// scrollback (a line that scrolls off the top is gone), the grid never grows.
+// with `AnsiScreenWrite` in any pieces (an escape sequence or a letter may be cut between two writes), `UiAnsiScreen` draws the grid. Nothing is allocated; the grid never
+// grows. The lines that scroll off the top go to a history the caller gives (a ring of rows: the oldest is lost when it is full); the view is scrolled back by the wheel
+// over the screen or by `AnsiScreenScroll`.
 //
 //     cells: [24 * 80]ui.AnsiCell
-//     screen := ui.AnsiScreenMake(cells[:], 80, 24)
+//     history: [1000 * 80]ui.AnsiCell                           // optional
+//     screen := ui.AnsiScreenMake(cells[:], 80, 24, history[:])
 //     ui.AnsiScreenWrite(&screen, output)
 //     ui.UiAnsiScreen(&ctx, &screen)
 //
-// What is read: the printable characters (UTF-8, one cell each: wide characters are not handled), \r \n \b \t, the cursor moves (A B C D E F G H f d, s u, ESC 7 and
+// What is read: the printable characters (UTF-8; a wide letter (Chinese, Japanese, Korean, emoji) takes two cells, a combining mark goes on the cell before it: see
+// `AnsiRuneWidth`), \r \n \b \t, the cursor moves (A B C D E F G H f d, s u, ESC 7 and
 // ESC 8), erasing (J, K, X, P, @), inserting and deleting lines (L, M), reverse index (ESC M), reset (ESC c), and the same SGR styles as UiAnsiText. Modes (the
 // alternate screen, the hidden cursor, the mouse) and every other sequence are skipped.
 //
@@ -19,7 +22,10 @@ import "core:unicode/utf8"
 
 AnsiCell :: struct {
     character: rune,            // 0: empty
+    mark: rune,                 // a combining mark that follows the character (0: none)
     style: AnsiState,
+    wide: bool,                 // the character takes this cell and the next one, which is its continuation
+    continuation: bool,         // the second cell of a wide character (it has no character of its own)
 }
 
 AnsiScreen :: struct {
@@ -38,12 +44,19 @@ AnsiScreen :: struct {
     letter: [4]u8,              // a UTF-8 letter that is not whole yet
     letter_length: int,
     letter_needed: int,
+    history: []AnsiCell,        // the lines that scrolled off the top: a ring of history_rows rows
+    history_rows: int,          // how many rows the ring has room for (0: no history)
+    history_count: int,         // how many of them are filled
+    history_head: int,          // the row of the ring the next line goes to
+    back: int,                  // the rows the view is scrolled back into the history (0: the live screen)
 }
 
-// A screen over `cells` (at least columns * rows of them), cleared
-AnsiScreenMake :: proc(cells: []AnsiCell, columns: int, rows: int) -> AnsiScreen {
+// A screen over `cells` (at least columns * rows of them), cleared. `history`: room for the lines that scroll off the top, as many rows as it has room for (nil: none).
+AnsiScreenMake :: proc(cells: []AnsiCell, columns: int, rows: int, history: []AnsiCell = nil) -> AnsiScreen {
     assert(columns > 0 && rows > 0 && len(cells) >= columns * rows, "a screen needs its cells")
     screen: AnsiScreen = {cells = cells[:columns * rows], columns = columns, rows = rows}
+    screen.history_rows = len(history) / columns
+    screen.history = history[:screen.history_rows * columns]
     AnsiScreenClear(&screen)
     return screen
 }
@@ -55,6 +68,7 @@ AnsiScreenClear :: proc(screen: ^AnsiScreen) {
     screen.style, screen.saved_style = {}, {}
     screen.saved_column, screen.saved_row = 0, 0
     screen.sequence_length, screen.letter_length = 0, 0
+    screen.history_count, screen.history_head, screen.back = 0, 0, 0
 }
 
 @(private)
@@ -94,24 +108,88 @@ screenScroll :: proc "contextless" (screen: ^AnsiScreen, top: int, bottom: int, 
     }
 }
 
+// The lines that scroll off the top are kept (the oldest of a full history is lost); a view that is scrolled back stays on what it shows
+@(private)
+screenHistoryPush :: proc "contextless" (screen: ^AnsiScreen) {
+    if screen.history_rows == 0 { return }
+    columns: int = screen.columns
+    copy(screen.history[screen.history_head * columns:(screen.history_head + 1) * columns], screen.cells[:columns])
+    screen.history_head = (screen.history_head + 1) % screen.history_rows
+    screen.history_count = min(screen.history_count + 1, screen.history_rows)
+    if screen.back > 0 { screen.back = min(screen.back + 1, screen.history_count) }
+}
+
 @(private)
 screenLineFeed :: proc "contextless" (screen: ^AnsiScreen) {
     if screen.row == screen.rows - 1 {
+        screenHistoryPush(screen)
         screenScroll(screen, 0, screen.rows - 1, 1)
     } else {
         screen.row += 1
     }
 }
 
+// How many cells a character takes on the screen: 0 for a combining mark (it goes on the cell before), 2 for a wide one (Hangul, Chinese and Japanese characters,
+// fullwidth forms, emoji), else 1. A table of the ranges that matter, not all of Unicode.
+AnsiRuneWidth :: proc "contextless" (character: rune) -> int {
+    if character < 0x300 { return 1 }
+    switch character {
+    case 0x300 ..= 0x36F, 0x483 ..= 0x489, 0x591 ..= 0x5BD, 0x610 ..= 0x61A, 0x64B ..= 0x65F, 0x1AB0 ..= 0x1AFF, 0x1DC0 ..= 0x1DFF, 0x200B ..= 0x200F, 0x20D0 ..= 0x20FF,
+         0xFE00 ..= 0xFE0F, 0xFE20 ..= 0xFE2F, 0xE0100 ..= 0xE01EF:
+        return 0
+    case 0x1100 ..= 0x115F, 0x2E80 ..= 0x303E, 0x3041 ..= 0x33FF, 0x3400 ..= 0x4DBF, 0x4E00 ..= 0x9FFF, 0xA000 ..= 0xA4CF, 0xA960 ..= 0xA97F, 0xAC00 ..= 0xD7A3,
+         0xF900 ..= 0xFAFF, 0xFE30 ..= 0xFE6F, 0xFF00 ..= 0xFF60, 0xFFE0 ..= 0xFFE6, 0x1F300 ..= 0x1F64F, 0x1F680 ..= 0x1F6FF, 0x1F900 ..= 0x1F9FF, 0x1FA70 ..= 0x1FAFF,
+         0x20000 ..= 0x3FFFD:
+        return 2
+    }
+    return 1
+}
+
+// A cell that is the half of a wide character, or has one, loses its other half when it is written over or cut
+@(private)
+screenBreakPair :: proc "contextless" (screen: ^AnsiScreen, column: int, row: int) {
+    cell: ^AnsiCell = screenCell(screen, column, row)
+    if cell.continuation && column > 0 {
+        previous: ^AnsiCell = screenCell(screen, column - 1, row)
+        if previous.wide { previous^ = {style = {background = previous.style.background}} }
+    }
+    if cell.wide && column + 1 < screen.columns {
+        next: ^AnsiCell = screenCell(screen, column + 1, row)
+        if next.continuation { next^ = {style = {background = next.style.background}} }
+    }
+}
+
+// A row after something cut it (erasing, deleting, inserting): a wide character without its other half is an empty cell
+@(private)
+screenFixRow :: proc "contextless" (screen: ^AnsiScreen, row: int) {
+    for column in 0 ..< screen.columns {
+        cell: ^AnsiCell = screenCell(screen, column, row)
+        if cell.continuation && (column == 0 || !screenCell(screen, column - 1, row).wide) { cell^ = {style = {background = cell.style.background}} }
+        if cell.wide && (column == screen.columns - 1 || !screenCell(screen, column + 1, row).continuation) { cell^ = {style = {background = cell.style.background}} }
+    }
+}
+
 @(private)
 screenPut :: proc "contextless" (screen: ^AnsiScreen, character: rune) {
-    if screen.column >= screen.columns {
-        // the cursor stood after the last cell: the letter starts the next line
+    width: int = AnsiRuneWidth(character)
+    if width == 0 {
+        // a combining mark: it goes on the letter before the cursor
+        column: int = min(screen.column, screen.columns) - 1
+        if column < 0 { return }
+        cell: ^AnsiCell = screenCell(screen, column, screen.row)
+        if cell.continuation && column > 0 { cell = screenCell(screen, column - 1, screen.row) }
+        if cell.character != 0 && cell.mark == 0 { cell.mark = character }
+        return
+    }
+    if screen.column + width > screen.columns {
+        // the cursor stood after the last cell, or a wide letter does not fit in the one that is left (it stays empty): the letter starts the next line
         screen.column = 0
         screenLineFeed(screen)
     }
-    screenCell(screen, screen.column, screen.row)^ = {character = character, style = screen.style}
-    screen.column += 1
+    for offset in 0 ..< width { screenBreakPair(screen, screen.column + offset, screen.row) }
+    screenCell(screen, screen.column, screen.row)^ = {character = character, style = screen.style, wide = width == 2}
+    if width == 2 { screenCell(screen, screen.column + 1, screen.row)^ = {style = screen.style, continuation = true} }
+    screen.column += width
 }
 
 @(private)
@@ -170,8 +248,12 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
         switch mode {
         case 0: screenClearRange(screen, screen.row, column, rows, 0)
         case 1: screenClearRange(screen, 0, 0, screen.row, 0); screenClearRange(screen, screen.row, 0, screen.row, min(column + 1, columns))
-        case 2, 3: screenClearRange(screen, 0, 0, rows, 0)
+        case 2: screenClearRange(screen, 0, 0, rows, 0)
+        case 3:
+            screenClearRange(screen, 0, 0, rows, 0)
+            screen.history_count, screen.history_head, screen.back = 0, 0, 0       // the history too
         }
+        for row in 0 ..< rows { screenFixRow(screen, row) }
     case 'K':
         mode: int = parameters[0] if len(parameters) > 0 else 0
         column: int = min(screen.column, columns)
@@ -180,9 +262,11 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
         case 1: screenClearRange(screen, screen.row, 0, screen.row, min(column + 1, columns))
         case 2: screenClearRange(screen, screen.row, 0, screen.row, columns)
         }
+        screenFixRow(screen, screen.row)
     case 'X':
         column: int = min(screen.column, columns)
         screenClearRange(screen, screen.row, column, screen.row, min(column + screenParameter(parameters, 0, 1), columns))
+        screenFixRow(screen, screen.row)
     case 'P':
         // delete letters: the rest of the row moves left
         column: int = min(screen.column, columns)
@@ -191,6 +275,7 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
         copy(row[column:columns - amount], row[column + amount:columns])
         blank: AnsiCell = screenBlank(screen)
         for i in columns - amount ..< columns { row[i] = blank }
+        screenFixRow(screen, screen.row)
     case '@':
         // insert blanks: the rest of the row moves right
         column: int = min(screen.column, columns)
@@ -199,6 +284,7 @@ screenSequence :: proc(screen: ^AnsiScreen, text: []u8) {
         copy(row[column + amount:columns], row[column:columns - amount])
         blank: AnsiCell = screenBlank(screen)
         for i in column ..< column + amount { row[i] = blank }
+        screenFixRow(screen, screen.row)
     case 'L': screenScroll(screen, screen.row, rows - 1, -screenParameter(parameters, 0, 1))
     case 'M': screenScroll(screen, screen.row, rows - 1, screenParameter(parameters, 0, 1))
     }
@@ -294,20 +380,54 @@ AnsiScreenRow :: proc(screen: ^AnsiScreen, row: int, out: []u8) -> string {
         if screenCell(screen, column, row).character != 0 { last = column }
     }
     for column in 0 ..= last {
-        character: rune = screenCell(screen, column, row).character
+        cell: AnsiCell = screenCell(screen, column, row)^
+        if cell.continuation { continue }                     // the second half of a wide letter
+        character: rune = cell.character
         if character == 0 { character = ' ' }
         encoded, width := utf8.encode_rune(character)
         if count + width > len(out) { break }
         copy(out[count:], encoded[:width])
         count += width
+        if cell.mark != 0 {
+            encoded, width = utf8.encode_rune(cell.mark)
+            if count + width > len(out) { break }
+            copy(out[count:], encoded[:width])
+            count += width
+        }
     }
     return string(out[:count])
 }
 
+// How many lines of history there are to scroll back through
+AnsiScreenHistory :: proc(screen: ^AnsiScreen) -> int {
+    return screen.history_count
+}
+
+// Scrolls the view back into the history (`rows` > 0) or forward (< 0), as far as there are lines. UiAnsiScreen does it for the wheel.
+AnsiScreenScroll :: proc(screen: ^AnsiScreen, rows: int) {
+    screen.back = clamp(screen.back + rows, 0, screen.history_count)
+}
+
+// The view is the live screen again
+AnsiScreenFollow :: proc(screen: ^AnsiScreen) {
+    screen.back = 0
+}
+
+// The cell of the view (the history and the screen below it, `back` rows up from the live screen): `row` counts from the top of the view
+AnsiScreenViewCell :: proc(screen: ^AnsiScreen, column: int, row: int) -> ^AnsiCell {
+    absolute: int = screen.history_count - screen.back + row
+    if absolute < screen.history_count {
+        ring: int = (screen.history_head + screen.history_rows - screen.history_count + absolute) % screen.history_rows
+        return &screen.history[ring * screen.columns + column]
+    }
+    return screenCell(screen, column, absolute - screen.history_count)
+}
+
 // The screen as texts in the code face: a row at a time, the cells of one style in a row are one text, the empty cells take their room, a ground is a FILL behind its
-// cells. The cursor is drawn as a block over its cell while `cursor` is true (a program that blinks it passes the phase). The text lives in the text memory of the frame:
-// a screen of 24 x 80 needs about 2 KB of it.
-UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true) {
+// cells. The cursor is drawn as a block over its cell while `cursor` is true (a program that blinks it passes the phase) and the view is the live screen. The wheel over
+// the screen scrolls the view through the history. A wide letter is a text of its own, two cells wide, so that what follows it stays on the grid. The text lives in the
+// text memory of the frame: a screen of 24 x 80 needs about 2 KB of it. `name` makes the id of the element (the wheel needs it): two screens in a container need two names.
+UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, name: string = "ansi screen") {
     metrics: ^Metrics = &ctx.style.metrics
     // the size of a cell: the code face's letter and the height of a line
     outer_tags: [DRAW_TAGS]Id = ctx.measure_tags
@@ -316,37 +436,55 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true) {
     for i in 0 ..< min(ctx.tag_count, DRAW_TAGS) { ctx.measure_tags[i] = ctx.tag_stack[ctx.tag_count - 1 - i] }
     cell: Vec2 = measureText(ctx, "M", metrics.font_size)
     ctx.measure_tags = outer_tags
-    ElementOpen(ctx, {layout = {size = {Fixed(cell.x * f32(screen.columns)), Fixed(cell.y * f32(screen.rows))}, direction = .TOP_TO_BOTTOM}})
+    id: Id = UiId(ctx, name)
+    _ = stateGet(ctx, id)
+    if ctx.hover_scroll == id && ctx.input.wheel.y != 0 {
+        steps: int = int(ctx.input.wheel.y * 3)
+        if steps == 0 { steps = 1 if ctx.input.wheel.y > 0 else -1 }
+        AnsiScreenScroll(screen, steps)
+    }
+    ElementOpen(ctx, {id = id, layout = {size = {Fixed(cell.x * f32(screen.columns)), Fixed(cell.y * f32(screen.rows))}, direction = .TOP_TO_BOTTOM}, hit = {.SCROLL}})
     for row in 0 ..< screen.rows {
         ElementOpen(ctx, {layout = {size = {Grow(), Fixed(cell.y)}, direction = .LEFT_TO_RIGHT}})
         // the end of the row: after the last cell that has anything, the empty cells with no ground are not declared
         end: int = screen.columns
         for end > 0 {
-            last: ^AnsiCell = screenCell(screen, end - 1, row)
-            if last.character != 0 || last.style.background.a != 0 { break }
+            last: ^AnsiCell = AnsiScreenViewCell(screen, end - 1, row)
+            if last.character != 0 || last.continuation || last.style.background.a != 0 { break }
             end -= 1
         }
         column: int
         for column < end {
-            first: AnsiCell = screenCell(screen, column, row)^
+            first: AnsiCell = AnsiScreenViewCell(screen, column, row)^
             stop: int = column + 1
-            for stop < end {
-                next: AnsiCell = screenCell(screen, stop, row)^
-                if next.style != first.style { break }
-                stop += 1
+            if first.wide && column + 1 < end {
+                stop = column + 2                                           // a wide letter and its continuation: a run of its own
+            } else {
+                for stop < end {
+                    next: AnsiCell = AnsiScreenViewCell(screen, stop, row)^
+                    if next.style != first.style || next.wide { break }
+                    stop += 1
+                }
             }
-            // the cells as one text; empty ones are spaces
+            // the cells as one text; empty ones are spaces, the second half of a wide letter has no text, a mark follows its letter
             start: int = ctx.text_used
             for at in column ..< stop {
-                character: rune = screenCell(screen, at, row).character
+                cell: AnsiCell = AnsiScreenViewCell(screen, at, row)^
+                if cell.continuation && at > column { continue }
+                character: rune = cell.character
                 if character == 0 { character = ' ' }
                 encoded, width := utf8.encode_rune(character)
-                if ctx.text_used + width > len(ctx.text_buffer) {
+                extra, extra_width := utf8.encode_rune(cell.mark)
+                if ctx.text_used + width + (extra_width if cell.mark != 0 else 0) > len(ctx.text_buffer) {
                     ctx.problems += {.TEXT_FULL}
                     break
                 }
                 copy(ctx.text_buffer[ctx.text_used:], encoded[:width])
                 ctx.text_used += width
+                if cell.mark != 0 {
+                    copy(ctx.text_buffer[ctx.text_used:], extra[:extra_width])
+                    ctx.text_used += extra_width
+                }
             }
             run: string = string(ctx.text_buffer[start:ctx.text_used])
             style: AnsiState = first.style
@@ -381,7 +519,7 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true) {
         }
         ElementClose(ctx)
     }
-    if cursor {
+    if cursor && screen.back == 0 {
         column: int = min(screen.column, screen.columns - 1)
         ElementOpen(ctx, {
             layout = {size = {Fixed(cell.x), Fixed(cell.y)}},
