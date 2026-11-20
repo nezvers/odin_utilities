@@ -1,0 +1,158 @@
+package simd_utils
+
+// What this machine can run. `CpuGet()` is detected once at start up; `CpuFromFeatures` makes the same record from a list of features (the tests of a ladder, a program that
+// reads the features of another machine from a file).
+
+// What CPUID reports, with the operating system's part applied: AVX and the ones above need the system to save the wide registers (XGETBV), so a feature that the CPU
+// has but the system does not keep safe is not in the set.
+Feature :: enum u8 {
+    MMX,
+    SSE,
+    SSE2,
+    SSE3,
+    SSSE3,
+    SSE41,
+    SSE42,
+    POPCNT,
+    AVX,
+    F16C,
+    FMA,
+    AVX2,
+    BMI1,
+    BMI2,
+    AVX512F,
+    AVX512DQ,
+    AVX512BW,
+    AVX512VL,
+    AVX512CD,
+    AVX512VNNI,
+    AVX512VBMI,
+    NEON,
+    SIMD128,
+}
+Features :: bit_set[Feature; u32]
+
+Cpu :: struct {
+    features: Features,
+    level: Level,                   // the best level of the ladder that this machine runs
+    forced: Level,                  // what the program or the environment limited it to (`level` when nothing did)
+    was_forced: bool,
+    family: Family,
+    vendor: [12]u8,                 // "GenuineIntel", "AuthenticAMD" ... (x86)
+    brand: [48]u8,                  // "AMD Ryzen 9 9950X 16-Core Processor" (x86, zero padded)
+}
+
+// The ladder of x86: every step needs the one below and its own features. AVX512 asks for F, DQ, BW and VL (Skylake-X and later, Zen 4 and later): Knights Landing, which has
+// F, CD, ER and PF only, stays at AVX2.
+LevelFromFeatures :: proc "contextless" (features: Features) -> Level {
+    if .NEON in features { return .NEON }
+    if .SIMD128 in features { return .SIMD128 }
+    if .SSE2 not_in features { return .SCALAR }
+    level: Level = .SSE2
+    if .SSE3 not_in features { return level }
+    level = .SSE3
+    if .SSSE3 not_in features { return level }
+    level = .SSSE3
+    if .SSE41 not_in features { return level }
+    level = .SSE41
+    if .SSE42 not_in features { return level }
+    level = .SSE42
+    if .AVX not_in features { return level }
+    level = .AVX
+    if .AVX2 not_in features || .FMA not_in features { return level }
+    level = .AVX2
+    wide: Features = {.AVX512F, .AVX512DQ, .AVX512BW, .AVX512VL}
+    if wide <= features { level = .AVX512 }
+    return level
+}
+
+CpuFromFeatures :: proc "contextless" (features: Features) -> Cpu {
+    level: Level = LevelFromFeatures(features)
+    return {features = features, level = level, forced = level, family = LevelFamily(level)}
+}
+
+@(private) cpu_global: Cpu
+@(private) cpu_ready: bool
+
+// The machine the program runs on, found on first use (and at start up)
+CpuGet :: proc "contextless" () -> ^Cpu {
+    if !cpu_ready { cpuInit() }
+    return &cpu_global
+}
+
+@(init, private)
+cpuInitAtStart :: proc "contextless" () {
+    cpuInit()
+}
+
+@(private)
+cpuInit :: proc "contextless" () {
+    cpu_global = cpuDetect()
+    cpu_global.forced = cpu_global.level
+    cpuApplyEnvironment(&cpu_global)
+    cpu_ready = true
+}
+
+// The best level the machine runs, before any limit
+CpuBest :: proc "contextless" () -> Level {
+    return CpuGet().level
+}
+
+// The level programs use: the best, unless limited by `SIMD_LEVEL` or `CpuForce`
+CpuLevel :: proc "contextless" () -> Level {
+    cpu: ^Cpu = CpuGet()
+    return cpu.forced
+}
+
+// Limits every client made or resolved afterwards to `level` (it can only lower: a level the machine does not have is ignored, SCALAR is always allowed). For a program that
+// knows a level is broken on its machine, and for measuring one level of a kernel set on a machine that has more. Not for the audio thread.
+CpuForce :: proc "contextless" (level: Level) {
+    cpu: ^Cpu = CpuGet()
+    cpu.forced = LevelClamp(level, cpu.level)
+    cpu.was_forced = cpu.forced != cpu.level
+}
+
+CpuBrand :: proc "contextless" (cpu: ^Cpu) -> string {
+    count: int
+    for count < len(cpu.brand) && cpu.brand[count] != 0 { count += 1 }
+    // the brand string is padded with spaces on one side or the other, depending on the CPU
+    start: int
+    for start < count && cpu.brand[start] == ' ' { start += 1 }
+    for count > start && cpu.brand[count - 1] == ' ' { count -= 1 }
+    return string(cpu.brand[start:count])
+}
+
+CpuVendor :: proc "contextless" (cpu: ^Cpu) -> string {
+    count: int
+    for count < len(cpu.vendor) && cpu.vendor[count] != 0 { count += 1 }
+    return string(cpu.vendor[:count])
+}
+
+FeatureName :: proc "contextless" (feature: Feature) -> string {
+    switch feature {
+    case .MMX: return "MMX"
+    case .SSE: return "SSE"
+    case .SSE2: return "SSE2"
+    case .SSE3: return "SSE3"
+    case .SSSE3: return "SSSE3"
+    case .SSE41: return "SSE4.1"
+    case .SSE42: return "SSE4.2"
+    case .POPCNT: return "POPCNT"
+    case .AVX: return "AVX"
+    case .F16C: return "F16C"
+    case .FMA: return "FMA"
+    case .AVX2: return "AVX2"
+    case .BMI1: return "BMI1"
+    case .BMI2: return "BMI2"
+    case .AVX512F: return "AVX512F"
+    case .AVX512DQ: return "AVX512DQ"
+    case .AVX512BW: return "AVX512BW"
+    case .AVX512VL: return "AVX512VL"
+    case .AVX512CD: return "AVX512CD"
+    case .AVX512VNNI: return "AVX512VNNI"
+    case .AVX512VBMI: return "AVX512VBMI"
+    case .NEON: return "NEON"
+    case .SIMD128: return "SIMD128"
+    }
+    return ""
+}

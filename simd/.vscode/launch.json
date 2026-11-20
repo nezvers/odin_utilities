@@ -1,0 +1,44 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Tests",
+            "request": "launch",
+            "preLaunchTask": "Build Tests",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+
+            // Default for Linux
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_test.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_test.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_test.bin"
+            }
+        },
+        {
+            "name": "Run info (--bench)",
+            "request": "launch",
+            "preLaunchTask": "Build Info",
+            "args": ["--bench"],
+            "cwd": "${workspaceFolder}",
+
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_info.exe",
+
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_info.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_info.bin"
+            }
+        }
+    ]
+}
