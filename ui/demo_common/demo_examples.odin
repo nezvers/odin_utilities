@@ -1460,7 +1460,7 @@ draw :: proc(ctx: ^kit.Context) {
         draw = {kind = .MENU_BAR},
     })
     ui.UiTitle(c, "Baldr examples", 1.3)
-    ui.UiTabBar(c, "##examples", EXAMPLES[:], &state.example)
+    ui.UiDropdown(c, "##examples", EXAMPLES[:], &state.example, {ui.Fixed(220), {}})
     ui.ElementClose(c)
     switch state.example {
     case 0:
@@ -1609,8 +1609,13 @@ aim :: proc(id: ui.Id) -> bool {
     return found && rect.z > 0
 }
 
+// The list of examples is a dropdown: the box opens it, `tab` is the option of an example in the open list
+tabBox :: proc() -> bool {
+    return aim(ui.UiId(&state.app.ctx, "##examples"))
+}
+
 tab :: proc(index: u32) -> bool {
-    return aim(ui.IdFromIndex(index, ui.UiId(&state.app.ctx, "##examples")))
+    return aim(ui.IdFromIndex(index, ui.IdFromString("popup", ui.UiId(&state.app.ctx, "##examples"))))
 }
 
 script: []kit.Step = {
@@ -1665,6 +1670,9 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.binds[0][0].code == u16(kit.Key.A) && state.binds[3][0].code == u16(kit.Key.J) }, "Defaults bring the first inputs back"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(1) }, "the Hello tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
@@ -1689,6 +1697,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.count == 0 }, "Reset sets the count to 0"),
 
     // controls: a check box, the switch (the theme of the page follows it), a slider, Reset
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(2) }, "the Controls tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
@@ -1722,6 +1733,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.dark && !state.remember && state.volume == 0.4 }, "Reset puts every value back"),
 
     // scroll: a pick, then the wheel
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(3) }, "the Scroll tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
@@ -1738,6 +1752,9 @@ script: []kit.Step = {
     kit.Wait(2),
 
     // toasts: one goes with a click, the button brings it back
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(4) }, "the Toasts tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
@@ -1753,6 +1770,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.toasts == [3]bool{true, true, true} }, "the toasts are back"),
 
     // theme lab: the page is in the blue of the style, a tile makes it green, the other mode makes it light
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(5) }, "the Theme tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
@@ -1781,6 +1801,9 @@ script: []kit.Step = {
     kit.Wait(2),
 
     // overlays: the menu from its button, the card and its cross, the dialog
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         state.mode, state.accent = 0, ACCENTS[3]
         return tab(6)
@@ -1828,6 +1851,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !state.confirm && state.deleted == 1 }, "Delete in the dialog deletes and closes it"),
 
     // charts: a point of the line is picked by a click and the arrows walk on, then the bars
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(7) }, "the Charts tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
@@ -1858,6 +1884,9 @@ script: []kit.Step = {
     kit.Wait(2),
 
     // jobs: all three start, the small one is done at once, the page takes clicks meanwhile, the big one is cancelled
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(8) }, "the Jobs tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
@@ -1896,6 +1925,9 @@ script: []kit.Step = {
     kit.Wait(2),
 
     // markdown: the note is shown as titles, a list and a code block; what is typed into the source is on the right at once
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(9) }, "the Markdown tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
@@ -1953,6 +1985,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.arrived == -1 && shown("the README", "link") && ui.UiProblems(&state.app.ctx) == ui.Problems{} }, "the whole note arrived"),
 
     // chat: bubbles with styles inside, the list at its newest message; a sent message and its answer are added and the list follows
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(10) }, "the Chat tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
@@ -2008,6 +2043,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.draft[:state.draft_length]) == "@Ada " && state.message_count == len(CHAT_SEED) + 2 }, "the name is in the field, nothing was sent"),
 
     // reading: the page has a theme of its own inside of the window; another paper and the next page
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(11) }, "the Reading tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
@@ -2028,6 +2066,9 @@ script: []kit.Step = {
     kit.Wait(2),
 
     // shortcuts: a row listens after a click and takes the next key; a shortcut another row had is taken from it; Backspace takes one away
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(12) }, "the Keys tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
@@ -2058,6 +2099,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.chords[0] == ui.Chord{} && state.chord_changes == 3 }, "Backspace takes the shortcut away"),
 
     // code: the words of the rows are drawn by what they are; what is typed is colored in the same frame
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(13) }, "the Code tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
@@ -2080,6 +2124,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shown("// typed", ui.SYNTAX_COMMENT) }, "what is typed is a comment at once"),
 
     // custom: a star rating made in the demo; a click on a star rates, the arrows change it while it has the focus
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(14) }, "the Custom tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
@@ -2105,6 +2152,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.ratings[1] == 3 && state.ratings[0] == 3 }, "the other arrow takes stars away"),
 
     // mentions: the list opens at the @, the letters narrow it, the arrow chooses, Enter writes the name in
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(15) }, "the Mentions tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
@@ -2133,6 +2183,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !drawn(.DROPDOWN_ITEM, "render.odin") && shown("1 mentioned, the last one: richtext.odin", "dim") }, "the list is closed"),
 
     // spring: a file is dragged over a folder and held there: the folder opens under the drag; let go on the empty part and the file is in that folder
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(16) }, "the Spring tab is in the bar"),
     kit.ClickAt(&target),
     kit.Wait(4),
@@ -2178,6 +2231,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.file_parents[0] == 4 && state.folder == 4 && drawn(.BUTTON, "report.pdf") }, "the file landed in the folder that is open"),
 
     // lines: the overlays are drawn (the picture is taken with the dashes standing still); the slider turns the box
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(17) }, "the Lines tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
@@ -2196,6 +2252,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.turn > 0 && state.turn != 12 }, "the slider turns the box"),
 
     // terminal: the output in its colors and styles; a command adds its line and an answer, the screen follows
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return tabBox() }, "the list of examples"),
+    kit.ClickAt(&target),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tab(18) }, "the Terminal tab is in the bar"),
     kit.ClickAt(&target),
     kit.MoveTo({640, 700}),
