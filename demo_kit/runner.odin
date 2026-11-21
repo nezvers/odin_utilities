@@ -73,6 +73,7 @@ RunnerStep :: proc(runner: ^Runner) -> bool {
     backend.clear(backend, ctx.background)
     if demo.draw != nil { demo.draw(ctx) }
     if runner.show_menu { runnerMenuDraw(runner) }
+    if runner.playing { Logf(runner.player.log, ctx, .FRAME, "drew %d calls so far, delta %.4f s", backend.stats.draw_calls, ctx.delta_time) }
     if runner.playing && runner.player.capture_name != "" { runnerCapture(runner) }
     backend.end_frame(backend)
     backend.stats.frames += 1
@@ -106,14 +107,20 @@ Run :: proc(runner: ^Runner, demos: []Demo, backend: ^Backend) {
 
 // Play the script of one demo from its init to its end. A demo without a script runs SMOKE_TEST_FRAMES frames. The backend can be
 // a window (you watch it) or headless. `max_frames` stops a script that never ends.
-TestDemo :: proc(demo: Demo, backend: ^Backend, max_frames: int = 36000) -> Report {
+TestDemo :: proc(demo: Demo, backend: ^Backend, max_frames: int = 36000, log: ^Log = nil) -> Report {
     demos: [1]Demo = {demo}
     runner: Runner
+    // the log of the call, or the one that the environment asks for (log.odin): every event of the run goes to it
+    environment: Log
+    run_log: ^Log = log
+    if run_log == nil && LogFromEnvironment(&environment) { run_log = &environment }
     RunnerInit(&runner, demos[:], backend)
     runner.show_menu = false
     runner.fixed_delta = 1.0 / 60.0
     runner.playing = true
     PlayerStart(&runner.player, demo.script)
+    runner.player.log, runner.ctx.log = run_log, run_log
+    Logf(run_log, &runner.ctx, .REACTION, "demo %q starts: %d steps", demo.name, len(demo.script))
 
     frames: int = 0
     limit: int = max_frames if len(demo.script) > 0 else SMOKE_TEST_FRAMES
@@ -132,6 +139,7 @@ TestDemo :: proc(demo: Demo, backend: ^Backend, max_frames: int = 36000) -> Repo
     report.frames = frames
     report.draw_calls = backend.stats.draw_calls
     runnerFinishDemo(&runner)
+    Logf(run_log, &runner.ctx, .REACTION, "demo %q ends: %d checks, %d failed, %d frames, %d draw calls%s", demo.name, report.checks, report.failed, report.frames, report.draw_calls, "" if report.finished else ", the script did not finish")
     return report
 }
 
@@ -160,6 +168,7 @@ TestAll :: proc(demos: []Demo, backend: ^Backend, max_frames: int = 36000) -> (t
 runnerCapture :: proc(runner: ^Runner) {
     player: ^Player = &runner.player
     result, message := CaptureCompare(&runner.ctx, player.capture_file, player.capture_name, player.capture_frames[:player.capture_frame_count])
+    Logf(player.log, &runner.ctx, .REACTION, "capture %q %v%s%s", player.capture_name, result, ": " if message != "" else "", message)
     #partial switch result {
     case .SKIPPED: player.report.captures_skipped += 1
     case .WRITTEN:

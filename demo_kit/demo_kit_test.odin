@@ -5,6 +5,7 @@ package demo_kit
 import "core:os"
 import "core:slice"
 import "core:sync"
+import "core:strings"
 import "core:testing"
 
 @(private="file")
@@ -324,4 +325,86 @@ test_a_mask_keeps_the_pixels_inside_of_the_frames_and_clears_the_rest :: proc(t:
     // the step takes at most CAPTURE_FRAMES of them
     step: Step = CaptureIn("x", {{0, 0, 1, 1}, {1, 1, 1, 1}, {2, 2, 1, 1}, {3, 3, 1, 1}, {4, 4, 1, 1}})
     testing.expect_value(t, step.mask_count, CAPTURE_FRAMES)
+}
+
+@(test)
+test_the_log_of_a_run_has_the_steps_the_input_and_the_reactions_with_their_timing :: proc(t: ^testing.T) {
+    state: HeadlessState
+    backend: Backend
+    HeadlessInit(&backend, &state)
+    target: Vec2 = {50, 60}
+    script: []Step = {
+        Wait(2),
+        MoveTo({10, 20}),
+        ClickAt(&target),
+        Wait(3),
+        Check(proc(ctx: ^Context) -> bool { return true }, "the click happened"),
+        Check(proc(ctx: ^Context) -> bool { return false }, "this one fails"),
+        Tap(.SPACE),
+        Type("ab"),
+        Wait(1),
+    }
+    demo: Demo = {name = "logged", script = script, draw = proc(ctx: ^Context) { LogNote(ctx, "drew frame %d", ctx.frame) }}
+    lines: [dynamic]u8
+    defer delete(lines)
+    log: Log
+    LogToBuffer(&log, &lines, LOG_ALL_KINDS)
+    report: Report = TestDemo(demo, &backend, log = &log)
+    text: string = string(lines[:])
+    testing.expect_value(t, report.failed, 1)
+    contains :: proc(t: ^testing.T, text: string, part: string) {
+        testing.expectf(t, strings.contains(text, part), "the log has %q", part)
+    }
+    contains(t, text, "demo \"logged\" starts: 9 steps")
+    contains(t, text, "INPUT     step 1 MOUSE_MOVE to (10.0, 20.0)")
+    contains(t, text, "step 2 MOUSE_CLICK LEFT at (50.0, 60.0)")      // the target is read when the step runs
+    contains(t, text, "mouse -> (50.0, 60.0)")
+    contains(t, text, "LEFT down")
+    contains(t, text, "LEFT up")
+    contains(t, text, "REACTION  check PASS \"the click happened\"")
+    contains(t, text, "REACTION  check FAIL \"this one fails\"")
+    contains(t, text, "frames, ")                                      // the distance from the last input, in frames and in seconds
+    contains(t, text, "key SPACE down")
+    contains(t, text, "text \"ab\"")
+    contains(t, text, "drew frame 0")                                  // a note of the demo
+    contains(t, text, "FRAME     drew ")
+    contains(t, text, "demo \"logged\" ends: 2 checks, 1 failed")
+    // only the trace of the simulator: no reactions, no frames
+    clear(&lines)
+    LogToBuffer(&log, &lines, {.INPUT})
+    TestDemo(demo, &backend, log = &log)
+    text = string(lines[:])
+    contains(t, text, "MOUSE_CLICK")
+    testing.expect(t, !strings.contains(text, "REACTION") && !strings.contains(text, "FRAME  "), "input only")
+    // the time of the lines is the simulated one: the same on every run
+    first_run: string = strings.clone(text)
+    defer delete(first_run)
+    clear(&lines)
+    LogToBuffer(&log, &lines, {.INPUT})
+    TestDemo(demo, &backend, log = &log)
+    testing.expect_value(t, string(lines[:]), first_run)
+    // the kinds are read from a text
+    testing.expect_value(t, LogKindsParse("input, Reaction"), LogKinds{.INPUT, .REACTION})
+    testing.expect_value(t, LogKindsParse("all"), LOG_ALL_KINDS)
+    testing.expect_value(t, LogKindsParse("nothing"), LogKinds{})
+}
+
+@(test)
+test_the_log_goes_to_a_file_with_the_wall_clock_in_every_line :: proc(t: ^testing.T) {
+    state: HeadlessState
+    backend: Backend
+    HeadlessInit(&backend, &state)
+    path: string = "demo_kit_log_test.log"
+    defer os.remove(path)
+    log: Log
+    testing.expect(t, LogOpen(&log, path, {.INPUT, .REACTION}))
+    script: []Step = {MoveTo({1, 2}), Wait(1), Check(proc(ctx: ^Context) -> bool { return true }, "fine")}
+    TestDemo({name = "to file", script = script}, &backend, log = &log)
+    LogClose(&log)
+    data, err := os.read_entire_file(path, context.temp_allocator)
+    testing.expect(t, err == nil)
+    text: string = string(data)
+    testing.expect(t, strings.contains(text, " ms]  INPUT") && strings.contains(text, "+"), "the wall clock is in the bracket")
+    testing.expect(t, strings.contains(text, "check PASS \"fine\""))
+    testing.expect(t, !LogOpen(&log, "no_such_folder_for_the_log/x.log"), "a file that cannot be made is refused")
 }

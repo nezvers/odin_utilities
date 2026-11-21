@@ -139,6 +139,7 @@ Player :: struct {
     capture_file: string,
     capture_frames: [CAPTURE_FRAMES]Rect,   // the masking frames of that step (none: the whole picture)
     capture_frame_count: int,
+    log: ^Log,                  // where the steps and the input go (nil: nowhere)
     report: Report,
 }
 
@@ -195,6 +196,7 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
     for !skip_steps && !player.active && player.index < len(player.script) {
         step: ^Step = &player.script[player.index]
         player.index += 1
+        logStep(player.log, ctx, step, player.index - 1)
         switch step.kind {
         case .WAIT:
             if step.frames > 0 {
@@ -255,12 +257,15 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
             if step.frame_target != nil { player.capture_frames[0], player.capture_frame_count = step.frame_target^, 1 }
         case .CHECK:
             player.report.checks += 1
+            passed: bool = true
             if step.check != nil && !step.check(ctx) {
+                passed = false
                 if player.report.failed < MAX_FAILURES {
                     player.report.failures[player.report.failed] = {message = step.text, frame = ctx.frame}
                 }
                 player.report.failed += 1
             }
+            logCheck(player.log, ctx, step.text, passed)
         }
     }
 
@@ -271,4 +276,5 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
     input.mouse_position = player.mouse_position
     input.mouse_delta = player.mouse_position - previous_position + extra_delta
     InputFromHeld(input, previous_keys, previous_buttons)
+    logInput(player.log, ctx, input)
 }

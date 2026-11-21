@@ -97,6 +97,7 @@ Context :: struct {
     screen: Vec2,
     ui_hover: bool,         // the mouse is over the kit's demo menu: a demo ignores clicks then
     background: Color,      // what the screen is cleared with each frame: a demo may change it (RAY_WHITE when it starts)
+    log: ^Log,              // the log of a test run (log.odin), nil when there is none: `LogNote(ctx, ...)` writes to it
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
