@@ -29,7 +29,6 @@ WebBuildConfig :: struct {
     scripts: []string,          // names of copied files that index.html loads with <script> before odin.js
     imports_js: string,         // JavaScript expression of an object that is merged into the wasm imports. Empty - {}
     start_js: string,           // JavaScript statements that run once the wasm memory exists. `exports` is in scope
-    quiet: bool,                // do not print what went wrong (a test that expects the build to fail; the result of WebBuild is the same)
 }
 
 WebBuildPaths :: struct {
@@ -73,46 +72,48 @@ WebBuildOdinJs :: proc() -> (path: string, ok: bool) {
     return path, os.exists(path)
 }
 
-@(private)
-report :: proc(config: WebBuildConfig, format: string, args: ..any) {
-    if !config.quiet { fmt.eprintfln(format, ..args) }
+// What a build came to: `message` says what went wrong (the output of the compiler included, in the temp allocator) and is empty when it worked
+WebBuildResult :: struct {
+    ok: bool,
+    message: string,
 }
 
-// Build the web version. Needs `odin` in PATH. Messages of the compiler go to stderr when the build fails.
-// Allocates temporary strings with the temp allocator, free it afterwards.
+// Build the web version. Needs `odin` in PATH. A failure is printed to stderr, whole: nothing about it is hidden. Allocates temporary strings with the temp allocator, free it afterwards.
 WebBuild :: proc(config: WebBuildConfig) -> bool {
+    result: WebBuildResult = WebBuildTry(config)
+    if !result.ok { fmt.eprintln(result.message) }
+    return result.ok
+}
+
+// The same build that gives the message back and prints nothing: for a caller that decides what to do with a failure (a test that expects one checks WHAT it says, so that a different failure
+// is not mistaken for the expected one).
+WebBuildTry :: proc(config: WebBuildConfig) -> WebBuildResult {
     assert(len(config.source_directory) > 0)
     paths: WebBuildPaths = WebBuildGetPaths(config, context.temp_allocator)
 
     if os.make_directory_all(paths.build_directory) != nil || os.make_directory_all(paths.output_directory) != nil {
-        report(config, "web_build: could not create the folders in %s", config.source_directory)
-        return false
+        return {message = fmt.tprintf("web_build: could not create the folders in %s", config.source_directory)}
     }
 
     // the entry imports the source package, which is two folders up from build/web
     if os.write_entire_file(fmt.tprintf("%s/web_entry.odin", paths.build_directory), WEB_ENTRY_TEMPLATE) != nil {
-        report(config, "web_build: could not write the entry")
-        return false
+        return {message = fmt.tprintf("web_build: could not write the entry")}
     }
     if os.write_entire_file(fmt.tprintf("%s/index.html", paths.output_directory), WebBuildIndexHtml(config, context.temp_allocator)) != nil {
-        report(config, "web_build: could not write index.html")
-        return false
+        return {message = fmt.tprintf("web_build: could not write index.html")}
     }
 
     odin_js, odin_js_ok := WebBuildOdinJs()
     if !odin_js_ok {
-        report(config, "web_build: odin.js of the Odin runtime was not found, is odin in PATH?")
-        return false
+        return {message = fmt.tprintf("web_build: odin.js of the Odin runtime was not found, is odin in PATH?")}
     }
     if os.copy_file(fmt.tprintf("%s/odin.js", paths.output_directory), odin_js) != nil {
-        report(config, "web_build: could not copy odin.js")
-        return false
+        return {message = fmt.tprintf("web_build: could not copy odin.js")}
     }
     for file in config.copy_files {
         name: string = file[max(strings.last_index_byte(file, '/'), strings.last_index_byte(file, '\\')) + 1:]
         if os.copy_file(fmt.tprintf("%s/%s", paths.output_directory, name), file) != nil {
-            report(config, "web_build: could not copy %s", file)
-            return false
+            return {message = fmt.tprintf("web_build: could not copy %s", file)}
         }
     }
 
@@ -122,10 +123,9 @@ WebBuild :: proc(config: WebBuildConfig) -> bool {
     append(&command, ..config.odin_arguments)
     state, _, errors, error := os.process_exec({command = command[:]}, context.temp_allocator)
     if error != nil || state.exit_code != 0 {
-        report(config, "web_build: building main.wasm failed\n%s", string(errors))
-        return false
+        return {message = fmt.tprintf("web_build: building main.wasm failed\n%s", string(errors))}
     }
-    return true
+    return {ok = true}
 }
 
 // --- Tests ---
@@ -207,8 +207,9 @@ shutdown :: proc() {}
     // a program that does not follow the contract fails and says so, instead of leaving an old wasm behind
     testing.expect_value(t, os.write_entire_file(fmt.tprintf("%s/tiny.odin", directory), "package tiny\n"), nil)
     os.remove(fmt.tprintf("%s/main.wasm", output))
-    quiet_config: WebBuildConfig = config
-    quiet_config.quiet = true                   // the compiler's complaint is expected here, not something for the output of the tests
-    testing.expect(t, !WebBuild(quiet_config))
+    // the compiler's complaint is expected, and it is checked: it has to be about the missing functions of the entry contract, so another failure would not pass for it
+    failed: WebBuildResult = WebBuildTry(config)
+    testing.expect(t, !failed.ok)
+    testing.expect(t, strings.contains(failed.message, "'init' is not declared") && strings.contains(failed.message, "'step' is not declared") && strings.contains(failed.message, "'shutdown' is not declared"), "the failure names the missing procedures")
     testing.expect(t, !os.exists(fmt.tprintf("%s/main.wasm", output)))
 }
