@@ -787,3 +787,65 @@ test_every_level_of_the_ramp_and_the_exponential_kernels_gives_the_same_samples 
         }
     }
 }
+
+@(test)
+test_many_tracks_are_compiled_into_one_storage_and_rendered_in_one_call :: proc(t: ^testing.T) {
+    timeline: ^Timeline = newTimeline()
+    defer free(timeline)
+    volume, _ := TimelineAutomationAdd(timeline, "volume", 0, 1)
+    TimelinePointAdd(timeline, volume, 0, 0)
+    TimelinePointAdd(timeline, volume, 4, 1)
+    pan, _ := TimelineAutomationAdd(timeline, "pan", -1, 1)
+    TimelinePointAdd(timeline, pan, 0, -1)
+    TimelinePointAdd(timeline, pan, 2, 1)
+    TimelinePointAdd(timeline, pan, 4, 0)
+    silent, _ := TimelineAutomationAdd(timeline, "silent", 0, 1)
+    clips, _ := TimelineTrackAdd(timeline, "clips")
+    tracks: [3]TrackHandle = {volume, pan, silent}
+    testing.expect_value(t, AutomationSegmentCount(timeline, volume) + AutomationSegmentCount(timeline, pan) + AutomationSegmentCount(timeline, silent), 3)
+    testing.expect_value(t, AutomationSegmentCount(timeline, clips), 0)
+    storage: [3]AutomationSegment
+    plans: [3]AutomationPlan
+    testing.expect(t, AutomationCompileAll(timeline, tracks[:], storage[:], plans[:]))
+    testing.expect(t, plans[0].valid && plans[1].valid && !plans[2].valid)
+    testing.expect_value(t, len(plans[0].segments) + len(plans[1].segments), 3)
+    // too little storage, too few plans, a track that is not automation: false
+    small: [2]AutomationSegment
+    testing.expect(t, !AutomationCompileAll(timeline, tracks[:], small[:], plans[:]))
+    testing.expect(t, !AutomationCompileAll(timeline, tracks[:], storage[:], plans[:2]))
+    with_clips: [2]TrackHandle = {volume, clips}
+    testing.expect(t, !AutomationCompileAll(timeline, with_clips[:], storage[:], plans[:]))
+    testing.expect(t, AutomationCompileAll(timeline, tracks[:], storage[:], plans[:]))
+    // a block of eight samples for every plan, one lane each, equal to rendering them one by one
+    lanes: [3 * 8]f32
+    cursors: [3]AutomationCursor
+    testing.expect(t, AutomationRenderAll(plans[:], cursors[:], 0, 0.5, lanes[:], 8))
+    for i in 0 ..< 3 {
+        single: [8]f32
+        cursor: AutomationCursor
+        AutomationRender(&plans[i], &cursor, 0, 0.5, single[:])
+        same: bool = true
+        for k in 0 ..< 8 { same &&= lanes[i * 8 + k] == single[k] }
+        testing.expectf(t, same, "lane %d is the block of its plan", i)
+    }
+    testing.expect(t, lanes[0] == 0 && abs(lanes[4] - 0.5) < 1e-6, "volume: 0 at 0, a half at 2")
+    testing.expect(t, lanes[8] == -1 && lanes[8 + 4] == 1, "pan: -1 at 0, 1 at 2")
+    testing.expect(t, lanes[16] == 0 && lanes[23] == 0, "the track without points is silent")
+    // the next block goes on from the cursors; a buffer that is too small is refused and left alone
+    testing.expect(t, AutomationRenderAll(plans[:], cursors[:], 4, 0.5, lanes[:], 8))
+    testing.expect(t, lanes[0] == 1 && lanes[8] == 0, "after the last points: their values")
+    before: [3 * 8]f32 = lanes
+    testing.expect(t, !AutomationRenderAll(plans[:], cursors[:], 0, 0.5, lanes[:16], 8))
+    testing.expect(t, !AutomationRenderAll(plans[:], cursors[:2], 0, 0.5, lanes[:], 8))
+    testing.expect(t, before == lanes)
+    // lanes of different lengths, and the values at one time
+    short: [4]f32
+    long: [8]f32
+    slices: [3][]f32 = {short[:], long[:], lanes[16:][:2]}
+    testing.expect(t, AutomationRenderLanes(plans[:], cursors[:], 1, 0.5, slices[:]))
+    testing.expect(t, abs(short[0] - 0.25) < 1e-6 && abs(long[0]) < 1e-6 && abs(long[1] - 0.5) < 1e-6)
+    values: [3]f32
+    testing.expect(t, AutomationValuesAt(plans[:], 2, values[:]))
+    testing.expect(t, abs(values[0] - 0.5) < 1e-6 && values[1] == 1 && values[2] == 0)
+    testing.expect(t, !AutomationValuesAt(plans[:], 2, values[:2]))
+}

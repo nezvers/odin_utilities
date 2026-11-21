@@ -8,6 +8,13 @@ package ui
 //   cursor: ui.AutomationCursor                                           // the audio thread keeps one per plan
 //   ui.AutomationRender(&plan, &cursor, time_of_first_sample, time_per_sample, block[:])
 //
+// Many tracks at once (every parameter of a plugin, every lane of a mixer): `AutomationCompileAll` makes a plan for each track from one storage, `AutomationRenderAll` fills one lane of a
+// buffer for each plan, `AutomationValuesAt` gives the value of every plan at one time (a parameter read once a block). The caller owns every array: nothing allocates.
+//
+//   plans: [8]ui.AutomationPlan;  cursors: [8]ui.AutomationCursor;  lanes: [8 * 512]f32                    // 8 tracks, blocks of 512
+//   ok := ui.AutomationCompileAll(&timeline, tracks[:], segments[:], plans[:])
+//   ui.AutomationRenderAll(plans[:], cursors[:], time, step, lanes[:], 512)                              // lane i is lanes[i * 512:][:512]
+//
 // How it is fast (and what it costs in exactness):
 //  - the segment is found once per block by a cursor that only moves forward (a jump back, a loop, a seek is found by one binary search), never by a search per sample;
 //  - everything a segment needs is computed when the plan is made (the length's inverse, the difference of the values, the coefficient of its shape: no divisions to set up a block);
@@ -261,4 +268,49 @@ AutomationRender :: proc(plan: ^AutomationPlan, cursor: ^AutomationCursor, time:
         if time + f64(i) * step >= segment.end && index < count - 1 { index += 1 }
     }
     cursor.index = index
+}
+
+// A plan for each of `tracks`, all of them in `storage` (one after the other, each as long as its track needs). `plans` has a place for each track. False when a track is not an automation track, a
+// handle is not a track, the storage is too small or `plans` is shorter than `tracks`: the plans made so far are then not to be used. A track without points gives a plan that is not valid (it renders 0).
+AutomationCompileAll :: proc(timeline: ^Timeline, tracks: []TrackHandle, storage: []AutomationSegment, plans: []AutomationPlan) -> bool {
+    if len(plans) < len(tracks) { return false }
+    used: int
+    for track, i in tracks {
+        plan, ok := AutomationCompile(timeline, track, storage[used:])
+        if !ok { return false }
+        plans[i] = plan
+        used += len(plan.segments)
+    }
+    return true
+}
+
+// How many segments the plan of a track needs (0 for a track without points or one that is not an automation track): the sum of these for the tracks is the storage of AutomationCompileAll.
+AutomationSegmentCount :: proc(timeline: ^Timeline, track: TrackHandle) -> int {
+    owner: ^TimelineTrack = TimelineTrackGet(timeline, track)
+    if owner == nil || owner.kind != .AUTOMATION { return 0 }
+    return max(owner.point_count - 1, 0)
+}
+
+// One block for each plan: lane `i` of `out` is `out[i * length:][:length]`, `length` samples at the times `time`, `time + step`, ... (every lane has the same times). `cursors` has one for each
+// plan (the audio thread keeps them from block to block, like the cursor of AutomationRender). False, and nothing written, when `out` or `cursors` is too small.
+AutomationRenderAll :: proc(plans: []AutomationPlan, cursors: []AutomationCursor, time: f64, step: f64, out: []f32, length: int) -> bool {
+    if length <= 0 || len(cursors) < len(plans) || len(out) < len(plans) * length { return false }
+    for i in 0 ..< len(plans) {
+        AutomationRender(&plans[i], &cursors[i], time, step, out[i * length:][:length])
+    }
+    return true
+}
+
+// The same with a slice for each lane (lanes of different lengths or buffers that are not one block of memory): `lanes[i]` is filled with the block of plan `i`.
+AutomationRenderLanes :: proc(plans: []AutomationPlan, cursors: []AutomationCursor, time: f64, step: f64, lanes: [][]f32) -> bool {
+    if len(cursors) < len(plans) || len(lanes) < len(plans) { return false }
+    for i in 0 ..< len(plans) { AutomationRender(&plans[i], &cursors[i], time, step, lanes[i]) }
+    return true
+}
+
+// The value of each plan at one time (a binary search for each): `values[i]` for plan `i`. For a parameter that is read once a block and smoothed by the plugin.
+AutomationValuesAt :: proc(plans: []AutomationPlan, time: f64, values: []f32) -> bool {
+    if len(values) < len(plans) { return false }
+    for i in 0 ..< len(plans) { values[i] = AutomationValueAt(&plans[i], time) }
+    return true
 }
