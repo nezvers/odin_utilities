@@ -29,6 +29,9 @@ Build the package as a DLL (`odin build <pkg> -build-mode:dll -out:<project>/bin
 - Callbacks run with a default context whose temp allocator is freed after every call.
 - Not here yet: signals, properties, virtual methods, other types (floats, vectors, arrays, dictionaries, objects). See TODO.md.
 
+## Template and testing ground
+`template/` is a copyable project (an extension with a `Counter` class, a Godot project, a headless test): start a new extension from it, and try a new feature of this library there first.
+
 ## Sub libraries
 - `godot_spacetimedb/`: `SpacetimeDBClient` for GDScript (connect to a SpacetimeDB database, subscribe, call reducers, read events). Its README says how to use it; its test runs a headless Godot against a real server.
 

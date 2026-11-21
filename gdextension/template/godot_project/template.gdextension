@@ -1,0 +1,11 @@
+[configuration]
+entry_symbol = "template_entry"
+compatibility_minimum = "4.4"
+
+[libraries]
+windows.debug.x86_64 = "res://bin/gdextension_template.dll"
+windows.release.x86_64 = "res://bin/gdextension_template.dll"
+linux.debug.x86_64 = "res://bin/libgdextension_template.so"
+linux.release.x86_64 = "res://bin/libgdextension_template.so"
+macos.debug = "res://bin/libgdextension_template.dylib"
+macos.release = "res://bin/libgdextension_template.dylib"

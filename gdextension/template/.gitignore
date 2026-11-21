@@ -1,0 +1,5 @@
+godot_project/bin/
+godot_project/.godot/
+*.lib
+*.exp
+*.pdb

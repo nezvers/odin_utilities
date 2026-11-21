@@ -1,0 +1,44 @@
+{
+    "version": "2.0.0",
+    "command": "",
+    "args": [],
+    "tasks": [
+        {
+            "label": "Build Extension",
+            "type": "shell",
+            "command": "odin build . -build-mode:dll -strict-style -vet -debug -out:godot_project/bin/${config:project_name}.dll",
+            "group": "build",
+            "linux": {
+                "command": "odin build . -build-mode:dll -strict-style -vet -debug -out:godot_project/bin/lib${config:project_name}.so"
+            },
+            "osx": {
+                "command": "odin build . -build-mode:dll -strict-style -vet -debug -out:godot_project/bin/lib${config:project_name}.dylib"
+            }
+        },
+        {
+            "label": "Open In Godot",
+            "type": "shell",
+            "command": "godot --path godot_project",
+            "group": "none",
+            "dependsOn": "Build Extension"
+        },
+        {
+            "label": "Build Tests",
+            "type": "shell",
+            "command": "odin build template_test -strict-style -vet -build-mode:test -out:${config:project_name}_test.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build template_test -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            },
+            "osx": {
+                "command": "odin build template_test -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            }
+        },
+        {
+            "label": "Test",
+            "type": "shell",
+            "command": "odin test template_test -strict-style -vet",
+            "group": "test"
+        }
+    ]
+}

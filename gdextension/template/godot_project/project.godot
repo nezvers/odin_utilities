@@ -1,0 +1,6 @@
+; Engine configuration file of the gdextension template
+config_version=5
+
+[application]
+config/name="gdextension template"
+run/main_scene="res://main.tscn"
