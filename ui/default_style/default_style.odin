@@ -1073,8 +1073,33 @@ DrawMenuItem :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
 DrawWindowTitle :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
-    FillRounded(painter, info.rect, theme.panel_rounding, theme.track, theme.panel_max_radius - 2)
+    if !ui.DrawInfoHasTag(info, "bare") {
+        // the band sits inside of the outline of the panel it is in (which is drawn first) and has the corners of the panel at the top, a pixel radius smaller by the width of the border
+        TitleBand(painter, info.rect, theme.panel_max_radius, theme.border_width)
+    }
     TextLeft(painter, info.name, info.rect, info.font_size, 10, theme.text if .FOCUSED in info.flags else theme.text_dim, .STRONG)
+}
+
+// The band of a title at the top of a panel of `rect` (the panel's rectangle: its top and its sides): inside of the border of `border` pixels, the top corners round with the radius of the panel
+// less the border (`radius` is the radius of the panel in pixels: not a part of the title's own size), the bottom corners square.
+TitleBand :: proc(painter: ^Painter, rect: ui.Rect, radius: f32, border: f32, height: f32 = 0) {
+    theme: ^Theme = &painter.theme
+    band: ui.Rect = {rect.x + border, rect.y + border, rect.z - 2 * border, (height if height > 0 else rect.w) - border}
+    inner: f32 = max(radius - border, 0)
+    FillRoundedCorners(painter, band, {inner, inner, 0, 0}, theme.track)
+}
+
+// A filled rectangle with a radius in pixels for each corner (top left, top right, bottom right, bottom left); each is kept to what fits.
+FillRoundedCorners :: proc(painter: ^Painter, rect: ui.Rect, radii: [4]f32, color: ui.Color) {
+    if color.a == 0 || rect.z <= 0 || rect.w <= 0 { return }
+    biggest: f32 = max(max(radii[0], radii[1]), max(radii[2], radii[3]))
+    if biggest <= 0.5 || painter.fill_polygon == nil {
+        painter.fill_rect(painter, rect, color)
+        return
+    }
+    buffer: ui.RoundedBuffer
+    points: []ui.Vec2 = ui.RoundedPoints(rect, radii, ui.RoundedSegments(biggest), buffer[:])
+    painter.fill_polygon(painter, points, color)
 }
 
 // The handle between two sections: a thin line in the middle of its rectangle that lights up under the pointer and while it is dragged

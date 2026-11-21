@@ -644,6 +644,8 @@ UiGraphNode :: proc(ctx: ^Context, graph: ^Graph, handle: NodeHandle) -> bool {
         hit = {.INTERACTIVE, .NO_FOCUS, .BLOCKER},
         draw = {kind = .GRAPH_NODE, name = GraphNodeName(node), color = node.color, flags = {.SELECTED} if selected else {}, font_size = metrics.font_size},
     })
+    // the band behind the title is the node's own to draw (inside of its outline, with the corners of the node): the title is only the text, the tag "bare"
+    UiPushTag(ctx, "bare")
     ElementOpen(ctx, {
         id = title_id,
         layout = {size = {Grow(), Fixed(metrics.control_height)}},
@@ -651,6 +653,7 @@ UiGraphNode :: proc(ctx: ^Context, graph: ^Graph, handle: NodeHandle) -> bool {
         draw = {kind = .WINDOW_TITLE, name = GraphNodeName(node), font_size = metrics.font_size, flags = {.FOCUSED} if selected else {}},
     })
     ElementClose(ctx)
+    UiPopTag(ctx)
     if node.collapsed {
         // only the title: an empty body, and false so that the program declares no pins (the cables go to the edges of the title)
         ElementOpen(ctx, {layout = {size = {Grow(), Fixed(0)}}})

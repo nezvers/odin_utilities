@@ -159,7 +159,7 @@ TestAll :: proc(demos: []Demo, backend: ^Backend, max_frames: int = 36000) -> (t
 @(private)
 runnerCapture :: proc(runner: ^Runner) {
     player: ^Player = &runner.player
-    result, message := CaptureCompare(&runner.ctx, player.capture_file, player.capture_name)
+    result, message := CaptureCompare(&runner.ctx, player.capture_file, player.capture_name, player.capture_frames[:player.capture_frame_count])
     #partial switch result {
     case .SKIPPED: player.report.captures_skipped += 1
     case .WRITTEN:

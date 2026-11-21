@@ -67,8 +67,14 @@ DrawGraphOverlay :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
 DrawGraphNode :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
-    border: ui.Color = theme.accent if .SELECTED in info.flags else theme.border
-    FillRoundedBorder(painter, info.rect, theme.panel_rounding, ui.ColorLerp(theme.panel, ui.Color{0, 0, 0, 255}, 0.15) if info.color.a == 0 else info.color, border, 2 if .SELECTED in info.flags else theme.border_width, theme.max_radius)
+    selected: bool = .SELECTED in info.flags
+    border: ui.Color = theme.accent if selected else theme.border
+    width: f32 = 2 if selected else theme.border_width
+    FillRoundedBorder(painter, info.rect, theme.panel_rounding, ui.ColorLerp(theme.panel, ui.Color{0, 0, 0, 255}, 0.15) if info.color.a == 0 else info.color, border, width, theme.max_radius)
+    // the band of the title (a node that has a name): inside of the outline, with the corners of the node
+    if info.name != "" {
+        TitleBand(painter, info.rect, ui.RoundedRadius(info.rect, theme.panel_rounding, theme.max_radius), width, ctx.style.metrics.control_height)
+    }
 }
 
 DrawGraphPin :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {

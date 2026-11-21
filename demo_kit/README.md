@@ -82,6 +82,8 @@ Keep the positions a script clicks fixed numbers (not relative to the window siz
 - Karl2D reads the screen back through the 3D layer of the fork, so `DEMO_CAPTURE` makes `Run` start Karl2D with `depth_test`.
 - `CaptureFrame` (pixels of the frame), `PngWrite`/`PngRead` (the writer compresses flat areas, a ui frame is about 50 KB) and `ImageDifference` are plain procs for your own checks.
 
+**Masking frames.** A whole picture is allowed to differ in 0.2 percent of its pixels (`CAPTURE_MAX_BAD`), which hides a change that is small: the corner of a node, the outline of a window, a line a pixel wide (the title band that covered the outline of a graph node differed in 452 pixels, 0.05 percent, and every picture passed). `kit.CaptureIn("name", {{x, y, w, h}, ...})` (up to `CAPTURE_FRAMES`, 4, frames) and `kit.CaptureAt("name", &frame)` (one frame that a `Check` set from the last frame, like `ClickAt`) mask the picture: only the pixels inside of the frames are stored and compared, and not one of them may differ by more than the tolerance. Anything else on the screen (a clock, a log that scrolls) is out of it. The golden image is the frames' pixels on a clear picture, the `.actual.png` is the whole frame. Used by the `graph` demo (`graph_node_selected_top`).
+
 The kit and `glue_karl2d` build for `js_wasm32` too (`capture_js.odin` and `exit_js.odin` are the stubs: no golden images, no process exit), so a demo can be a web page: `kit.RunnerInit` + `kit.RunnerStep` per frame from a web_build `init/step/shutdown` (see `browser_extension/youtube_shorts/host_karl2d`).
 
 A new framework is one more backend: fill the `Backend` table (see `glue_raylib/raylib.odin`; `capture` may stay nil).

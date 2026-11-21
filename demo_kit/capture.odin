@@ -68,13 +68,30 @@ CapturePath :: proc(script_file: string, backend_name: string, name: string, suf
     return fmt.aprintf("%s/captures/%s/%s%s.png", folder, backend_name, name, suffix, allocator = allocator)
 }
 
-// Takes the frame and compares it with the golden image (or writes it). Used by the runner, a demo may call it too.
-CaptureCompare :: proc(ctx: ^Context, script_file: string, name: string) -> (result: CaptureResult, message: string) {
+// Keeps the pixels inside of the frames and clears the rest (RGBA 0): the picture a masked capture stores and compares. Frames are cut to the picture.
+CaptureMask :: proc(rgba: []u8, width: int, height: int, frames: []Rect, allocator := context.temp_allocator) -> []u8 {
+    masked: []u8 = make([]u8, len(rgba), allocator)
+    for frame in frames {
+        x0: int = clamp(int(frame.x), 0, width)
+        y0: int = clamp(int(frame.y), 0, height)
+        x1: int = clamp(int(frame.x + frame.z + 0.999), 0, width)
+        y1: int = clamp(int(frame.y + frame.w + 0.999), 0, height)
+        for y in y0 ..< y1 {
+            copy(masked[(y * width + x0) * 4:(y * width + x1) * 4], rgba[(y * width + x0) * 4:(y * width + x1) * 4])
+        }
+    }
+    return masked
+}
+
+// Takes the frame and compares it with the golden image (or writes it). Used by the runner, a demo may call it too. With `frames` only the pixels inside of them count: the picture is masked
+// first, and not one pixel of them may differ by more than the tolerance (a frame is a small region: the part of bad pixels that a whole picture may have would hide a corner).
+CaptureCompare :: proc(ctx: ^Context, script_file: string, name: string, frames: []Rect = nil) -> (result: CaptureResult, message: string) {
     when !DEMO_CAPTURE {
         return .SKIPPED, ""
     }
-    rgba, width, height, ok := CaptureFrame(ctx, context.temp_allocator)
+    full, width, height, ok := CaptureFrame(ctx, context.temp_allocator)
     if !ok { return .SKIPPED, "" }
+    rgba: []u8 = CaptureMask(full, width, height, frames) if len(frames) > 0 else full
     golden_path: string = CapturePath(script_file, ctx.backend.name, name)
     exists: bool = os.exists(golden_path)
     if !exists || DEMO_CAPTURE_UPDATE {
@@ -93,9 +110,9 @@ CaptureCompare :: proc(ctx: ^Context, script_file: string, name: string) -> (res
         return .SIZE_CHANGED, fmt.aprintf("capture %s: the screen is %dx%d, the golden image %dx%d", name, width, height, golden_width, golden_height)
     }
     different, biggest := ImageDifference(rgba, golden)
-    if f32(different) > f32(width * height) * CAPTURE_MAX_BAD {
+    if f32(different) > f32(width * height) * CAPTURE_MAX_BAD || (len(frames) > 0 && different > 0) {
         actual_path: string = CapturePath(script_file, ctx.backend.name, name, ".actual")
-        PngWrite(actual_path, width, height, rgba)
+        PngWrite(actual_path, width, height, full)
         return .DIFFERENT, fmt.aprintf("capture %s: %d of %d pixels differ (up to %d in a channel), see %s", name, different, width * height, biggest, actual_path)
     }
     return .MATCH, ""

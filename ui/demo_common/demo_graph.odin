@@ -164,6 +164,8 @@ draw :: proc(ctx: ^kit.Context) {
 
 // Screen positions (the canvas is at (8, 44), the nodes are at their position inside of it, a pin 16 pixels from the side of its node):
 // the output of Gain (472, 144), of Filter (472, 304), the input of Gain (314, 118), of Filter (314, 278), of the Mixer (564, 198), Noise (222, 298)
+corner: kit.Rect
+
 script: []kit.Step = {
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
@@ -249,6 +251,15 @@ script: []kit.Step = {
         return ui.GraphSelectedCount(&state.graph) == 2 && ui.GraphNode(&state.graph, state.nodes[0]).selected && ui.GraphNode(&state.graph, state.nodes[1]).selected
     }, "the box selected the two nodes it touches"),
     kit.Capture("graph_box"),
+    // masking frames: only the top strip of a selected node is compared, with no pixel allowed to differ: the outline and the selection outline run under the title band, and the band has
+    // the corners of the node (the whole picture may differ in 0.2 percent of its pixels, which hides a corner)
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        node: ^ui.Node = ui.GraphNode(&state.graph, state.nodes[0])
+        corner = {8 + node.position.x - state.view.origin.x - 4, 44 + node.position.y - state.view.origin.y - 4, node.size.x + 8, 44}
+        return node.selected
+    }, "the top strip of the first selected node"),
+    kit.CaptureAt("graph_node_selected_top", &corner),
+    kit.Wait(1),
     kit.MoveTo({100, 108}),
     kit.Wait(3),
     kit.Drag({100, 108}, {130, 128}, 8),

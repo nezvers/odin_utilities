@@ -20,6 +20,6 @@ CaptureFrame :: proc(ctx: ^Context, allocator := context.allocator) -> (rgba: []
     return nil, 0, 0, false
 }
 
-CaptureCompare :: proc(ctx: ^Context, script_file: string, name: string) -> (result: CaptureResult, message: string) {
+CaptureCompare :: proc(ctx: ^Context, script_file: string, name: string, frames: []Rect = nil) -> (result: CaptureResult, message: string) {
     return .SKIPPED, ""
 }

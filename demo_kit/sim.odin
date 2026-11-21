@@ -46,6 +46,9 @@ Step :: struct {
     text: string,               // Type, and the message of a Check
     check: proc(ctx: ^Context) -> bool,
     file: string,               // Capture: the file of the script, the golden images are next to it
+    mask: [CAPTURE_FRAMES]Rect,     // CaptureIn: the masking frames (the rest of the picture is not looked at)
+    mask_count: int,
+    frame_target: ^Rect,        // CaptureAt: one frame that is read when the step runs
     target: ^Vec2,              // ClickAt: where the click goes is read when the step runs
 }
 
@@ -75,9 +78,28 @@ Type :: proc "contextless" (text: string) -> Step { return {kind = .TEXT, text =
 // The check says if what the demo shows is right, `message` is what the report says when it is not
 Check :: proc "contextless" (check: proc(ctx: ^Context) -> bool, message: string) -> Step { return {kind = .CHECK, check = check, text = message} }
 
+CAPTURE_FRAMES :: 4         // masking frames of one capture (CaptureIn)
+
 // Takes the pixels of the frame that is drawn in this frame and compares them with the golden image `captures/<backend>/<name>.png` next to the
 // script file (see capture.odin). Only with -define:DEMO_CAPTURE=true and a backend that can capture, else it does nothing.
 Capture :: proc "contextless" (name: string, location := #caller_location) -> Step { return {kind = .CAPTURE, text = name, file = location.file_path} }
+
+// A capture that looks only inside of masking frames (x, y, width, height; at most CAPTURE_FRAMES of them): the rest of the picture is masked out, so a picture that changes elsewhere (a clock, a
+// scrolling log) does not fail it, and a small region (the corner of a node, the outline of a window) is compared on its own with no pixel allowed to differ (see capture.odin). The golden image is
+// the frames' pixels on a transparent picture.
+CaptureIn :: proc "contextless" (name: string, frames: []Rect, location := #caller_location) -> Step {
+    step: Step = {kind = .CAPTURE, text = name, file = location.file_path}
+    for i in 0 ..< min(len(frames), CAPTURE_FRAMES) {
+        step.mask[i] = frames[i]
+        step.mask_count += 1
+    }
+    return step
+}
+
+// The same with one frame that the script finds when the step runs (the place of an element of the last frame): `frame` is read then.
+CaptureAt :: proc "contextless" (name: string, frame: ^Rect, location := #caller_location) -> Step {
+    return {kind = .CAPTURE, text = name, file = location.file_path, frame_target = frame}
+}
 
 MAX_FAILURES :: 16
 
@@ -115,6 +137,8 @@ Player :: struct {
     drag_total: u32,
     capture_name: string,       // a Capture step of this frame: the runner takes it after the demo drew
     capture_file: string,
+    capture_frames: [CAPTURE_FRAMES]Rect,   // the masking frames of that step (none: the whole picture)
+    capture_frame_count: int,
     report: Report,
 }
 
@@ -133,6 +157,7 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
     previous_position: Vec2 = player.mouse_position
     input^ = {}
     player.capture_name = ""
+    player.capture_frame_count = 0
 
     // what a tap or a click of the last frame lets go of
     player.held_keys -= player.release_next
@@ -226,6 +251,8 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
         case .CAPTURE:
             player.capture_name = step.text
             player.capture_file = step.file
+            player.capture_frames, player.capture_frame_count = step.mask, step.mask_count
+            if step.frame_target != nil { player.capture_frames[0], player.capture_frame_count = step.frame_target^, 1 }
         case .CHECK:
             player.report.checks += 1
             if step.check != nil && !step.check(ctx) {

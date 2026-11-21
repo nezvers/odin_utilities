@@ -287,3 +287,41 @@ test_the_rectangle_of_a_display_comes_from_the_environment :: proc(t: ^testing.T
     _, ok = DisplayRect()
     testing.expect(t, !ok)
 }
+
+@(test)
+test_a_mask_keeps_the_pixels_inside_of_the_frames_and_clears_the_rest :: proc(t: ^testing.T) {
+    width, height: int = 8, 6
+    picture: []u8 = make([]u8, width * height * 4)
+    defer delete(picture)
+    for i in 0 ..< len(picture) { picture[i] = u8(1 + i % 200) }
+    frames: [2]Rect = {{1, 1, 2, 2}, {6.5, 4.2, 10, 10}}                  // the second one reaches past the picture and starts between pixels
+    masked: []u8 = CaptureMask(picture, width, height, frames[:])
+    defer delete(masked)
+    inside :: proc(x: int, y: int) -> bool {
+        return (x >= 1 && x < 3 && y >= 1 && y < 3) || (x >= 6 && x < 8 && y >= 4 && y < 6)
+    }
+    for y in 0 ..< height {
+        for x in 0 ..< width {
+            at: int = (y * width + x) * 4
+            same: bool = masked[at] == picture[at] && masked[at + 3] == picture[at + 3]
+            cleared: bool = masked[at] == 0 && masked[at + 1] == 0 && masked[at + 2] == 0 && masked[at + 3] == 0
+            testing.expectf(t, same if inside(x, y) else cleared, "pixel %d, %d", x, y)
+        }
+    }
+    // a pixel that differs outside of the frames does not count, one inside does, however small the part of the picture
+    changed: []u8 = make([]u8, len(picture))
+    defer delete(changed)
+    copy(changed, picture)
+    changed[(0 * width + 0) * 4] += 100
+    other: []u8 = CaptureMask(changed, width, height, frames[:])
+    defer delete(other)
+    different, _ := ImageDifference(masked, other)
+    testing.expect_value(t, different, 0)
+    changed[(1 * width + 1) * 4] += 100
+    other = CaptureMask(changed, width, height, frames[:])
+    different, _ = ImageDifference(masked, other)
+    testing.expect_value(t, different, 1)
+    // the step takes at most CAPTURE_FRAMES of them
+    step: Step = CaptureIn("x", {{0, 0, 1, 1}, {1, 1, 1, 1}, {2, 2, 1, 1}, {3, 3, 1, 1}, {4, 4, 1, 1}})
+    testing.expect_value(t, step.mask_count, CAPTURE_FRAMES)
+}
