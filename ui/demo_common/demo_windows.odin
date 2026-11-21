@@ -15,7 +15,7 @@ import icons "../../icons"
 
 @(private="package")
 demo_windows: kit.Demo = {
-    name = "windows",
+    name = "baldr windows",
     init = init,
     draw = draw,
     script = script,

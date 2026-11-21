@@ -16,7 +16,7 @@ import icons "../../icons"
 
 @(private="package")
 demo_gallery: kit.Demo = {
-    name = "gallery",
+    name = "baldr gallery",
     init = init,
     draw = draw,
     script = script,

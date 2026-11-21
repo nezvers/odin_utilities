@@ -152,7 +152,7 @@ script: []kit.Step = {
     kit.Wait(2),
     kit.MoveTo({570, 250}),
     kit.Wait(3),
-    kit.Drag({570, 250}, {570, 245}, 6),
+    kit.Drag({570, 250}, {590, 250}, 6),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         out: [8]ui.PointHandle
@@ -160,8 +160,8 @@ script: []kit.Step = {
         if count != 5 { return false }
         smooth: ^ui.TimelinePoint = ui.TimelinePointGet(&state.timeline, out[2])
         bent: ^ui.TimelinePoint = ui.TimelinePointGet(&state.timeline, out[3])
-        return smooth.shape == .SMOOTH && bent.shape == .CURVE && bent.curve < -0.2 && bent.curve > -0.5
-    }, "Ctrl and a click made a segment smooth, the handle bent another one to start slowly"),
+        return smooth.shape == .SMOOTH && bent.shape == .CURVE && bent.curve < -0.1 && bent.curve > -0.9
+    }, "Ctrl and a click made a segment smooth, the handle pulled to the right bent another one: slow first, fast at the end"),
     kit.Capture("timeline_curves"),
     kit.Wait(1),
     // undo takes the bend away, redo brings it back (the timeline has the focus from the clicks)

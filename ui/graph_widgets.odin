@@ -625,11 +625,23 @@ UiGraphNode :: proc(ctx: ^Context, graph: ^Graph, handle: NodeHandle) -> bool {
         return ElementOpen(ctx, {layout = {size = {Fit(), Fit()}, direction = .LEFT_TO_RIGHT, gap = 2}})
     }
     if interaction.double_clicked && interaction.pressed && ctx.input.mouse_pressed { GraphNodeCollapse(graph, handle, !node.collapsed) }
+    // the body of a node is held too: a press on the room between its widgets drags the node (and the selected ones with it), as the title does
+    grab: Interaction = widgetBehavior(ctx, id)
+    if grab.pressed && ctx.input.mouse_pressed {
+        GraphNodeRaise(graph, handle)
+        if !node.selected {
+            GraphSelectClear(graph)
+            node.selected = true
+        }
+        view.selected_link, view.selected_tie = {}, {}
+        view.moving, view.move_last = handle, ctx.input.mouse_position
+    }
+    selected = node.selected
     ElementOpen(ctx, {
         id = id,
         layout = {size = {Fit(style.node_width), Fit()}, direction = .TOP_TO_BOTTOM},
         absolute = {enabled = true, offset = node.position - view.origin},
-        hit = {.BLOCKER},
+        hit = {.INTERACTIVE, .NO_FOCUS, .BLOCKER},
         draw = {kind = .GRAPH_NODE, name = GraphNodeName(node), color = node.color, flags = {.SELECTED} if selected else {}, font_size = metrics.font_size},
     })
     ElementOpen(ctx, {

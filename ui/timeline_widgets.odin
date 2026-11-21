@@ -614,8 +614,10 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                             continue
                         }
                         // the part of the way from this value to the next that the handle is at; a segment that was straight or smooth becomes a bias when it is bent
-                        covered: f32 = clamp((mouse.y - points[k].y) / (points[k + 1].y - points[k].y), 0.02, 0.98)
                         shape: CurveShape = owner.shape if owner.shape == .S_CURVE || owner.shape == .EXP || CurveIsCounted(owner.shape) else .CURVE
+                        // CURVE and EXP are pulled along the segment (right: fast at the end, left: fast at the start), the others up and down
+                        covered: f32 = clamp((mouse.y - points[k].y) / (points[k + 1].y - points[k].y), 0.02, 0.98)
+                        if CurveHandleAlong(shape) && points[k + 1].x != points[k].x { covered = clamp((mouse.x - points[k].x) / (points[k + 1].x - points[k].x), 0.02, 0.98) }
                         // the sign of a count is the variant (a pulse that starts high): the handle sets the number only
                         sign: f32 = -1 if CurveIsCounted(shape) && owner.curve < 0 else 1
                         TimelinePointShape(timeline, view.gesture_handle, shape, sign * CurveFromHandle(shape, covered) - (points[k].bend if !CurveIsCounted(shape) else 0))

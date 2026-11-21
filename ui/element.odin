@@ -394,6 +394,9 @@ WidgetState :: struct {
     caret_top: f32,                 // the top of that row (a field: its top)
     anchor: int,                    // a text field: the other end of the selection (the cursor is one end; the same as the cursor: nothing is selected)
     hsv: [3]f32,                    // a color picker: hue, saturation and value as the person set them (a gray has no hue in RGB: this keeps it)
+    lch: [3]f32,                    // a color picker: lightness, chroma and hue (degrees) as the person set them (chroma that sRGB cannot show is lost in the color, kept here)
+    held: [3]f32,                   // a color picker: the color it gave last, to see that the program set another one
+    mode: int,                      // a color picker: the ColorMode that is shown
     drag: Vec2,                     // where the pointer was in the last frame of a drag (a drag widget, a window title)
     press_time: f32,                // seconds the widget has been held (a button that repeats)
     anim: f32,                      // UiAnimate: a value that follows a target

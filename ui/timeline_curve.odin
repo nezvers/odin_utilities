@@ -169,23 +169,50 @@ CurveSegmentPoints :: proc(shape: CurveShape, curve: f32, a: Vec2, b: Vec2, out:
     return out[:0]
 }
 
-// Where the handle that bends a segment is: a part of the way along the segment, and the part of the value that the curve has covered there (0 .. 1). In the middle for the bias, a quarter of
-// the way for the S shape (at the middle it is always at half way, a handle there would not move).
+// Where the handle that bends a segment is: a part of the way along the segment, and the part of the value that the curve has covered there (0 .. 1).
+// CURVE and EXP: the handle sits where HALF of the change is done, and it is pulled ALONG the segment: pulled towards the end (right) the half is reached late, so the change is fast
+// at the end; pulled towards the start (left) it is fast at the start. That is the same for a segment that rises and one that falls (before, the height of the handle told the bend,
+// and a fall and a rise behaved opposite). The S shape has the handle a quarter of the way (at the middle it is always half way) and is pulled up and down, the counted shapes have it
+// in the middle with the count as its height.
 CurveHandle :: proc(shape: CurveShape, curve: f32) -> (along: f32, covered: f32) {
     // a counted shape: the handle is in the middle and its height is the count (more cycles higher), the position of the line there means nothing
     if CurveIsCounted(shape) { return 0.5, abs(clamp(curve, -CURVE_LIMIT, CURVE_LIMIT)) }
+    if CurveHandleAlong(shape) { return curveHalfWay(shape, curve), 0.5 }
     along = 0.25 if shape == .S_CURVE else 0.5
     return along, CurveEvalCoefficient(shape, CurveCoefficient(shape, curve), along)
 }
 
-// The `curve` number that puts the handle of a segment at the part `covered` of the value (the inverse of CurveHandle for CURVE and S_CURVE: at the middle the bias is its own shape number,
-// at a quarter the gain is half of the opposite number).
-CurveFromHandle :: proc(shape: CurveShape, covered: f32) -> f32 {
-    if CurveIsCounted(shape) { return clamp(covered, 0, CURVE_LIMIT) }
-    // at the middle the exponential is 1 / (e^(c / 2) + 1)
-    if shape == .EXP { return clamp(2 * math.ln(1 / clamp(covered, 0.001, 0.999) - 1) / CURVE_EXP_RANGE, -CURVE_LIMIT, CURVE_LIMIT) }
-    if shape == .S_CURVE { return clamp(1 - 4 * covered, -CURVE_LIMIT, CURVE_LIMIT) }
-    return clamp(2 * covered - 1, -CURVE_LIMIT, CURVE_LIMIT)
+// Whether the handle of the shape is pulled along the segment (see CurveHandle) and not up and down.
+CurveHandleAlong :: proc(shape: CurveShape) -> bool {
+    return shape == .CURVE || shape == .EXP
+}
+
+// How far along the segment half of the change is done: Schlick's bias reaches 0.5 at (c + 1) / (c + 2) = (1 - curve) / 2, the exponential at ln((e^c + 1) / 2) / c.
+@(private)
+curveHalfWay :: proc(shape: CurveShape, curve: f32) -> f32 {
+    k: f32 = clamp(curve, -CURVE_LIMIT, CURVE_LIMIT)
+    if shape == .CURVE { return 0.5 - 0.5 * k }
+    c: f32 = CURVE_EXP_RANGE * k
+    if abs(c) < CURVE_EXP_LINEAR { return 0.5 }
+    return math.ln((math.exp(c) + 1) * 0.5) / c
+}
+
+// The `curve` number for the handle at `pulled`: the part of the segment's width for CURVE and EXP (the inverse of CurveHandle), the part of the value covered for the others (at a quarter the
+// gain is half of the opposite number).
+CurveFromHandle :: proc(shape: CurveShape, pulled: f32) -> f32 {
+    if CurveIsCounted(shape) { return clamp(pulled, 0, CURVE_LIMIT) }
+    if shape == .CURVE { return clamp(1 - 2 * pulled, -CURVE_LIMIT, CURVE_LIMIT) }
+    if shape == .EXP {
+        // the half way point grows with the number: a bisection (only a dragged handle asks)
+        low, high: f32 = -CURVE_LIMIT, CURVE_LIMIT
+        for _ in 0 ..< 24 {
+            middle: f32 = (low + high) * 0.5
+            if curveHalfWay(.EXP, middle) < pulled { low = middle } else { high = middle }
+        }
+        return (low + high) * 0.5
+    }
+    if shape == .S_CURVE { return clamp(1 - 4 * pulled, -CURVE_LIMIT, CURVE_LIMIT) }
+    return clamp(2 * pulled - 1, -CURVE_LIMIT, CURVE_LIMIT)
 }
 
 // The handles of a segment between the screen points `a` and `b`, for a style to draw and a widget to pick: one for the shapes that bend (CurveHandle), two for HERMITE (the control points of

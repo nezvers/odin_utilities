@@ -1619,6 +1619,33 @@ coveredGraphFrame :: proc(harness: ^Harness, graph: ^Graph, view: ^GraphView, in
 }
 
 @(test)
+test_a_node_is_dragged_by_its_body_and_the_selected_ones_go_with_it :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    graph: ^Graph = new(Graph)
+    defer free(graph)
+    GraphInit(graph)
+    view: GraphView
+    first, _ := GraphNodeAdd(graph, "first", {0, 0})
+    GraphPortAdd(graph, first, "out", .OUTPUT, 1)
+    second, _ := GraphNodeAdd(graph, "second", {250, 0})
+    GraphPortAdd(graph, second, "in", .INPUT, 1)
+    for _ in 0 ..< 4 { coveredGraphFrame(harness, graph, &view, {}) }
+    a, b: ^Node = GraphNode(graph, first), GraphNode(graph, second)
+    a.selected, b.selected = true, true
+    // a press in the room of the body of the first node, below its title and away from its pin
+    grab: Vec2 = a.position + {8, a.size.y - 6}
+    start_a, start_b: Vec2 = a.position, b.position
+    coveredGraphFrame(harness, graph, &view, pointerAt(grab))
+    coveredGraphFrame(harness, graph, &view, pointerAt(grab, true, true))
+    for i in 1 ..= 5 { coveredGraphFrame(harness, graph, &view, pointerAt(grab + {f32(i) * 6, f32(i) * 4}, true)) }
+    coveredGraphFrame(harness, graph, &view, pointerAt(grab + {30, 20}, false, false, true))
+    testing.expect(t, abs(a.position.x - (start_a.x + 30)) < 1 && abs(a.position.y - (start_a.y + 20)) < 1, "the body drags the node")
+    testing.expect(t, abs(b.position.x - (start_b.x + 30)) < 1 && abs(b.position.y - (start_b.y + 20)) < 1, "the other selected node goes with it")
+}
+
+@(test)
 test_a_pin_that_another_node_covers_neither_drags_nor_connects :: proc(t: ^testing.T) {
     harness: ^Harness = new(Harness)
     defer free(harness)
@@ -1647,6 +1674,10 @@ test_a_pin_that_another_node_covers_neither_drags_nor_connects :: proc(t: ^testi
     }
     coveredGraphFrame(harness, graph, &view, pointerAt(target.anchor, false, false, true))
     testing.expect_value(t, GraphLinkCount(graph), 0)
+    // the press on the covered pin landed on the node above it, whose body is held: it moved with the pointer, so put it back
+    GraphNodeMove(graph, cover, {100, 0})
+    GraphSelectClear(graph)
+    for _ in 0 ..< 3 { coveredGraphFrame(harness, graph, &view, {}) }
 
     // and a cable from a pin that is free cannot end on a pin that is covered
     free_node, _ := GraphNodeAdd(graph, "free", {0, 150})
@@ -2639,6 +2670,24 @@ inspectorFrame :: proc(ctx: ^Context, style: ^Style, input: Input) {
 }
 
 @(test)
+test_the_measure_cache_of_a_quiet_ui_misses_only_on_the_counters_of_the_inspector :: proc(t: ^testing.T) {
+    storage: ^InspectorStorage = new(InspectorStorage)
+    defer free(storage)
+    ctx: ^Context = new(Context)
+    defer free(ctx)
+    style: Style = makeStyle()
+    UiInit(ctx, storage, testMeasure)
+    for _ in 0 ..< 10 { inspectorFrame(ctx, &style, pointerAt({-10, -10})) }
+    // a ui that does not change is all hits; what is missed each frame is the text of the inspector with a number in it that is new every frame
+    inspector: ^Inspector = &ctx.inspector
+    for _ in 0 ..< 5 {
+        inspectorFrame(ctx, &style, pointerAt({-10, -10}))
+        testing.expectf(t, inspector.frame_misses <= 6, "a quiet frame misses %d texts", inspector.frame_misses)
+        testing.expect(t, inspector.frame_hits > inspector.frame_misses)
+    }
+}
+
+@(test)
 test_the_inspector_lists_the_elements_of_the_last_frame_without_its_own_and_picks_by_the_pointer :: proc(t: ^testing.T) {
     storage: ^InspectorStorage = new(InspectorStorage)
     defer free(storage)
@@ -3334,20 +3383,21 @@ test_the_handle_of_a_segment_bends_it_and_a_held_segment_has_none :: proc(t: ^te
     harness: ^Harness = new(Harness)
     timeline, view, _, first, _ := automationSetup(harness)
     defer { free(timeline); free(view); free(harness) }
-    // the segment from (100, 48) to (300, 29): its handle is in the middle, at (200, 38.5)
-    timelineDrag(harness, timeline, view, {200, 38}, {200, 33})
+    // the segment from (100, 48) to (300, 29): its handle is where half of the change is done, in the middle at (200, 38.5), and it is pulled ALONG the segment
+    timelineDrag(harness, timeline, view, {200, 38}, {240, 38})
     bent: ^TimelinePoint = TimelinePointGet(timeline, first)
-    covered: f32 = (33.0 - 48.0) / (29.0 - 48.0)
+    along: f32 = (240.0 - 100.0) / (300.0 - 100.0)
     testing.expect_value(t, bent.shape, CurveShape.CURVE)
-    testing.expect(t, abs(bent.curve - (2 * covered - 1)) < 0.03, "the handle is where the curve is at the middle")
+    testing.expect(t, abs(bent.curve - (1 - 2 * along)) < 0.03, "the handle is where half of the change is done")
+    testing.expect(t, bent.curve < 0, "pulled to the right: slow first, fast at the end")
     testing.expect_value(t, TimelinePointGet(timeline, first).time, 1)   // the points did not move
-    // the middle of the bent line is now at the pointer: the handle follows what it shaped
-    value, _ := TimelineAutomationValue(timeline, TimelinePointGet(timeline, first).track, 2)
-    testing.expect(t, abs(value - (50 + 50 * covered)) < 2)
-    // dragged the other way: slow start
+    // the half way of the bent line is now under the pointer: at 70 percent of the time half of the change is done
+    value, _ := TimelineAutomationValue(timeline, TimelinePointGet(timeline, first).track, 2.4)
+    testing.expect(t, abs(value - (50 + 50 * 0.5)) < 4, "half of the change is done where the handle is")
+    // pulled the other way (left): fast at the start
     for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
-    timelineDrag(harness, timeline, view, {200, 33}, {200, 44})
-    testing.expect(t, TimelinePointGet(timeline, first).curve < 0, "below the line: it starts slowly")
+    timelineDrag(harness, timeline, view, {240, 38}, {160, 38})
+    testing.expect(t, TimelinePointGet(timeline, first).curve > 0, "pulled to the left: fast at the start")
     // a held segment has no handle: the same drag in the middle pans instead and the shape stays
     TimelinePointShape(timeline, first, .HOLD)
     for _ in 0 ..< 30 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
@@ -4788,6 +4838,84 @@ test_every_interactive_widget_is_reached_by_the_tab_key_and_draws_its_focus :: p
     for _, kind in visited { if kind != .NONE { reached += 1 } }
     testing.expect_value(t, len(visited), wanted)                       // the tab key reaches every widget that takes the pointer
     testing.expect_value(t, reached, wanted)                            // and each one is drawn with the FOCUSED flag, so a style can show it
+}
+
+@(test)
+test_the_color_spaces_give_the_colors_back :: proc(t: ^testing.T) {
+    colors: [6][3]f32 = {{0.9, 0.4, 0.1}, {0.1, 0.7, 0.3}, {0.2, 0.2, 0.9}, {0.5, 0.5, 0.5}, {1, 1, 1}, {0.05, 0.02, 0.4}}
+    for color in colors {
+        h, s, l := ColorRgbToHsl(color)
+        back: [3]f32 = ColorHslToRgb(h, s, l)
+        testing.expectf(t, abs(back.r - color.r) < 0.002 && abs(back.g - color.g) < 0.002 && abs(back.b - color.b) < 0.002, "HSL of %v gives %v", color, back)
+        lightness, chroma, hue := ColorRgbToOklch(color)
+        from: [3]f32 = ColorOklchToRgb(lightness, chroma, hue)
+        testing.expectf(t, abs(from.r - color.r) < 0.01 && abs(from.g - color.g) < 0.01 && abs(from.b - color.b) < 0.01, "OKLCH of %v gives %v", color, from)
+    }
+    // black and white have no chroma; a chroma that sRGB cannot show gives a color of the same lightness
+    lightness, chroma, _ := ColorRgbToOklch({1, 1, 1})
+    testing.expect(t, abs(lightness - 1) < 0.01 && chroma < 0.01)
+    vivid: [3]f32 = ColorOklchToRgb(0.5, 0.4, 150)
+    testing.expect(t, vivid.r >= 0 && vivid.r <= 1 && vivid.g >= 0 && vivid.g <= 1 && vivid.b >= 0 && vivid.b <= 1)
+    // the strips of a bar: the ends of the red channel of RGB, the hue of HSV going round
+    testing.expect_value(t, ColorChannelColor(.RGB, 0, 0, {0.5, 0.2, 0.7}), [3]f32{0, 0.2, 0.7})
+    testing.expect_value(t, ColorChannelColor(.RGB, 0, 1, {0.5, 0.2, 0.7}), [3]f32{1, 0.2, 0.7})
+    cyan: [3]f32 = ColorChannelColor(.HSV, 0, 0.5, {0, 1, 1})
+    testing.expect(t, cyan.r < 0.01 && cyan.g > 0.99 && cyan.b > 0.99)
+}
+
+@(test)
+test_the_bar_modes_of_the_color_picker_set_one_channel_each :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    color: [3]f32 = {0.8, 0.4, 0.2}
+    alpha: f32 = 1
+    picker :: proc(harness: ^Harness, color: ^[3]f32, alpha: ^f32, input: Input) -> bool {
+        frame(harness, input)
+        changed: bool = UiColorPicker(&harness.ctx, "Tint", color, alpha, 100)
+        UiEnd(&harness.ctx)
+        return changed
+    }
+    for _ in 0 ..< 3 { picker(harness, &color, &alpha, pointerAt({-50, -50})) }
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("Tint"))
+    testing.expect_value(t, ColorMode(state.mode), ColorMode.SQUARE)
+    // the mode row: a click on RGB
+    box, found := UiElementRect(&harness.ctx, UiIdPath("Tint", "##mode"))
+    testing.expect(t, found && box.z > 0, "the mode box")
+    middle: Vec2 = {box.x + box.z * 0.5, box.y + box.w * 0.5}
+    picker(harness, &color, &alpha, pointerAt(middle))
+    picker(harness, &color, &alpha, pointerAt(middle, true, true))
+    picker(harness, &color, &alpha, pointerAt(middle, false, false, true))
+    for _ in 0 ..< 2 { picker(harness, &color, &alpha, pointerAt({-50, -50})) }
+    option, listed := UiElementRect(&harness.ctx, IdFromIndex(u32(ColorMode.RGB), IdFromString("popup", UiIdPath("Tint", "##mode"))))
+    testing.expect(t, listed && option.z > 0, "the list has RGB")
+    middle = {option.x + option.z * 0.5, option.y + option.w * 0.5}
+    picker(harness, &color, &alpha, pointerAt(middle))
+    picker(harness, &color, &alpha, pointerAt(middle, true, true))
+    picker(harness, &color, &alpha, pointerAt(middle, false, false, true))
+    for _ in 0 ..< 2 { picker(harness, &color, &alpha, pointerAt({-50, -50})) }
+    testing.expect_value(t, ColorMode(state.mode), ColorMode.RGB)
+    // the green bar: the pointer at a quarter of its width sets green to a quarter and leaves the others
+    bar, _ := UiElementRect(&harness.ctx, IdFromIndex(1, UiIdPath("Tint", "hue")))
+    testing.expect(t, bar.z > bar.w * 3, "a bar lies down")
+    at: Vec2 = {bar.x + bar.z * 0.25, bar.y + bar.w * 0.5}
+    picker(harness, &color, &alpha, pointerAt(at))
+    picker(harness, &color, &alpha, pointerAt(at, true, true))
+    testing.expect(t, abs(color.g - 0.25) < 0.01 && abs(color.r - 0.8) < 0.01 && abs(color.b - 0.2) < 0.01, "the green bar sets green only")
+    picker(harness, &color, &alpha, pointerAt(at, false, false, true))
+    // the same color is the same in the other spaces: HSL keeps the hue of the one in HSV
+    state.mode = int(ColorMode.OKLCH)
+    for _ in 0 ..< 2 { picker(harness, &color, &alpha, pointerAt({-50, -50})) }
+    lightness: Rect
+    lightness, _ = UiElementRect(&harness.ctx, IdFromIndex(0, UiIdPath("Tint", "hue")))
+    at = {lightness.x + lightness.z * 0.5, lightness.y + lightness.w * 0.5}
+    picker(harness, &color, &alpha, pointerAt(at))
+    picker(harness, &color, &alpha, pointerAt(at, true, true))
+    l, _, _ := ColorRgbToOklch(color)
+    testing.expect(t, abs(l - 0.5) < 0.03, "the lightness bar of OKLCH: the middle is a lightness of a half")
+    picker(harness, &color, &alpha, pointerAt(at, false, false, true))
+    // a drag to the end of the chroma bar and then to a gray lightness keeps the chosen hue and chroma in the state
+    testing.expect(t, state.lch[2] >= 0 && state.lch[2] <= 360)
 }
 
 @(test)

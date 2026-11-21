@@ -77,16 +77,40 @@ test_a_segment_becomes_straight_pieces_that_end_at_the_next_point :: proc(t: ^te
 
 @(test)
 test_the_handle_of_a_segment_is_where_the_curve_is_and_gives_the_curve_back :: proc(t: ^testing.T) {
-    for shape in ([2]CurveShape{.CURVE, .S_CURVE}) {
+    for shape in ([3]CurveShape{.CURVE, .S_CURVE, .EXP}) {
         for curve in ([6]f32{-0.9, -0.5, -0.1, 0.2, 0.6, 0.9}) {
             along, covered := CurveHandle(shape, curve)
-            testing.expect(t, along == 0.5 || shape == .S_CURVE)
-            back: f32 = CurveFromHandle(shape, covered)
-            testing.expectf(t, abs(back - curve) < 1e-4, "%v %v: the handle at %v gives %v back", shape, curve, covered, back)
+            pulled: f32 = along if CurveHandleAlong(shape) else covered
+            testing.expect(t, along == 0.5 || shape == .S_CURVE || CurveHandleAlong(shape))
+            back: f32 = CurveFromHandle(shape, pulled)
+            testing.expectf(t, abs(back - curve) < 2e-3, "%v %v: the handle at %v gives %v back", shape, curve, pulled, back)
+            if CurveHandleAlong(shape) {
+                // the handle is on the curve: half of the change is done there
+                testing.expectf(t, abs(CurveEval(shape, curve, along) - 0.5) < 1e-3, "%v %v: half way at %v", shape, curve, along)
+            }
         }
     }
     along, covered := CurveHandle(.LINEAR, 0)
     testing.expect(t, along == 0.5 && covered == 0.5)
+}
+
+@(test)
+test_a_handle_pulled_to_the_right_is_fast_at_the_end_whether_the_segment_rises_or_falls :: proc(t: ^testing.T) {
+    // the shape is of the part of the way from the first value to the second, so it is the same for a rise and a fall: pulled right the half is reached late
+    right: f32 = CurveFromHandle(.CURVE, 0.8)
+    left: f32 = CurveFromHandle(.CURVE, 0.2)
+    testing.expect(t, CurveEval(.CURVE, right, 0.5) < 0.5, "pulled right: slow first")
+    testing.expect(t, CurveEval(.CURVE, right, 0.9) - CurveEval(.CURVE, right, 0.8) > CurveEval(.CURVE, right, 0.2) - CurveEval(.CURVE, right, 0.1), "pulled right: fast at the end")
+    testing.expect(t, CurveEval(.CURVE, left, 0.5) > 0.5, "pulled left: fast first")
+    for shape in ([2]CurveShape{.CURVE, .EXP}) {
+        a: f32 = CurveFromHandle(shape, 0.75)
+        testing.expect(t, CurveEval(shape, a, 0.1) < 0.1, "pulled right: below the line early")
+    }
+    // a segment that falls, in screen points: the handle is at the same x for the same curve
+    rise, _ := CurveHandles(.CURVE, right, {}, {0, 100}, {100, 0})
+    fall, _ := CurveHandles(.CURVE, right, {}, {0, 0}, {100, 100})
+    testing.expect_value(t, rise[0].x, fall[0].x)
+    testing.expect(t, rise[0].x > 50)
 }
 
 @(test)
@@ -142,7 +166,7 @@ test_the_exponential_grows_by_a_constant_ratio_and_is_a_line_at_zero :: proc(t: 
     testing.expect(t, abs(b / a - e / d) < 1e-3, "equal steps in x multiply by the same ratio")
     // the handle at the middle gives the curve back
     for curve in ([5]f32{-0.9, -0.3, 0.1, 0.5, 0.95}) {
-        _, covered := CurveHandle(.EXP, curve)
+        covered, _ := CurveHandle(.EXP, curve)
         testing.expectf(t, abs(CurveFromHandle(.EXP, covered) - curve) < 2e-3, "the handle of %v gives %v back", curve, CurveFromHandle(.EXP, covered))
     }
 }

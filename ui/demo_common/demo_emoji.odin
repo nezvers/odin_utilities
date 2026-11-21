@@ -15,7 +15,7 @@ import kit "../../demo_kit"
 
 @(private="package")
 demo_emoji: kit.Demo = {
-    name = "emoji",
+    name = "baldr emoji",
     init = init,
     draw = draw,
     script = script,

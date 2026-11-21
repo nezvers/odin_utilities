@@ -63,7 +63,9 @@ StyleKind :: enum u8 {
     GRAPH_PIN,          // a connection point: color, actual: the data type, cursor: 1 for an output, flags: ON connected, PRESSED dragged from, SELECTED a cable that is dragged fits, DISABLED does not fit
     GRAPH_MINIMAP,      // user: ^GraphMinimapData, the style draws the nodes with GraphMinimapTransform and the view rectangle
     COLOR_FIELD,        // the square of a color picker: actual: the hue 0..1, value: saturation, ratio: the value (brightness), color: the pure hue; the marker is at (value, 1 - ratio)
-    COLOR_STRIP,        // a bar of a color picker: actual 0 for the hues, 1 for the alpha; value: where the marker is, 0 at the top; color: the color the alpha is of
+    COLOR_STRIP,        // a bar of a color picker: actual 0 for the hues, 1 for the alpha (both upright; value: where the marker is, 0 at the top; color: the color the alpha is of), 2 for a channel of a color space
+                        // from left to right (cursor: the ColorMode, anchor: the channel, minimum / maximum / ratio: the three channels in the units of ColorChannelMax, value: where the marker is, ColorChannelColor
+                        // gives the color of a strip), 3 for the alpha lying down (value: the alpha)
     ICON,               // a small picture: actual is the Icon, color (alpha 0: the style's own), the rect is square
     SWITCH,             // a toggle drawn as a track with a knob: ON flag, value 0..1 where the knob is on its way, ratio the width of the track, name
     BADGE,              // a few words in a pill: name, actual the Tone

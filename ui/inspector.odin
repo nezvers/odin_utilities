@@ -82,6 +82,8 @@ Inspector :: struct {
     command_list: VirtualList,
     begin: time.Tick,           // UiBegin: the time of the frame (declaring and layout) is the time to UiEnd
     build_ms: [INSPECTOR_HISTORY]f32,       // the last frames, the newest at the end
+    measure_hits, measure_misses: u64,      // the totals of the cache at the last panel: the difference is one frame's
+    frame_hits, frame_misses: u64,
     fixed_ms: f32,              // more than 0: the build time that is recorded instead of the measured one (UiInspectorFixedTime)
     element_history: [INSPECTOR_HISTORY]f32,
     command_history: [INSPECTOR_HISTORY]f32,
@@ -306,8 +308,12 @@ UiInspector :: proc(ctx: ^Context, name: string, size: Size = {}) {
         storage_elements: int = len(ctx.elements)
         UiLabel(ctx, UiFormat(ctx, "elements %d (peak %d) of %d    commands %d of %d", now.elements, peak.elements, storage_elements, now.commands, len(ctx.commands)))
         UiLabel(ctx, UiFormat(ctx, "text %d of %d bytes    lines %d    roots %d    states %d    hits %d", now.text_bytes, len(ctx.text_buffer), now.lines, now.roots, now.states, now.hits))
+        // the cache answers a text it has seen: a frame of a quiet ui is all hits. The numbers of this very panel change every frame, so each of its lines that holds a counter is a
+        // miss by nature (about four a frame): the misses that stay are those, not the ui next to it
         hits, misses := UiMeasureCacheStats(ctx)
-        UiLabel(ctx, UiFormat(ctx, "measure cache %d hits, %d misses    frame %.2f ms%s", hits, misses, ctx.delta_time * 1000, "    TABLE FULL" if inspector.cut_off else ""))
+        inspector.frame_hits, inspector.frame_misses = hits - inspector.measure_hits, misses - inspector.measure_misses
+        inspector.measure_hits, inspector.measure_misses = hits, misses
+        UiLabel(ctx, UiFormat(ctx, "measure cache last frame %d hits, %d misses (the counters of this panel are misses by nature)    frame %.2f ms%s", inspector.frame_hits, inspector.frame_misses, ctx.delta_time * 1000, "    TABLE FULL" if inspector.cut_off else ""))
         if ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .LEFT_TO_RIGHT, gap = metrics.gap, align = {y = .CENTER}}}) {
             UiToggle(ctx, "Pick", &inspector.pick)
             UiToggle(ctx, "Text", &inspector.show_text)

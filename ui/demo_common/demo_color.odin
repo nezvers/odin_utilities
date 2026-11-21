@@ -62,5 +62,60 @@ script: []kit.Step = {
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return abs(alpha - 0.2) < 0.02 }, "the alpha bar sets the alpha"),
     kit.Capture("color_picked"),
+    // the bar modes: the same color through the channels of HSV, HSL, RGB and OKLCH, each bar as smooth as the screen
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aimAt(ui.UiIdPath("Color", "Tint", "##mode")) }, "the mode box"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aimAt(ui.IdFromIndex(u32(ui.ColorMode.HSV), ui.IdFromString("popup", ui.UiIdPath("Color", "Tint", "##mode")))) }, "the HSV option"),
+    kit.ClickAt(&target),
+    kit.MoveTo({900, 600}),
+    kit.Wait(4),
+    kit.Capture("color_hsv"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aimAt(ui.UiIdPath("Color", "Tint", "##mode")) }, "the mode box"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aimAt(ui.IdFromIndex(u32(ui.ColorMode.HSL), ui.IdFromString("popup", ui.UiIdPath("Color", "Tint", "##mode")))) }, "the HSL option"),
+    kit.ClickAt(&target),
+    kit.MoveTo({900, 600}),
+    kit.Wait(4),
+    kit.Capture("color_hsl"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aimAt(ui.UiIdPath("Color", "Tint", "##mode")) }, "the mode box"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aimAt(ui.IdFromIndex(u32(ui.ColorMode.RGB), ui.IdFromString("popup", ui.UiIdPath("Color", "Tint", "##mode")))) }, "the RGB option"),
+    kit.ClickAt(&target),
+    kit.MoveTo({900, 600}),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        rect, found := ui.UiElementRect(&state.ctx, ui.IdFromIndex(0, ui.UiIdPath("Color", "Tint", "hue")))
+        target = {rect.x + rect.z * 0.9, rect.y + rect.w * 0.5}
+        return found && rect.z > rect.w * 3
+    }, "the red bar"),
+    kit.ClickAt(&target),
+    kit.MoveTo({900, 600}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return abs(color.r - 0.9) < 0.02 }, "the red bar sets red"),
+    kit.Capture("color_rgb"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aimAt(ui.UiIdPath("Color", "Tint", "##mode")) }, "the mode box"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aimAt(ui.IdFromIndex(u32(ui.ColorMode.OKLCH), ui.IdFromString("popup", ui.UiIdPath("Color", "Tint", "##mode")))) }, "the OKLCH option"),
+    kit.ClickAt(&target),
+    kit.MoveTo({900, 600}),
+    kit.Wait(4),
+    kit.Capture("color_oklch"),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.ctx) == {} }, "the frames had no problems"),
+}
+
+target: ui.Vec2
+
+// `target` is the middle of an element of the picker
+aimAt :: proc(id: ui.Id) -> bool {
+    rect, found := ui.UiElementRect(&state.ctx, id)
+    target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    return found && rect.z > 0
 }

@@ -21,11 +21,21 @@ import icons "../../icons"
 
 @(private="package")
 demo_examples: kit.Demo = {
-    name = "examples",
+    name = "baldr examples",
     init = init,
     finit = finit,
     draw = draw,
     script = script,
+}
+
+// The controls page of the examples on its own, first in the menu: a game's input rebinding (a key and a gamepad button for every action, pictures of the inputs, one input does one thing).
+@(private="package")
+demo_rebind: kit.Demo = {
+    name = "rebind controls",
+    init = init,
+    finit = finit,
+    draw = drawRebind,
+    script = rebindScript,
 }
 
 State :: struct {
@@ -1425,6 +1435,17 @@ themeLab :: proc(c: ^ui.Context) {
     ui.ElementClose(c)
 }
 
+drawRebind :: proc(ctx: ^kit.Context) {
+    state.app.painter.theme = ui_default.THEME_DARK
+    ctx.background = kit.Color(state.app.painter.theme.background)
+    ui_demo_begin(&state.app, ctx)
+    c: ^ui.Context = &state.app.ctx
+    ui.ElementOpen(c, {layout = {size = {ui.Fixed(ctx.screen.x), ui.Fixed(ctx.screen.y)}, direction = .TOP_TO_BOTTOM}})
+    rebind(c, ctx)
+    ui.ElementClose(c)
+    ui_demo_end(&state.app)
+}
+
 draw :: proc(ctx: ^kit.Context) {
     state.app.painter.theme = ui_default.THEME_DARK if state.dark else ui_default.THEME_LIGHT
     if state.example == 5 { state.app.painter.theme = ui_default.ThemeFromAccent(state.accent, state.mode == 0) }
@@ -2370,4 +2391,39 @@ script: []kit.Step = {
         return whole && count_lines(text) == 50 && contains(text, log_text(45)) && ui.UiScrollGet(&state.app.ctx, state.log_id) > 36 * 20 && shown(log_cell(52, 2), "")
     }, "the end moved out of view row by row and the table followed it"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
+}
+
+// The rebinding page alone: listen, take a key, take a pad button, one input one action, the action runs, Backspace clears, Defaults
+rebindScript: []kit.Step = {
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return drawn(.GLYPH, "Space") && drawn(.GLYPH, "Start") && drawn(.GLYPH, "R") }, "the bindings are drawn as pictures of the inputs"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return bind_target(2, 1) }, "the pad field of Jump"),
+    kit.ClickAt(&target),
+    kit.MoveTo({640, 700}),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.bind_listening }, "the field listens"),
+    kit.Capture("rebind_listening"),
+    kit.Wait(2),
+    kit.PadTap(.FACE_UP),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.binds[2][1] == ui.Binding{device = .GAMEPAD, code = u16(kit.PadButton.FACE_UP)} }, "the button that was pressed is the binding"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return bind_target(3, 0) }, "the key field of Shoot"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Tap(.K),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.binds[3][0].code == u16(kit.Key.K) }, "Shoot is on K"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return bind_target(4, 0) }, "the key field of Dash"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Tap(.K),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.binds[4][0].code == u16(kit.Key.K) && state.binds[3][0].device == .NONE }, "an input belongs to one action"),
+    kit.Tap(.K),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.bind_done[4] == 1 }, "the key does the action"),
+    kit.MoveTo({640, 700}),
+    kit.Wait(3),
+    kit.Capture("rebind_done"),
+    kit.Wait(2),
 }

@@ -765,13 +765,12 @@ DrawSlider :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     FocusRing(painter, info)
     FillRoundedBorder(painter, rect, theme.rounding, theme.track, theme.border, theme.border_width, theme.max_radius)
     inner: ui.Rect = ui.RectShrink(rect, theme.border_width)
-    width: f32 = inner.z * info.value
-    if width > 0 {
-        FillRounded(painter, {inner.x, inner.y, max(width, inner.w * 0.5), inner.w}, theme.rounding, theme.accent_soft, theme.max_radius - theme.border_width)
-    }
-    handle_width: f32 = 3
-    handle_x: f32 = clamp(inner.x + width - handle_width * 0.5, inner.x + 3, inner.x + inner.z - handle_width - 3)
-    FillRounded(painter, {handle_x, rect.y + 5, handle_width, rect.w - 10}, 1, ui.ColorLerp(theme.accent, theme.text, info.press))
+    // the fill ends under the middle of a round knob that is where the pointer is (the same place the slider maps the pointer to), kept whole inside of the well at both ends
+    knob: f32 = max(inner.w - 8, 8)
+    centre_x: f32 = clamp(inner.x + inner.z * info.value, inner.x + knob * 0.5 + 4, inner.x + inner.z - knob * 0.5 - 4)
+    FillRounded(painter, {inner.x, inner.y, centre_x - inner.x, inner.w}, theme.rounding, theme.accent_soft, theme.max_radius - theme.border_width)
+    knob_rect: ui.Rect = {centre_x - knob * 0.5, inner.y + (inner.w - knob) * 0.5, knob, knob}
+    FillRoundedBorder(painter, knob_rect, knob * 0.5, ui.ColorLerp(theme.text, theme.accent, info.press), theme.accent, 2, knob)
     TextLeft(painter, info.name, rect, info.font_size, 10, textColor(theme, info), .STRONG)
     TextRight(painter, info.text, rect, info.font_size, 10, textColor(theme, info), .MONO if painter.glue_fonts[.MONO] != 0 else .REGULAR)
 }
