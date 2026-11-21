@@ -119,12 +119,22 @@ primitiveType :: proc(tag: string) -> (odin: string, read: string, write: string
     return "", "", "", false
 }
 
-// The product types that the server uses for its own types: an Identity is a product of one u256 named `__identity__`, and so on
+// The types that the server defines for itself: an Identity is a product of one u256 named `__identity__`, a ScheduleAt a sum of Interval and Time. They are written inline in a column
+// by a module that makes its own description, and as a reference to a named type by others: `specialInline` looks at the type itself, `specialType` at an entry of the typespace.
 @(private)
-specialType :: proc(g: ^Generator, index: int) -> (odin: string, read: string, write: string, ok: bool) {
-    if index < 0 || index >= len(g.types) { return }
-    tag, payload, tagged := jsonTag(g.types[index])
-    if !tagged || tag != "Product" { return }
+specialInline :: proc(t: json.Value) -> (odin: string, read: string, write: string, ok: bool) {
+    tag, payload, tagged := jsonTag(t)
+    if !tagged { return }
+    if tag == "Sum" {
+        variants, _ := jsonField(payload, "variants")
+        list, is_list := variants.(json.Array)
+        if !is_list || len(list) != 2 { return }
+        first, _ := jsonSome(jsonField(list[0], "name") or_else nil)
+        second, _ := jsonSome(jsonField(list[1], "name") or_else nil)
+        if jsonStr(first) == "Interval" && jsonStr(second) == "Time" { return "st.ScheduleAt", "st.ReadScheduleAt", "st.WriteScheduleAt", true }
+        return
+    }
+    if tag != "Product" { return }
     elements, _ := jsonField(payload, "elements")
     list, is_list := elements.(json.Array)
     if !is_list || len(list) != 1 { return }
@@ -136,6 +146,12 @@ specialType :: proc(g: ^Generator, index: int) -> (odin: string, read: string, w
     case "__time_duration_micros__": return "st.TimeDuration", "readTimeDuration", "writeTimeDuration", true
     }
     return
+}
+
+@(private)
+specialType :: proc(g: ^Generator, index: int) -> (odin: string, read: string, write: string, ok: bool) {
+    if index < 0 || index >= len(g.types) { return }
+    return specialInline(g.types[index])
 }
 
 @(private)
@@ -170,6 +186,7 @@ typeName :: proc(g: ^Generator, index: int) -> string {
 @(private)
 mangle :: proc(g: ^Generator, t: json.Value) -> string {
     tag, payload, _ := jsonTag(t)
+    if odin, _, _, special := specialInline(t); special { return strings.trim_prefix(odin, "st.") }
     switch tag {
     case "Ref":
         index: int = jsonInt(payload)
@@ -187,6 +204,7 @@ mangle :: proc(g: ^Generator, t: json.Value) -> string {
 odinType :: proc(g: ^Generator, t: json.Value) -> string {
     tag, payload, _ := jsonTag(t)
     if odin, _, _, ok := primitiveType(tag); ok { return odin }
+    if odin, _, _, special := specialInline(t); special { return odin }
     switch tag {
     case "Ref":
         index: int = jsonInt(payload)
@@ -204,6 +222,7 @@ odinType :: proc(g: ^Generator, t: json.Value) -> string {
 readProc :: proc(g: ^Generator, t: json.Value) -> string {
     tag, payload, _ := jsonTag(t)
     if _, read, _, ok := primitiveType(tag); ok { return read }
+    if _, read, _, special := specialInline(t); special { return read }
     switch tag {
     case "Ref":
         index: int = jsonInt(payload)
@@ -241,6 +260,7 @@ readProc :: proc(g: ^Generator, t: json.Value) -> string {
 writeProc :: proc(g: ^Generator, t: json.Value) -> string {
     tag, payload, _ := jsonTag(t)
     if _, _, write, ok := primitiveType(tag); ok { return write }
+    if _, _, write, special := specialInline(t); special { return write }
     switch tag {
     case "Ref":
         index: int = jsonInt(payload)
@@ -277,6 +297,14 @@ writeProc :: proc(g: ^Generator, t: json.Value) -> string {
 @(private)
 fixedSize :: proc(g: ^Generator, t: json.Value) -> int {
     tag, payload, _ := jsonTag(t)
+    if odin, _, _, special := specialInline(t); special {
+        switch odin {
+        case "st.Identity": return 32
+        case "st.ConnectionId": return 16
+        case "st.Timestamp", "st.TimeDuration": return 8
+        }
+        return 0
+    }
     switch tag {
     case "Bool", "I8", "U8": return 1
     case "I16", "U16": return 2

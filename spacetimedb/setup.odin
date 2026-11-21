@@ -132,6 +132,7 @@ SetupRun :: proc(options: SetupOptions = {}) -> (result: SetupResult) {
         if SetupFixture(options, "basic-rs", root) { result.fixtures += 1 }
         if SetupOdinModule(options, "basic", root) { result.fixtures += 1 }
         if SetupOdinModule(options, "rich", root) { result.fixtures += 1 }
+        if SetupOdinModule(options, "arena", root) { result.fixtures += 1 }
     }
     return
 }
@@ -223,7 +224,9 @@ SetupOdinModule :: proc(options: SetupOptions, name: string, root: string = "") 
     if os.exists(out) { return true }
     setupSay(options, fmt.tprintf("building the module %s in Odin", name))
     os.make_directory_all(ServerBinFolder(base))
-    return BuildModule(fmt.tprintf("%s/spacetimedb/module/example/%s", base, name), out)
+    package_path: string = fmt.tprintf("%s/spacetimedb/module/example/%s", base, name)
+    if !os.exists(package_path) { package_path = fmt.tprintf("%s/spacetimedb/%s/module", base, name) }       // a game: spacetimedb/arena/module
+    return BuildModule(package_path, out)
 }
 
 // The namespaces of host functions that a SpacetimeDB module may import (the ABI versions of the server of SPACETIMEDB_VERSION): a module that imports another one does not load

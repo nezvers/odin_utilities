@@ -24,3 +24,19 @@ WriteWide32 :: proc(writer: ^Writer, value: [32]u8) {
     value := value
     WriteRaw(writer, value[:])
 }
+
+// A `.SCHEDULE_AT` column: when a scheduled reducer runs. `time` false: every `micros` microseconds (an interval), true: once at `micros` since the Unix epoch.
+ScheduleAt :: struct {
+    time: bool,
+    micros: i64,
+}
+
+ReadScheduleAt :: proc(reader: ^Reader) -> ScheduleAt {
+    time: bool = ReadTag(reader) == 1
+    return {time = time, micros = ReadI64(reader)}
+}
+
+WriteScheduleAt :: proc(writer: ^Writer, value: ScheduleAt) {
+    WriteTag(writer, 1 if value.time else 0)
+    WriteI64(writer, value.micros)
+}

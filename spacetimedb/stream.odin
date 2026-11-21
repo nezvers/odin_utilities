@@ -13,8 +13,15 @@ StreamStatus :: enum u8 {
     CLOSED,         // the other side closed it, or it broke
 }
 
+// A program that reaches the server through something that has to be stepped by the same thread (a tunnel over a p2p Link, see tunnel/) sets this: every wait of a blocking call
+// (an HTTP request, the websocket handshake) calls it in between, so the other end keeps being served while this one waits. Plain sockets only.
+StreamIdle: proc(user: rawptr)
+StreamIdleUser: rawptr
+
 Stream :: struct {
     socket: net.TCP_Socket,
+    timeout: time.Duration,
+    polling: bool,              // the idle hook was set when this stream was opened: waits are polls
     secure: bool,
     tls: p2p.Tls,   // used when `secure` (about 55 KB: a stream lives in the struct of its connection, not on a small stack)
 }
@@ -26,7 +33,11 @@ streamOpen :: proc(stream: ^Stream, endpoint: Endpoint, timeout: time.Duration) 
     if dial_error != nil { return false, "could not connect" }
     net.set_option(socket, .Receive_Timeout, timeout)
     net.set_option(socket, .Send_Timeout, timeout)
-    stream.socket = socket
+    stream.socket, stream.timeout = socket, timeout
+    if StreamIdle != nil && !endpoint.secure {
+        stream.polling = true
+        net.set_blocking(socket, false)
+    }
     if endpoint.secure {
         if !p2p.TlsConnect(&stream.tls, socket, endpoint.host) {
             net.close(socket)
@@ -48,8 +59,9 @@ streamSend :: proc(stream: ^Stream, bytes: []u8, patience: time.Duration = 0) ->
     start: time.Tick = time.tick_now()
     for sent < len(bytes) {
         count, error := net.send_tcp(stream.socket, bytes[sent:])
-        if error == .Would_Block && patience > 0 {
-            if time.tick_since(start) > patience { return false }
+        if error == .Would_Block && (patience > 0 || stream.polling) {
+            if time.tick_since(start) > (patience if patience > 0 else stream.timeout) { return false }
+            if stream.polling { StreamIdle(StreamIdleUser) }
             time.sleep(time.Millisecond)
             continue
         }
@@ -66,6 +78,21 @@ streamRecv :: proc(stream: ^Stream, buffer: []u8, wait: bool) -> (count: int, st
         if read < 0 { return 0, .CLOSED }
         if read == 0 { return 0, .NONE }
         return read, .OK
+    }
+    if stream.polling && wait {
+        start: time.Tick = time.tick_now()
+        for {
+            received, error := net.recv_tcp(stream.socket, buffer)
+            if error == .Would_Block || error == .Timeout {
+                if time.tick_since(start) > stream.timeout { return 0, .NONE }
+                StreamIdle(StreamIdleUser)
+                time.sleep(time.Millisecond)
+                continue
+            }
+            if error != nil { return received, .OK if received > 0 else .CLOSED }
+            if received == 0 { return 0, .CLOSED }
+            return received, .OK
+        }
     }
     received, error := net.recv_tcp(stream.socket, buffer)
     if error == .Would_Block || error == .Timeout { return received, .OK if received > 0 else .NONE }
