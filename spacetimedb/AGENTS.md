@@ -1,6 +1,25 @@
 # spacetimedb: notes for agents
 
-What is not obvious from the code of this library. The rules that hold for every library, the commands and the map of the libraries are in [../AGENTS.md](../AGENTS.md); the user facing description is in README.md.
+What is not obvious from the code of this library. The rules that hold for every library, the commands and the map of the libraries are in [../AGENTS.md](../AGENTS.md); the user facing description is in README.md. Next steps: `TODO.md`.
 
-- `setup.odin` (`SetupRun(options)`: clones SpacetimeDB into `spacetimedb/SpacetimeDB` (vendored, untracked through `spacetimedb/.gitignore`) and the other references into `odin_utilities/references/` (a `.gitignore *` of its own), downloads the release of the server (`SPACETIMEDB_VERSION`) into `spacetimedb/bin`, builds the test module `fixtures/basic-rs` with cargo; other libraries call it from their setup), `server.odin` (`ServerStart` / `ServerStop`: the CLI with `--root-dir` makes the keys and starts the standalone server as a child, so a stop kills the whole tree; the output is thrown away unless `show_output`: a child does not inherit an `os.create` handle on Windows), `rest.odin` + `http.odin` (identity, publish, delete, schema, SQL, call, logs; `HttpRequest` into a caller buffer), `bsatn.odin` (`Writer` / `Reader` over caller memory, an error is remembered), `protocol.odin` (websocket protocol v2: `Encode...` for the client messages, `ServerMessageDecode` with an allocator for the arrays, strings and bytes point into the frame), `websocket.odin` (client RFC 6455, non blocking, `WebSocketPoll`), `connection.odin` (`ConnectionOpen/Poll/Subscribe/CallReducer`, asks for `compression=None`), `spacetimedb_test.odin` (the session test is skipped when the server or the module is missing: `odin run spacetimedb/tool/setup`), `tool/setup`, `tool/session` (a session by hand), `fixtures/basic-rs` (a Rust module: table `person`, reducer `add`), `bsatn/` (BSATN as its own package, free of sockets so it builds for wasm; `bsatn_alias.odin` re-exports it), `module/` (package `spacetimedb_module`: a module written in Odin for `freestanding_wasm32`, fixed buffers, `Define(define)` from an `__preinit__...` export, `TableAdd` / `ReducerAdd`, the exports `__describe_module__` and `__call_reducer__`; `module/example/basic`, `tool/build_module`, `BuildModule` = `web_build.WasmBuild` + `WasmInspect`: the same wasm build and check for any host module, see web_build). Next steps are in `TODO.md`: modules in Odin (wasm, the module ABI), a client cache, code generation, the Godot GDExtension as its own library. A TLS socket and reconnect are not there.
-- The sources (`spacetimedb/SpacetimeDB` is vendored in the library; the rest in references/: BitCraftPublic, spacetimedb-python-sdk, spacetimedb-bindings-cpp, spacetimedb-cookbook, spacetime-studio) are shallow clones: `crates/client-api-messages/src/websocket/v2.rs` is the protocol, `crates/bindings-sys` the module ABI, `crates/bindings-cpp` the model of a module that is not Rust, `docs/docs/00300-resources` the HTTP, BSATN and ABI documents.
+## Setup and server
+- `setup.odin` `SetupRun(options)`: clones SpacetimeDB into `spacetimedb/SpacetimeDB` (vendored, untracked via `spacetimedb/.gitignore`), the other references into `odin_utilities/references/` (own `.gitignore *`), downloads the server release (`SPACETIMEDB_VERSION`) into `spacetimedb/bin`, builds `fixtures/basic-rs` with cargo (skipped without cargo). Other libraries call it from their setup. Run: `odin run spacetimedb/tool/setup`.
+- `server.odin` `ServerStart/ServerStop`: start through the CLI with `--root-dir` (it makes the jwt keys and starts the standalone server as a child), so stop kills the whole tree. Output is discarded unless `show_output` (an `os.create` handle is not inherited by children on Windows; an inherited test pipe hangs the runner).
+
+## Client
+- `http.odin` `HttpRequest` into a caller buffer; `rest.odin`: identity, publish, delete, schema, SQL, call, logs.
+- `bsatn/` is its own package (no sockets, builds for wasm); `bsatn_alias.odin` re-exports it. `Writer/Reader` work over caller memory and remember the first error.
+- `protocol.odin`: websocket protocol v2 (`Encode...` for client messages, `ServerMessageDecode` with an allocator for arrays; strings and bytes point into the frame).
+- `websocket.odin`: RFC 6455 client, non blocking, `WebSocketPoll`. `connection.odin`: `ConnectionOpen/Poll/Subscribe/CallReducer`, asks for `compression=None`.
+
+## Modules in Odin
+- `module/` (package `spacetimedb_module`): module for `freestanding_wasm32`, fixed buffers, `Define(define)` called from an `__preinit__...` export, `TableAdd/ReducerAdd`, exports `__describe_module__` and `__call_reducer__`. Example `module/example/basic`.
+- Build with `tool/build_module` / `BuildModule` = `web_build.WasmBuild` + `WasmInspect` (checks exports, memory, import namespaces).
+
+## Tests and tools
+- `spacetimedb_test.odin`: the session test is skipped when the server or module is missing. `tool/session` runs a session by hand. `fixtures/basic-rs`: Rust module (table `person`, reducer `add`).
+
+## Where the truth is (shallow clones)
+- `SpacetimeDB/crates/client-api-messages/src/websocket/v2.rs` the protocol; `crates/bindings-sys` the module ABI; `crates/bindings-cpp` a non Rust module model; `docs/docs/00300-resources` HTTP, BSATN, ABI docs.
+- `references/`: BitCraftPublic, spacetimedb-python-sdk, spacetimedb-bindings-cpp, spacetimedb-cookbook, spacetime-studio.
+- Not there yet: TLS socket, reconnect.
