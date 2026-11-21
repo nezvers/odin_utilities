@@ -1,0 +1,67 @@
+{
+    "version": "2.0.0",
+    "command": "",
+    "args": [],
+    "tasks": [
+        {
+            "label": "Build Setup",
+            "type": "shell",
+            "command": "odin build tool/setup -strict-style -vet -out:${config:project_name}_setup.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build tool/setup -strict-style -vet -out:${config:project_name}_setup.bin -debug"
+            },
+            "osx": {
+                "command": "odin build tool/setup -strict-style -vet -out:${config:project_name}_setup.bin -debug"
+            }
+        },
+        {
+            "label": "Build Session",
+            "type": "shell",
+            "command": "odin build tool/session -strict-style -vet -out:${config:project_name}_session.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build tool/session -strict-style -vet -out:${config:project_name}_session.bin -debug"
+            },
+            "osx": {
+                "command": "odin build tool/session -strict-style -vet -out:${config:project_name}_session.bin -debug"
+            }
+        },
+        {
+            "label": "Build Tests",
+            "type": "shell",
+            "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            },
+            "osx": {
+                "command": "odin build . -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            }
+        },
+        {
+            "label": "Test",
+            "type": "shell",
+            "command": "odin test . -strict-style -vet",
+            "group": "test"
+        },
+        {
+            "label": "Check",
+            "type": "shell",
+            "command": "odin check . -no-entry-point -strict-style -vet",
+            "group": "build"
+        },
+        {
+            "label": "Run Setup",
+            "type": "shell",
+            "command": "odin run tool/setup -strict-style -vet",
+            "group": "none"
+        },
+        {
+            "label": "Run Session",
+            "type": "shell",
+            "command": "odin run tool/session -strict-style -vet",
+            "group": "none"
+        }
+    ]
+}

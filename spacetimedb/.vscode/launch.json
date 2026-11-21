@@ -1,0 +1,56 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Tests",
+            "request": "launch",
+            "preLaunchTask": "Build Tests",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_test.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_test.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_test.bin"
+            }
+        },
+        {
+            "name": "Run Session",
+            "request": "launch",
+            "preLaunchTask": "Build Session",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_session.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_session.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_session.bin"
+            }
+        },
+        {
+            "name": "Run Setup",
+            "request": "launch",
+            "preLaunchTask": "Build Setup",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/${config:project_name}_setup.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_setup.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/${config:project_name}_setup.bin"
+            }
+        }
+    ]
+}

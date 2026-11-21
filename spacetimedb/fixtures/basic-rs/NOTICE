@@ -1,0 +1,2 @@
+src/lib.rs is the module of the template basic-rs of SpacetimeDB (https://github.com/clockworklabs/SpacetimeDB, templates/basic-rs/spacetimedb/src/lib.rs),
+Copyright Clockwork Labs, Apache License 2.0 (the templates of that repository are under it). Cargo.toml here depends on the published crate instead of a path.
