@@ -12,16 +12,16 @@ package ui
 //  - the segment is found once per block by a cursor that only moves forward (a jump back, a loop, a seek is found by one binary search), never by a search per sample;
 //  - everything a segment needs is computed when the plan is made (the length's inverse, the difference of the values, the coefficient of its shape: no divisions to set up a block);
 //  - HOLD, and the stretches before the first point and after the last one, are a fill of one value;
-//  - LINEAR is a ramp: one add per sample (forward differencing), started again from an exact value every AUTOMATION_CHUNK samples so that the rounding of f32 cannot add up;
+//  - LINEAR is a ramp: value + i * delta from an exact start, a multiply and an add a sample that the compiler does 4, 8 or 16 at a time (the sum it was before waited for the sample before it);
 //  - STAIRS, SMOOTH_STAIRS and PULSE have edges that a ramp would smear: exact at every sample (a few ns each); TRIANGLE and WAVE are continuous: a ramp per run, anchored inside of a run for WAVE;
-//  - EXP is one multiply a sample (the ratio of neighbours is constant), started again from an exact e^(c x) every AUTOMATION_CHUNK samples, like the linear ramp;
+//  - EXP is one multiply a sample (the ratio of neighbours is constant) by eight lanes at a time, started again from an exact e^(c x) every AUTOMATION_CHUNK samples so that the rounding of f32 cannot add up;
 //  - SMOOTH, CURVE, S_CURVE and HERMITE are evaluated exactly only every few samples (the anchors) and ramped linearly between them. The distance between anchors is a part (1 / 125) of the length of the
 //    segment, at most AUTOMATION_ANCHOR samples, so the error is the same small part of the change of the value whatever the length: at most about 5e-5 for SMOOTH, more for a strongly bent CURVE
 //    (see the test). A segment shorter than 125 samples is evaluated at every sample, exactly. `AutomationRenderExact` is the per-sample reference.
 
 import "core:math"
 
-AUTOMATION_CHUNK :: 64              // samples between two exact starts of a linear ramp
+AUTOMATION_CHUNK :: 256             // samples between two exact starts of an exponential (the powers of the ratio are multiplied on: a part in 10^6 after this many)
 AUTOMATION_ANCHOR :: 64             // at most this many samples between two exact evaluations of a curved segment
 AUTOMATION_ANCHOR_PART :: 125       // a segment has at least this many anchor spaces: the error of the ramps between anchors is about (1 / this)^2 of the bend
 
@@ -115,11 +115,8 @@ fill :: proc(out: []f32, value: f32) {
 @(private)
 ramp :: proc(out: []f32, from: f32, to: f32) {
     delta: f32 = (to - from) / f32(len(out))
-    value: f32 = from
-    for i in 0 ..< len(out) {
-        out[i] = value
-        value += delta
-    }
+    // from + i * delta, not a running sum: no sample waits for the one before it, so the compiler fills 4, 8 or 16 of them at a time (a sum is one add of latency a sample), and no rounding adds up
+    automation_current.ramp(out, from, delta)
 }
 
 // One segment's samples: `out[0]` is at `time` (inside of the segment), `step` is the time of a sample.
@@ -140,24 +137,16 @@ automationSegmentFill :: proc(segment: ^AutomationSegment, time: f64, step: f64,
             count: int = min(AUTOMATION_CHUNK, len(out) - start)
             x: f64 = (time - segment.start) * segment.inverse_length + f64(start) * delta_x
             growth: f32 = math.exp(c * f32(clamp(x, 0, 1)))
-            for i in 0 ..< count {
-                out[start + i] = segment.value + (growth - 1) * scale
-                growth *= ratio
-            }
+            automation_current.exp_run(out[start:start + count], growth, ratio, segment.value - scale, scale)
         }
     case .LINEAR:
-        // forward differencing: one add a sample, from an exact value at the start of every chunk
+        // value + i * delta from an exact start: a multiply and an add a sample with no sample waiting for another, and nothing adds up (the error of i * delta is that of one f32 rounding of delta, at
+        // most a part in 10^7 of the change)
         delta_x: f64 = step * segment.inverse_length
         delta: f32 = segment.change * f32(delta_x)
-        for start := 0; start < len(out); start += AUTOMATION_CHUNK {
-            count: int = min(AUTOMATION_CHUNK, len(out) - start)
-            x: f64 = (time - segment.start) * segment.inverse_length + f64(start) * delta_x
-            value: f32 = segment.value + segment.change * f32(clamp(x, 0, 1))
-            for i in 0 ..< count {
-                out[start + i] = value
-                value += delta
-            }
-        }
+        x: f64 = (time - segment.start) * segment.inverse_length
+        value: f32 = segment.value + segment.change * f32(clamp(x, 0, 1))
+        automation_current.ramp(out, value, delta)
     case .TRIANGLE, .WAVE:
         // continuous: every run (up or down) is a ramp, between exact values at its ends; WAVE is eased inside of a run, so it is anchored like the other curves
         x0: f64 = (time - segment.start) * segment.inverse_length

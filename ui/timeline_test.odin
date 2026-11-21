@@ -2,6 +2,7 @@
 package ui
 
 import "core:testing"
+import su "../simd"
 
 @(private = "file")
 newTimeline :: proc() -> ^Timeline {
@@ -758,4 +759,25 @@ test_a_clip_stretch_works_from_the_snapshot_and_keeps_clips_that_may_not_be_ther
     testing.expect_value(t, TimelineClipsStretch(timeline, 0, 0.4), 1)
     testing.expect(t, abs(TimelineClipGet(timeline, b).start - 0.8) < 1e-9 && abs(TimelineClipGet(timeline, b).length - 0.8) < 1e-9)
     testing.expect_value(t, TimelineClipGet(timeline, a).length, 2)                 // it keeps the last place it had
+}
+
+@(test)
+test_every_level_of_the_ramp_and_the_exponential_kernels_gives_the_same_samples :: proc(t: ^testing.T) {
+    for level in su.Level {
+        if level > su.CpuBest() || su.LevelFamily(level) != su.LevelFamily(su.CpuBest()) { continue }
+        kernels: AutomationKernels = AutomationKernelsOf(level)
+        testing.expect(t, kernels.ramp != nil && kernels.exp_run != nil, "a kernel for every level")
+        for length in ([?]int{0, 1, 7, 8, 9, 15, 16, 17, 63, 64, 100, 256}) {
+            expected, got: [300]f32
+            rampBase(expected[:length], 0.25, 0.003)
+            kernels.ramp(got[:length], 0.25, 0.003)
+            testing.expectf(t, expected == got, "%v: the ramp of %d samples", level, length)
+            expected, got = {}, {}
+            expBase(expected[:length], 1.3, 1.01, -0.2, 0.7)
+            kernels.exp_run(got[:length], 1.3, 1.01, -0.2, 0.7)
+            for i in 0 ..< length {
+                testing.expectf(t, abs(expected[i] - got[i]) <= 1e-5 * max(abs(expected[i]), 1), "%v: the exponential at %d of %d: %v and %v", level, i, length, expected[i], got[i])
+            }
+        }
+    }
 }
