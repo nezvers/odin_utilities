@@ -26,7 +26,7 @@ test_the_arena_demo_plays_its_script :: proc(t: ^testing.T) {
     headless: kit.HeadlessState
     backend: kit.Backend
     kit.HeadlessInit(&backend, &headless)
-    report: kit.Report = kit.TestDemo(demo_arena, &backend)
+    report: kit.Report = kit.TestDemo(demo_arena_solo, &backend)
     for failure in report.failures[:min(report.failed, kit.MAX_FAILURES)] {
         testing.expectf(t, false, "frame %d: %s", failure.frame, failure.message)
     }
@@ -49,7 +49,7 @@ test_the_arena_start_screen_plays_its_script :: proc(t: ^testing.T) {
     headless: kit.HeadlessState
     backend: kit.Backend
     kit.HeadlessInit(&backend, &headless)
-    report: kit.Report = kit.TestDemo(demo_arena_menu, &backend)
+    report: kit.Report = kit.TestDemo(demo_arena, &backend)
     for failure in report.failures[:min(report.failed, kit.MAX_FAILURES)] {
         testing.expectf(t, false, "frame %d: %s", failure.frame, failure.message)
     }

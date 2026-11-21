@@ -19,9 +19,16 @@ aimConnect :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "join", "Con
 aimBack :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "join", "Back") }
 aimCopyInvite :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Copy the invite code") }
 
+// The right of the screen: the Players and the Connection windows (the field is on the left and changes all the time)
+panel_frames: []kit.Rect = {{880, 40, 380, 660}}
+
 menu_script: []kit.Step = {
     kit.Wait(4),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .MENU && state.name_length > 0 }, "the start screen is shown with a name"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        config.mask_codes, config.loopback = true, true       // pictures cannot hold a code that is new every time; the codes of this machine and the loopback are enough to connect
+        state.name_length = copy(state.name[:], "player")
+        return state.phase == .MENU && state.name_length > 0
+    }, "the start screen is shown with a name"),
     kit.Check(aimJoin, "the Join a game button is on the screen"),
     kit.ClickAt(&target),
     kit.Wait(3),
@@ -32,10 +39,16 @@ menu_script: []kit.Step = {
     kit.Type("not a code"),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.code[:state.code_length]) == "not a code" }, "the code field takes typing"),
+    kit.Wait(2),
+    kit.Capture("join_form"),
+    kit.Wait(1),
     kit.Check(aimConnect, "the Connect button is on the screen"),
     kit.ClickAt(&target),
     kit.Wait(10),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .MENU && strings.contains(string(state.status[:state.status_length]), "not an invite code") }, "a text that is not a code is refused on the start screen"),
+    kit.Wait(2),
+    kit.Capture("menu_refused"),
+    kit.Wait(1),
     // Paste puts the clipboard into the field
     kit.Check(aimJoin, "the Join a game button is back"),
     kit.ClickAt(&target),
@@ -61,6 +74,9 @@ menu_script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(1400),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .PLAYING && state.host != nil && state.host.stage == .READY && aimCopyInvite(ctx) }, "Host a game starts the game and the invite is ready"),
+    kit.Wait(2),
+    kit.CaptureIn("host_ready", panel_frames),
+    kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, ""); return true }, "the clipboard is emptied"),
     kit.ClickAt(&target),
     kit.Wait(3),
@@ -68,6 +84,28 @@ menu_script: []kit.Step = {
         buffer: [1024]u8
         return state.host != nil && kit.ClipboardGet(ctx, buffer[:]) == session.HostInvite(state.host)
     }, "Copy the invite code puts the invite on the clipboard"),
+    // a friend (a guest of this process) joins the hosted game with the code: the Connection window lists it with the path of the connection
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        test_guest = new(session.Guest)
+        frame_hook = proc() {
+            if test_guest != nil { session.GuestUpdate(test_guest) }
+            if test_host != nil { session.HostUpdate(test_host) }
+        }
+        if !session.GuestJoin(test_guest, session.HostInvite(state.host), {loopback = true, name = "Friend"}) { return false }
+        return session.HostAcceptReply(state.host, session.GuestReply(test_guest))
+    }, "a friend joins the hosted game and its reply is accepted"),
+    kit.Wait(300),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return session.HostGuests(state.host) == 1 && session.GuestConnected(test_guest) }, "the friend is connected"),
+    kit.Wait(2),
+    kit.CaptureIn("host_with_friend", panel_frames),
+    kit.Wait(1),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        frame_hook = nil
+        session.GuestStop(test_guest)
+        free(test_guest)
+        test_guest = nil
+        return true
+    }, "the friend leaves"),
     kit.Tap(.ESCAPE),
     kit.Wait(10),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .MENU }, "and Escape leaves the hosted game"),
@@ -87,9 +125,14 @@ menu_script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(40),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .CONNECTING && state.guest != nil && state.guest.stage >= .READY }, "the guest shows the connection being made and has its reply code"),
+    kit.Capture("connecting"),
+    kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return session.HostAcceptReply(test_host, session.GuestReply(state.guest)) }, "the host accepts the reply code"),
     kit.Wait(600),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .PLAYING && state.game.phase == .PLAYING && state.game.player_count == 1 }, "the guest plays on the database of the other host through the tunnel"),
+    kit.Wait(2),
+    kit.CaptureIn("guest_playing", panel_frames),
+    kit.Wait(1),
     kit.Tap(.ESCAPE),
     kit.Wait(10),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
@@ -105,12 +148,4 @@ menu_script: []kit.Step = {
 }
 
 test_host: ^session.Host
-
-demo_arena_menu: kit.Demo = {
-    name = "arena start screen",
-    init = init,
-    finit = finit,
-    update = update,
-    draw = draw,
-    script = menu_script,
-}
+test_guest: ^session.Guest

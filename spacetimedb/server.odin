@@ -33,6 +33,8 @@ Server :: struct {
     host: [16]u8,
     root: string,
     lan: bool,
+    log_path: [256]u8,          // the log file of this start (a copy): ServerStop waits until the process has let go of it
+    log_length: int,
 }
 
 SERVER_HOST :: "127.0.0.1"
@@ -82,6 +84,7 @@ ServerStart :: proc(server: ^Server, options: ServerOptions) -> bool {
     process, start_error := os.process_start({command = command[:], stdout = output, stderr = error_output})
     if start_error != nil { return false }
     server.process, server.running, server.root, server.lan = process, true, options.root, options.lan
+    server.log_length = copy(server.log_path[:], options.log_file)
     server.endpoint = {host = SERVER_HOST, port = port}
     wait: time.Duration = options.wait if options.wait > 0 else 30 * time.Second
     start: time.Tick = time.tick_now()
@@ -111,6 +114,18 @@ ServerStop :: proc(server: ^Server) {
     _ = os.process_kill(server.process)
     _, _ = os.process_wait(server.process)
     server.running = false
+    // the process has let go of its log file: a server started right after with the same log file would find it locked, its redirection would fail and it would never start
+    if server.log_length > 0 {
+        path: string = string(server.log_path[:server.log_length])
+        for _ in 0 ..< 100 {
+            file, open_error := os.open(path, {.Write})
+            if open_error == nil {
+                os.close(file)
+                break
+            }
+            time.sleep(50 * time.Millisecond)
+        }
+    }
     // the port is free when nothing answers any more: a server that is started right after on the same port (a test, a game that goes back to its start screen) would find the old one
     for _ in 0 ..< 100 {
         if !ServerPing(server.endpoint) { break }

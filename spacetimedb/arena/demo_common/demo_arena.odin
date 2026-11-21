@@ -41,6 +41,7 @@ Config :: struct {
     port: int,
     sleep_ms: int,          // a test sleeps in each frame: the network needs real time while a headless run has none
     loopback: bool,         // a test: also offer 127.0.0.1 in the p2p codes
+    mask_codes: bool,       // pictures: the codes are shown as a fixed text (see screens.odin)
     idle_host: ^session.Host,   // a test that hosts in the same process: stepped while the guest waits in a blocking call
 }
 
@@ -367,6 +368,16 @@ drawField :: proc(ctx: ^kit.Context) {
 
 demo_arena: kit.Demo = {
     name = "arena",
+    init = init,
+    finit = finit,
+    update = update,
+    draw = draw,
+    script = menu_script,       // the start screen, a solo game, a hosted game, a friend, a guest: with the pictures of each screen
+}
+
+// The solo game started from the command line (no start screen): the test of that way in
+demo_arena_solo: kit.Demo = {
+    name = "arena solo",
     init = init,
     finit = finit,
     update = update,

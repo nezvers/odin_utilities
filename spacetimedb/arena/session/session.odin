@@ -58,6 +58,8 @@ Host :: struct {
     options: HostOptions,
     port: int,
     relay_used: bool,
+    notice: [200]u8,            // the last thing the link wanted to say (a relay that failed, a friend who joined or left): shown by the window
+    notice_length: int,
 }
 
 // Starts the server, publishes the module, opens the p2p side and makes the invite: `HostBegin` and then the waiting (a few hundred milliseconds with the internet). False with `host.error` set.
@@ -89,7 +91,7 @@ HostBegin :: proc(host: ^Host, options: HostOptions) -> bool {
     port: int = options.port if options.port > 0 else SERVER_PORT
     log_file: string = fmt.tprintf("%s/server.log", options.root)
     os.make_directory_all(options.root)
-    if !st.ServerStart(&host.server, {root = options.root, port = port, log_file = log_file}) {
+    if !st.ServerStart(&host.server, {root = options.root, port = port, log_file = log_file, wait = 60 * time.Second}) {
         host.error = "the server does not start"
         if log, log_error := os.read_entire_file(log_file, context.temp_allocator); log_error == nil && len(log) > 0 {
             host.error = fmt.tprintf("the server does not start: %s", string(log[max(0, len(log) - 2500):]))
@@ -112,14 +114,20 @@ HostBegin :: proc(host: ^Host, options: HostOptions) -> bool {
         token = strings.clone(string(token_view), context.temp_allocator)
         _ = os.write_entire_file(token_file, transmute([]u8)token)
     }
-    published: st.HttpResult = st.DatabasePublish(host.server.endpoint, "arena", module, token, response)
+    // a server that answers its ping may still be starting its database (a start on an existing one replays it): a publish that fails to get through is tried again
+    published: st.HttpResult
+    for _ in 0 ..< 20 {
+        published = st.DatabasePublish(host.server.endpoint, "arena", module, token, response)
+        if published.ok && published.status < 500 { break }
+        time.sleep(300 * time.Millisecond)
+    }
     if !published.ok || published.status != 200 {
-        host.error = fmt.tprintf("the module is not published: %s", string(published.body))
+        host.error = fmt.tprintf("the module is not published: %s %d %s", published.error, published.status, string(published.body))
         return false
     }
     host.link = new(p2p.Link)
     host.tunnel = new(tunnel.Tunnel)
-    if !p2p.LinkInit(host.link, {include_loopback = options.loopback}) {
+    if !p2p.LinkInit(host.link, {include_loopback = true}) {
         host.error = "no UDP socket"
         return false
     }
@@ -181,6 +189,43 @@ HostAcceptReply :: proc(host: ^Host, reply_text: string) -> bool {
     return accepted
 }
 
+// Reading the events of the link, as ai_messaging does: a relay that failed or moved, a friend who came or went. The last one is kept as a notice for the window.
+@(private)
+linkEvents :: proc(link: ^p2p.Link, notice: []u8, notice_length: ^int, guest: bool) -> (peer_failed: bool) {
+    say :: proc(notice: []u8, notice_length: ^int, text: string) {
+        notice_length^ = copy(notice, text)
+    }
+    for {
+        event, ok := p2p.LinkPollEvent(link)
+        if !ok { break }
+        switch event.kind {
+        case .DERP_FAILED:
+            say(notice, notice_length, fmt.tprintf("the relay cannot be used: %s. %s (it keeps trying)", link.derp.failure, p2p.DerpAdvice(link.derp.failure_kind)))
+        case .DERP_SWITCHED:
+            say(notice, notice_length, fmt.tprintf("the relay stayed down: moved to %s", p2p.LinkDerpHost(link)))
+        case .DERP_LOST:
+            say(notice, notice_length, "the relay connection was lost: reconnecting by itself")
+        case .PEER_CONNECTED:
+            if !guest { say(notice, notice_length, fmt.tprintf("%s joined", p2p.LinkPeerName(link, event.peer))) }
+        case .PEER_LOST:
+            say(notice, notice_length, "the other side left or went silent" if guest else fmt.tprintf("%s left", p2p.LinkPeerName(link, event.peer)))
+        case .PEER_FAILED:
+            say(notice, notice_length, "nobody answered: the code may be old, or a firewall blocks both ways (the free relay helps)")
+            peer_failed = true
+        case .GATHERED, .NAT_MEASURED, .RELAY_READY, .RELAY_FAILED, .DERP_READY, .DERP_HOST_FOUND:
+        }
+    }
+    return
+}
+
+HostNotice :: proc(host: ^Host) -> string {
+    return string(host.notice[:host.notice_length])
+}
+
+GuestNotice :: proc(guest: ^Guest) -> string {
+    return string(guest.notice[:guest.notice_length])
+}
+
 HostGuests :: proc(host: ^Host) -> int {
     return p2p.LinkPeerCount(host.link)
 }
@@ -190,6 +235,7 @@ HostUpdate :: proc(host: ^Host) {
     now: i64 = p2p.LinkNow()
     p2p.LinkUpdate(host.link, now)
     tunnel.TunnelUpdate(host.tunnel, now)
+    linkEvents(host.link, host.notice[:], &host.notice_length, false)
     switch host.stage {
     case .GATHERING:
         if p2p.LinkGathered(host.link) || HostElapsedMs(host) > STAGE_GATHER_MS {
@@ -238,6 +284,8 @@ Guest :: struct {
     options: GuestOptions,
     name: [32]u8,
     name_length: int,
+    notice: [200]u8,
+    notice_length: int,
 }
 
 // Takes the invite code of a host and waits until the reply code is made (`GuestBegin` and the waiting); `guest.reply` (GuestReply) is the code to send back
@@ -263,7 +311,7 @@ GuestBegin :: proc(guest: ^Guest, invite_text: string, options: GuestOptions) ->
     guest.invite = invite
     guest.link = new(p2p.Link)
     guest.tunnel = new(tunnel.Tunnel)
-    if !p2p.LinkInit(guest.link, {include_loopback = options.loopback}) {
+    if !p2p.LinkInit(guest.link, {include_loopback = true}) {
         guest.error, guest.stage = "no UDP socket", .FAILED
         return false
     }
@@ -303,6 +351,9 @@ GuestUpdate :: proc(guest: ^Guest) {
     p2p.LinkUpdate(guest.link, now)
     if guest.tunnel_started { tunnel.TunnelUpdate(guest.tunnel, now) }
     relay_wanted: bool = guest.invite.derp_server != 0 && !guest.options.no_derp
+    if linkEvents(guest.link, guest.notice[:], &guest.notice_length, true) && guest.stage == .READY {
+        guest.error, guest.stage = GuestNotice(guest), .FAILED
+    }
     switch guest.stage {
     case .GATHERING:
         if p2p.LinkGathered(guest.link) || GuestElapsedMs(guest) > STAGE_GATHER_MS {

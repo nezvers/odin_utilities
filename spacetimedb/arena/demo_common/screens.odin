@@ -102,6 +102,15 @@ firstLine :: proc(text: string) -> string {
     return strings.trim_space(text if end < 0 else text[:end])
 }
 
+// The code as shown: a picture of the screen (a golden) cannot hold a code that is new every time, so a run that takes pictures (`config.mask_codes`) shows a fixed text of `length` letters
+@(private = "file")
+shownCode :: proc(code: string, length: int) -> string {
+    if !config.mask_codes { return code }
+    // groups like the ones of a real code, so that the lines are about as wide as real ones
+    pattern: string = strings.repeat("XXXXX-", length / 6 + 1, context.temp_allocator)
+    return pattern[:length]
+}
+
 // A code with no spaces cannot wrap by itself: it is cut into lines of `width` characters (temp memory)
 @(private = "file")
 cutCode :: proc(code: string, width: int) -> string {
@@ -216,7 +225,7 @@ connectingScreen :: proc(c: ^ui.Context) {
         if stage == .READY && !relay {
             ui.UiLabelColored(c, "This code names no relay, so the host needs a reply code from you. Send it to the host:", WARNING, .WORDS)
             reply: string = session.GuestReply(guest)
-            ui.UiLabelColored(c, cutCode(reply, 70), RAY, .NEWLINES)
+            ui.UiLabelColored(c, cutCode(shownCode(reply, 2 * 70), 70), RAY, .NEWLINES)
             if ui.UiButton(c, "Copy the reply code", {ui.Grow(), ui.Fixed(34)}) { kit.ClipboardSet(frame_context, reply) }
         } else if stage == .READY {
             ui.UiLabelColored(c, "Waiting for the host. Nothing needs to be sent back: the relay carries the answer.", DIM, .WORDS)
@@ -275,6 +284,8 @@ connectionWindow :: proc(c: ^ui.Context) {
         }
         if host != nil && state.hosting { hostPanel(c, host) }
         if state.game.error != "" { ui.UiLabelColored(c, state.game.error, WARNING, .WORDS) }
+        if host != nil && session.HostNotice(host) != "" { ui.UiLabelColored(c, session.HostNotice(host), WARNING, .WORDS) }
+        if guest != nil && session.GuestNotice(guest) != "" { ui.UiLabelColored(c, session.GuestNotice(guest), WARNING, .WORDS) }
         ui.UiLabelColored(c, "Escape leaves", DIM)
     }
 }
@@ -291,7 +302,7 @@ hostPanel :: proc(c: ^ui.Context, host: ^session.Host) {
         ui.UiProgress(c, "relay", min(1, f32(session.HostElapsedMs(host)) / 8000), 0, 1, {ui.Grow(), {}}, "")
     case .READY, .CONNECTED:
         code: string = session.HostInvite(host)
-        ui.UiLabelColored(c, cutCode(code, 38), RAY, .NEWLINES)
+        ui.UiLabelColored(c, cutCode(shownCode(code, 3 * 38), 38), RAY, .NEWLINES)
         if ui.UiButton(c, "Copy the invite code", {ui.Grow(), ui.Fixed(32)}) { kit.ClipboardSet(frame_context, code) }
         if host.relay_used && host.link.derp.state == .READY {
             ui.UiLabelColored(c, "A friend needs only this code: the relay carries the answer.", GOOD, .WORDS)
