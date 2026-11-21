@@ -21,5 +21,5 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (medium) Authentication: the OIDC side (identities from an issuer, `POST /v1/identity/websocket-token`, SpacetimeAuth).
 - [ ] (low) The test module of the library in more shapes (a table with a primary key and an index, a scheduled reducer, an event table, a view): the references have them under modules/ (sdk-test).
 - [ ] (low) A sample game: players that move (BitCraftPublic and the Blackholio demo of clockworklabs are the models), with demo_kit, two windows against one server.
-- [ ] (low) Windows: a log file for the server (a pipe that a thread drains), and `show_output` on every system.
-- [ ] (later) Run the server of the library for a LAN session from a game: start with a listen address other than loopback, announce through the p2p discovery of odin_utilities.
+- [x] Server log file on every system (`ServerOptions.log_file`; on Windows through a batch file with a redirection)
+- [x] (part) A server for a LAN session: `ServerOptions.lan` listens on 0.0.0.0, `LanEndpoint`. Open (later): announce it through the p2p discovery of odin_utilities, and the invite that carries the address

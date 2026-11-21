@@ -4,7 +4,7 @@ What is not obvious from the code of this library. The rules that hold for every
 
 ## Setup and server
 - `setup.odin` `SetupRun(options)`: clones SpacetimeDB into `spacetimedb/SpacetimeDB` (vendored, untracked via `spacetimedb/.gitignore`), the other references into `odin_utilities/references/` (own `.gitignore *`), downloads the server release (`SPACETIMEDB_VERSION`) into `spacetimedb/bin`, builds `fixtures/basic-rs` with cargo (skipped without cargo). Other libraries call it from their setup. Run: `odin run spacetimedb/tool/setup`.
-- `server.odin` `ServerStart/ServerStop`: start through the CLI with `--root-dir` (it makes the jwt keys and starts the standalone server as a child), so stop kills the whole tree. Output is discarded unless `show_output` (an `os.create` handle is not inherited by children on Windows; an inherited test pipe hangs the runner).
+- `server.odin` `ServerStart/ServerStop`: start through the CLI with `--root-dir` (it makes the jwt keys and starts the standalone server as a child), so stop kills the whole tree. Output is discarded unless `show_output` or `log_file` (Windows: a generated `start_server.cmd` does the redirection, its path needs backslashes); `lan` listens on 0.0.0.0. Output is discarded unless `show_output` (an `os.create` handle is not inherited by children on Windows; an inherited test pipe hangs the runner).
 
 ## Client
 - `http.odin` `HttpRequest` into a caller buffer; `rest.odin`: identity, publish, delete, schema, SQL, call, logs.
