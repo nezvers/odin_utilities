@@ -5348,3 +5348,33 @@ test_edit_mode_keeps_presses_from_the_widgets_picks_the_element_and_covers_it_la
     testing.expect_value(t, clicked, 2)
     for command in UiCommands(&harness.ctx) { testing.expect(t, command.info.kind != .EDIT_COVER) }
 }
+
+@(test)
+test_a_press_on_a_node_selects_it_and_a_press_on_another_selects_only_that_one :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    graph: ^Graph = new(Graph)
+    defer free(graph)
+    GraphInit(graph)
+    view: GraphView
+    first, _ := GraphNodeAdd(graph, "first", {0, 0})
+    GraphPortAdd(graph, first, "out", .OUTPUT, 1)
+    second, _ := GraphNodeAdd(graph, "second", {250, 0})
+    GraphPortAdd(graph, second, "in", .INPUT, 1)
+    for _ in 0 ..< 4 { coveredGraphFrame(harness, graph, &view, {}) }
+    a, b: ^Node = GraphNode(graph, first), GraphNode(graph, second)
+    testing.expect(t, !a.selected && !b.selected)
+    title: Vec2 = a.position + {30, 10}
+    coveredGraphFrame(harness, graph, &view, pointerAt(title))
+    coveredGraphFrame(harness, graph, &view, pointerAt(title, true, true))
+    coveredGraphFrame(harness, graph, &view, pointerAt(title, false, false, true))
+    coveredGraphFrame(harness, graph, &view, pointerAt({-50, -50}))
+    testing.expect(t, a.selected && !b.selected, "a press on the title selects the node")
+    body: Vec2 = b.position + {8, b.size.y - 6}
+    coveredGraphFrame(harness, graph, &view, pointerAt(body))
+    coveredGraphFrame(harness, graph, &view, pointerAt(body, true, true))
+    coveredGraphFrame(harness, graph, &view, pointerAt(body, false, false, true))
+    coveredGraphFrame(harness, graph, &view, pointerAt({-50, -50}))
+    testing.expect(t, !a.selected && b.selected, "a press on the body of another node selects only that one")
+}

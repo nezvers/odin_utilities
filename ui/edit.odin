@@ -108,7 +108,7 @@ editResolve :: proc(ctx: ^Context) {
             if clip_count > 0 { clip_count -= 1 }
         case .DRAW:
             #partial switch command.info.kind {
-            case .NONE, .TEXT_CARET, .TEXT_SELECTION, .HIGHLIGHT, .BACKDROP, .EDIT_COVER:
+            case .NONE, .TEXT_CARET, .TEXT_SELECTION, .HIGHLIGHT, .BACKDROP, .GRAPH_OVERLAY, .EDIT_COVER:
                 continue
             }
             area: Rect = command.info.rect

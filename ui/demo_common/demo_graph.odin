@@ -165,6 +165,7 @@ draw :: proc(ctx: ^kit.Context) {
 // Screen positions (the canvas is at (8, 44), the nodes are at their position inside of it, a pin 16 pixels from the side of its node):
 // the output of Gain (472, 144), of Filter (472, 304), the input of Gain (314, 118), of Filter (314, 278), of the Mixer (564, 198), Noise (222, 298)
 corner: kit.Rect
+pick: kit.Vec2
 
 script: []kit.Step = {
     kit.Wait(4),
@@ -176,6 +177,56 @@ script: []kit.Step = {
         return port.anchor_known && abs(port.anchor.x - 306) < 1.5 && abs(port.anchor.y - 74) < 1.5
     }, "the pins know where they are (canvas coordinates) after the first frame"),
     kit.Capture("graph"),
+    // a click on a node selects it (the title or the body), a click on another one selects only that one
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        node: ^ui.Node = ui.GraphNode(&state.graph, state.nodes[0])
+        pick = {8 + node.position.x - state.view.origin.x + 30, 44 + node.position.y - state.view.origin.y + 10}
+        return true
+    }, "the title of the first node"),
+    kit.MoveAt(&pick),
+    kit.Wait(2),
+    kit.MouseDownStep(),
+    kit.Wait(8),
+    kit.MouseUpStep(),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        return ui.GraphSelectedCount(&state.graph) == 1 && ui.GraphNode(&state.graph, state.nodes[0]).selected
+    }, "a click on the title selected the node"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        node: ^ui.Node = ui.GraphNode(&state.graph, state.nodes[1])
+        pick = {8 + node.position.x - state.view.origin.x + 30, 44 + node.position.y - state.view.origin.y + node.size.y - 6}
+        return true
+    }, "the body of the second node"),
+    kit.MoveAt(&pick),
+    kit.Wait(2),
+    kit.ClickAt(&pick),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        return ui.GraphSelectedCount(&state.graph) == 1 && ui.GraphNode(&state.graph, state.nodes[1]).selected
+    }, "a click on the body of another node selected only that one"),
+    kit.Click({700, 500}),
+    kit.Wait(3),
+    // edit mode (the style editor's Pick element): the nodes are picked like any element, and the press does not select them
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        ui.UiEditMode(&state.app.ctx, true)
+        node: ^ui.Node = ui.GraphNode(&state.graph, state.nodes[0])
+        pick = {8 + node.position.x - state.view.origin.x + 30, 44 + node.position.y - state.view.origin.y + node.size.y - 6}
+        return true
+    }, "edit mode on, the body of the first node"),
+    kit.MoveAt(&pick),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        hover, found := ui.UiEditHover(&state.app.ctx)
+        return found && hover.kind == .GRAPH_NODE
+    }, "edit mode: the node is the element under the pointer"),
+    kit.ClickAt(&pick),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        picked, found := ui.UiEditPicked(&state.app.ctx)
+        ui.UiEditMode(&state.app.ctx, false)
+        ui.UiEditClear(&state.app.ctx)
+        return found && picked.kind == .GRAPH_NODE && ui.GraphSelectedCount(&state.graph) == 0
+    }, "edit mode: a press picked the node for the style editor and did not select it"),
     // a new cable from the output of Noise to the merging input of the Mixer: it takes any number of cables
     kit.MoveTo({222, 298}),
     kit.Wait(3),
@@ -327,4 +378,11 @@ script: []kit.Step = {
     kit.Capture("graph_reroute"),
     kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ui.UiProblems(&state.app.ctx) == {} }, "the frames had no problems"),
+}
+
+// For the test that plays the demo like a person at a window (demo_common_test.odin): how many nodes are selected, and where the title of the first one is
+@(private = "package")
+graphSelectedForTest :: proc() -> (selected: int, title: kit.Vec2) {
+    node: ^ui.Node = ui.GraphNode(&state.graph, state.nodes[0])
+    return ui.GraphSelectedCount(&state.graph), {8 + node.position.x - state.view.origin.x + 30, 44 + node.position.y - state.view.origin.y + 10}
 }

@@ -79,7 +79,8 @@ ThemeText :: proc(theme: ^Theme, out: []u8) -> string {
             color: ui.Color = ThemeFieldColor(theme, i)^
             put(out, &length, fmt.bprintf(scratch[:], "#%02x%02x%02x%02x", color.r, color.g, color.b, color.a))
         case .NUMBER:
-            put(out, &length, strconv.write_float(scratch[:], f64(ThemeFieldNumber(theme, i)^), 'g', 6, 32))
+            number: string = strconv.write_float(scratch[:], f64(ThemeFieldNumber(theme, i)^), 'g', 6, 32)
+            put(out, &length, number[1:] if len(number) > 1 && number[0] == '+' else number)
         case .FLAG:
             put(out, &length, "true" if ThemeFieldFlag(theme, i)^ else "false")
         case .NONE:
