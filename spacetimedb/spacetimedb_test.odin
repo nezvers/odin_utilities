@@ -235,7 +235,7 @@ runSession :: proc(t: ^testing.T, module_path: string, port: int) {
     testing.expect(t, read_error == nil)
 
     root: string = fmt.tprintf("spacetimedb_test_server_%d", port)
-    defer os.remove_all(root)
+    defer ServerRemove(root)
     server: Server
     testing.expect(t, ServerStart(&server, {root = root, port = port, in_memory = true}), "the server starts and answers")
     defer ServerStop(&server)

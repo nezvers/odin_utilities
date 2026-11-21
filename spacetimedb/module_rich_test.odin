@@ -70,7 +70,7 @@ test_a_module_in_odin_with_keys_indexes_and_a_schedule :: proc(t: ^testing.T) {
     module, read_error := os.read_entire_file(module_path, context.temp_allocator)
     testing.expect(t, read_error == nil)
     root: string = "spacetimedb_test_server_rich"
-    defer os.remove_all(root)
+    defer ServerRemove(root)
     server: Server
     testing.expect(t, ServerStart(&server, {root = root, port = 3197, in_memory = true}), "the server starts")
     defer ServerStop(&server)

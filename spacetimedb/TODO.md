@@ -20,6 +20,6 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] `ConnectionCallProcedure`, `ConnectionSubscribeBatch` (the cache applies `SubscribeBatchApplied`), event tables in the cache. Open: views and procedures in the generator (schema v10)
 - [ ] (medium) Authentication: the OIDC side (identities from an issuer, `POST /v1/identity/websocket-token`, SpacetimeAuth).
 - [ ] (low) The test module of the library in more shapes (a table with a primary key and an index, a scheduled reducer, an event table, a view): the references have them under modules/ (sdk-test).
-- [ ] (low) A sample game: players that move (BitCraftPublic and the Blackholio demo of clockworklabs are the models), with demo_kit, two windows against one server.
+- [x] A sample game: `arena/` (a multiplayer game in the database, a window on raylib and Karl2D, p2p host and join through `tunnel/`); its own TODO.md has what is next
 - [x] Server log file on every system (`ServerOptions.log_file`; on Windows through a batch file with a redirection)
 - [x] (part) A server for a LAN session: `ServerOptions.lan` listens on 0.0.0.0, `LanEndpoint`. Open (later): announce it through the p2p discovery of odin_utilities, and the invite that carries the address

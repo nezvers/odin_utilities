@@ -29,6 +29,7 @@ HostOptions :: struct {
     module_path: string,        // the built game module ("": bin/arena-odin.wasm of the library)
     name: string,               // the name of the host in the p2p session
     internet: bool,             // gather the public address with STUN so that a guest on another network can connect (needs the internet at the start)
+    derp: bool,                 // also use a free DERP relay (Tailscale, no account): the invite names it, a guest connects through it with no reply code to send back, even behind strict NATs
     loopback: bool,             // also offer 127.0.0.1: two programs on one computer (tests)
 }
 
@@ -62,12 +63,20 @@ HostStart :: proc(host: ^Host, options: HostOptions) -> bool {
     }
     response := make([]u8, 1 << 16)
     defer delete(response)
-    _, token_view, made := st.IdentityCreate(host.server.endpoint, response)
-    if !made {
-        host.error = "no identity"
-        return false
+    // the identity that owns the database is kept in the folder of the server, so the next start can update the same database (the world of the last session is still there)
+    token_file: string = fmt.tprintf("%s/owner.token", options.root)
+    token: string
+    if saved, saved_error := os.read_entire_file(token_file, context.temp_allocator); saved_error == nil && len(saved) > 20 {
+        token = string(saved)
+    } else {
+        _, token_view, made := st.IdentityCreate(host.server.endpoint, response)
+        if !made {
+            host.error = "no identity"
+            return false
+        }
+        token = strings.clone(string(token_view), context.temp_allocator)
+        _ = os.write_entire_file(token_file, transmute([]u8)token)
     }
-    token: string = strings.clone(string(token_view), context.temp_allocator)
     published: st.HttpResult = st.DatabasePublish(host.server.endpoint, "arena", module, token, response)
     if !published.ok || published.status != 200 {
         host.error = fmt.tprintf("the module is not published: %s", string(published.body))
@@ -79,6 +88,7 @@ HostStart :: proc(host: ^Host, options: HostOptions) -> bool {
         host.error = "no UDP socket"
         return false
     }
+    if options.derp { derpBegin(host.link) }
     gather(host.link, options.internet)
     p2p.LinkHost(host.link, options.name if options.name != "" else "host")
     text, encoded := p2p.InviteEncode(p2p.LinkMakeInvite(host.link), host.invite[:])
@@ -94,6 +104,16 @@ HostStart :: proc(host: ^Host, options: HostOptions) -> bool {
 @(private)
 parseLoopback :: proc() -> (address: [4]u8) {
     return {127, 0, 0, 1}
+}
+
+// The fastest of a few relays, connected before the invite is made (the invite then carries it); the connection takes a moment, so the gathering waits for it
+@(private)
+derpBegin :: proc(link: ^p2p.Link) -> bool {
+    candidates: [6]int = {4, 8, 1, 14, 22, 2}
+    server: int = p2p.DerpRace(candidates[:], 6000)
+    if server == 0 { return false }
+    p2p.LinkDerpBegin(link, server, p2p.LinkNow())
+    return true
 }
 
 // Looks up the public address (STUN) and waits for the gathering: a few hundred milliseconds with the internet, up to 5 seconds without
@@ -147,6 +167,7 @@ HostStop :: proc(host: ^Host) {
 }
 
 GuestOptions :: struct {
+    no_derp: bool,              // ignore the relay that the invite names
     internet: bool,
     loopback: bool,
     name: string,
@@ -176,6 +197,14 @@ GuestJoin :: proc(guest: ^Guest, invite_text: string, options: GuestOptions) -> 
         return false
     }
     gather(guest.link, options.internet)
+    if invite.derp_server != 0 && !options.no_derp {
+        // the invite names a relay: connect to it first, the reply then goes through it by itself
+        p2p.LinkDerpBeginInvite(guest.link, invite, p2p.LinkNow())
+        for waited := 0; waited < 8000 && guest.link.derp.state == .CONNECTING; waited += 10 {
+            p2p.LinkUpdate(guest.link, p2p.LinkNow())
+            time.sleep(10 * time.Millisecond)
+        }
+    }
     if !p2p.LinkJoin(guest.link, invite, options.name if options.name != "" else "guest", p2p.LinkNow()) {
         guest.error = "the invite cannot be used"
         return false

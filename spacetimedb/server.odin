@@ -113,6 +113,14 @@ ServerStop :: proc(server: ^Server) {
     server.running = false
 }
 
+// Removes the folder of a server that was stopped. The files of its database are released a moment after the process is gone, so a first try can fail: it tries again for two seconds.
+ServerRemove :: proc(root: string) {
+    for _ in 0 ..< 40 {
+        if os.remove_all(root) == nil { return }
+        time.sleep(50 * time.Millisecond)
+    }
+}
+
 // Does a server answer at the endpoint (`GET /v1/ping`)
 ServerPing :: proc(endpoint: Endpoint) -> bool {
     response: [512]u8

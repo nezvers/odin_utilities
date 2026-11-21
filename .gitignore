@@ -34,3 +34,6 @@ log.txt
 
 ui/styles/current.style
 spacetimedb_test_server_*/
+arena_server/
+arena_test_*/
+arena_schema_server/

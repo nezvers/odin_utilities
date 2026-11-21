@@ -1,0 +1,50 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Solo",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build Debug",
+            "linux": { "type": "lldb", "program": "${workspaceFolder}/${config:project_name}.bin" },
+            "osx": { "type": "lldb", "program": "${workspaceFolder}/${config:project_name}.bin" }
+        },
+        {
+            "name": "Run Host (relay)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "args": ["host", "--derp"],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build Debug",
+            "linux": { "type": "lldb", "program": "${workspaceFolder}/${config:project_name}.bin" },
+            "osx": { "type": "lldb", "program": "${workspaceFolder}/${config:project_name}.bin" }
+        },
+        {
+            "name": "Run Join (asks for the code)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:project_name}.exe",
+            "args": ["join", "${input:invite}"],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build Debug",
+            "linux": { "type": "lldb", "program": "${workspaceFolder}/${config:project_name}.bin" },
+            "osx": { "type": "lldb", "program": "${workspaceFolder}/${config:project_name}.bin" }
+        },
+        {
+            "name": "Debug Tests",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:project_name}_test.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build Tests"
+        }
+    ],
+    "inputs": [
+        { "id": "invite", "type": "promptString", "description": "The invite code of the host" }
+    ]
+}

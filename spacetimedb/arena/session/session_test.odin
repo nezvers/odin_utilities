@@ -29,7 +29,7 @@ test_two_players_play_through_a_p2p_tunnel :: proc(t: ^testing.T) {
         return
     }
     root: string = "arena_test_host"
-    defer os.remove_all(root)
+    defer st.ServerRemove(root)
     host := new(Host)                    // on the heap: SetIdle keeps pointers to them
     defer free(host)
     if !HostStart(host, {root = root, port = 3143, loopback = true, name = "Ada"}) {
@@ -111,4 +111,29 @@ test_two_players_play_through_a_p2p_tunnel :: proc(t: ^testing.T) {
         }
     }
     testing.expect(t, gone, "a player who leaves leaves the field")
+}
+
+// Needs the internet: `ARENA_LIVE=1 odin test spacetimedb/arena/session`. The invite names a free DERP relay and the guest joins with no reply code at all.
+@(test)
+test_a_guest_joins_through_a_derp_relay_without_a_reply_code :: proc(t: ^testing.T) {
+    if os.get_env("ARENA_LIVE", context.temp_allocator) != "1" { return }
+    if st.FixturePath("arena-odin") == "" || !os.exists(st.ServerCliPath()) { return }
+    root: string = "arena_test_derp"
+    defer st.ServerRemove(root)
+    host := new(Host)
+    defer free(host)
+    if !HostStart(host, {root = root, port = 3144, internet = true, derp = true, name = "Ada"}) { testing.fail_now(t, host.error) }
+    defer HostStop(host)
+    guest := new(Guest)
+    defer free(guest)
+    testing.expect(t, GuestJoin(guest, HostInvite(host), {internet = true, name = "Bob"}), guest.error)
+    defer GuestStop(guest)
+    // no HostAcceptReply: the relay carries the answer
+    for _ in 0 ..< 1500 {
+        HostUpdate(host)
+        GuestUpdate(guest)
+        time.sleep(10 * time.Millisecond)
+        if GuestConnected(guest) && HostGuests(host) == 1 { break }
+    }
+    testing.expect(t, GuestConnected(guest) && HostGuests(host) == 1, "connected with the one code")
 }

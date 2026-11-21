@@ -15,7 +15,7 @@ test_a_server_writes_its_log_to_a_file_and_listens_on_the_network :: proc(t: ^te
     root: string = "spacetimedb_test_server_lan"
     log: string = fmt.tprintf("%s/server.log", root)
     os.make_directory_all(root)
-    defer os.remove_all(root)
+    defer ServerRemove(root)
     server: Server
     testing.expect(t, ServerStart(&server, {root = root, port = 3196, in_memory = true, log_file = log, lan = true}), "the server starts on every interface")
     testing.expect(t, ServerPing(server.endpoint), "and answers on the loopback")
@@ -47,7 +47,7 @@ test_identities_tokens_and_the_public_key :: proc(t: ^testing.T) {
         return
     }
     root: string = "spacetimedb_test_server_auth"
-    defer os.remove_all(root)
+    defer ServerRemove(root)
     server: Server
     testing.expect(t, ServerStart(&server, {root = root, port = 3195, in_memory = true}), "the server starts")
     defer ServerStop(&server)
