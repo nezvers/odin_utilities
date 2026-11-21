@@ -249,7 +249,7 @@ richPut :: proc(ctx: ^Context, text: string) -> bool {
 }
 
 @(private)
-richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32, max_width: f32 = 0) -> (address: string, clicked: bool) {
+richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32, max_width: f32 = 0, align: AlignX = .LEFT) -> (address: string, clicked: bool) {
     state: ^WidgetState = stateGet(ctx, id)
     // the width to break for: the one it had in the last frame, or the given one (then it is as wide as its lines)
     fit: bool = max_width > 0
@@ -262,7 +262,7 @@ richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32, max
         free_space: []u8 = ctx.text_buffer[ctx.text_used:]
         shown: string = MarkdownInline(source, free_space[:min(len(free_space), len(source))])
         ctx.text_used += len(shown)
-        TextOpen(ctx, shown, {wrap = .WORDS, font_size = font_size})
+        TextOpen(ctx, shown, {wrap = .WORDS, font_size = font_size, align = .CENTER if align == .CENTER else (.RIGHT if align == .RIGHT else .LEFT)})
         return
     }
     cursor: RichCursor
@@ -297,7 +297,7 @@ richParagraph :: proc(ctx: ^Context, id: Id, source: string, font_size: f32, max
             line_width, space_width = 0, 0
         }
         if !line_open {
-            ElementOpen(ctx, {layout = {size = {line_width_sizing, Fit()}, direction = .LEFT_TO_RIGHT, align = {y = .BOTTOM}}})
+            ElementOpen(ctx, {layout = {size = {line_width_sizing, Fit()}, direction = .LEFT_TO_RIGHT, align = {x = align, y = .BOTTOM}}})
             line_open = true
             run.continues = run.lines > 0
             run.lines += 1

@@ -205,7 +205,14 @@ test_markdown_reads_and_shows_a_table :: proc(t: ^testing.T) {
     testing.expect(t, !extra_found, "a cell past the columns of the header is not shown")
     testing.expect(t, DrawInfoHasTag(&name, "strong") && DrawInfoHasTag(&size, "strong") && DrawInfoHasTag(&a, "strong") && !DrawInfoHasTag(&one, "strong"), "the header is strong, a cell has its own marks")
     testing.expect(t, DrawInfoHasTag(&link, "link"))
-    testing.expect(t, name.rect.x == a.rect.x && a.rect.x == escaped.rect.x && size.rect.x == one.rect.x && one.rect.x == three.rect.x && size.rect.x > name.rect.x, "the columns line up")
+    middle :: proc(info: DrawInfo) -> f32 { return info.rect.x + info.rect.z * 0.5 }
+    testing.expect(t, name.rect.x == a.rect.x && a.rect.x == escaped.rect.x && size.rect.x > name.rect.x, "the first column lines up on its left edge")
+    testing.expect(t, abs(middle(size) - middle(one)) < 1 && abs(middle(one) - middle(three)) < 1 && size.rect.x != one.rect.x, "the centred column lines up on its middle")
+    testing.expect_value(t, MarkdownTableAlign("|---|:--:|--:|:--|", 0), AlignX.LEFT)
+    testing.expect_value(t, MarkdownTableAlign("|---|:--:|--:|:--|", 1), AlignX.CENTER)
+    testing.expect_value(t, MarkdownTableAlign("|---|:--:|--:|:--|", 2), AlignX.RIGHT)
+    testing.expect_value(t, MarkdownTableAlign("|---|:--:|--:|:--|", 3), AlignX.LEFT)
+    testing.expect_value(t, MarkdownTableAlign("|---|", 5), AlignX.LEFT)
     testing.expect(t, a.rect.y > name.rect.y && escaped.rect.y > a.rect.y && link.rect.y > escaped.rect.y, "a row under the other")
 }
 

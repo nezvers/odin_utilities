@@ -9,7 +9,7 @@ package ui
 //
 // Limits: no images, no HTML, no footnotes, no reference links or bare addresses as links, no language for a fenced block
 //     a list is nested by two spaces of indent and is not checked (a list item holds one paragraph: no block of its own inside), a quote is its lines as text (no block inside)
-//     a heading is one text in the strong face: its marks are taken away, not drawn; a table has no alignment of its columns and every column is as wide as the others
+//     a heading is one text in the strong face: its marks are taken away, not drawn; every column of a table is as wide as the others (its alignment, `:--` `:-:` `--:`, is kept)
 //
 // The Markdown view of Baldr (baldr/widget_markdown_view.odin) was the reason to have one; the code is written for this library.
 
@@ -128,6 +128,19 @@ MarkdownTableCell :: proc(line: string, index: int) -> (cell: string, ok: bool) 
         start = i + 1
     }
     return "", false
+}
+
+// How the cells of a column are aligned, from the line of dashes of the table: `:--` left, `:-:` centred, `--:` right (a column without colons is left)
+MarkdownTableAlign :: proc(dashes: string, index: int) -> AlignX {
+    cell, ok := MarkdownTableCell(dashes, index)
+    if !ok || len(cell) == 0 { return .LEFT }
+    starts: bool = cell[0] == ':'
+    ends: bool = cell[len(cell) - 1] == ':'
+    switch {
+    case starts && ends && len(cell) > 1: return .CENTER
+    case ends: return .RIGHT
+    }
+    return .LEFT
 }
 
 // How many cells a line of a table has
@@ -383,6 +396,8 @@ UiMarkdown :: proc(ctx: ^Context, source: string, name: string = "markdown") -> 
             ElementOpen(ctx, {layout = {size = {Grow(), Fit()}, direction = .TOP_TO_BOTTOM, gap = metrics.gap * 0.5}})
             line_at: int
             row_index: int
+            _, header_end := markdownLine(block.text, 0)
+            dashes, _ := markdownLine(block.text, header_end)
             for line_at < len(block.text) {
                 row, after := markdownLine(block.text, line_at)
                 line_at = after
@@ -393,7 +408,7 @@ UiMarkdown :: proc(ctx: ^Context, source: string, name: string = "markdown") -> 
                 for column in 0 ..< columns {
                     cell, _ := MarkdownTableCell(row, column)       // a row with fewer cells has empty ones
                     ElementOpen(ctx, {layout = {size = {Percent(1 / f32(columns)), Fit()}}})
-                    cell_link, cell_clicked := richParagraph(ctx, IdFromIndex(u32(row_index * 64 + column), paragraph), cell, metrics.font_size)
+                    cell_link, cell_clicked := richParagraph(ctx, IdFromIndex(u32(row_index * 64 + column), paragraph), cell, metrics.font_size, 0, MarkdownTableAlign(dashes, column))
                     if cell_clicked { link, link_clicked = cell_link, true }
                     ElementClose(ctx)
                 }
