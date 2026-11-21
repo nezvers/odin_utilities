@@ -384,3 +384,85 @@ test_the_items_of_a_completion_list_are_ranked_and_tell_the_style_what_matched :
     testing.expect(t, list[0].from == 0 && list[0].to == 2 && list[2].from == 1 && list[2].to == 3)
     testing.expect_value(t, UiProblems(&test.ctx), Problems{})
 }
+
+@(test)
+test_a_long_completion_list_scrolls_with_the_arrow_keys_and_the_wheel :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 512, 64, 4096),
+        ctx: Context,
+        style: Style,
+        text: [64]u8,
+        length: int,
+        area: Id,
+        names: [30]string,
+        labels: [30][8]u8,
+        item: int,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    for i in 0 ..< len(test.names) {
+        digits: int = copy(test.labels[i][:], "item")
+        test.labels[i][digits] = u8('a' + i / 10)
+        test.labels[i][digits + 1] = u8('0' + i % 10)
+        test.names[i] = string(test.labels[i][:digits + 2])
+    }
+    frame :: proc(test: ^Test, input: Input) {
+        UiBegin(&test.ctx, input, 1.0 / 60, {800, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(500), {}}) {
+            test.area = UiId(&test.ctx, "Message")
+            inserted, item := UiComplete(&test.ctx, "Message", test.text[:], &test.length, test.names[:])
+            if inserted { test.item = item }
+            UiTextArea(&test.ctx, "Message", test.text[:], &test.length, {Fixed(400), Fixed(100)})
+        }
+        UiEnd(&test.ctx)
+    }
+    away: Input = {mouse_position = {-100, -100}}
+    rows :: proc(test: ^Test) -> (count: int, first: string, selected: string) {
+        for command in UiCommands(&test.ctx) {
+            if command.kind != .DRAW || command.info.kind != .DROPDOWN_ITEM { continue }
+            if count == 0 { first = command.info.name }
+            count += 1
+            if .SELECTED in command.info.flags { selected = command.info.name }
+        }
+        return
+    }
+    frame(test, away)
+    UiFocus(&test.ctx, test.area)
+    frame(test, away)
+    input: Input = away
+    input.text_count = u8(copy(input.text[:], "@"))
+    frame(test, input)
+    frame(test, away)
+    count, first, selected := rows(test)
+    testing.expect_value(t, count, COMPLETE_ROWS)
+    testing.expect(t, first == test.names[0] && selected == test.names[0])
+    // down past the last row in view: the list scrolls and keeps the choice in sight
+    for _ in 0 ..< 10 {
+        frame(test, {mouse_position = {-100, -100}, actions = {.DOWN}})
+        frame(test, away)
+    }
+    count, first, selected = rows(test)
+    testing.expect_value(t, count, COMPLETE_ROWS)
+    testing.expect(t, selected == test.names[10], "the tenth is chosen")
+    testing.expect(t, first == test.names[3], "and the view moved: it holds the rows 3 to 10")
+    // up again to the top of the view and past it
+    for _ in 0 ..< 9 {
+        frame(test, {mouse_position = {-100, -100}, actions = {.UP}})
+        frame(test, away)
+    }
+    count, first, selected = rows(test)
+    testing.expect(t, selected == test.names[1] && first == test.names[1])
+    // up from the first goes round to the last
+    for _ in 0 ..< 2 {
+        frame(test, {mouse_position = {-100, -100}, actions = {.UP}})
+        frame(test, away)
+    }
+    _, first, selected = rows(test)
+    testing.expect(t, selected == test.names[29] && first == test.names[22], "round to the end of the list")
+    // Enter writes the chosen item, even when it was not in view at the start
+    frame(test, {mouse_position = {-100, -100}, keys = {.ENTER}})
+    testing.expect_value(t, string(test.text[:test.length]), "@itemc9 ")
+    testing.expect_value(t, test.item, 29)
+}

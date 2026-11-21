@@ -10,13 +10,14 @@ package ui
 // thousands wants a search of its own that gives the few that match).
 //
 // Limits: one trigger character, ASCII letters only match without regard to case, one match of the word in an item (the first) and a ranking by where it is, not by how often an item
-//     is used; at most COMPLETE_ROWS (8) rows and no scrolling of a longer list
+//     is used; COMPLETE_ROWS (8) rows in view and a list of at most COMPLETE_MATCHES (64) items that scrolls with the arrow keys and the wheel
 //     the list opens below the caret of the last frame, or above its row when it would not fit below and does; it is declared right before its field or area
 //
 // Baldr's completion (examples/34_mentions, editor_complete) was the reason to have one; the code is written for this library.
 
 // The rows of the list at most
 COMPLETE_ROWS :: 8
+COMPLETE_MATCHES :: 64             // the items the list holds and walks through (the best ones first); COMPLETE_ROWS of them are in view
 
 @(private)
 completeLower :: proc "contextless" (character: u8) -> u8 {
@@ -108,11 +109,11 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
     // closed by Escape: it stays closed for this word
     if own.anchor == start { return }
     // the best matches first (an item that starts with the word, then one that has it at the start of a part, then the others), the order of the items within each
-    matches: [COMPLETE_ROWS]int
+    matches: [COMPLETE_MATCHES]int
     count: int
     for tier in 0 ..< 3 {
         for candidate, i in items {
-            if count == COMPLETE_ROWS { break }
+            if count == COMPLETE_MATCHES { break }
             if completeTier(candidate, query) == tier {
                 matches[count] = i
                 count += 1
@@ -122,11 +123,22 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
     if count == 0 { return }
     own.cursor = clamp(own.cursor, 0, count - 1)
     open = true
+    rows: int = min(count, COMPLETE_ROWS)
+    first: int = clamp(int(own.scroll.y), 0, count - rows)            // the first row in view: the list scrolls to keep the chosen one in sight
     // the keys of the list are taken out of the input: the area after this does not move its caret, break the line or lose the focus by them
     input: ^Input = &ctx.input
     if .UP in input.actions { own.cursor = (own.cursor + count - 1) % count }
     if .DOWN in input.actions { own.cursor = (own.cursor + 1) % count }
     input.actions -= {.UP, .DOWN}
+    // the wheel over the list moves the view, not the choice
+    if ctx.input.wheel.y != 0 {
+        for row in 0 ..< rows {
+            if ctx.hover == IdFromIndex(u32(row), list) { first = clamp(first - (1 if ctx.input.wheel.y > 0 else -1), 0, count - rows) }
+        }
+    }
+    if own.cursor < first { first = own.cursor }
+    if own.cursor >= first + rows { first = own.cursor - rows + 1 }
+    own.scroll.y = f32(first)
     picked: int = -1
     if .ENTER in input.keys { picked = own.cursor }
     input.keys -= {.ENTER}
@@ -140,7 +152,7 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
     // the list, under the caret of the last frame. It is placed on the screen by the rectangle the area had then: the area is declared after this, an element
     // cannot be attached to one that comes later. Where it would end below the screen and there is room above the row of the caret, it stands above it.
     metrics: ^Metrics = &ctx.style.metrics
-    list_height: f32 = f32(count) * metrics.control_height + 4
+    list_height: f32 = f32(rows) * metrics.control_height + 4
     below: f32 = state.rect.y + state.caret.y
     above: f32 = state.rect.y + state.caret_top
     flip: bool = below + list_height > ctx.screen.y && above >= list_height
@@ -151,8 +163,9 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
         hit = {.BLOCKER},
         draw = {kind = .PANEL, name = "dropdown", font_size = metrics.font_size},
     })
-    for row in 0 ..< count {
-        row_id: Id = IdFromIndex(u32(row), list)
+    for view in 0 ..< rows {
+        row: int = first + view
+        row_id: Id = IdFromIndex(u32(view), list)
         _ = stateGet(ctx, row_id)
         interaction: Interaction = widgetBehavior(ctx, row_id)
         if interaction.clicked { picked = row }
@@ -162,7 +175,7 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
             id = row_id,
             layout = {size = {Grow(), Fixed(metrics.control_height)}},
             hit = {.INTERACTIVE, .NO_FOCUS},            // a click on a row leaves the focus in the area
-            draw = {kind = .DROPDOWN_ITEM, name = items[matches[row]], font_size = metrics.font_size, flags = {.SELECTED} if row == own.cursor else {}, value = f32(row), actual = f32(row), cursor = max(found, 0), anchor = max(found, 0) + len(query)},
+            draw = {kind = .DROPDOWN_ITEM, name = items[matches[row]], font_size = metrics.font_size, flags = {.SELECTED} if row == own.cursor else {}, value = f32(view), actual = f32(row), cursor = max(found, 0), anchor = max(found, 0) + len(query)},
         })
         ElementClose(ctx)
     }
@@ -174,6 +187,7 @@ UiComplete :: proc(ctx: ^Context, area_name: string, buffer: []u8, length: ^int,
     textInsert(state, buffer, length, items[item])
     textInsert(state, buffer, length, " ")
     own.cursor = 0
+    own.scroll.y = 0
     open = false
     // a step of the history of the widget: undo gives the typed word back (without it the history would start again, the text changed outside of the widget)
     undo: ^TextUndo = &ctx.text_undo

@@ -509,7 +509,7 @@ ticked off in `TODO.md`. Look here before relying on a widget for something it m
   - no selection in an icon, an image or a text of a widget (a field has its own selection); Shift + arrows move the end of a selection by letters, lines and pages; a double click selects a word and a drag from it goes on by words, a triple click a paragraph and a drag from it by paragraphs
 - **UiComplete** (`complete.odin`):
   - one trigger character, ASCII letters only match without regard to case, one match of the word in an item (the first) and a ranking by where it is, not by how often an item
-  - is used; at most COMPLETE_ROWS (8) rows and no scrolling of a longer list
+  - is used; COMPLETE_ROWS (8) rows in view and at most COMPLETE_MATCHES (64) items that scroll with the arrow keys and the wheel
   - the list opens below the caret of the last frame, or above its row when it would not fit below and does; it is declared right before its field or area
 - **UiShortcutField** (`shortcut.odin`):
   - one chord, no sequences; a modifier alone is not a chord; what the operating system takes (Alt + Tab) never arrives; no conflict check (the program does it, as the demo does)
