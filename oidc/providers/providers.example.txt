@@ -1,0 +1,13 @@
+# Copy to oidc/providers.local.txt (git ignored) and fill in your own values. Client ids are public; put no secret here.
+# Read with oidc.ClientConfigRead(text, "discord", oidc.PresetConfig(.DISCORD, "")).
+# Setup steps per provider: providers/README.md
+
+discord.client_id = YOUR_DISCORD_APPLICATION_ID
+discord.redirect_port = 48217
+
+google.client_id = YOUR_ID.apps.googleusercontent.com
+
+github.client_id = YOUR_GITHUB_OAUTH_APP_CLIENT_ID
+
+spacetimeauth.client_id = YOUR_SPACETIMEAUTH_CLIENT_ID
+spacetimeauth.redirect_port = 48217

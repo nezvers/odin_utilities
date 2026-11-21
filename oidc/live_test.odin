@@ -3,6 +3,7 @@ package oidc
 
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import "core:testing"
 
 // Against real providers on the internet: `OIDC_LIVE=1 odin test oidc`. Nothing here needs an account of ours: the discovery documents and the keys of the big providers are public, and the demo
@@ -11,7 +12,7 @@ import "core:testing"
 @(test)
 test_real_providers_discovery_and_keys :: proc(t: ^testing.T) {
     if os.get_env("OIDC_LIVE", context.temp_allocator) != "1" { return }
-    issuers: []string = {"https://accounts.google.com", "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0", "https://auth.spacetimedb.com/oidc", "https://demo.duendesoftware.com"}
+    issuers: []string = {"https://accounts.google.com", "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0", "https://auth.spacetimedb.com/oidc", "https://demo.duendesoftware.com", "https://discord.com"}
     for issuer in issuers {
         metadata: ^Metadata = new(Metadata)
         keys: ^KeySet = new(KeySet)
@@ -64,4 +65,17 @@ test_a_real_token_is_verified :: proc(t: ^testing.T) {
         _, error = JwtVerify(tokens.access_token, google, {allow_no_subject = true}, scratch[:])
         testing.expect(t, error == .SIGNATURE || error == .NO_KEY, "another provider's keys do not fit")
     }
+}
+
+// GitHub is not OpenID Connect: its device code endpoint answers a made up client id with a refusal in JSON, which proves that the address is right (a wrong one is a 404 page)
+@(test)
+test_github_device_endpoint_answers :: proc(t: ^testing.T) {
+    if os.get_env("OIDC_LIVE", context.temp_allocator) != "1" { return }
+    metadata: ^Metadata = new(Metadata)
+    defer free(metadata)
+    PresetMetadataGithub(metadata)
+    buffer: [4096]u8
+    response, ok := PostForm(metadata.device_authorization_endpoint, "client_id=odin-oidc-test&scope=read%3Auser", buffer[:])
+    testing.expect(t, ok, "reached")
+    testing.expectf(t, strings.contains(string(response.body), "error"), "a refusal for an unknown client: %d %s", response.status, string(response.body))
 }

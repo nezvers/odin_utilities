@@ -20,6 +20,7 @@ This is the flow that RFC 8252 asks of native apps: the authorization code flow 
 | `provider.odin` | `Discover` (the issuer document, which must name the issuer that was asked: a multi tenant `common` endpoint of Microsoft names `{tenantid}` and is refused, use the tenant's own), `FetchKeys`, `ExchangeCode`, `Refresh`, `ClientCredentials`, `Userinfo`, the device flow (`DeviceStart`, `DevicePoll`, RFC 8628, for a console or a TV), PKCE helpers. |
 | `login.odin`, `browser.odin` | `Login` (the state machine above), `BrowserOpen` (no shell: the address is an argument). A request to the callback with another `state` is ignored (nobody can end your login from another site). |
 | `http.odin` | the little HTTP(S) client (https through the TLS 1.3 client of p2p, the certificate is checked). `HttpIdle` steps another party in the same thread while a request waits (tests). |
+| `presets.odin`, `providers/` | settings for Google, Discord, GitHub (device flow, OAuth 2.0 only) and SpacetimeAuth (`PresetConfig`), a settings file reader (`ClientConfigRead`), and the setup steps per provider (`providers/README.md`, `providers.example.txt`). |
 | `mock/` | a provider that runs inside of a test (ES256 or RS256, the code flow with PKCE, refresh, device flow, `fault` to make it cheat). |
 
 ## Used by

@@ -137,7 +137,7 @@ Request :: proc(url: string, method: string, headers: []Header, body: []u8, buff
 
     head: strings.Builder
     strings.builder_init(&head, context.temp_allocator)
-    fmt.sbprintf(&head, "%s %s HTTP/1.1\r\nHost: %s:%d\r\nConnection: close\r\nAccept: application/json\r\n", method, parsed.path, parsed.host, parsed.port)
+    fmt.sbprintf(&head, "%s %s HTTP/1.1\r\nHost: %s:%d\r\nConnection: close\r\nAccept: application/json\r\nUser-Agent: odin-oidc\r\n", method, parsed.path, parsed.host, parsed.port)
     for header in headers { fmt.sbprintf(&head, "%s: %s\r\n", header.name, header.value) }
     if body != nil || method == "POST" { fmt.sbprintf(&head, "Content-Length: %d\r\n", len(body)) }
     strings.write_string(&head, "\r\n")
