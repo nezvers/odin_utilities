@@ -198,13 +198,11 @@ isUpdateOrResult :: proc(message: ServerMessage, user: rawptr) -> bool {
     return false
 }
 
-@(private = "file")
 isApplied :: proc(message: ServerMessage, user: rawptr) -> bool {
     _, applied := message.(SubscribeApplied)
     return applied
 }
 
-@(private = "file")
 isInitial :: proc(message: ServerMessage, user: rawptr) -> bool {
     _, initial := message.(InitialConnection)
     return initial

@@ -37,8 +37,29 @@ LOG_DEBUG :: u8(3)
 LOG_TRACE :: u8(4)
 LOG_PANIC :: u8(101)
 
+foreign import spacetime_5 "spacetime_10.5"
+
+@(default_calling_convention = "c")
+foreign spacetime_5 {
+    @(link_name = "datastore_clear")
+    host_clear :: proc(table: TableId, out: ^u64) -> u16 ---
+}
+
+// Functions of later versions of the ABI are their own import modules: a module that does not use them does not import them, so it still loads on an older server
+foreign import spacetime_4 "spacetime_10.4"
+
+@(default_calling_convention = "c")
+foreign spacetime_4 {
+    @(link_name = "datastore_index_scan_point_bsatn")
+    host_index_scan_point :: proc(index: IndexId, point: [^]u8, point_length: uint, out: ^RowIter) -> u16 ---
+    @(link_name = "datastore_delete_by_index_scan_point_bsatn")
+    host_delete_by_index_point :: proc(index: IndexId, point: [^]u8, point_length: uint, out: ^u32) -> u16 ---
+}
+
 @(default_calling_convention = "c")
 foreign spacetime {
+    @(link_name = "datastore_update_bsatn")
+    host_update :: proc(table: TableId, index: IndexId, row: [^]u8, row_length: ^uint) -> u16 ---
     @(link_name = "table_id_from_name")
     host_table_id_from_name :: proc(name: [^]u8, name_length: uint, out: ^TableId) -> u16 ---
     @(link_name = "index_id_from_name")
@@ -55,8 +76,6 @@ foreign spacetime {
     host_insert :: proc(table: TableId, row: [^]u8, row_length: ^uint) -> u16 ---
     @(link_name = "datastore_delete_all_by_eq_bsatn")
     host_delete_all_by_eq :: proc(table: TableId, relation: [^]u8, relation_length: uint, out: ^u32) -> u16 ---
-    @(link_name = "datastore_clear")
-    host_clear :: proc(table: TableId, out: ^u64) -> u16 ---
     @(link_name = "bytes_sink_write")
     host_bytes_sink_write :: proc(sink: BytesSink, buffer: [^]u8, buffer_length: ^uint) -> u16 ---
     @(link_name = "bytes_source_read")

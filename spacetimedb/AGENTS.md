@@ -15,7 +15,7 @@ What is not obvious from the code of this library. The rules that hold for every
 - `websocket.odin`: RFC 6455 client, non blocking, `WebSocketPoll`. `connection.odin`: `ConnectionOpen/Poll/Subscribe/SubscribeBatch/CallReducer/CallProcedure/Reconnect/Maintain`, asks for `compression=None`; the connection remembers its subscriptions (query strings by reference) and the token for a reconnect.
 
 ## Modules in Odin
-- `module/` (package `spacetimedb_module`): module for `freestanding_wasm32`, fixed buffers, `Define(define)` called from an `__preinit__...` export, `TableAdd/ReducerAdd`, exports `__describe_module__` and `__call_reducer__`. Example `module/example/basic`.
+- `module/` (package `spacetimedb_module`): module for `freestanding_wasm32`, fixed buffers, `Define(define)` called from an `__preinit__...` export, `TableAdd/ReducerAdd`, exports `__describe_module__` and `__call_reducer__`. Examples `module/example/basic` and `module/example/rich` (keys, indexes, option/array/identity columns, schedule; `module_rich_test.odin`). ABI functions of later versions are separate `foreign import` blocks (`spacetime_10.4` point scans, `10.5` clear): a module imports only what it calls, and `datastore_clear` in 10.0 does not exist (the server says `unknown import`). A scheduled reducer takes one argument, a Ref to the table row type. Careful: `return count, call(&count)` reads count before the call.
 - Build with `tool/build_module` / `BuildModule` = `web_build.WasmBuild` + `WasmInspect` (checks exports, memory, import namespaces).
 
 ## Tests and tools

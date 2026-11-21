@@ -30,8 +30,12 @@ package spacetimedb_module
 // `DatabasePublish` or the CLI. There is no heap in the module: every buffer is a fixed array of this package or of the module (`CAPACITY` below); a reducer that needs memory gets the arena of its
 // call in `ctx.allocator` (cleared after the reducer).
 //
-// Limits: the column types are the primitive ones (strings, booleans, integers, floats); a reducer has no return value; indexes, constraints, scheduled reducers, views and procedures are not described
-// yet (TODO.md); a table has no automatic increment; only the V9 description of the module is written.
+// Column types: the primitive ones, `.IDENTITY`, `.CONNECTION_ID`, `.TIMESTAMP`, `.TIME_DURATION`, `.SCHEDULE_AT`, and `.ARRAY` / `.OPTION` of one of those (the `element` of the column).
+// A table can have a primary key, unique columns, an automatic increment column, btree indexes and a scheduled reducer (`TableOptions`); rows are read and deleted by an index (`TableFind`,
+// `TableDeleteBy`, `TableUpdate`) and deleted by value (`TableDelete`).
+//
+// Limits: a reducer has no return value; views and procedures are not described yet (they need the V10 description, TODO.md); structs and enums are not column types (flatten them into
+// columns); only the V9 description of the module is written.
 
 import "base:runtime"
 import "core:mem"
@@ -40,6 +44,8 @@ import "../bsatn"
 MAX_TABLES :: 16
 MAX_COLUMNS :: 16
 MAX_REDUCERS :: 32
+MAX_INDEXES :: 8
+MAX_INDEX_COLUMNS :: 4
 
 ARGUMENT_BUFFER :: 1 << 16          // the biggest argument list of a reducer
 DESCRIPTION_BUFFER :: 1 << 15       // the biggest description of the module
@@ -48,6 +54,7 @@ CALL_ARENA :: 1 << 16               // the memory of one reducer call
 
 // The type of a column: the number is the tag of the type in the description (spacetimedb/SpacetimeDB/crates/sats/src/algebraic_type.rs)
 ColumnType :: enum u8 {
+    ARRAY = 3,          // of `Column.element`
     STRING = 4,
     BOOL = 5,
     I8 = 6,
@@ -64,11 +71,19 @@ ColumnType :: enum u8 {
     U256 = 17,
     F32 = 18,
     F64 = 19,
+    // the types the database defines for itself: not tags of the description but products and sums that it knows by their field names
+    OPTION = 100,       // of `Column.element`
+    IDENTITY = 101,
+    CONNECTION_ID = 102,
+    TIMESTAMP = 103,
+    TIME_DURATION = 104,
+    SCHEDULE_AT = 105,  // Interval(TimeDuration) or Time(Timestamp): when a scheduled reducer runs
 }
 
 Column :: struct {
     name: string,
     type: ColumnType,
+    element: ColumnType,        // for `.ARRAY` and `.OPTION`: the type of the items (not an array or an option itself)
 }
 
 ReducerKind :: enum u8 {
@@ -93,6 +108,28 @@ Table :: struct {
     index: int,                     // the place of the table in the module (made by TableAdd)
 }
 
+// A btree index over columns (by their place in the table): a read by `TableFind` needs one
+Index :: struct {
+    columns: []int,
+}
+
+// What a table has besides its columns
+TableOptions :: struct {
+    unique: []int,                  // columns whose values are unique (a second insert of one is refused)
+    auto_increment: int,            // a column (an integer) that the database numbers when the row is inserted with 0 (used when `has_auto_increment`)
+    has_auto_increment: bool,
+    indexes: []Index,
+    schedule_reducer: string,       // a scheduled table: the reducer that runs for each row when its time (`schedule_column`, a `.SCHEDULE_AT`) comes; the row is its argument
+    schedule_column: int,
+}
+
+IndexDef :: struct {
+    columns: [MAX_INDEX_COLUMNS]u16,
+    count: int,
+    id: IndexId,
+    id_known: bool,
+}
+
 TableDef :: struct {
     name: string,
     public: bool,
@@ -101,6 +138,13 @@ TableDef :: struct {
     primary_key: int,               // the column, -1 for none
     id: TableId,                    // found by name at the first use
     id_known: bool,
+    unique: [MAX_COLUMNS]u16,
+    unique_count: int,
+    auto_column: int,               // -1 for none
+    indexes: [MAX_INDEXES]IndexDef, // the ones given, the primary key and the unique columns (each is a btree index of the database)
+    index_count: int,
+    schedule_reducer: string,
+    schedule_column: int,
 }
 
 ReducerDef :: struct {
@@ -109,6 +153,7 @@ ReducerDef :: struct {
     column_count: int,
     kind: ReducerKind,
     call: ReducerProc,
+    scheduled_table: int,           // >= 0: the reducer of a scheduled table, its one argument is a row of that table
 }
 
 Module :: struct {
@@ -153,16 +198,48 @@ ensureDefined :: proc() {
 }
 
 // Adds a table. `columns` are its fields in the order of the rows. `public` tables can be subscribed to by clients; a private table is for the module only.
-TableAdd :: proc(m: ^Module, name: string, columns: []Column, public: bool = false, primary_key: int = -1) -> Table {
+TableAdd :: proc(m: ^Module, name: string, columns: []Column, public: bool = false, primary_key: int = -1, options: TableOptions = {}) -> Table {
     if m.table_count >= MAX_TABLES || len(columns) > MAX_COLUMNS {
         m.failed = true
         return {index = -1}
     }
     table: ^TableDef = &m.tables[m.table_count]
-    table^ = {name = name, public = public, column_count = len(columns), primary_key = primary_key}
+    table^ = {name = name, public = public, column_count = len(columns), primary_key = primary_key, auto_column = options.auto_increment if options.has_auto_increment else -1}
+    table.schedule_reducer, table.schedule_column = options.schedule_reducer, options.schedule_column
     for column, i in columns { table.columns[i] = column }
+    if len(options.unique) > MAX_COLUMNS { m.failed = true }
+    for column in options.unique {
+        if table.unique_count < MAX_COLUMNS {
+            table.unique[table.unique_count] = u16(column)
+            table.unique_count += 1
+        }
+    }
+    // the database keeps a btree index for a primary key and for every unique column: they are the ones `TableFind` can use
+    if primary_key >= 0 { indexAdd(m, table, {primary_key}) }
+    for column in options.unique { indexAdd(m, table, {column}) }
+    for index in options.indexes { indexAdd(m, table, index.columns) }
     m.table_count += 1
     return {index = m.table_count - 1}
+}
+
+@(private)
+indexAdd :: proc(m: ^Module, table: ^TableDef, columns: []int) {
+    if len(columns) == 0 || len(columns) > MAX_INDEX_COLUMNS || table.index_count >= MAX_INDEXES {
+        m.failed = true
+        return
+    }
+    for i in 0 ..< table.index_count {
+        existing: ^IndexDef = &table.indexes[i]
+        if existing.count == len(columns) {
+            same: bool = true
+            for column, j in columns { if int(existing.columns[j]) != column { same = false } }
+            if same { return }
+        }
+    }
+    definition: ^IndexDef = &table.indexes[table.index_count]
+    definition^ = {count = len(columns)}
+    for column, i in columns { definition.columns[i] = u16(column) }
+    table.index_count += 1
 }
 
 // Adds a reducer: `parameters` are the fields of its arguments in order (what a client sends is checked against them by the host, the reducer reads them from the Reader)
@@ -172,12 +249,66 @@ ReducerAdd :: proc(m: ^Module, name: string, parameters: []Column, call: Reducer
         return
     }
     reducer: ^ReducerDef = &m.reducers[m.reducer_count]
-    reducer^ = {name = name, column_count = len(parameters), kind = kind, call = call}
+    reducer^ = {name = name, column_count = len(parameters), kind = kind, call = call, scheduled_table = -1}
     for column, i in parameters { reducer.columns[i] = column }
     m.reducer_count += 1
 }
 
+// Adds the reducer that a scheduled table runs for each of its rows (`TableOptions.schedule_reducer`): the one argument is a whole row of the table, which the reducer reads field by field.
+ReducerAddScheduled :: proc(m: ^Module, name: string, table: Table, call: ReducerProc) {
+    if m.reducer_count >= MAX_REDUCERS {
+        m.failed = true
+        return
+    }
+    m.reducers[m.reducer_count] = {name = name, call = call, scheduled_table = table.index}
+    m.reducer_count += 1
+}
+
 // ---- the description ------------------------------------------------------------------------------------------------------------------------------------------------
+
+// A product with one named field of a primitive type: how the database writes its own Identity, Timestamp and the like
+@(private)
+writeWrapper :: proc(writer: ^bsatn.Writer, field: string, tag: ColumnType) {
+    bsatn.WriteTag(writer, 2)
+    bsatn.WriteLength(writer, 1)
+    bsatn.WriteTag(writer, 0)
+    bsatn.WriteString(writer, field)
+    bsatn.WriteTag(writer, u8(tag))
+}
+
+@(private)
+writeType :: proc(writer: ^bsatn.Writer, type: ColumnType, element: ColumnType) {
+    switch type {
+    case .ARRAY:
+        bsatn.WriteTag(writer, 3)
+        writeType(writer, element, .STRING)
+    case .OPTION:
+        bsatn.WriteTag(writer, 1)               // a sum of some(T) and none
+        bsatn.WriteLength(writer, 2)
+        bsatn.WriteTag(writer, 0)
+        bsatn.WriteString(writer, "some")
+        writeType(writer, element, .STRING)
+        bsatn.WriteTag(writer, 0)
+        bsatn.WriteString(writer, "none")
+        bsatn.WriteTag(writer, 2)               // an empty product
+        bsatn.WriteLength(writer, 0)
+    case .IDENTITY: writeWrapper(writer, "__identity__", .U256)
+    case .CONNECTION_ID: writeWrapper(writer, "__connection_id__", .U128)
+    case .TIMESTAMP: writeWrapper(writer, "__timestamp_micros_since_unix_epoch__", .I64)
+    case .TIME_DURATION: writeWrapper(writer, "__time_duration_micros__", .I64)
+    case .SCHEDULE_AT:
+        bsatn.WriteTag(writer, 1)
+        bsatn.WriteLength(writer, 2)
+        bsatn.WriteTag(writer, 0)
+        bsatn.WriteString(writer, "Interval")
+        writeWrapper(writer, "__time_duration_micros__", .I64)
+        bsatn.WriteTag(writer, 0)
+        bsatn.WriteString(writer, "Time")
+        writeWrapper(writer, "__timestamp_micros_since_unix_epoch__", .I64)
+    case .STRING, .BOOL, .I8, .U8, .I16, .U16, .I32, .U32, .I64, .U64, .I128, .U128, .I256, .U256, .F32, .F64:
+        bsatn.WriteTag(writer, u8(type))
+    }
+}
 
 @(private)
 writeColumns :: proc(writer: ^bsatn.Writer, columns: []Column) {
@@ -185,8 +316,32 @@ writeColumns :: proc(writer: ^bsatn.Writer, columns: []Column) {
     for column in columns {
         bsatn.WriteTag(writer, 0)               // the name is Some
         bsatn.WriteString(writer, column.name)
-        bsatn.WriteTag(writer, u8(column.type))
+        writeType(writer, column.type, column.element)
     }
+}
+
+// The name the database gives a btree index: table, columns, `idx_btree`
+@(private)
+indexName :: proc(table: ^TableDef, index: ^IndexDef, buffer: []u8) -> string {
+    at: int
+    put :: proc(buffer: []u8, at: ^int, text: string) {
+        count: int = min(len(text), len(buffer) - at^)
+        copy(buffer[at^:at^ + count], text[:count])
+        at^ += count
+    }
+    put(buffer, &at, table.name)
+    for i in 0 ..< index.count {
+        put(buffer, &at, "_")
+        put(buffer, &at, table.columns[index.columns[i]].name)
+    }
+    put(buffer, &at, "_idx_btree")
+    return string(buffer[:at])
+}
+
+@(private)
+writeColList :: proc(writer: ^bsatn.Writer, columns: []u16) {
+    bsatn.WriteLength(writer, len(columns))
+    for column in columns { bsatn.WriteU16(writer, column) }
 }
 
 // RawModuleDef::V9: the typespace (one product type for each table), the tables, the reducers, the names of the table types, and the lists that are empty
@@ -210,10 +365,49 @@ describe :: proc(writer: ^bsatn.Writer) {
         } else {
             bsatn.WriteLength(writer, 0)
         }
-        bsatn.WriteLength(writer, 0)            // indexes
-        bsatn.WriteLength(writer, 0)            // constraints
-        bsatn.WriteLength(writer, 0)            // sequences
-        bsatn.WriteTag(writer, 1)               // schedule: None
+        bsatn.WriteLength(writer, table.index_count)
+        for index_number in 0 ..< table.index_count {
+            index: ^IndexDef = &table.indexes[index_number]
+            name_buffer: [128]u8
+            bsatn.WriteTag(writer, 0)           // name: Some (the one the database would make)
+            bsatn.WriteString(writer, indexName(table, index, name_buffer[:]))
+            bsatn.WriteTag(writer, 1)           // accessor_name: None
+            bsatn.WriteTag(writer, 0)           // BTree
+            writeColList(writer, index.columns[:index.count])
+        }
+        unique_total: int = table.unique_count + (1 if table.primary_key >= 0 else 0)
+        bsatn.WriteLength(writer, unique_total)
+        if table.primary_key >= 0 {
+            bsatn.WriteTag(writer, 1)           // name: None
+            bsatn.WriteTag(writer, 0)           // Unique
+            key: [1]u16 = {u16(table.primary_key)}
+            writeColList(writer, key[:])
+        }
+        for u in 0 ..< table.unique_count {
+            bsatn.WriteTag(writer, 1)
+            bsatn.WriteTag(writer, 0)
+            writeColList(writer, table.unique[u:u + 1])
+        }
+        if table.auto_column >= 0 {
+            bsatn.WriteLength(writer, 1)
+            bsatn.WriteTag(writer, 1)           // name: None
+            bsatn.WriteU16(writer, u16(table.auto_column))
+            bsatn.WriteTag(writer, 1)           // start, min, max: None
+            bsatn.WriteTag(writer, 1)
+            bsatn.WriteTag(writer, 1)
+            bsatn.WriteU64(writer, 1)           // increment: 1 as an i128
+            bsatn.WriteU64(writer, 0)
+        } else {
+            bsatn.WriteLength(writer, 0)
+        }
+        if table.schedule_reducer != "" {
+            bsatn.WriteTag(writer, 0)           // schedule: Some
+            bsatn.WriteTag(writer, 1)           // name: None
+            bsatn.WriteString(writer, table.schedule_reducer)
+            bsatn.WriteU16(writer, u16(table.schedule_column))
+        } else {
+            bsatn.WriteTag(writer, 1)           // schedule: None
+        }
         bsatn.WriteU8(writer, 1)                // table_type: User
         bsatn.WriteU8(writer, 0 if table.public else 1)     // table_access: Public, Private
     }
@@ -221,7 +415,15 @@ describe :: proc(writer: ^bsatn.Writer) {
     for i in 0 ..< module.reducer_count {
         reducer: ^ReducerDef = &module.reducers[i]
         bsatn.WriteString(writer, reducer.name)
-        writeColumns(writer, reducer.columns[:reducer.column_count])
+        if reducer.scheduled_table >= 0 {
+            bsatn.WriteLength(writer, 1)        // one argument, `arg`: a reference to the product type of the table
+            bsatn.WriteTag(writer, 0)
+            bsatn.WriteString(writer, "arg")
+            bsatn.WriteTag(writer, 0)
+            bsatn.WriteU32(writer, u32(reducer.scheduled_table))
+        } else {
+            writeColumns(writer, reducer.columns[:reducer.column_count])
+        }
         switch reducer.kind {
         case .NORMAL:
             bsatn.WriteTag(writer, 1)           // lifecycle: None
@@ -348,17 +550,24 @@ tableId :: proc(table: Table) -> (id: TableId, ok: bool) {
 
 // Inserts a row (its BSATN: the fields of the table in order). "" or the text of the error (a unique key that exists, a row that does not fit the table)
 TableInsert :: proc(table: Table, row: []u8) -> string {
+    _, message := TableInsertRow(table, row)
+    return message
+}
+
+// The same, and the row as it was stored: the automatic increment column holds the number the database gave. The slice is the row buffer of the module, good until the next table call.
+TableInsertRow :: proc(table: Table, row: []u8) -> (stored: []u8, message: string) {
     id, found := tableId(table)
-    if !found { return "no such table" }
-    if len(row) > len(row_buffer) { return "the row is too big" }
+    if !found { return nil, "no such table" }
+    if len(row) > len(row_buffer) { return nil, "the row is too big" }
     copy(row_buffer[:], row)
     length: uint = uint(len(row))
     #partial switch Errno(host_insert(id, raw_data(row_buffer[:]), &length)) {
-    case .OK: return ""
-    case .UNIQUE_ALREADY_EXISTS: return "a row with the same unique value exists"
-    case .BSATN_DECODE_ERROR: return "the row does not match the table"
-    case .NO_SUCH_TABLE: return "no such table"
-    case: return "the insert failed"
+    case .OK: return row_buffer[:length], ""
+    case .UNIQUE_ALREADY_EXISTS: return nil, "a row with the same unique value exists"
+    case .BSATN_DECODE_ERROR: return nil, "the row does not match the table"
+    case .NO_SUCH_TABLE: return nil, "no such table"
+    case .SCHEDULE_AT_DELAY_TOO_LONG: return nil, "the schedule is too far away"
+    case: return nil, "the insert failed"
     }
 }
 
@@ -387,6 +596,11 @@ TableScan :: proc(table: Table, user: rawptr, each: proc(user: rawptr, row: ^bsa
     if !found { return false }
     iterator: RowIter
     if host_table_scan(id, &iterator) != 0 { return false }
+    return readRows(iterator, user, each)
+}
+
+@(private)
+readRows :: proc(iterator: RowIter, user: rawptr, each: proc(user: rawptr, row: ^bsatn.Reader) -> bool) -> bool {
     for {
         length: uint = uint(len(row_buffer))
         result: i16 = host_row_iter_advance(iterator, raw_data(row_buffer[:]), &length)
@@ -403,6 +617,92 @@ TableScan :: proc(table: Table, user: rawptr, each: proc(user: rawptr, row: ^bsa
         }
         if result == -1 { return true }           // the iterator is exhausted and gone
     }
+}
+
+// ---- by an index ------------------------------------------------------------------------------------------------------------------------------------------------
+
+@(private)
+indexId :: proc(table: Table, columns: []int) -> (id: IndexId, ok: bool) {
+    if table.index < 0 || table.index >= module.table_count || len(columns) == 0 || len(columns) > MAX_INDEX_COLUMNS { return 0, false }
+    definition: ^TableDef = &module.tables[table.index]
+    for i in 0 ..< definition.index_count {
+        index: ^IndexDef = &definition.indexes[i]
+        if index.count != len(columns) { continue }
+        same: bool = true
+        for column, j in columns { if int(index.columns[j]) != column { same = false } }
+        if !same { continue }
+        if !index.id_known {
+            name_buffer: [128]u8
+            name: string = indexName(definition, index, name_buffer[:])
+            if host_index_id_from_name(raw_data(transmute([]u8)name), uint(len(name)), &index.id) != 0 { return 0, false }
+            index.id_known = true
+        }
+        return index.id, true
+    }
+    return 0, false       // the table has no such index: give it one in TableOptions
+}
+
+// Calls `each` for every row whose indexed columns equal `key` (the BSATN of those columns in the order of the index; for a unique index at most one row). The index has to exist: the primary
+// key, a unique column or one of `TableOptions.indexes`. False when there is no such index.
+TableFind :: proc(table: Table, columns: []int, key: []u8, user: rawptr, each: proc(user: rawptr, row: ^bsatn.Reader) -> bool) -> bool {
+    index, found := indexId(table, columns)
+    if !found { return false }
+    if len(key) > len(row_buffer) { return false }
+    copy(row_buffer[:], key)
+    iterator: RowIter
+    if host_index_scan_point(index, raw_data(row_buffer[:]), uint(len(key)), &iterator) != 0 { return false }
+    return readRows(iterator, user, each)
+}
+
+// Deletes the rows whose indexed columns equal `key`; returns how many
+TableDeleteBy :: proc(table: Table, columns: []int, key: []u8) -> (deleted: u32, ok: bool) {
+    index, found := indexId(table, columns)
+    if !found { return 0, false }
+    if len(key) > len(row_buffer) { return 0, false }
+    copy(row_buffer[:], key)
+    status: u16 = host_delete_by_index_point(index, raw_data(row_buffer[:]), uint(len(key)), &deleted)
+    return deleted, status == 0          // the count is read after the call that writes it
+}
+
+// Replaces the row that has the same value in the unique index `columns` (the primary key is the usual one) with `row`. "" or the text of the error (no such row, a unique value of another row).
+TableUpdate :: proc(table: Table, columns: []int, row: []u8) -> string {
+    index, found := indexId(table, columns)
+    id, table_found := tableId(table)
+    if !found || !table_found { return "no such index" }
+    if len(row) > len(row_buffer) { return "the row is too big" }
+    copy(row_buffer[:], row)
+    length: uint = uint(len(row))
+    #partial switch Errno(host_update(id, index, raw_data(row_buffer[:]), &length)) {
+    case .OK: return ""
+    case .NO_SUCH_ROW: return "no row with that key"
+    case .INDEX_NOT_UNIQUE: return "the index is not unique"
+    case .UNIQUE_ALREADY_EXISTS: return "a row with the same unique value exists"
+    case .BSATN_DECODE_ERROR: return "the row does not match the table"
+    case: return "the update failed"
+    }
+}
+
+// Deletes the rows that are equal to `row` (the whole row, BSATN); returns how many
+TableDelete :: proc(table: Table, row: []u8) -> (deleted: u32, ok: bool) {
+    id, found := tableId(table)
+    if !found || len(row) + 4 > len(row_buffer) { return 0, false }
+    writer: bsatn.Writer = bsatn.WriterMake(row_buffer[:])
+    bsatn.WriteU32(&writer, 1)                  // a relation of one row
+    bsatn.WriteRaw(&writer, row)
+    bytes: []u8 = bsatn.WriterBytes(&writer)
+    status: u16 = host_delete_all_by_eq(id, raw_data(bytes), uint(len(bytes)), &deleted)
+    return deleted, status == 0
+}
+
+// For a `.SCHEDULE_AT` column: the value as BSATN. A reducer that runs every `microseconds`, or once at a time (microseconds since the Unix epoch).
+WriteScheduleInterval :: proc(writer: ^bsatn.Writer, microseconds: i64) {
+    bsatn.WriteTag(writer, 0)
+    bsatn.WriteI64(writer, microseconds)
+}
+
+WriteScheduleTime :: proc(writer: ^bsatn.Writer, timestamp: bsatn.Timestamp) {
+    bsatn.WriteTag(writer, 1)
+    bsatn.WriteI64(writer, i64(timestamp))
 }
 
 // ---- the log ------------------------------------------------------------------------------------------------------------------------------------------------------------------

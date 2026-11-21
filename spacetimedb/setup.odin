@@ -131,6 +131,7 @@ SetupRun :: proc(options: SetupOptions = {}) -> (result: SetupResult) {
     if !options.skip_fixtures {
         if SetupFixture(options, "basic-rs", root) { result.fixtures += 1 }
         if SetupOdinModule(options, "basic", root) { result.fixtures += 1 }
+        if SetupOdinModule(options, "rich", root) { result.fixtures += 1 }
     }
     return
 }
