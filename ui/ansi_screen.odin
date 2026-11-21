@@ -1,5 +1,6 @@
 package ui
 
+import "core:unicode"
 import "core:unicode/utf8"
 import ud "../unicode_data"
 import su "../simd"
@@ -29,7 +30,7 @@ import su "../simd"
 //
 // Limits: a fixed grid (no resize: make another screen and write the output again), no origin or wrap modes, no tab stops that are set; a scroll region feeds no history unless it is the whole screen
 //     the width and the clusters come from the unicode_data library (Unicode 18), ambiguous widths are 1 unless `ambiguous_wide`, a cell keeps ANSI_EXTRA (2) characters besides its own so a longer emoji sequence loses its tail, a flag or a family is one cell group only when its parts arrive in order, no right-to-left text; marks go on the cell before it and one mark only
-//     the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; a selection is by cells (a press and a drag, one word or line at a time is not there: no double click selection), no mouse or paste modes, no cursor shapes or hiding
+//     the history and the second buffer for the alternate screen are the caller's memory, and without the second buffer the alternate screen is skipped; a selection is by cells (a press and a drag), by words (a double click, then a drag goes on by words) or by lines (a triple click); a word is a run of letters and digits, of spaces or of other characters, no mouse or paste modes, no cursor shapes or hiding
 //     it only draws: nothing reads the keyboard or talks to a process; a cell is as wide as the code face's M, and a wide letter takes two of them whatever the font does
 //
 // Selection: a press on the screen and a drag select the cells between the two ends (the ends are included, a wide letter whole), the highlight is a TEXT_SELECTION per row, a drag past the
@@ -136,6 +137,14 @@ AnsiScreen :: struct {
     select_from_column: int,
     select_to_row: int,         // and where it ends now (either may come first)
     select_to_column: int,
+    press_time: f64,            // the last press on the screen: a second one soon after at the same cell selects a word, a third one a line
+    press_row: int,
+    press_column: int,
+    presses: int,
+    unit: int,                  // 0 cells, 1 words, 2 lines: what a drag after a double or triple click goes by
+    unit_row: int,              // the word or line that was pressed (the number of its row, its first and last column)
+    unit_first: int,
+    unit_last: int,
 }
 
 // A screen over `cells` (at least columns * rows of them), cleared. `history`: room for the lines that scroll off the top, as many rows as it has room for (nil: none).
@@ -828,6 +837,28 @@ AnsiScreenSelected :: proc(screen: ^AnsiScreen, out: []u8) -> string {
     return string(out[:count])
 }
 
+// The first and last column of the word (unit 1) or of the line (unit 2) at a place of the view. A word is a run of letters and digits (and the underscore), a run of spaces, or a run of
+// other characters; the second half of a wide letter belongs to its first half.
+@(private)
+screenUnitBounds :: proc(screen: ^AnsiScreen, view_row: int, column: int, unit: int) -> (first: int, last: int) {
+    if unit == 2 { return 0, screen.columns - 1 }
+    classOf :: proc(screen: ^AnsiScreen, view_row: int, column: int) -> int {
+        cell: ^AnsiCell = AnsiScreenViewCell(screen, column, view_row)
+        if cell.continuation && column > 0 { return classOf(screen, view_row, column - 1) }
+        character: rune = rune(cell.character)
+        switch {
+        case character == 0 || character == ' ': return 0
+        case unicode.is_letter(character) || unicode.is_digit(character) || character == '_': return 1
+        }
+        return 2
+    }
+    wanted: int = classOf(screen, view_row, column)
+    first, last = column, column
+    for first > 0 && classOf(screen, view_row, first - 1) == wanted { first -= 1 }
+    for last < screen.columns - 1 && classOf(screen, view_row, last + 1) == wanted { last += 1 }
+    return
+}
+
 // The screen as texts in the code face: a row at a time, the cells of one style in a row are one text, the empty cells take their room, a ground is a FILL behind its
 // cells. The cursor is drawn as a block over its cell while `cursor` is true (a program that blinks it passes the phase) and the view is the live screen. The wheel over
 // the screen scrolls the view through the history. A wide letter is a text of its own, two cells wide, so that what follows it stays on the grid. The text lives in the
@@ -858,14 +889,40 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, na
         if interaction.pressed && ctx.input.mouse_pressed {
             AnsiScreenSelectClear(screen)
             screen.select_dragging = true
-            screen.select_from_row, screen.select_from_column = screenRowId(screen, view_row), column
-            screen.select_to_row, screen.select_to_column = screen.select_from_row, column
+            row_id: int = screenRowId(screen, view_row)
+            again: bool = ctx.time - screen.press_time <= ctx.settings.double_click_seconds && screen.press_row == row_id && screen.press_column == column
+            screen.presses = screen.presses + 1 if again else 1
+            if screen.presses > max(ctx.settings.multi_click_limit, 1) { screen.presses = 1 }
+            screen.press_time, screen.press_row, screen.press_column = ctx.time, row_id, column
+            screen.select_from_row, screen.select_from_column = row_id, column
+            screen.select_to_row, screen.select_to_column = row_id, column
+            screen.unit = 0 if screen.presses < 2 else (1 if screen.presses == 2 else 2)
+            if screen.unit != 0 {
+                first, last := screenUnitBounds(screen, view_row, column, screen.unit)
+                screen.unit_row, screen.unit_first, screen.unit_last = row_id, first, last
+                screen.select_from_column, screen.select_to_column = first, last
+                screen.select_active = true
+            }
         } else if screen.select_dragging && ctx.active == id && ctx.input.mouse_down {
             if point.y < area.y { AnsiScreenScroll(screen, 1) }
             if point.y > area.y + area.w { AnsiScreenScroll(screen, -1) }
             view_row = clamp(int((point.y - area.y) / cell.y), 0, screen.rows - 1)
-            screen.select_to_row, screen.select_to_column = screenRowId(screen, view_row), column
-            screen.select_active = screen.select_to_row != screen.select_from_row || screen.select_to_column != screen.select_from_column
+            if screen.unit != 0 {
+                // by words or lines: the pressed unit stays whole and the one under the pointer is added to it, in whichever direction
+                row_id: int = screenRowId(screen, view_row)
+                first, last := screenUnitBounds(screen, view_row, column, screen.unit)
+                if row_id < screen.unit_row || (row_id == screen.unit_row && first < screen.unit_first) {
+                    screen.select_from_row, screen.select_from_column = screen.unit_row, screen.unit_last
+                    screen.select_to_row, screen.select_to_column = row_id, first
+                } else {
+                    screen.select_from_row, screen.select_from_column = screen.unit_row, screen.unit_first
+                    screen.select_to_row, screen.select_to_column = row_id, last
+                }
+                screen.select_active = true
+            } else {
+                screen.select_to_row, screen.select_to_column = screenRowId(screen, view_row), column
+                screen.select_active = screen.select_to_row != screen.select_from_row || screen.select_to_column != screen.select_from_column
+            }
         } else if screen.select_dragging {
             screen.select_dragging = false
         }

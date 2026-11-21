@@ -1081,3 +1081,68 @@ test_bad_utf8_gives_one_replacement_character_per_maximal_subpart :: proc(t: ^te
     AnsiScreenWrite(&screen, transmute([]u8)string("\x80"))
     testing.expect_value(t, row(&screen, 0), "a���")  // E0 80: E0 alone is replaced when 80 shows it cannot go on, and 80 is an error of its own
 }
+
+@(test)
+test_a_double_click_selects_a_word_a_triple_click_a_line_and_a_drag_goes_on_by_words :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: Storage(128, 256, 64, 4096),
+        ctx: Context,
+        style: Style,
+        cells: [10 * 4]AnsiCell,
+        screen: AnsiScreen,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    test.style = {metrics = DEFAULT_METRICS}
+    UiInit(&test.ctx, &test.storage, measure)
+    test.screen = AnsiScreenMake(test.cells[:], 10, 4)
+    write(&test.screen, "foo_bar x\r\nab, cd ef")
+    frame :: proc(test: ^Test, input: Input) {
+        UiBegin(&test.ctx, input, 1.0 / 60, {800, 600}, &test.style)
+        if UiWindow(&test.ctx, "window", {0, 0}, {Fixed(300), {}}) { UiAnsiScreen(&test.ctx, &test.screen, false) }
+        UiEnd(&test.ctx)
+    }
+    away: Input = {mouse_position = {-100, -100}}
+    for _ in 0 ..< 3 { frame(test, away) }
+    area, _ := UiElementRect(&test.ctx, UiIdPath("window", "ansi screen"))
+    cell: Vec2 = {area.z / 10, area.w / 4}
+    at :: proc(area: Rect, cell: Vec2, column: int, row: int) -> Vec2 {
+        return {area.x + (f32(column) + 0.5) * cell.x, area.y + (f32(row) + 0.5) * cell.y}
+    }
+    press :: proc(test: ^Test, place: Vec2) {
+        frame(test, {mouse_position = place})
+        frame(test, {mouse_position = place, mouse_down = true, mouse_pressed = true})
+        frame(test, {mouse_position = place, mouse_released = true})
+    }
+    place: Vec2 = at(area, cell, 2, 0)
+    press(test, place)
+    testing.expect_value(t, selected(&test.screen), "")
+    press(test, place)
+    testing.expect_value(t, selected(&test.screen), "foo_bar")            // the underscore is a letter of the word
+    press(test, place)
+    testing.expect_value(t, selected(&test.screen), "foo_bar x")          // a line
+    // the words of the second row: the comma is a word of its own, the spaces are runs
+    for _ in 0 ..< 40 { frame(test, away) }
+    place = at(area, cell, 2, 1)
+    press(test, place)
+    press(test, place)
+    testing.expect_value(t, selected(&test.screen), ",")
+    // a double click held and moved goes on by words, to the right and to the left
+    for _ in 0 ..< 40 { frame(test, away) }
+    first: Vec2 = at(area, cell, 4, 1)
+    press(test, first)
+    frame(test, {mouse_position = first})
+    frame(test, {mouse_position = first, mouse_down = true, mouse_pressed = true})
+    frame(test, {mouse_position = at(area, cell, 7, 1), mouse_down = true})
+    testing.expect_value(t, selected(&test.screen), "cd ef")
+    frame(test, {mouse_position = at(area, cell, 7, 1), mouse_released = true})
+    for _ in 0 ..< 40 { frame(test, away) }
+    first = at(area, cell, 5, 1)
+    press(test, first)
+    frame(test, {mouse_position = first})
+    frame(test, {mouse_position = first, mouse_down = true, mouse_pressed = true})
+    frame(test, {mouse_position = at(area, cell, 0, 1), mouse_down = true})
+    testing.expect_value(t, selected(&test.screen), "ab, cd")
+    frame(test, {mouse_position = at(area, cell, 0, 1), mouse_released = true})
+    testing.expect_value(t, UiProblems(&test.ctx), Problems{})
+}
