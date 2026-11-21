@@ -43,8 +43,9 @@ test_the_arena_start_screen_plays_its_script :: proc(t: ^testing.T) {
     }
     sync.mutex_lock(&tests_lock)
     defer sync.mutex_unlock(&tests_lock)
-    config = {parsed = true, menu = true, name = "Tester", root = "arena_test_menu", port = 3146, sleep_ms = 2}
+    config = {parsed = true, menu = true, name = "Tester", root = "arena_test_menu", port = 3146, sleep_ms = 2, loopback = true}
     defer st.ServerRemove("arena_test_menu")
+    defer st.ServerRemove("arena_test_menu_host")
     headless: kit.HeadlessState
     backend: kit.Backend
     kit.HeadlessInit(&backend, &headless)

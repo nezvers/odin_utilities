@@ -8,7 +8,12 @@ import game_lib "../game"
 // the demo sleeps in every frame (`config.sleep_ms`) to give the network and the 20 steps per second of the server the time they need.
 script: []kit.Step = {
     kit.Wait(3),
-    kit.Click({640, 312}),                  // "Play solo" when the start screen is there (a window run has no arguments); harmless on the field
+    kit.Check(proc(ctx: ^kit.Context) -> bool { state.name_length = copy(state.name[:], "player"); return true }, "a fixed name for the picture"),
+    kit.Wait(2),
+    kit.Capture("start_screen"),            // only in a window run with the captures on; a window of this size shows the start screen
+    kit.Wait(1),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase != .MENU || aimPlaySolo(ctx) }, "the start screen has Play solo (a window run has no arguments)"),
+    kit.ClickAt(&target),                   // on the start screen it starts the game; when the game runs already it lands on the field and does nothing
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .PLAYING }, "the solo game started its server and opened the game"),
     kit.Wait(1200),

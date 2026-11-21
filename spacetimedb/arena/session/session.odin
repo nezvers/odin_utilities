@@ -33,6 +33,19 @@ HostOptions :: struct {
     loopback: bool,             // also offer 127.0.0.1: two programs on one computer (tests)
 }
 
+// Where a connection is, for a window that shows it (and for the loops of `HostStart` / `GuestJoin` that wait for it). The p2p side never blocks: `HostUpdate` / `GuestUpdate` move it on.
+Stage :: enum u8 {
+    IDLE,
+    GATHERING,          // finding the addresses that a friend can reach (the network cards, the public one through STUN)
+    RELAY,              // waiting for the free relay (DERP)
+    READY,              // a host: the invite code is made; a guest: joined, the reply code is made, waiting for the host to answer
+    CONNECTED,          // a guest: the host answered (a host counts its friends: HostGuests)
+    FAILED,
+}
+
+STAGE_GATHER_MS :: 5000
+STAGE_RELAY_MS :: 8000
+
 Host :: struct {
     server: st.Server,
     link: ^p2p.Link,
@@ -40,11 +53,28 @@ Host :: struct {
     invite: [p2p.CODE_TEXT_MAX]u8,
     invite_length: int,
     error: string,
+    stage: Stage,
+    stage_started: time.Tick,
+    options: HostOptions,
+    port: int,
+    relay_used: bool,
 }
 
-// Starts the server, publishes the module, opens the p2p side and makes the invite. False with `host.error` set.
+// Starts the server, publishes the module, opens the p2p side and makes the invite: `HostBegin` and then the waiting (a few hundred milliseconds with the internet). False with `host.error` set.
 HostStart :: proc(host: ^Host, options: HostOptions) -> bool {
+    if !HostBegin(host, options) { return false }
+    for host.stage == .GATHERING || host.stage == .RELAY {
+        HostUpdate(host)
+        time.sleep(10 * time.Millisecond)
+    }
+    return host.stage == .READY
+}
+
+// The first part: the server (blocking, a second or two), the module, the link; then the stage is GATHERING and `HostUpdate` brings it to READY. False with `host.error` set.
+HostBegin :: proc(host: ^Host, options: HostOptions) -> bool {
     host^ = {}
+    host.options = options
+    defer if host.error != "" { host.stage = .FAILED }
     module_path: string = options.module_path if options.module_path != "" else st.FixturePath("arena-odin")
     if module_path == "" || !os.exists(st.ServerCliPath()) {
         host.error = "the server or the module is not built: run `odin run spacetimedb/tool/setup`"
@@ -93,22 +123,30 @@ HostStart :: proc(host: ^Host, options: HostOptions) -> bool {
         host.error = "no UDP socket"
         return false
     }
-    if options.derp { derpBegin(host.link) }
-    gather(host.link, options.internet)
-    p2p.LinkHost(host.link, options.name if options.name != "" else "host")
-    text, encoded := p2p.InviteEncode(p2p.LinkMakeInvite(host.link), host.invite[:])
-    if !encoded {
-        host.error = "the invite does not fit"
-        return false
-    }
-    host.invite_length = len(text)
-    tunnel.TunnelHostInit(host.tunnel, host.link, {address = net.IP4_Loopback, port = port})
+    if options.derp { host.relay_used = derpBegin(host.link) }
+    gatherBegin(host.link, options.internet)
+    host.port = port
+    host.stage, host.stage_started = .GATHERING, time.tick_now()
     return true
 }
 
+// The invite is made once the addresses are known (and the relay is up, when one is used): the code then carries them
 @(private)
-parseLoopback :: proc() -> (address: [4]u8) {
-    return {127, 0, 0, 1}
+hostFinish :: proc(host: ^Host) {
+    p2p.LinkHost(host.link, host.options.name if host.options.name != "" else "host")
+    text, encoded := p2p.InviteEncode(p2p.LinkMakeInvite(host.link), host.invite[:])
+    if !encoded {
+        host.error = "the invite does not fit"
+        host.stage = .FAILED
+        return
+    }
+    host.invite_length = len(text)
+    tunnel.TunnelHostInit(host.tunnel, host.link, {address = net.IP4_Loopback, port = host.port})
+    host.stage = .READY
+}
+
+HostElapsedMs :: proc(host: ^Host) -> int {
+    return int(time.duration_milliseconds(time.tick_since(host.stage_started)))
 }
 
 // The fastest of a few relays, connected before the invite is made (the invite then carries it); the connection takes a moment, so the gathering waits for it
@@ -121,17 +159,13 @@ derpBegin :: proc(link: ^p2p.Link) -> bool {
     return true
 }
 
-// Looks up the public address (STUN) and waits for the gathering: a few hundred milliseconds with the internet, up to 5 seconds without
+// Looks up the public address (STUN) and starts the gathering; `LinkUpdate` finishes it
 @(private)
-gather :: proc(link: ^p2p.Link, internet: bool) {
+gatherBegin :: proc(link: ^p2p.Link, internet: bool) {
     servers: [p2p.STUN_MAX_SERVERS]net.Endpoint
     count: int
     if internet { count = p2p.LinkResolveStun(servers[:]) }
     p2p.LinkGatherBegin(link, servers[:count], p2p.LinkNow())
-    for waited := 0; waited < 5000 && !p2p.LinkGathered(link); waited += 10 {
-        p2p.LinkUpdate(link, p2p.LinkNow())
-        time.sleep(10 * time.Millisecond)
-    }
 }
 
 // The code to hand out
@@ -151,11 +185,24 @@ HostGuests :: proc(host: ^Host) -> int {
     return p2p.LinkPeerCount(host.link)
 }
 
-// Once a frame
+// Once a frame: the link, the tunnel, and the stage (GATHERING, RELAY, READY)
 HostUpdate :: proc(host: ^Host) {
     now: i64 = p2p.LinkNow()
     p2p.LinkUpdate(host.link, now)
     tunnel.TunnelUpdate(host.tunnel, now)
+    switch host.stage {
+    case .GATHERING:
+        if p2p.LinkGathered(host.link) || HostElapsedMs(host) > STAGE_GATHER_MS {
+            if host.relay_used && host.link.derp.state == .CONNECTING {
+                host.stage, host.stage_started = .RELAY, time.tick_now()
+            } else {
+                hostFinish(host)
+            }
+        }
+    case .RELAY:
+        if host.link.derp.state != .CONNECTING || HostElapsedMs(host) > STAGE_RELAY_MS { hostFinish(host) }
+    case .IDLE, .READY, .CONNECTED, .FAILED:
+    }
 }
 
 HostStop :: proc(host: ^Host) {
@@ -185,53 +232,92 @@ Guest :: struct {
     reply_length: int,
     tunnel_started: bool,
     error: string,
+    stage: Stage,
+    stage_started: time.Tick,
+    invite: p2p.Invite,
+    options: GuestOptions,
+    name: [32]u8,
+    name_length: int,
 }
 
-// Takes the invite code of a host; `guest.reply` (GuestReply) is the code to send back
+// Takes the invite code of a host and waits until the reply code is made (`GuestBegin` and the waiting); `guest.reply` (GuestReply) is the code to send back
 GuestJoin :: proc(guest: ^Guest, invite_text: string, options: GuestOptions) -> bool {
+    if !GuestBegin(guest, invite_text, options) { return false }
+    for guest.stage == .GATHERING || guest.stage == .RELAY {
+        GuestUpdate(guest)
+        time.sleep(10 * time.Millisecond)
+    }
+    return guest.stage == .READY || guest.stage == .CONNECTED
+}
+
+// Decodes the code and opens the link; the stage is GATHERING and `GuestUpdate` brings it to READY. False with `guest.error` set.
+GuestBegin :: proc(guest: ^Guest, invite_text: string, options: GuestOptions) -> bool {
     guest^ = {}
+    guest.options = options
+    guest.name_length = copy(guest.name[:], options.name if options.name != "" else "guest")
     invite, decoded := p2p.InviteDecode(invite_text)
     if !decoded {
-        guest.error = "that is not an invite code"
+        guest.error, guest.stage = "that is not an invite code", .FAILED
         return false
     }
+    guest.invite = invite
     guest.link = new(p2p.Link)
     guest.tunnel = new(tunnel.Tunnel)
     if !p2p.LinkInit(guest.link, {include_loopback = options.loopback}) {
-        guest.error = "no UDP socket"
+        guest.error, guest.stage = "no UDP socket", .FAILED
         return false
     }
-    gather(guest.link, options.internet)
-    if invite.derp_server != 0 && !options.no_derp {
-        // the invite names a relay: connect to it first, the reply then goes through it by itself
-        p2p.LinkDerpBeginInvite(guest.link, invite, p2p.LinkNow())
-        for waited := 0; waited < 8000 && guest.link.derp.state == .CONNECTING; waited += 10 {
-            p2p.LinkUpdate(guest.link, p2p.LinkNow())
-            time.sleep(10 * time.Millisecond)
-        }
-    }
-    if !p2p.LinkJoin(guest.link, invite, options.name if options.name != "" else "guest", p2p.LinkNow()) {
-        guest.error = "the invite cannot be used"
-        return false
+    gatherBegin(guest.link, options.internet)
+    // the invite names a relay: connect to it too, the reply then goes through it by itself
+    if invite.derp_server != 0 && !options.no_derp { p2p.LinkDerpBeginInvite(guest.link, invite, p2p.LinkNow()) }
+    guest.stage, guest.stage_started = .GATHERING, time.tick_now()
+    return true
+}
+
+GuestElapsedMs :: proc(guest: ^Guest) -> int {
+    return int(time.duration_milliseconds(time.tick_since(guest.stage_started)))
+}
+
+@(private)
+guestFinish :: proc(guest: ^Guest) {
+    if !p2p.LinkJoin(guest.link, guest.invite, string(guest.name[:guest.name_length]), p2p.LinkNow()) {
+        guest.error, guest.stage = "the invite cannot be used", .FAILED
+        return
     }
     text, encoded := p2p.InviteEncode(p2p.LinkMakeInvite(guest.link), guest.reply[:])
     if !encoded {
-        guest.error = "the reply does not fit"
-        return false
+        guest.error, guest.stage = "the reply does not fit", .FAILED
+        return
     }
     guest.reply_length = len(text)
-    return true
+    guest.stage = .READY
 }
 
 GuestReply :: proc(guest: ^Guest) -> string {
     return string(guest.reply[:guest.reply_length])
 }
 
-// Once a frame (and while waiting for the connection)
+// Once a frame (and while waiting for the connection): the link, the tunnel and the stage (GATHERING, RELAY, READY, CONNECTED)
 GuestUpdate :: proc(guest: ^Guest) {
     now: i64 = p2p.LinkNow()
     p2p.LinkUpdate(guest.link, now)
     if guest.tunnel_started { tunnel.TunnelUpdate(guest.tunnel, now) }
+    relay_wanted: bool = guest.invite.derp_server != 0 && !guest.options.no_derp
+    switch guest.stage {
+    case .GATHERING:
+        if p2p.LinkGathered(guest.link) || GuestElapsedMs(guest) > STAGE_GATHER_MS {
+            if relay_wanted && guest.link.derp.state == .CONNECTING {
+                guest.stage, guest.stage_started = .RELAY, time.tick_now()
+            } else {
+                guestFinish(guest)
+            }
+        }
+    case .RELAY:
+        if guest.link.derp.state != .CONNECTING || GuestElapsedMs(guest) > STAGE_RELAY_MS { guestFinish(guest) }
+    case .READY:
+        if p2p.LinkPeerCount(guest.link) == 1 { guest.stage = .CONNECTED }
+    case .IDLE, .CONNECTED, .FAILED:
+    }
 }
 
 GuestConnected :: proc(guest: ^Guest) -> bool {

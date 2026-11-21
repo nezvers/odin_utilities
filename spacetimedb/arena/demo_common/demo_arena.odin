@@ -2,12 +2,13 @@
 package demo_common
 
 // The arena: a small multiplayer game whose whole world lives in a SpacetimeDB database (arena/module), for people to try the library with. Move with WASD or the arrows and pick up the
-// coins; everybody sees the same field. The start screen (no arguments) offers the three ways to play:
+// coins; everybody sees the same field. The windows (start screen, code, connection, players) are made with `odin_utilities/ui` (screens.odin); the field is drawn with the demo kit.
+// The start screen (no arguments) offers the three ways to play:
 //
 //   Play solo        this program starts a server and the game; nobody else can join
-//   Host a game      the same, and a p2p invite code is drawn for friends (Copy code puts it on the clipboard). With the free relay a friend joins with this one code, even behind strict
-//                    NATs; without it the friend sends a reply code back: paste it into the field "reply from a friend"
-//   Join a game      paste the code of a host (Ctrl+V or the Paste button) and press Connect
+//   Host a game      the same, and a p2p invite code for friends (Copy the invite code puts it on the clipboard). With the free relay a friend joins with this one code, even behind strict
+//                    NATs; without it the friend sends a reply code back: paste it into the field "Reply" of the connection window
+//   Join a game      paste the code of a host (Ctrl+V or the Paste button) and press Connect: the steps of the connection are shown
 //
 // The same from the command line (the start screen is skipped): `arena host --derp`, `arena join <code> [name]`, `arena <name>` (the start screen with the name filled in). `--internet` adds
 // the public address (STUN), `--port N` is the port of the server. A guest has no server: its game reaches the host's database through a tunnel over the p2p link (spacetimedb/tunnel).
@@ -39,15 +40,20 @@ Config :: struct {
     root: string,           // the folder of the server of a host
     port: int,
     sleep_ms: int,          // a test sleeps in each frame: the network needs real time while a headless run has none
+    loopback: bool,         // a test: also offer 127.0.0.1 in the p2p codes
+    idle_host: ^session.Host,   // a test that hosts in the same process: stepped while the guest waits in a blocking call
 }
+
+// A test that has something to do every frame (another host to step)
+frame_hook: proc()
 
 config: Config
 
 Phase :: enum u8 {
     MENU,
     JOIN_FORM,
-    STARTING,
-    WAITING,                // a guest: the p2p connection to the host is not up yet
+    STARTING,               // the server is being started (a moment): drawn first, done in the next update
+    CONNECTING,             // a guest: the p2p connection to the host is being made (the steps are shown)
     PLAYING,
     FAILED,
 }
@@ -62,25 +68,22 @@ State :: struct {
     host: ^session.Host,
     guest: ^session.Guest,
     game: ^game_lib.Game,
-    invite_lines: [8][96]u8,
-    invite_line_lengths: [8]int,
-    invite_line_count: int,
+    hosting: bool,          // the host shows an invite (Host a game, not Play solo)
+    guest_tunnel_open: bool,
+    printed: bool,          // the invite or the reply code went to the console
     reply_line: [1024]u8,   // a line typed into the console of a host
     min_x, max_x: f32,      // where this player has been (the test of the demo reads it)
     started: time.Tick,
     paste_message: [96]u8,
     paste_length: int,
-    // the start screen
     name: [24]u8,
     name_length: int,
     code: [1024]u8,
     code_length: int,
     reply: [1024]u8,
     reply_length: int,
-    focus_name, focus_code, focus_reply: bool,
     relay, stun: bool,
     console: bool,          // the console of the process is read for reply codes (started from the command line)
-    copy_rect: kit.Rect,    // where the Copy code button was drawn (the test clicks it)
 }
 
 state: State
@@ -146,20 +149,6 @@ playerName :: proc() -> string {
     return string(state.name[:state.name_length])
 }
 
-// The invite as lines that fit the side panel
-@(private = "file")
-splitInvite :: proc(code: string) {
-    state.invite_line_count = 0
-    rest: string = code
-    for len(rest) > 0 && state.invite_line_count < len(state.invite_lines) {
-        length: int = min(len(rest), 44)
-        state.invite_line_lengths[state.invite_line_count] = copy(state.invite_lines[state.invite_line_count][:], rest[:length])
-        state.invite_line_count += 1
-        rest = rest[length:]
-    }
-}
-
-@(private = "file")
 setStatus :: proc(message: string) {
     state.status_length = copy(state.status[:], message)
 }
@@ -173,6 +162,7 @@ init :: proc(ctx: ^kit.Context) {
     state.name_length = copy(state.name[:], defaultName())
     state.relay, state.stun = config.derp, config.internet
     if config.invite != "" { state.code_length = copy(state.code[:], config.invite) }
+    uiInit()
     if config.menu {
         state.phase = .MENU
     } else {
@@ -208,7 +198,7 @@ teardown :: proc() {
         free(state.guest)
         state.guest = nil
     }
-    state.invite_line_count = 0
+    state.hosting, state.guest_tunnel_open, state.printed = false, false, false
     state.paste_length = 0
 }
 
@@ -217,7 +207,7 @@ finit :: proc(ctx: ^kit.Context) {
     state = {}
 }
 
-// Does what was chosen: starts the server and the game, or joins a host
+// Does what was chosen: starts the server and the game, or begins joining a host
 @(private = "file")
 launch :: proc(mode: Mode) {
     name: string = playerName()
@@ -226,20 +216,14 @@ launch :: proc(mode: Mode) {
     case .SOLO, .HOST:
         state.host = new(session.Host)
         root: string = config.root if config.root != "" else "arena_server"
-        if !session.HostStart(state.host, {root = root, port = config.port, name = name, internet = mode == .HOST && state.stun, derp = mode == .HOST && state.relay}) {
+        if !session.HostBegin(state.host, {root = root, port = config.port, name = name, internet = mode == .HOST && state.stun, derp = mode == .HOST && state.relay}) {
             fail(state.host.error)
             return
         }
-        if mode == .HOST {
-            code: string = session.HostInvite(state.host)
-            splitInvite(code)
-            fmt.println("Give this code to your friends (arena join <code>):")
-            fmt.println(code)
-            if !config.menu {
-                fmt.println("If it does not use a relay (--derp), paste the reply code of each friend here and press Enter.")
-                consoleStart()
-                state.console = true
-            }
+        state.hosting = mode == .HOST
+        if state.hosting && !config.menu {
+            consoleStart()
+            state.console = true
         }
         if !game_lib.GameOpen(state.game, state.host.server.endpoint, name) {
             fail(state.game.error)
@@ -253,19 +237,17 @@ launch :: proc(mode: Mode) {
             fail("paste the code of the host first")
             return
         }
-        if !session.GuestJoin(state.guest, code, {internet = state.stun, name = name}) {
+        if !session.GuestBegin(state.guest, code, {internet = state.stun, name = name, loopback = config.loopback}) {
             fail(state.guest.error)
             return
         }
-        fmt.println("Connecting to the host. If its code did not name a relay, send this reply code back to the host:")
-        fmt.println(session.GuestReply(state.guest))
-        splitInvite(session.GuestReply(state.guest))
-        state.phase = .WAITING
+        state.phase = .CONNECTING
     }
 }
 
 update :: proc(ctx: ^kit.Context) {
     if config.sleep_ms > 0 { time.sleep(time.Duration(config.sleep_ms) * time.Millisecond) }
+    if frame_hook != nil { frame_hook() }
     if mode, chosen := state.pending.?; chosen {
         state.pending = nil
         launch(mode)
@@ -279,6 +261,12 @@ update :: proc(ctx: ^kit.Context) {
     if state.phase == .FAILED { return }
     if state.host != nil {
         session.HostUpdate(state.host)
+        if state.hosting && state.host.stage == .READY && !state.printed {
+            state.printed = true
+            fmt.println("Give this code to your friends (arena join <code>):")
+            fmt.println(session.HostInvite(state.host))
+            if state.console { fmt.println("If it does not use a relay (--derp), paste the reply code of each friend here and press Enter.") }
+        }
         if state.console {
             line: string = consoleLine(state.reply_line[:])
             if line != "" { acceptReply(line) }
@@ -286,8 +274,18 @@ update :: proc(ctx: ^kit.Context) {
     }
     if state.guest != nil {
         session.GuestUpdate(state.guest)
-        if state.phase == .WAITING && session.GuestConnected(state.guest) && session.GuestStartTunnel(state.guest) {
-            session.SetIdle(state.guest)
+        if state.guest.stage == .FAILED {
+            fail(state.guest.error)
+            return
+        }
+        if state.guest.stage == .READY && !state.printed {
+            state.printed = true
+            fmt.println("Connecting to the host. If its code did not name a relay, send this reply code back to the host:")
+            fmt.println(session.GuestReply(state.guest))
+        }
+        if state.phase == .CONNECTING && state.guest.stage == .CONNECTED && session.GuestStartTunnel(state.guest) {
+            state.guest_tunnel_open = true
+            session.SetIdle(state.guest, config.idle_host)
             if !game_lib.GameOpen(state.game, session.GuestEndpoint(state.guest), playerName()) {
                 fail(state.game.error)
                 return
@@ -298,8 +296,8 @@ update :: proc(ctx: ^kit.Context) {
     if state.phase != .PLAYING { return }
     game: ^game_lib.Game = state.game
     game_lib.GamePoll(game)
-    // the keys go to the game unless a text field has the focus
-    if !(state.focus_reply || state.focus_code || state.focus_name) {
+    // the keys go to the game unless a text field has the keyboard
+    if !textFieldFocused() {
         dx: i8 = i8(kit.AxisKeys(&ctx.input, .A, .D)) + i8(kit.AxisKeys(&ctx.input, .LEFT, .RIGHT))
         dy: i8 = i8(kit.AxisKeys(&ctx.input, .W, .S)) + i8(kit.AxisKeys(&ctx.input, .UP, .DOWN))
         game_lib.GameInput(game, clamp(dx, -1, 1), clamp(dy, -1, 1))
@@ -313,7 +311,6 @@ update :: proc(ctx: ^kit.Context) {
     }
 }
 
-@(private = "file")
 acceptReply :: proc(text: string) {
     if state.host != nil && session.HostAcceptReply(state.host, strings.trim_space(text)) {
         state.paste_length = copy(state.paste_message[:], "reply accepted: the friend is connecting")
@@ -342,91 +339,16 @@ hueColor :: proc(hue: u8) -> kit.Color {
 FIELD_X :: 40
 FIELD_Y :: 60
 
-// Where the start screen is drawn: the middle column of the 1280 x 720 window
-MENU_X :: 440
-MENU_WIDTH :: 400
-
 draw :: proc(ctx: ^kit.Context) {
-    switch state.phase {
-    case .MENU: drawMenu(ctx)
-    case .JOIN_FORM: drawJoinForm(ctx)
-    case .STARTING:
-        kit.DrawTextCentered(ctx, "starting...", {640, 340}, 32, kit.YELLOW)
-    case .WAITING, .PLAYING, .FAILED: drawGame(ctx)
-    }
+    if state.phase == .PLAYING { drawField(ctx) }
+    uiFrame(ctx)
 }
 
+// The field with the coins and the players: the kit draws it, the windows over it are the ui's
 @(private = "file")
-drawStatus :: proc(ctx: ^kit.Context, y: f32) {
-    if state.status_length > 0 { kit.DrawTextCentered(ctx, string(state.status[:state.status_length]), {640, y}, 18, kit.ORANGE) }
-}
-
-@(private = "file")
-drawMenu :: proc(ctx: ^kit.Context) {
-    kit.DrawTextCentered(ctx, "ARENA", {640, 110}, 64, kit.RAY_WHITE)
-    kit.DrawTextCentered(ctx, "a game on a SpacetimeDB database, played over p2p", {640, 160}, 18, kit.LIGHT_GRAY)
-    kit.DrawText(ctx, "your name", {MENU_X, 208}, 16, kit.LIGHT_GRAY)
-    kit.TextField(ctx, {MENU_X, 230, MENU_WIDTH, 32}, state.name[:], &state.name_length, &state.focus_name, "your name")
-    if kit.Button(ctx, {MENU_X, 290, MENU_WIDTH, 44}, "Play solo") && state.name_length > 0 {
-        state.pending, state.phase = .SOLO, .STARTING
-        setStatus("")
-    }
-    if kit.Button(ctx, {MENU_X, 344, MENU_WIDTH, 44}, "Host a game") && state.name_length > 0 {
-        state.pending, state.phase = .HOST, .STARTING
-        setStatus("")
-    }
-    if kit.Button(ctx, {MENU_X, 398, MENU_WIDTH, 44}, "Join a game") {
-        state.phase = .JOIN_FORM
-        setStatus("")
-    }
-    kit.Toggle(ctx, {MENU_X, 466, MENU_WIDTH, 28}, "free relay: friends join with one code (host)", &state.relay)
-    kit.Toggle(ctx, {MENU_X, 500, MENU_WIDTH, 28}, "public address: friends on other networks", &state.stun)
-    if state.name_length == 0 { setStatus("type a name first") }
-    drawStatus(ctx, 560)
-    kit.DrawTextCentered(ctx, "WASD or the arrows move, Escape leaves a game", {640, 660}, 16, kit.GRAY)
-}
-
-@(private = "file")
-drawJoinForm :: proc(ctx: ^kit.Context) {
-    kit.DrawTextCentered(ctx, "Join a game", {640, 110}, 40, kit.RAY_WHITE)
-    kit.DrawText(ctx, "paste the code of the host (Ctrl+V)", {160, 218}, 16, kit.LIGHT_GRAY)
-    kit.TextField(ctx, {160, 240, 780, 32}, state.code[:], &state.code_length, &state.focus_code, "the code of the host")
-    if kit.Button(ctx, {960, 240, 160, 32}, "Paste") {
-        state.code_length = 0
-        kit.TextFieldPaste(ctx, state.code[:], &state.code_length)
-    }
-    if kit.Button(ctx, {MENU_X, 320, MENU_WIDTH, 44}, "Connect") && state.name_length > 0 {
-        state.pending, state.phase = .JOIN, .STARTING
-        setStatus("")
-    }
-    if kit.Button(ctx, {MENU_X, 374, MENU_WIDTH, 36}, "Back") {
-        state.phase = .MENU
-        setStatus("")
-    }
-    drawStatus(ctx, 450)
-}
-
-@(private = "file")
-drawGame :: proc(ctx: ^kit.Context) {
-    kit.DrawText(ctx, "ARENA   WASD / arrows: move, pick up the coins   Escape: leave" if config.menu else "ARENA   WASD / arrows: move, pick up the coins", {FIELD_X, 20}, 22, kit.RAY_WHITE)
+drawField :: proc(ctx: ^kit.Context) {
     kit.DrawRect(ctx, {FIELD_X, FIELD_Y, game_lib.FIELD_WIDTH, game_lib.FIELD_HEIGHT}, {38, 46, 62, 255})
     kit.DrawRectOutline(ctx, {FIELD_X, FIELD_Y, game_lib.FIELD_WIDTH, game_lib.FIELD_HEIGHT}, 2, {90, 110, 150, 255})
-    panel_x: f32 = FIELD_X + game_lib.FIELD_WIDTH + 30
-    if state.phase == .FAILED {
-        kit.DrawText(ctx, string(state.error[:state.error_length]), {panel_x, FIELD_Y}, 20, kit.RED)
-        return
-    }
-    if state.phase == .WAITING {
-        kit.DrawText(ctx, "connecting to the host...", {FIELD_X + 20, FIELD_Y + 20}, 24, kit.YELLOW)
-        kit.DrawText(ctx, "reply code (if the host needs it):", {panel_x, FIELD_Y}, 18, kit.LIGHT_GRAY)
-        for i in 0 ..< state.invite_line_count {
-            kit.DrawText(ctx, string(state.invite_lines[i][:state.invite_line_lengths[i]]), {panel_x, FIELD_Y + 26 + f32(i) * 18}, 14, kit.LIGHT_GRAY)
-        }
-        if state.guest != nil && kit.Button(ctx, {panel_x, FIELD_Y + 40 + f32(state.invite_line_count) * 18, 120, 26}, "Copy reply") {
-            kit.ClipboardSet(ctx, session.GuestReply(state.guest))
-        }
-        return
-    }
     game: ^game_lib.Game = state.game
     for i in 0 ..< game.coin_count {
         coin: schema.Coin = game.coins[i]
@@ -441,49 +363,6 @@ drawGame :: proc(ctx: ^kit.Context) {
         if has_me && player.id == me.id { kit.DrawCircleOutline(ctx, center, 17, 2, kit.WHITE) }
         kit.DrawTextCentered(ctx, player.name, {center.x, center.y - 26}, 16, kit.RAY_WHITE)
     }
-
-    // the side panel: who is here, the connection, the invite
-    kit.DrawText(ctx, "players", {panel_x, FIELD_Y}, 20, kit.RAY_WHITE)
-    order: [game_lib.PLAYERS_MAX]int
-    for i in 0 ..< game.player_count { order[i] = i }
-    for i in 1 ..< game.player_count {
-        for j := i; j > 0 && game.players[order[j]].score > game.players[order[j - 1]].score; j -= 1 { order[j], order[j - 1] = order[j - 1], order[j] }
-    }
-    for rank in 0 ..< game.player_count {
-        player: ^schema.Player = &game.players[order[rank]]
-        kit.DrawCircle(ctx, {panel_x + 8, FIELD_Y + 40 + f32(rank) * 24}, 7, hueColor(player.hue))
-        kit.DrawText(ctx, fmt.tprintf("%s  %d", player.name, player.score), {panel_x + 24, FIELD_Y + 31 + f32(rank) * 24}, 18, kit.WHITE)
-    }
-    y: f32 = FIELD_Y + 40 + f32(game.player_count) * 24 + 30
-    status: string = "connected" if game.phase == .PLAYING else fmt.tprintf("%v", game.phase)
-    via: string = "your own server" if state.guest == nil else "the host through p2p"
-    kit.DrawText(ctx, fmt.tprintf("%s (%s)", status, via), {panel_x, y}, 16, kit.LIGHT_GRAY)
-    if state.host != nil && state.invite_line_count > 0 {
-        y += 34
-        kit.DrawText(ctx, fmt.tprintf("friends connected: %d", session.HostGuests(state.host)), {panel_x, y}, 16, kit.LIGHT_GRAY)
-        y += 24
-        kit.DrawText(ctx, "invite code:", {panel_x, y}, 14, kit.GRAY)
-        for i in 0 ..< state.invite_line_count {
-            kit.DrawText(ctx, string(state.invite_lines[i][:state.invite_line_lengths[i]]), {panel_x, y + 18 + f32(i) * 15}, 12, kit.LIGHT_GRAY)
-        }
-        y += 24 + f32(state.invite_line_count) * 15
-        state.copy_rect = {panel_x, y, 120, 26}
-        if kit.Button(ctx, {panel_x, y, 120, 26}, "Copy code") { kit.ClipboardSet(ctx, session.HostInvite(state.host)) }
-        y += 36
-        kit.DrawText(ctx, "reply from a friend (no relay):", {panel_x, y}, 14, kit.GRAY)
-        submitted: bool = kit.TextField(ctx, {panel_x, y + 20, 150, 26}, state.reply[:], &state.reply_length, &state.focus_reply, "paste")
-        if kit.Button(ctx, {panel_x + 156, y + 20, 70, 26}, "Paste") {
-            state.reply_length = 0
-            kit.TextFieldPaste(ctx, state.reply[:], &state.reply_length)
-            submitted = true
-        }
-        if submitted && state.reply_length > 0 {
-            acceptReply(string(state.reply[:state.reply_length]))
-            state.reply_length = 0
-        }
-        if state.paste_length > 0 { kit.DrawText(ctx, string(state.paste_message[:state.paste_length]), {panel_x, y + 52}, 14, kit.ORANGE) }
-    }
-    if game.error != "" { kit.DrawText(ctx, game.error, {panel_x, FIELD_Y + game_lib.FIELD_HEIGHT - 20}, 14, kit.RED) }
 }
 
 demo_arena: kit.Demo = {
