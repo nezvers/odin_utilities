@@ -1,0 +1,61 @@
+{
+    "version": "2.0.0",
+    "command": "",
+    "args": [],
+    "tasks": [
+        {
+            "label": "Build Extension",
+            "type": "shell",
+            "command": "odin build . -build-mode:dll -strict-style -vet -debug -out:test_project/bin/${config:project_name}.dll",
+            "group": "build",
+            "linux": {
+                "command": "odin build . -build-mode:dll -strict-style -vet -debug -out:test_project/bin/lib${config:project_name}.so"
+            },
+            "osx": {
+                "command": "odin build . -build-mode:dll -strict-style -vet -debug -out:test_project/bin/lib${config:project_name}.dylib"
+            }
+        },
+        {
+            "label": "Build Extension Release",
+            "type": "shell",
+            "command": "odin build . -build-mode:dll -strict-style -vet -o:speed -out:test_project/bin/${config:project_name}.dll",
+            "group": "build",
+            "linux": {
+                "command": "odin build . -build-mode:dll -strict-style -vet -o:speed -out:test_project/bin/lib${config:project_name}.so"
+            },
+            "osx": {
+                "command": "odin build . -build-mode:dll -strict-style -vet -o:speed -out:test_project/bin/lib${config:project_name}.dylib"
+            }
+        },
+        {
+            "label": "Build Tests",
+            "type": "shell",
+            "command": "odin build godot_test -strict-style -vet -build-mode:test -out:${config:project_name}_test.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build godot_test -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            },
+            "osx": {
+                "command": "odin build godot_test -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            }
+        },
+        {
+            "label": "Test",
+            "type": "shell",
+            "command": "odin test godot_test -strict-style -vet",
+            "group": "test"
+        },
+        {
+            "label": "Check",
+            "type": "shell",
+            "command": "odin build . -build-mode:dll -strict-style -vet -out:${config:project_name}_check.dll && del ${config:project_name}_check.*",
+            "group": "build"
+        },
+        {
+            "label": "Open Test Project In Godot",
+            "type": "shell",
+            "command": "godot --editor --path test_project",
+            "group": "none"
+        }
+    ]
+}

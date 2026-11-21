@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Tests",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:project_name}_test.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build Tests"
+        },
+        {
+            "name": "Run Test Script In Godot",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "godot",
+            "args": ["--headless", "--path", "test_project", "--script", "test.gd", "--", "3194"],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build Extension"
+        }
+    ]
+}

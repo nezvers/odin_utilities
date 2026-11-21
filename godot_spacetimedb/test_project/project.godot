@@ -1,0 +1,5 @@
+; Engine configuration file for the test of godot_spacetimedb
+config_version=5
+
+[application]
+config/name="godot_spacetimedb test"
