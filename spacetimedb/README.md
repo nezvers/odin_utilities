@@ -75,6 +75,9 @@ add :: proc(ctx: ^module.ReducerContext, args: ^bsatn.Reader) -> string {
 ## Is Rust needed?
 No. The server is a release binary that setup downloads, the client is Odin, a module can be Odin (`module/`), and a module is published over HTTP (the CLI is not needed for that). Rust is used for two optional things: the test module `fixtures/basic-rs` (without cargo setup skips it and the session test runs with the Odin module alone) and building the server from source on a platform that has no release. A module can also be written in C#, TypeScript or C++ with their own toolchains: any `.wasm` that follows the module ABI is published the same way.
 
+## The cache
+`Cache` keeps the rows of your subscriptions by table (`CacheApply` every message of `ConnectionPoll`), so a game reads rows and not messages: `CacheCollect(&cache, table, PersonRead, people[:])`, `CacheFind` by key, `CacheEvents` for what changed this frame (INSERT, UPDATE with the old row, DELETE). All storage is yours (slots, buckets, bytes, events); a full cache sets `failed` instead of growing.
+
 ## Design
 - **No threads, no callbacks from other threads.** The socket is non blocking and `ConnectionPoll` is called when the program wants (a game frame, a Godot `_process`, a loop of a tool). Nothing in it runs when
   it is not called, so it fits an engine that owns its threads.

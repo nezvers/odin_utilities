@@ -266,6 +266,15 @@ runSession :: proc(t: ^testing.T, module_path: string, port: int) {
     testing.expect(t, first.token_length > 0 && ConnectionToken(&first) != ConnectionToken(&second), "every client has an identity of its own")
 
     queries: [1]string = {"SELECT * FROM person"}
+    // the second client keeps what it hears in a cache: the game side of the same session
+    cache_slots: [16]CacheSlot
+    cache_buckets: [16]i32
+    cache_bytes: [1024]u8
+    cache_events: [16]CacheEvent
+    cache_tables: [2]CacheTable
+    cache: Cache
+    CacheInit(&cache, {slots = cache_slots[:], buckets = cache_buckets[:], bytes = cache_bytes[:], events = cache_events[:], tables = cache_tables[:]})
+    person: int = CacheTableAdd(&cache, "person")
     for connection in ([2]^Connection{&first, &second}) {
         message, got := ConnectionWait(connection, isInitial, nil, allocator)
         testing.expect(t, got, "the server greets the client")
@@ -275,6 +284,7 @@ runSession :: proc(t: ^testing.T, module_path: string, port: int) {
         applied, applied_got := ConnectionWait(connection, isApplied, nil, allocator)
         testing.expect(t, applied_got, "the subscription is applied")
         rows, is_applied := applied.(SubscribeApplied)
+        if connection == &second { CacheApply(&cache, applied) }
         total: int
         for table in rows.rows.tables { total += RowListCount(table.rows) }
         testing.expect(t, is_applied && total == 0, "the table starts empty (the server may leave an empty table out)")
@@ -294,6 +304,7 @@ runSession :: proc(t: ^testing.T, module_path: string, port: int) {
         for !seen_by[index] {
             message, got := ConnectionWait(connection, isUpdateOrResult, nil, allocator)
             if !got { break }
+            if index == 1 { CacheApply(&cache, message) }
             updates: [dynamic]TableUpdate
             updates.allocator = allocator
             #partial switch value in message {
@@ -312,6 +323,11 @@ runSession :: proc(t: ^testing.T, module_path: string, port: int) {
         }
     }
     testing.expect(t, seen_by[0] && seen_by[1], "both clients saw the row")
+    testing.expect_value(t, CacheCount(&cache, person), 1)
+    testing.expect_value(t, len(CacheEvents(&cache)), 1)
+    people_names: [4]string
+    read_name :: proc(reader: ^Reader) -> string { return ReadString(reader) }
+    testing.expect_value(t, CacheCollect(&cache, person, read_name, people_names[:])[0], "Ada")
 
     // a reducer that refuses: the call is rolled back and the caller is told (the Odin module refuses an empty name; the Rust one inserts it: only the first is checked for the error)
     nothing: [8]u8
