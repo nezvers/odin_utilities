@@ -37,3 +37,4 @@ What is not obvious from the code of this library. The rules that hold for every
 - A pipe handed to a child on Windows keeps the child waiting for end of input: give `clip` a temp file as stdin.
 - The CHANGE-REQUEST result includes the PC firewall.
 - `DerpRace` hands each attempt to a detached thread; the `Derp` is shared (`references`) and allocated and freed with `runtime.heap_allocator()`, never with the allocator of the caller (a test context has a tracking allocator, and freeing from another thread through the wrong one crashes the test run silently, exit 127).
+- The TLS client offers X25519 and secp256r1 key shares: servers on Azure (login.microsoftonline.com, demo.duendesoftware.com) take only P-256 and used to close the connection or answer with a HelloRetryRequest, which is not handled. Verified live against Google, Microsoft, GitHub, Cloudflare, Auth0, SpacetimeAuth. `Tls.alert` holds the description of an alert that ended a handshake.

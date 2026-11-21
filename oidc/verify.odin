@@ -42,7 +42,7 @@ KeySet :: struct {
 // The keys of a JWKS document (`{"keys": [...]}`): the EC P-256 and RSA ones; others (and keys meant for encryption) are skipped. False when it is not a JWKS or holds no usable key.
 JwksParse :: proc(document: string, set: ^KeySet) -> bool {
     set.count = 0
-    scratch: [32768]u8
+    scratch: [262144]u8                 // the JWKS of a big provider (Microsoft) carries certificates: tens of kilobytes
     arena: mem.Arena
     mem.arena_init(&arena, scratch[:])
     allocator: mem.Allocator = mem.arena_allocator(&arena)
@@ -95,6 +95,7 @@ VerifyOptions :: struct {
     leeway: i64,                // seconds of clock difference that are forgiven (0: 60)
     now: i64,                   // seconds since the Unix epoch (0: the clock)
     allow_no_expiry: bool,      // a token without `exp` is refused unless this is set
+    allow_no_subject: bool,     // a token without `sub` is refused unless this is set (the access token of a service, client credentials, has none)
 }
 
 VerifyError :: enum u8 {
@@ -151,6 +152,7 @@ JwtVerify :: proc(token: string, keys: ^KeySet, options: VerifyOptions, scratch:
     claims = parsed
     now: i64 = options.now if options.now != 0 else NowUnix()
     leeway: i64 = options.leeway if options.leeway != 0 else 60
+    if claims.subject == "" && !options.allow_no_subject { return claims, .MALFORMED }
     if options.issuer != "" && claims.issuer != options.issuer { return claims, .ISSUER }
     if options.audience != "" && !JwtAudienceHas(claims, options.audience) { return claims, .AUDIENCE }
     if claims.has_expires {

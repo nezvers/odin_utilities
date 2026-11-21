@@ -77,7 +77,7 @@ Discover :: proc(issuer: string, metadata: ^Metadata) -> bool {
 
 // The keys of the provider
 FetchKeys :: proc(metadata: ^Metadata, keys: ^KeySet) -> bool {
-    buffer: [32768]u8
+    buffer: [65536]u8
     response, ok := Request(metadata.jwks_uri, "GET", nil, nil, buffer[:])
     return ok && response.status == 200 && JwksParse(string(response.body), keys)
 }
@@ -149,6 +149,25 @@ ExchangeCode :: proc(metadata: ^Metadata, config: ClientConfig, code: string, ve
     FormField(&form, "client_id", config.client_id)
     FormField(&form, "code_verifier", verifier)
     if config.client_secret != "" { FormField(&form, "client_secret", config.client_secret) }
+    buffer: [16384]u8
+    response, ok := PostForm(metadata.token_endpoint, strings.to_string(form), buffer[:])
+    if !ok {
+        tokens^ = {}
+        tokens.error = "the token endpoint could not be reached"
+        return false
+    }
+    return readTokens(response, tokens)
+}
+
+// The client credentials grant (RFC 6749 section 4.4): a program that is not a person (a dedicated server, a service) gets an access token for itself with its client id and secret. The access
+// token of most providers is a JWT that `JwtVerify` can check (audience: the API it is for).
+ClientCredentials :: proc(metadata: ^Metadata, config: ClientConfig, scope: string, tokens: ^Tokens) -> bool {
+    form: strings.Builder
+    strings.builder_init(&form, context.temp_allocator)
+    FormField(&form, "grant_type", "client_credentials")
+    FormField(&form, "client_id", config.client_id)
+    FormField(&form, "client_secret", config.client_secret)
+    if scope != "" { FormField(&form, "scope", scope) }
     buffer: [16384]u8
     response, ok := PostForm(metadata.token_endpoint, strings.to_string(form), buffer[:])
     if !ok {

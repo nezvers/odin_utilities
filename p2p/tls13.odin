@@ -18,6 +18,7 @@ import "core:crypto/hash"
 import "core:crypto/hkdf"
 import "core:crypto/hmac"
 import "core:crypto/sha2"
+import "core:crypto/ecdh"
 import "core:crypto/x25519"
 import "core:net"
 import "core:testing"
@@ -198,6 +199,8 @@ TlsState :: enum {
 }
 
 TlsHandshake :: struct {
+    p256: ecdh.Private_Key,                   // the second key share of the hello: servers on Azure and some CDNs take P-256 and not X25519
+    p256_public: [65]byte,                    // its uncompressed point
     state: TlsState,
     transcript: sha2.Context_256,
     private: [32]byte,
@@ -272,11 +275,20 @@ TlsClientHello :: proc(handshake: ^TlsHandshake, out: []byte, hostname: string, 
     put16(out, &at, len(hostname))
     copy(out[at:], hostname)
     at += len(hostname)
-    // supported_groups: x25519
+    // supported_groups: x25519 first (the one share that is sent), then the NIST curves that every server has: a server that must choose a group (a hello retry) or that only lists these
+    // (FIPS builds) then answers with a clear refusal instead of closing the connection
     put16(out, &at, 10)
-    put16(out, &at, 4)
-    put16(out, &at, 2)
+    put16(out, &at, 8)
+    put16(out, &at, 6)
     put16(out, &at, 0x001d)
+    put16(out, &at, 0x0017)
+    put16(out, &at, 0x0018)
+    // psk_key_exchange_modes: psk_dhe_ke (some servers refuse a hello without it, although no PSK is offered)
+    put16(out, &at, 45)
+    put16(out, &at, 2)
+    out[at] = 1
+    out[at + 1] = 1
+    at += 2
     // signature_algorithms: what a server may sign with, and what its chain may be signed with (the same list in TLS 1.3): ECDSA P-256 / P-384,
     // RSA-PSS, Ed25519 and RSA PKCS#1 for the certificates above the leaf (all of them verified by core:crypto/x509)
     SIGNATURE_ALGORITHMS :: [?]int{0x0403, 0x0503, 0x0804, 0x0805, 0x0806, 0x0807, 0x0401, 0x0501}
@@ -292,14 +304,21 @@ TlsClientHello :: proc(handshake: ^TlsHandshake, out: []byte, hostname: string, 
     out[at] = 2
     at += 1
     put16(out, &at, 0x0304)
-    // key_share: one x25519 share
+    // key_share: an x25519 share and a secp256r1 one (a server that does not know x25519 would otherwise answer with a HelloRetryRequest, which is not handled)
+    p256_ok: bool = ecdh.private_key_generate(&handshake.p256, .SECP256R1)
+    ecdh.private_key_public_bytes(&handshake.p256, handshake.p256_public[:])
     put16(out, &at, 51)
-    put16(out, &at, 2 + 4 + 32)
-    put16(out, &at, 4 + 32)
+    put16(out, &at, 2 + 4 + 32 + 4 + 65)
+    put16(out, &at, 4 + 32 + 4 + 65)
     put16(out, &at, 0x001d)
     put16(out, &at, 32)
     copy(out[at:], handshake.public[:])
     at += 32
+    put16(out, &at, 0x0017)
+    put16(out, &at, 65)
+    copy(out[at:], handshake.p256_public[:])
+    at += 65
+    _ = p256_ok
     out[extensions_at] = u8((at - extensions_at - 2) >> 8)
     out[extensions_at + 1] = u8(at - extensions_at - 2)
     out[0] = 1                                        // ClientHello
@@ -355,6 +374,7 @@ TlsServerHello :: proc(handshake: ^TlsHandshake, message: []byte) -> bool {
         return TlsFail(handshake, "ServerHello extensions are cut off")
     }
     version_ok: bool
+    use_p256: bool
     server_share: []byte
     end: int = at + extensions_length
     for at + 4 <= end {
@@ -366,18 +386,28 @@ TlsServerHello :: proc(handshake: ^TlsHandshake, message: []byte) -> bool {
             version_ok = true
         } else if kind == 51 && len(body) == 2 + 2 + 32 && body[0] == 0 && body[1] == 0x1d && body[2] == 0 && body[3] == 32 {
             server_share = body[4:]
+        } else if kind == 51 && len(body) == 2 + 2 + 65 && body[0] == 0 && body[1] == 0x17 && body[2] == 0 && body[3] == 65 {
+            server_share = body[4:]
+            use_p256 = true
         }
     }
     if !version_ok {
         return TlsFail(handshake, "the server does not speak TLS 1.3")
     }
     if server_share == nil {
-        return TlsFail(handshake, "no X25519 key share from the server")
+        return TlsFail(handshake, "no X25519 or P-256 key share from the server")
     }
     sha2.update(&handshake.transcript, message)
     shared: [32]byte
-    private: [32]byte = handshake.private
-    x25519.scalarmult(shared[:], private[:], server_share)
+    if use_p256 {
+        public: ecdh.Public_Key
+        if !ecdh.public_key_set_bytes(&public, .SECP256R1, server_share) || !ecdh.ecdh(&handshake.p256, &public, shared[:]) {
+            return TlsFail(handshake, "the P-256 key share of the server is not valid")
+        }
+    } else {
+        private: [32]byte = handshake.private
+        x25519.scalarmult(shared[:], private[:], server_share)
+    }
     transcript: TlsHash = TlsTranscriptHash(handshake)
     handshake.handshake_secret, handshake.client_handshake, handshake.server_handshake = TlsHandshakeSecrets(shared[:], transcript[:])
     handshake.state = .WAIT_ENCRYPTED_EXTENSIONS
@@ -513,6 +543,7 @@ Tls :: struct {
     handshake_buffer: [TLS_HANDSHAKE_MAX]byte,
     handshake_length: int,
     failure: string,
+    alert: u8,                  // the description of the alert that refused the handshake (40 handshake_failure, 70 protocol_version, 109 missing_extension ...), 0: none
 }
 
 // The first bytes of the next record in the input buffer are a complete record?
@@ -663,6 +694,7 @@ TlsConnect :: proc(tls: ^Tls, socket: net.TCP_Socket, hostname: string, verify: 
         case TLS_TYPE_CHANGE_CIPHER_SPEC:
         case TLS_TYPE_ALERT:
             tls.failure = "the server refused the connection (alert)"
+            if length >= 2 { tls.alert = tls.input[6] }
             return false
         case:
             tls.failure = "unexpected record instead of ServerHello"

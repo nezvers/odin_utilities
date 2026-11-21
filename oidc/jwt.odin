@@ -80,7 +80,7 @@ JwtPayloadClaims :: proc(payload: string, scratch: []u8) -> (claims: JwtClaims, 
     claims.expires, claims.has_expires = JsonInt(json, "exp")
     claims.issued, _ = JsonInt(json, "iat")
     claims.not_before, _ = JsonInt(json, "nbf")
-    return claims, claims.issuer != "" && claims.subject != ""
+    return claims, claims.issuer != ""            // a token of a service has no `sub` (a person's has: the checks of a login look at it)
 }
 
 // Is `wanted` the audience: `aud` is one string or an array of strings
