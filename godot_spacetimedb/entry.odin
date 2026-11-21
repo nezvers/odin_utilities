@@ -15,6 +15,7 @@ ValueKind :: enum u8 {
     BOOL,
     INT,
     STRING,
+    BYTES,                  // a PackedByteArray (the bytes are in `text`)
 }
 
 Value :: struct {
@@ -54,6 +55,7 @@ variantTypeOf :: proc "contextless" (kind: ValueKind) -> GdVariantType {
     case .BOOL: return .BOOL
     case .INT: return .INT
     case .STRING: return .STRING
+    case .BYTES: return .PACKED_BYTE_ARRAY
     case .NONE: return .NIL
     }
     return .NIL
@@ -88,6 +90,11 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
             buffer: []u8 = make([]u8, ARGUMENT_TEXT, context.temp_allocator)
             values[i].text = buffer[:stringRead(&string_value, buffer)]
             gd.destroy_string(&string_value)
+        case .BYTES:
+            array: GdBytes
+            gd.to_bytes(&array, variant)
+            values[i].text = readBytes(&array, context.temp_allocator)
+            gd.bytes_destroy(&array)
         case .NONE:
         }
         values[i].kind = kind
@@ -98,6 +105,7 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     case .BOOL: variantBool(result, answer.number != 0)
     case .INT: variantInt(result, answer.number)
     case .STRING: variantString(result, answer.text)
+    case .BYTES: variantBytes(result, answer.text)
     }
     free_all(context.temp_allocator)
 }
@@ -115,6 +123,7 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
         case .STRING:
             buffer: []u8 = make([]u8, ARGUMENT_TEXT, context.temp_allocator)
             values[i].text = buffer[:stringRead(cast(^GdString)args[i], buffer)]
+        case .BYTES: values[i].text = readBytes(args[i], context.temp_allocator)
         case .NONE:
         }
         values[i].kind = kind
@@ -125,6 +134,7 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
     case .BOOL: (cast(^GdBool)result)^ = 1 if answer.number != 0 else 0
     case .INT: (cast(^i64)result)^ = answer.number
     case .STRING: nativeString(result, answer.text)
+    case .BYTES: makeBytes(result, answer.text)
     }
     free_all(context.temp_allocator)
 }
@@ -227,7 +237,7 @@ spanText :: proc(client: ^Client, span: Span) -> Value {
     return {kind = .STRING, text = spanBytes(client, span)}
 }
 
-METHOD_COUNT :: 15
+METHOD_COUNT :: 17
 
 methods: [METHOD_COUNT]Method = {
     {"open", {.STRING, .INT, .STRING, .STRING}, .BOOL, proc(client: ^Client, a: []Value) -> Value {
@@ -241,6 +251,15 @@ methods: [METHOD_COUNT]Method = {
     {"subscribe", {.STRING}, .INT, proc(client: ^Client, a: []Value) -> Value { return intOf(i64(clientSubscribe(client, string(a[0].text)))) }},
     {"call_reducer", {.STRING, .STRING}, .INT, proc(client: ^Client, a: []Value) -> Value {
         return intOf(i64(clientCallReducer(client, string(a[0].text), string(a[1].text))))
+    }},
+    {"call_reducer_bytes", {.STRING, .BYTES}, .INT, proc(client: ^Client, a: []Value) -> Value {
+        return intOf(i64(clientCallReducerBytes(client, string(a[0].text), a[1].text)))
+    }},
+    {"event_row_bytes", {}, .BYTES, proc(client: ^Client, a: []Value) -> Value {
+        hex: []u8 = spanBytes(client, clientEvent(client).row)
+        raw: []u8 = make([]u8, len(hex) / 2, context.temp_allocator)
+        count, _ := hexDecode(hex, raw)
+        return {kind = .BYTES, text = raw[:count]}
     }},
     {"poll", {}, .INT, proc(client: ^Client, a: []Value) -> Value { return intOf(i64(clientPoll(client))) }},
     {"next_event", {}, .BOOL, proc(client: ^Client, a: []Value) -> Value { return boolOf(clientNextEvent(client)) }},

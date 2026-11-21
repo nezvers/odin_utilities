@@ -5,7 +5,8 @@ What is not obvious from the code of this library. The rules that hold for every
 ## Files
 - `gdextension.odin`: the used part of `gdextension_interface.h` (structs as the header lays them out, the functions looked up once from `get_proc_address`). Godot 4.7.2 was the reference; the class is registered with `classdb_register_extension_class4` (kept since 4.4).
 - `client.odin`: `Client` (one `spacetimedb.Connection`, an event list, the bytes of the events copied per poll). No Godot types here, so it can be tested and reused.
-- `entry.odin`: `spacetimedb_entry` (the `entry_symbol`), the class `SpacetimeDBClient : RefCounted`, the method table `methods` (name, argument kinds, result kind, an Odin proc on plain `Value`s) and two adapters: `callMethod` (Variants, untyped GDScript) and `ptrCallMethod` (native types, typed GDScript). To add a method add a row and raise `METHOD_COUNT` (the static arrays hold 32).
+- `entry.odin`: `spacetimedb_entry` (the `entry_symbol`), the class `SpacetimeDBClient : RefCounted`, the method table `methods` (name, argument kinds, result kind, an Odin proc on plain `Value`s) and two adapters: `callMethod` (Variants, untyped GDScript) and `ptrCallMethod` (native types, typed GDScript). To add a method add a row and raise `METHOD_COUNT` (the static arrays hold 32). Value kind `.BYTES` is a PackedByteArray (`readBytes`/`makeBytes`; the builtin method hashes of `size` and `resize` come from `extension_api.json`).
+- A builtin method called through `variant_get_ptr_builtin_method` needs a real result pointer even when you ignore it (`resize` writes an error code: nil crashes).
 - `godot_test/godot_test.odin`: the integration test (builds the DLL into `test_project/bin`, starts a server, runs `test_project/test.gd` in headless Godot). `test_project/` is a minimal project with the `.gdextension` file.
 
 ## Gotchas learned

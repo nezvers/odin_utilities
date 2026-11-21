@@ -14,6 +14,7 @@ GdInstance :: rawptr
 GdLibrary :: rawptr
 GdVariant :: [3]u64                 // a Variant is 24 bytes
 GdString :: [1]u64                  // a String and a StringName are one pointer
+GdBytes :: [2]u64                   // a PackedByteArray is a pointer and a reference count
 GdStringName :: [1]u64
 
 GdVariantType :: enum u32 {
@@ -22,6 +23,7 @@ GdVariantType :: enum u32 {
     INT = 2,
     FLOAT = 3,
     STRING = 4,
+    PACKED_BYTE_ARRAY = 29,
 }
 
 GdCallErrorType :: enum i32 {
@@ -132,6 +134,14 @@ Interface :: struct {
     to_string: proc "c" (value: rawptr, variant: ^GdVariant),
     to_bool: proc "c" (value: rawptr, variant: ^GdVariant),
     destroy_string: proc "c" (value: rawptr),
+    bytes_index: proc "c" (array: rawptr, index: GdInt) -> [^]u8,
+    bytes_index_const: proc "c" (array: rawptr, index: GdInt) -> [^]u8,
+    bytes_construct: proc "c" (array: rawptr, args: [^]rawptr),
+    bytes_size: proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32),
+    bytes_resize: proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32),
+    bytes_destroy: proc "c" (array: rawptr),
+    from_bytes: proc "c" (variant: ^GdVariant, value: rawptr),
+    to_bytes: proc "c" (value: rawptr, variant: ^GdVariant),
 }
 
 GetProcAddress :: #type proc "c" (name: cstring) -> rawptr
@@ -162,6 +172,10 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.register_method = auto_cast lookup(get, "classdb_register_extension_class_method", &ok)
     gd.unregister_class = auto_cast lookup(get, "classdb_unregister_extension_class", &ok)
     gd.print_warning = auto_cast lookup(get, "print_warning", &ok)
+    gd.bytes_index = auto_cast lookup(get, "packed_byte_array_operator_index", &ok)
+    gd.bytes_index_const = auto_cast lookup(get, "packed_byte_array_operator_index_const", &ok)
+    constructor: proc "c" (type: GdVariantType, index: i32) -> proc "c" (array: rawptr, args: [^]rawptr) = auto_cast lookup(get, "variant_get_ptr_constructor", &ok)
+    method: proc "c" (type: GdVariantType, name: ^GdStringName, hash: GdInt) -> proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32) = auto_cast lookup(get, "variant_get_ptr_builtin_method", &ok)
     if !ok { return false }
     gd.from_bool = gd.variant_from_type(.BOOL)
     gd.from_int = gd.variant_from_type(.INT)
@@ -170,7 +184,16 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.to_int = gd.variant_to_type(.INT)
     gd.to_string = gd.variant_to_type(.STRING)
     gd.destroy_string = gd.variant_destructor(.STRING)
-    return true
+    gd.bytes_destroy = gd.variant_destructor(.PACKED_BYTE_ARRAY)
+    gd.from_bytes = gd.variant_from_type(.PACKED_BYTE_ARRAY)
+    gd.to_bytes = gd.variant_to_type(.PACKED_BYTE_ARRAY)
+    gd.bytes_construct = constructor(.PACKED_BYTE_ARRAY, 0)
+    // the hashes are the ones of extension_api.json for PackedByteArray.size and .resize
+    size_name: GdStringName = stringName("size")
+    resize_name: GdStringName = stringName("resize")
+    gd.bytes_size = method(.PACKED_BYTE_ARRAY, &size_name, 3173160232)
+    gd.bytes_resize = method(.PACKED_BYTE_ARRAY, &resize_name, 848867239)
+    return gd.bytes_size != nil && gd.bytes_resize != nil
 }
 
 stringName :: proc "c" (text: cstring) -> GdStringName {
@@ -209,4 +232,35 @@ nativeString :: proc "c" (result: rawptr, text: []u8) {
 
 defaultContext :: proc "c" () -> runtime.Context {
     return runtime.default_context()
+}
+
+// The bytes of a native PackedByteArray, copied into `allocator` memory (the array stays the engine's)
+readBytes :: proc "c" (array: rawptr, allocator: runtime.Allocator) -> []u8 {
+    context = runtime.default_context()
+    size: i64
+    gd.bytes_size(array, nil, &size, 0)
+    if size <= 0 { return nil }
+    copy_of: []u8 = make([]u8, int(size), allocator)
+    source: [^]u8 = gd.bytes_index_const(array, 0)
+    copy(copy_of, source[:size])
+    return copy_of
+}
+
+// Makes a PackedByteArray in `array` (uninitialized memory of 16 bytes) holding `bytes`
+makeBytes :: proc "c" (array: rawptr, bytes: []u8) {
+    gd.bytes_construct(array, nil)
+    if len(bytes) == 0 { return }
+    count: i64 = i64(len(bytes))
+    args: [1]rawptr = {&count}
+    status: i64                          // resize returns an error code and writes it: the pointer has to be there
+    gd.bytes_resize(array, raw_data(args[:]), &status, 1)
+    destination: [^]u8 = gd.bytes_index(array, 0)
+    copy(destination[:len(bytes)], bytes)
+}
+
+variantBytes :: proc "c" (result: ^GdVariant, bytes: []u8) {
+    array: GdBytes
+    makeBytes(&array, bytes)
+    gd.from_bytes(result, &array)
+    gd.bytes_destroy(&array)
 }

@@ -25,9 +25,9 @@ Calling a reducer: `client.call_reducer("add", args_hex)` where `args_hex` is th
 | `open(host, port, database, token) -> bool` | connects; `token()` has the token to keep |
 | `close()`, `is_open() -> bool`, `error() -> String` | |
 | `subscribe(query) -> int` | one query per call; the request id, 0 when it could not be sent |
-| `call_reducer(name, args_hex) -> int` | the request id, 0 when it could not be sent |
+| `call_reducer(name, args_hex) -> int`, `call_reducer_bytes(name, PackedByteArray) -> int` | the request id, 0 when it could not be sent |
 | `poll() -> int` | reads the network, returns how many events there are (and reconnects when the socket was lost) |
-| `next_event() -> bool`, `event_kind()`, `event_request()`, `event_ok()`, `event_table()`, `event_row()`, `event_text()` | the events of the last poll |
+| `next_event() -> bool`, `event_kind()`, `event_request()`, `event_ok()`, `event_table()`, `event_row()`, `event_text()`, `event_row_bytes() -> PackedByteArray` | the events of the last poll |
 
 Event kinds: 1 CONNECTED, 2 INSERT, 3 DELETE, 4 SUBSCRIBED, 5 REDUCER, 6 SUBSCRIPTION_ERROR, 7 DISCONNECTED, 8 RECONNECTED (see `client.odin`).
 

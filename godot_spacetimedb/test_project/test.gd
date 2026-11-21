@@ -20,19 +20,20 @@ func _init() -> void:
 	var refused := false
 	var deadline := Time.get_ticks_msec() + 8000
 	client.subscribe("SELECT * FROM person")
-	while Time.get_ticks_msec() < deadline and not (reducer_ok and refused and rows.size() >= 1):
+	while Time.get_ticks_msec() < deadline and not (reducer_ok and refused and rows.size() >= 2):
 		client.poll()
 		while client.next_event():
 			match client.event_kind():
 				1:
 					identity = client.event_text()
 				2:
-					rows.append([client.event_table(), client.event_row()])
+					rows.append([client.event_table(), client.event_row(), client.event_row_bytes()])
 				4:
 					if not subscribed:
 						subscribed = true
 						called = client.call_reducer("add", _string_arguments("Ada"))
 						client.call_reducer("add", _string_arguments(""))
+						client.call_reducer_bytes("add", _string_bytes("Grace"))
 				5:
 					if client.event_ok():
 						reducer_ok = true
@@ -50,8 +51,10 @@ func _init() -> void:
 		failures.append("no ok result from the reducer")
 	if not refused:
 		failures.append("the empty name was not refused")
-	if rows.size() < 1 or rows[0][0] != "person" or rows[0][1] != "03000000416461":
+	if rows.size() < 2 or rows[0][0] != "person" or rows[0][1] != "03000000416461":
 		failures.append("rows: " + str(rows))
+	elif rows[0][2] != "03000000416461".hex_decode() or rows[1][2] != _string_bytes("Grace"):
+		failures.append("bytes of the rows: " + str(rows))
 	client.close()
 	if client.is_open():
 		failures.append("close did not close")
@@ -70,3 +73,11 @@ func _string_arguments(text: String) -> String:
 	buffer.put_u32(bytes.size())
 	buffer.put_data(bytes)
 	return buffer.data_array.hex_encode()
+
+
+func _string_bytes(text: String) -> PackedByteArray:
+	var buffer := StreamPeerBuffer.new()
+	var bytes := text.to_utf8_buffer()
+	buffer.put_u32(bytes.size())
+	buffer.put_data(bytes)
+	return buffer.data_array

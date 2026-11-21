@@ -146,6 +146,12 @@ clientCallReducer :: proc(client: ^Client, name: string, arguments_hex: string) 
     return spacetimedb.ConnectionCallReducer(&client.connection, name, bytes[:count])
 }
 
+// The same with the arguments as bytes (a PackedByteArray of GDScript)
+clientCallReducerBytes :: proc(client: ^Client, name: string, arguments: []u8) -> u32 {
+    if !client.open { return 0 }
+    return spacetimedb.ConnectionCallReducer(&client.connection, name, arguments)
+}
+
 // Reads what the network has into the event list (the previous events are dropped); returns how many events there are. Reconnects when the socket was lost.
 clientPoll :: proc(client: ^Client) -> int {
     clear(&client.events)
