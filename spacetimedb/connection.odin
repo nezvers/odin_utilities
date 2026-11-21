@@ -26,10 +26,21 @@ import "core:time"
 CONNECTION_SEND_BUFFER :: 1 << 16
 CONNECTION_TOKEN_LENGTH :: 1024
 
+CONNECTION_SUBSCRIPTIONS :: 16
+CONNECTION_QUERIES :: 8
+
 ConnectionConfig :: struct {
     endpoint: Endpoint,
-    database: string,           // the name or the identity (hex) of the database
+    database: string,           // the name or the identity (hex) of the database (kept by reference: it has to live as long as the connection, for a reconnect)
     token: string,              // "": a new identity is made
+    confirmed: bool,            // `confirmed=true`: the server tells a change only when it is durable (slower, never taken back)
+}
+
+// What the connection subscribed to, to do it again after a reconnect (the query strings are kept by reference)
+ConnectionSubscription :: struct {
+    query_set_id: u32,
+    queries: [CONNECTION_QUERIES]string,
+    count: int,
 }
 
 Connection :: struct {
@@ -42,6 +53,13 @@ Connection :: struct {
     next_request: u32,
     send: [CONNECTION_SEND_BUFFER]u8,
     error: string,
+    config: ConnectionConfig,                       // with the token filled in: a reconnect is the same client
+    receive_buffer, message_buffer: []u8,           // the socket's buffers, again for a reconnect
+    subscriptions: [CONNECTION_SUBSCRIPTIONS]ConnectionSubscription,
+    subscription_count: int,
+    attempts: int,                                  // failed reconnects in a row (the backoff)
+    next_attempt: time.Tick,
+    dropped: bool,                                  // the socket closed after it was open: `ConnectionMaintain` reconnects
 }
 
 ConnectionToken :: proc(connection: ^Connection) -> string {
@@ -67,10 +85,20 @@ ConnectionOpen :: proc(connection: ^Connection, config: ConnectionConfig, receiv
         return false
     }
     connection.token_length = copy(connection.token[:], token)
-    path: string = fmt.tprintf("/v1/database/%s/subscribe?compression=None", config.database)
+    connection.config = config
+    connection.config.token = ""
+    connection.receive_buffer, connection.message_buffer = receive, message
+    return connectSocket(connection)
+}
+
+@(private)
+connectSocket :: proc(connection: ^Connection) -> bool {
+    config: ConnectionConfig = connection.config
+    token: string = ConnectionToken(connection)
+    path: string = fmt.tprintf("/v1/database/%s/subscribe?compression=None%s", config.database, "&confirmed=true" if config.confirmed else "")
     headers: [1]HttpHeader = {{"Authorization", fmt.tprintf("Bearer %s", token)}}
     protocols: [1]string = {PROTOCOL_V2}
-    if !WebSocketOpen(&connection.socket, config.endpoint, path, protocols[:], headers[:], receive, message) {
+    if !WebSocketOpen(&connection.socket, config.endpoint, path, protocols[:], headers[:], connection.receive_buffer, connection.message_buffer) {
         connection.error = connection.socket.error
         return false
     }
@@ -107,14 +135,38 @@ ConnectionSubscribe :: proc(connection: ^Connection, query_set_id: u32, queries:
     request: u32 = nextRequest(connection)
     writer: Writer = WriterMake(connection.send[:])
     EncodeSubscribe(&writer, request, query_set_id, queries)
-    return request if sendFrame(connection, &writer) else 0
+    if !sendFrame(connection, &writer) { return 0 }
+    remember(connection, query_set_id, queries)
+    return request
+}
+
+@(private)
+remember :: proc(connection: ^Connection, query_set_id: u32, queries: []string) {
+    if len(queries) > CONNECTION_QUERIES { return }
+    at: int = connection.subscription_count
+    for i in 0 ..< connection.subscription_count {
+        if connection.subscriptions[i].query_set_id == query_set_id { at = i }
+    }
+    if at >= CONNECTION_SUBSCRIPTIONS { return }
+    entry: ^ConnectionSubscription = &connection.subscriptions[at]
+    entry^ = {query_set_id = query_set_id, count = len(queries)}
+    copy(entry.queries[:], queries)
+    if at == connection.subscription_count { connection.subscription_count += 1 }
 }
 
 ConnectionUnsubscribe :: proc(connection: ^Connection, query_set_id: u32) -> u32 {
     request: u32 = nextRequest(connection)
     writer: Writer = WriterMake(connection.send[:])
     EncodeUnsubscribe(&writer, request, query_set_id)
-    return request if sendFrame(connection, &writer) else 0
+    if !sendFrame(connection, &writer) { return 0 }
+    for i in 0 ..< connection.subscription_count {
+        if connection.subscriptions[i].query_set_id == query_set_id {
+            connection.subscriptions[i] = connection.subscriptions[connection.subscription_count - 1]
+            connection.subscription_count -= 1
+            break
+        }
+    }
+    return request
 }
 
 ConnectionOneOffQuery :: proc(connection: ^Connection, query: string) -> u32 {
@@ -132,6 +184,26 @@ ConnectionCallReducer :: proc(connection: ^Connection, reducer: string, argument
     return request if sendFrame(connection, &writer) else 0
 }
 
+// Calls a procedure (a function of the module that may return a value and use HTTP, unlike a reducer, and is not a transaction): the `ProcedureResult` that answers has the request id and the
+// returned value as BSATN.
+ConnectionCallProcedure :: proc(connection: ^Connection, procedure: string, arguments: []u8) -> u32 {
+    request: u32 = nextRequest(connection)
+    writer: Writer = WriterMake(connection.send[:])
+    EncodeCallProcedure(&writer, request, procedure, arguments)
+    return request if sendFrame(connection, &writer) else 0
+}
+
+// Several subscriptions applied at the same moment of the database: one `SubscribeBatchApplied` answers (the cache applies it whole). `query_set_ids[i]` goes with `queries[i]`.
+ConnectionSubscribeBatch :: proc(connection: ^Connection, query_set_ids: []u32, queries: [][]string) -> u32 {
+    assert(len(query_set_ids) == len(queries))
+    request: u32 = nextRequest(connection)
+    writer: Writer = WriterMake(connection.send[:])
+    EncodeSubscribeBatch(&writer, request, query_set_ids, queries)
+    if !sendFrame(connection, &writer) { return 0 }
+    for id, i in query_set_ids { remember(connection, id, queries[i]) }
+    return request
+}
+
 // The next message that came, if there is one. `allocator` is for the arrays of the message (see protocol.odin), strings and bytes point into the socket's buffer: both are good until the
 // next call. `got` false: nothing new (or the socket closed: see `ConnectionOpenState` and `connection.error`).
 ConnectionPoll :: proc(connection: ^Connection, allocator: runtime.Allocator) -> (message: ServerMessage, got: bool) {
@@ -142,6 +214,7 @@ ConnectionPoll :: proc(connection: ^Connection, allocator: runtime.Allocator) ->
             return nil, false
         case .CLOSED, .ERROR:
             connection.error = connection.socket.error
+            if connection.connected { connection.dropped = true }
             connection.connected = false
             return nil, false
         case .TEXT:
@@ -171,4 +244,36 @@ ConnectionWait :: proc(connection: ^Connection, wanted: proc(message: ServerMess
         }
     }
     return nil, false
+}
+
+// Opens the socket again with the same token (the same identity) and subscribes again to everything that was subscribed to. The new `InitialConnection` and the `SubscribeApplied` of every
+// subscription come through ConnectionPoll again: clear the cache first (`CacheClear`), the answers fill it. False when the server could not be reached.
+ConnectionReconnect :: proc(connection: ^Connection) -> bool {
+    WebSocketClose(&connection.socket)
+    connection.connected = false
+    if !connectSocket(connection) { return false }
+    connection.dropped = false
+    for i in 0 ..< connection.subscription_count {
+        entry: ConnectionSubscription = connection.subscriptions[i]
+        request: u32 = nextRequest(connection)
+        writer: Writer = WriterMake(connection.send[:])
+        EncodeSubscribe(&writer, request, entry.query_set_id, entry.queries[:entry.count])
+        if !sendFrame(connection, &writer) { return false }
+    }
+    return true
+}
+
+// For a game loop: when the socket was lost, tries to reconnect, no more often than the backoff allows (1 s, doubling to 30 s) so a server that is down is not hammered. Returns true in the
+// frame in which the connection came back (clear the cache then). Call it once a frame, after the poll loop.
+ConnectionMaintain :: proc(connection: ^Connection) -> bool {
+    if !connection.dropped { return false }
+    if time.tick_since(connection.next_attempt) < 0 { return false }
+    if ConnectionReconnect(connection) {
+        connection.attempts = 0
+        return true
+    }
+    connection.attempts += 1
+    delay: time.Duration = time.Second << uint(min(connection.attempts - 1, 5))
+    connection.next_attempt = time.tick_add(time.tick_now(), delay)
+    return false
 }

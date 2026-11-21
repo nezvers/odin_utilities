@@ -353,10 +353,44 @@ runSession :: proc(t: ^testing.T, module_path: string, port: int) {
     logs: HttpResult = DatabaseLogs(server.endpoint, "odin-session", 20, token, response[:])
     testing.expect(t, logs.ok && contains(string(logs.body), "Hello, World!") && contains(string(logs.body), "Ada"), "the module wrote the names to the log")
 
+    // a lost connection: the same client comes back with the same token and the subscription again, the cache is filled by the new answer
+    token_before: string = strings.clone(ConnectionToken(&second), context.temp_allocator)
+    identity_before: Identity = second.identity
+    CacheClear(&cache)
+    testing.expect(t, ConnectionReconnect(&second), "the client reconnects")
+    _, greeted := ConnectionWait(&second, isInitial, nil, allocator)
+    testing.expect(t, greeted && second.identity == identity_before && ConnectionToken(&second) == token_before, "the same identity")
+    again, applied_again := ConnectionWait(&second, isApplied, nil, allocator)
+    testing.expect(t, applied_again, "the subscription is applied again")
+    CacheApply(&cache, again)
+    testing.expect(t, CacheCount(&cache, person) >= 1, "the rows are back in the cache")
+
     // the same row by SQL over HTTP, then the database is deleted
     sql: HttpResult = DatabaseSql(server.endpoint, "odin-session", "SELECT * FROM person", token, response[:])
     testing.expect(t, sql.ok && sql.status == 200)
     testing.expect(t, contains(string(sql.body), "Ada"), "the row is in the database")
     deleted: HttpResult = DatabaseDelete(server.endpoint, "odin-session", token, response[:])
     testing.expect(t, deleted.ok && deleted.status == 200)
+}
+
+@(test)
+test_procedure_and_batch_messages_are_encoded :: proc(t: ^testing.T) {
+    buffer: [128]u8
+    writer: Writer = WriterMake(buffer[:])
+    EncodeCallProcedure(&writer, 4, "score", {1, 2})
+    reader: Reader = ReaderMake(WriterBytes(&writer))
+    testing.expect_value(t, ReadTag(&reader), 4)
+    testing.expect_value(t, ReadU32(&reader), 4)
+    testing.expect_value(t, ReadU8(&reader), 0)
+    testing.expect_value(t, ReadString(&reader), "score")
+    WriterReset(&writer)
+    ids: [2]u32 = {5, 6}
+    first, second: [1]string = {"SELECT * FROM a"}, {"SELECT * FROM b"}
+    sets: [2][]string = {first[:], second[:]}
+    EncodeSubscribeBatch(&writer, 3, ids[:], sets[:])
+    reader = ReaderMake(WriterBytes(&writer))
+    testing.expect_value(t, ReadTag(&reader), 5)
+    testing.expect_value(t, ReadU32(&reader), 3)
+    testing.expect_value(t, ReadLength(&reader, 1), 2)
+    testing.expect_value(t, ReadU32(&reader), 5)
 }
