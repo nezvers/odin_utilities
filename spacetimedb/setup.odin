@@ -146,6 +146,11 @@ SetupFixture :: proc(options: SetupOptions, name: string, root: string = "") -> 
     if FixturePath(name, base) != "" { return true }
     source: string = fmt.tprintf("%s/spacetimedb/fixtures/%s", base, name)
     if !os.exists(source) { return false }
+    // Rust is only for this test module and for building the server from source: nothing else of the library needs it (the server is a release binary, a module can be written in Odin)
+    if !runCommand({"cargo", "--version"}) {
+        setupSay(options, fmt.tprintf("no Rust here: the module %s is skipped (the session test runs with the module in Odin, which needs only the Odin compiler)", name))
+        return false
+    }
     bin: string = ServerBinFolder(base)
     os.make_directory_all(bin)
     target: string = fmt.tprintf("%s/cargo_target", bin)
