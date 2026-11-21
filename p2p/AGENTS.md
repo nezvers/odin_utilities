@@ -36,3 +36,4 @@ What is not obvious from the code of this library. The rules that hold for every
 - A real STUN server drops a request whose datagram is longer than its header says: send `request[:length]`.
 - A pipe handed to a child on Windows keeps the child waiting for end of input: give `clip` a temp file as stdin.
 - The CHANGE-REQUEST result includes the PC firewall.
+- `DerpRace` hands each attempt to a detached thread; the `Derp` is shared (`references`) and allocated and freed with `runtime.heap_allocator()`, never with the allocator of the caller (a test context has a tracking allocator, and freeing from another thread through the wrong one crashes the test run silently, exit 127).

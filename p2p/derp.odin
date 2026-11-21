@@ -20,6 +20,7 @@
 package p2p
 
 import "core:fmt"
+import "base:runtime"
 import "core:net"
 import "core:strings"
 import "core:os"
@@ -153,6 +154,7 @@ Derp :: struct {
     received: u64,
     connect_ms: i64,                     // how long the connection took, for reports
     abandoned: bool,                     // DerpRace: nobody wants this connection any more (atomic)
+    references: int,                     // DerpRace: the race and the connect thread each hold one; the last one to let go frees the memory (atomic)
     closed: bool,                        // the connection was closed already, by whoever came first (atomic)
 }
 
@@ -402,6 +404,15 @@ DerpThread :: proc(data: rawptr) {
     if sync.atomic_load(&derp.abandoned) {
         DerpCloseConnection(derp)
     }
+    DerpRelease(derp)
+}
+
+// A Derp made by DerpRace is shared by the race and its connect thread: whoever lets go last frees it
+@(private)
+DerpRelease :: proc(derp: ^Derp) {
+    if derp.references > 0 && sync.atomic_sub(&derp.references, 1) == 1 {
+        free(derp, runtime.heap_allocator())
+    }
 }
 
 // Closes the TLS connection and the socket once, whoever asks first (the connect thread of a lost race, or its owner).
@@ -417,7 +428,7 @@ DerpCloseConnection :: proc(derp: ^Derp) {
 
 // Which relay answers fastest from here: connects to the candidates (server numbers, 1 = the first of DERP_SERVERS) all at once and
 // returns the first that is ready, 0 when none was within `timeout_ms`. The attempts that lose close themselves when they finish.
-// Their memory (about 110 KB each) is not given back: this is a start-up helper for a tool, not something to call in a loop.
+// Their memory (about 110 KB each) is given back by whoever finishes last, the race or the thread of the attempt.
 DerpRace :: proc(candidates: []int, timeout_ms: i64) -> int {
     clients: [8]^Derp
     count: int = min(len(candidates), len(clients))
@@ -427,8 +438,8 @@ DerpRace :: proc(candidates: []int, timeout_ms: i64) -> int {
         }
         private, public: BoxKey
         BoxKeyGenerate(&private, &public)
-        clients[i] = new(Derp)
-        DerpBegin(clients[i], DERP_SERVERS[candidates[i] - 1].host, private)
+        clients[i] = new(Derp, runtime.heap_allocator())          // freed by another thread: not through the allocator of the caller
+        DerpBegin(clients[i], DERP_SERVERS[candidates[i] - 1].host, private, detached = true)
     }
     winner: int
     start: time.Tick = time.tick_now()
@@ -447,17 +458,24 @@ DerpRace :: proc(candidates: []int, timeout_ms: i64) -> int {
         if clients[i] != nil {
             sync.atomic_store(&clients[i].abandoned, true)
             DerpCloseConnection(clients[i])
+            DerpRelease(clients[i])
         }
     }
     return winner
 }
 
 // Starts connecting on a thread. Poll DerpGetState: READY, or FAILED with `failure`.
-DerpBegin :: proc(derp: ^Derp, host: string, private: BoxKey) {
+// `detached`: nobody will join the thread (DerpRace): it frees itself when it ends, and the Derp is shared (`references`).
+DerpBegin :: proc(derp: ^Derp, host: string, private: BoxKey, detached: bool = false) {
     derp^ = {private = private}
     derp.host_length = min(len(host), len(derp.host))
     copy(derp.host[:derp.host_length], host)
     DerpSetState(derp, .CONNECTING)
+    if detached {
+        derp.references = 2
+        thread.create_and_start_with_data(derp, DerpThread, self_cleanup = true)
+        return
+    }
     derp.thread = thread.create_and_start_with_data(derp, DerpThread)
 }
 

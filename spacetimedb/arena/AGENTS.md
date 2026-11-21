@@ -9,5 +9,5 @@ What is not obvious from the code. The rules for every library are in [../../AGE
 - Tests start servers on ports 3143 to 3145 (and 3144 live); the folders are removed with `spacetimedb.ServerRemove` (the database files are locked for a moment after the kill).
 - `Host`/`Guest` structs go on the heap in tests: `SetIdle` keeps pointers to them (the compiler warns about stack addresses).
 - The demo reads `os.args` once (`parseArguments`); a test sets `config` itself (`parsed = true`) and `sleep_ms` because a headless run has no real time for the network.
-- The p2p `DerpRace` prints leak reports in the test allocator tracking (its own threads): not this code.
+- A test that is killed leaves `spacetimedb-standalone.exe` running on its port; the next run then talks to the old server ("not authorized"): kill the orphans (`taskkill /F /IM spacetimedb-standalone.exe /IM spacetimedb-cli.exe`).
 - The stdin reader of a host is a thread with a one slot mailbox (`console.odin`), the only thread of the game.
