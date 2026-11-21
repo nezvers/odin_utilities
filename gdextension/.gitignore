@@ -1,0 +1,4 @@
+godot_api/
+*.lib
+*.exp
+*.pdb

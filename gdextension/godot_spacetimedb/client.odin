@@ -9,7 +9,7 @@ package godot_spacetimedb
 import "base:runtime"
 import "core:fmt"
 import "core:strings"
-import spacetimedb "../spacetimedb"
+import spacetimedb "../../spacetimedb"
 
 EventKind :: enum i64 {
     NONE = 0,

@@ -9,7 +9,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
-import spacetimedb "../../spacetimedb"
+import spacetimedb "../../../spacetimedb"
 
 PROJECT :: #directory + "../test_project"
 

@@ -1,0 +1,17 @@
+# gdextension: notes for agents
+
+What is not obvious from the code of this library. The rules that hold for every library, the commands and the map of the libraries are in [../AGENTS.md](../AGENTS.md); the user facing description is in README.md.
+
+## Files
+- `interface.odin`: the used part of `gdextension_interface.h` (structs as the header lays them out, the functions looked up once from `get_proc_address` into `gd`, Variant and PackedByteArray helpers). Godot 4.7.2 was the reference; the class is registered with `classdb_register_extension_class4` (kept since 4.4).
+- `class.odin`: the public API: `Class`, `Method`, `Value`, `Entry`. `registerClass` builds the property infos and method infos (heap, once), `callMethod` and `ptrCallMethod` are the two ways Godot calls a method.
+- `godot_spacetimedb/`: the example and first user (own AGENTS.md). `godot_api/`: dumps of the interface of Godot (git ignored).
+
+## Gotchas learned
+- Every `GDExtensionPropertyInfo` needs real `name`, `class_name` and `hint_string` (a valid empty String/StringName): a nil `hint_string` crashes Godot at load (signal 11 inside registration).
+- Sizes: String and StringName are 8 bytes, a PackedByteArray 16, a Variant 24. A String made for Godot must be destroyed after the Variant copy is made (`variantString`).
+- A builtin method called through `variant_get_ptr_builtin_method` needs a real result pointer even when ignored (`resize` writes an error code: nil crashes). The hashes of `size` and `resize` are from `extension_api.json`.
+- Every `proc "c"` callback sets `context = runtime.default_context()` first; temp memory is freed at the end of each call.
+- A DLL that Godot loads is copied as `~name.dll` next to it: git ignore `bin/`.
+- A test folder must not be called `test`: `odin run tool/test` writes `test.exe` and the package exe would clash.
+- Adding an argument kind: a `ValueKind`, a `variantTypeOf` row, a row in both adapters and the helpers in interface.odin.

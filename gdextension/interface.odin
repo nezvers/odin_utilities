@@ -1,4 +1,4 @@
-package godot_spacetimedb
+package gdextension
 
 // The part of the GDExtension C interface (godot_api/gdextension_interface.h, written by `godot --dump-gdextension-interface`) that this library uses: a class registered with methods that
 // GDScript calls, strings and integers in both directions. Godot hands the extension one function, `get_proc_address`, and everything else is looked up by name from it. Only the handful of

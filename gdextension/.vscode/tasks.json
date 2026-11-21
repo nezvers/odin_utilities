@@ -1,0 +1,37 @@
+{
+    "version": "2.0.0",
+    "command": "",
+    "args": [],
+    "tasks": [
+        {
+            "label": "Check",
+            "type": "shell",
+            "command": "odin check . -no-entry-point -strict-style -vet",
+            "group": "build"
+        },
+        {
+            "label": "Dump Godot Interface",
+            "type": "shell",
+            "command": "cd godot_api && godot --headless --dump-extension-api --dump-gdextension-interface",
+            "group": "none"
+        },
+        {
+            "label": "Test Example",
+            "type": "shell",
+            "command": "odin test godot_spacetimedb/godot_test -strict-style -vet",
+            "group": "test"
+        },
+        {
+            "label": "Build Example Tests",
+            "type": "shell",
+            "command": "odin build godot_spacetimedb/godot_test -strict-style -vet -build-mode:test -out:${config:project_name}_test.exe -debug",
+            "group": "build",
+            "linux": {
+                "command": "odin build godot_spacetimedb/godot_test -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            },
+            "osx": {
+                "command": "odin build godot_spacetimedb/godot_test -strict-style -vet -build-mode:test -out:${config:project_name}_test.bin -debug"
+            }
+        }
+    ]
+}

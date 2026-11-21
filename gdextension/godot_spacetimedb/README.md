@@ -1,6 +1,6 @@
 # godot_spacetimedb
 
-A Godot 4 GDExtension written in Odin that connects a game to a SpacetimeDB database (`odin_utilities/spacetimedb`). GDScript gets one class, `SpacetimeDBClient`, that it polls from `_process`: no thread, no callback from the network into Godot.
+A Godot 4 GDExtension written in Odin (a sub library of `odin_utilities/gdextension`) that connects a game to a SpacetimeDB database (`odin_utilities/spacetimedb`). GDScript gets one class, `SpacetimeDBClient`, that it polls from `_process`: no thread, no callback from the network into Godot.
 
 ```gdscript
 var client := SpacetimeDBClient.new()
@@ -32,8 +32,8 @@ Calling a reducer: `client.call_reducer("add", args_hex)` where `args_hex` is th
 Event kinds: 1 CONNECTED, 2 INSERT, 3 DELETE, 4 SUBSCRIBED, 5 REDUCER, 6 SUBSCRIPTION_ERROR, 7 DISCONNECTED, 8 RECONNECTED (see `client.odin`).
 
 ## Build and test
-- `odin build godot_spacetimedb -build-mode:dll -out:<project>/bin/godot_spacetimedb.dll` (Linux `.so`, macOS `.dylib`), and a `.gdextension` file next to it: `test_project/spacetimedb.gdextension` is the model (`entry_symbol = "spacetimedb_entry"`, Godot 4.4 or newer).
-- `odin test godot_spacetimedb/godot_test -strict-style -vet` builds the extension, starts a SpacetimeDB server with the Odin test module and runs `test_project/test.gd` in headless Godot (`godot` in PATH; skipped without it or without `odin run spacetimedb/tool/setup`).
+- `odin build gdextension/godot_spacetimedb -build-mode:dll -out:<project>/bin/godot_spacetimedb.dll` (Linux `.so`, macOS `.dylib`), and a `.gdextension` file next to it: `test_project/spacetimedb.gdextension` is the model (`entry_symbol = "spacetimedb_entry"`, Godot 4.4 or newer).
+- `odin test gdextension/godot_spacetimedb/godot_test -strict-style -vet` builds the extension, starts a SpacetimeDB server with the Odin test module and runs `test_project/test.gd` in headless Godot (`godot` in PATH; skipped without it or without `odin run spacetimedb/tool/setup`).
 - `godot --headless --dump-extension-api --dump-gdextension-interface` writes the interface header (`gdextension.odin` follows it; keep the dump in `godot_api/`, git ignored).
 
 Limits and the list of what comes next: TODO.md.
