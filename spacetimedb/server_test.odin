@@ -3,6 +3,7 @@ package spacetimedb
 
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -37,4 +38,29 @@ test_https_to_the_public_cloud :: proc(t: ^testing.T) {
     protocols: [1]string = {PROTOCOL_V2}
     testing.expect(t, !WebSocketOpen(&socket, {host = "maincloud.spacetimedb.com", port = 443, secure = true}, "/v1/database/no-such-database-for-odin-test/subscribe", protocols[:], nil, receive[:], message[:]))
     testing.expect_value(t, socket.error, "the server refused the upgrade")
+}
+
+@(test)
+test_identities_tokens_and_the_public_key :: proc(t: ^testing.T) {
+    if !os.exists(ServerCliPath()) {
+        fmt.println("[spacetimedb] no server: run `odin run spacetimedb/tool/setup`")
+        return
+    }
+    root: string = "spacetimedb_test_server_auth"
+    defer os.remove_all(root)
+    server: Server
+    testing.expect(t, ServerStart(&server, {root = root, port = 3195, in_memory = true}), "the server starts")
+    defer ServerStop(&server)
+    response: [4096]u8
+    identity_view, token_view, made := IdentityCreate(server.endpoint, response[:])
+    testing.expect(t, made)
+    identity: string = fmt.tprintf("%s", identity_view)
+    token: string = fmt.tprintf("%s", token_view)
+    short_buffer: [4096]u8
+    short, short_ok := IdentityWebsocketToken(server.endpoint, token, short_buffer[:])
+    testing.expect(t, short_ok && len(short) > 20 && short != token, "a short lived token is made from the token")
+    testing.expect(t, IdentityVerify(server.endpoint, identity, token, response[:]), "the identity and its token agree")
+    testing.expect(t, !IdentityVerify(server.endpoint, identity, "not-a-token", response[:]), "a wrong token is refused")
+    pem, has_pem := IdentityPublicKey(server.endpoint, response[:])
+    testing.expect(t, has_pem && strings.contains(pem, "PUBLIC KEY"), "the public key that verifies tokens")
 }

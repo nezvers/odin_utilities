@@ -81,3 +81,32 @@ DatabaseLogs :: proc(endpoint: Endpoint, name: string, lines: int, token: string
     headers: [1]HttpHeader = bearer(token)
     return HttpRequest(endpoint, .GET, fmt.tprintf("/v1/database/%s/logs?num_lines=%d", name, lines), headers[:], nil, response)
 }
+
+// A short-lived token for an untrusted place (a URL, a page): `POST /v1/identity/websocket-token` with the token of the identity. Returned as a view into `response`. Tokens that another issuer
+// made (OIDC: SpacetimeAuth, any provider the module trusts) are used the same way as the ones of `IdentityCreate`: as the `token` of `ConnectionConfig` and of every call here.
+IdentityWebsocketToken :: proc(endpoint: Endpoint, token: string, response: []u8) -> (short_lived: string, ok: bool) {
+    headers: [1]HttpHeader = bearer(token)
+    result: HttpResult = HttpRequest(endpoint, .POST, "/v1/identity/websocket-token", headers[:], nil, response)
+    if !result.ok || result.status != 200 { return "", false }
+    return JsonString(string(result.body), "token")
+}
+
+// The databases an identity owns (`GET /v1/identity/<identity>/databases`): JSON `{"identities": [...]}`, the body of the result
+IdentityDatabases :: proc(endpoint: Endpoint, identity_hex: string, response: []u8) -> HttpResult {
+    return HttpRequest(endpoint, .GET, fmt.tprintf("/v1/identity/%s/databases", identity_hex), nil, nil, response)
+}
+
+// Does the server accept this identity with this token (`GET /v1/identity/<identity>/verify`): 204 yes, 400 the token is not that identity's
+IdentityVerify :: proc(endpoint: Endpoint, identity_hex: string, token: string, response: []u8) -> bool {
+    headers: [1]HttpHeader = bearer(token)
+    result: HttpResult = HttpRequest(endpoint, .GET, fmt.tprintf("/v1/identity/%s/verify", identity_hex), headers[:], nil, response)
+    return result.ok && result.status == 204
+}
+
+// The public key (PEM) that the server verifies tokens with: for a module or service that checks a token itself
+IdentityPublicKey :: proc(endpoint: Endpoint, response: []u8) -> (pem: string, ok: bool) {
+    result: HttpResult = HttpRequest(endpoint, .GET, "/v1/identity/public-key", nil, nil, response)
+    if !result.ok || result.status != 200 { return "", false }
+    return string(result.body), true
+}
+
