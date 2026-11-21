@@ -75,6 +75,9 @@ add :: proc(ctx: ^module.ReducerContext, args: ^bsatn.Reader) -> string {
 ## Is Rust needed?
 No. The server is a release binary that setup downloads, the client is Odin, a module can be Odin (`module/`), and a module is published over HTTP (the CLI is not needed for that). Rust is used for two optional things: the test module `fixtures/basic-rs` (without cargo setup skips it and the session test runs with the Odin module alone) and building the server from source on a platform that has no release. A module can also be written in C#, TypeScript or C++ with their own toolchains: any `.wasm` that follows the module ABI is published the same way.
 
+## Code generation
+`odin run spacetimedb/tool/generate -- --server 127.0.0.1:3000 --database chat --package game_data --library ../spacetimedb --out game/data.odin` (or `--schema file.json`) writes the row structs with `<Type>Read` / `<Type>Write`, a `Call<Reducer>(&connection, ...)` per reducer, `TablesAdd(&cache)` and `SubscribeAll(&connection, id)`. Then a game does `CacheCollect(&cache, tables.person, PersonRead, people[:])`.
+
 ## The cache
 `Cache` keeps the rows of your subscriptions by table (`CacheApply` every message of `ConnectionPoll`), so a game reads rows and not messages: `CacheCollect(&cache, table, PersonRead, people[:])`, `CacheFind` by key, `CacheEvents` for what changed this frame (INSERT, UPDATE with the old row, DELETE). All storage is yours (slots, buckets, bytes, events); a full cache sets `failed` instead of growing.
 

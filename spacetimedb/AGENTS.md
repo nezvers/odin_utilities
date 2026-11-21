@@ -11,6 +11,7 @@ What is not obvious from the code of this library. The rules that hold for every
 - `bsatn/` is its own package (no sockets, builds for wasm); `bsatn_alias.odin` re-exports it. `Writer/Reader` work over caller memory and remember the first error.
 - `protocol.odin`: websocket protocol v2 (`Encode...` for client messages, `ServerMessageDecode` with an allocator for arrays; strings and bytes point into the frame).
 - `cache.odin`: client cache over caller storage (`CacheInit`, `CacheTableAdd(name, key_size)`, `CacheApply(message)`, `CacheEvents`, `CacheFind`, `CacheNext`, `CacheCollect`). Rows keep an 8 byte header in `bytes` (compacted when full); a row points into the cache until the next apply; events point into the frame. Tests: `cache_test.odin` and the session test.
+- `codegen.odin` (`GenerateSource(schema_json, options)`, `#+build !js`) + `tool/generate`: Odin source from the schema JSON; `wide.odin` has the 128/256 bit readers it uses. `fixtures/generated/{basic,rich}` are the committed outputs of `fixtures/*.schema.json`; `codegen_test.odin` regenerates and compares them, compiles and tests them (`rich_test.odin` is by hand). After changing the generator regenerate them: `odin run spacetimedb/tool/generate -- --schema spacetimedb/fixtures/rich.schema.json --package rich --library ../../.. --out spacetimedb/fixtures/generated/rich/rich.odin`.
 - `websocket.odin`: RFC 6455 client, non blocking, `WebSocketPoll`. `connection.odin`: `ConnectionOpen/Poll/Subscribe/CallReducer`, asks for `compression=None`.
 
 ## Modules in Odin
