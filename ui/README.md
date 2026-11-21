@@ -499,7 +499,7 @@ ticked off in `TODO.md`. Look here before relying on a widget for something it m
   - a list is nested by two spaces of indent and is not checked (a list item holds one paragraph: no block of its own inside), a quote is its lines as text (no block inside)
   - a heading is one text in the strong face: its marks are taken away, not drawn; a table has no alignment of its columns and every column is as wide as the others
 - **UiRichText** (`richtext.odin`):
-  - marks: strong, italic, code, links; `~~strike~~` is taken away, not drawn; no underline, no colors, no images
+  - marks: strong, italic, code, links; `~~strike~~` (the tag "strike"); no underline, no colors, no images
   - a link that is broken over two lines is two links with the same address; a run keeps the innermost `ui.DRAW_TAGS` (4) tags, so a paragraph inside of three tags loses the outer ones
   - lines are broken by the width the paragraph had in the last frame (the first frame is plain); a word wider than the line is not cut
 - **selection of read text** (`select.odin`):

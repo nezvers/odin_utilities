@@ -46,7 +46,7 @@ test_rich_text_is_read_piece_by_piece :: proc(t: ^testing.T) {
     check(t, "a [bracket] alone", {{"a", {}, false}, {"[bracket]", {}, true}, {"alone", {}, true}})
     check(t, "open [link(", {{"open", {}, false}, {"[link(", {}, true}})
     check(t, "2 \\* 3", {{"2", {}, false}, {"*", {}, true}, {"3", {}, true}})
-    check(t, "~~gone~~ here", {{"gone", {}, false}, {"here", {}, true}})
+    check(t, "~~gone~~ here", {{"gone", {.STRIKE}, false}, {"here", {}, true}})
     check(t, "line\r\nend", {{"line", {}, false}, {"end", {}, true}})
 }
 

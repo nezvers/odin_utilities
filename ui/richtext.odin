@@ -7,7 +7,7 @@ package ui
 // The style draws a run by its tags: "strong", "italic", "mono" (code) and "link"; they are measured in the same faces (a text is measured with its tags). Nothing is
 // allocated: the runs are built in the text memory of the frame.
 //
-// Limits: marks: strong, italic, code, links; `~~strike~~` is taken away, not drawn; no underline, no colors, no images
+// Limits: marks: strong, italic, code, links, `~~strike~~` (the tag "strike"); no underline, no colors, no images
 //     a link that is broken over two lines is two links with the same address; a run keeps the innermost `ui.DRAW_TAGS` (4) tags, so a paragraph inside of three tags loses the outer ones
 //     lines are broken by the width the paragraph had in the last frame (the first frame is plain); a word wider than the line is not cut
 
@@ -16,6 +16,7 @@ RichMark :: enum u8 {
     ITALIC,
     CODE,
     LINK,
+    STRIKE,
 }
 RichMarks :: bit_set[RichMark; u8]
 
@@ -92,7 +93,8 @@ RichNext :: proc "contextless" (source: string, cursor: ^RichCursor) -> (token: 
                 continue
             case '~':
                 if cursor.at + 1 < len(source) && source[cursor.at + 1] == '~' {
-                    cursor.at += 2                          // struck text is shown as it is: the marks are gone
+                    cursor.marks ~= {.STRIKE}
+                    cursor.at += 2
                     continue
                 }
             case '[':
@@ -162,6 +164,10 @@ richPushTags :: proc(ctx: ^Context, marks: RichMarks) -> (pushed: int) {
     }
     if .LINK in marks {
         UiPushTag(ctx, "link")
+        pushed += 1
+    }
+    if .STRIKE in marks {
+        UiPushTag(ctx, "strike")
         pushed += 1
     }
     return
