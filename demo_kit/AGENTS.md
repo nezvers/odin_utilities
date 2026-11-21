@@ -20,3 +20,6 @@ What is not obvious from the code of this library. The rules that hold for every
 
 ## Gotcha
 - Strings with apostrophes break multi file bash heredocs: write demo files with the Write tool.
+
+## Clipboard and text field
+- `Backend.clipboard_get/clipboard_set` are optional (raylib: its own, Karl2D on Windows: `glue_karl2d/clipboard_windows.odin`, elsewhere nil); `ClipboardGet/ClipboardSet` always keep a copy inside the program too, so the headless backend and the fields of a demo paste between each other. `TextField(ctx, rect, buffer, &length, &focused, placeholder)` in gui.odin: ASCII typing, Backspace, Ctrl+V / Ctrl+C, Enter returns true; a script chords with `KeyDownStep(.LEFT_CTRL)`, `Tap(.V)`, `KeyUpStep(.LEFT_CTRL)`.

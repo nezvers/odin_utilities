@@ -176,6 +176,16 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             if u32(texture) == 0 || u32(texture) > state.texture_count { return }
             rl.DrawTexturePro(state.textures[texture], transmute(rl.Rectangle)source, transmute(rl.Rectangle)destination, origin, rotation, rl.Color(tint))
         },
+        clipboard_get = proc(backend: ^kit.Backend, buffer: []u8) -> int {
+            text: string = string(rl.GetClipboardText())
+            return copy(buffer, text)
+        },
+        clipboard_set = proc(backend: ^kit.Backend, text: string) {
+            terminated: [kit.CLIPBOARD_LOCAL + 1]u8
+            count: int = copy(terminated[:kit.CLIPBOARD_LOCAL], text)
+            terminated[count] = 0
+            rl.SetClipboardText(cstring(raw_data(terminated[:])))
+        },
         mouse_capture = proc(backend: ^kit.Backend, captured: bool) {
             if captured { rl.DisableCursor() } else { rl.EnableCursor() }
         },

@@ -120,3 +120,56 @@ spinnerText :: proc(value: f32) -> string {
 Label :: proc(ctx: ^Context, position: Vec2, text: string, color: Color = BLACK) {
     DrawText(ctx, text, position, GUI_TEXT_SIZE, color)
 }
+
+// A line of text that the keyboard types into. `focused` is where the focus is kept (the field takes it when it is clicked and gives it up when something else is): the characters typed this frame
+// are added, Backspace removes one, Ctrl+V pastes the clipboard (one line, no control characters), Ctrl+C copies, Enter is `submitted`. `buffer` is the text (`length` of it is used); what does
+// not fit is not added. A long text shows its end.
+//
+//     kit.TextField(ctx, {10, 10, 300, 28}, name[:], &name_length, &focus_name, "your name")
+TextField :: proc(ctx: ^Context, rect: Rect, buffer: []u8, length: ^int, focused: ^bool, placeholder: string = "") -> (submitted: bool) {
+    hovered: bool = guiHovered(ctx, rect)
+    if MousePressed(&ctx.input) { focused^ = hovered }
+    DrawRect(ctx, rect, WHITE)
+    DrawRectOutline(ctx, rect, 2 if focused^ else 1, DARK_BLUE if focused^ else GUI_BORDER)
+    if focused^ {
+        for i in 0 ..< int(ctx.input.text_count) {
+            character: u8 = ctx.input.text[i]
+            if character >= 32 && character < 127 && length^ < len(buffer) {
+                buffer[length^] = character
+                length^ += 1
+            }
+        }
+        if KeyPressed(&ctx.input, .BACKSPACE) && length^ > 0 { length^ -= 1 }
+        control: bool = KeyDown(&ctx.input, .LEFT_CTRL) || KeyDown(&ctx.input, .RIGHT_CTRL)
+        if control && KeyPressed(&ctx.input, .V) { TextFieldPaste(ctx, buffer, length) }
+        if control && KeyPressed(&ctx.input, .C) { ClipboardSet(ctx, string(buffer[:length^])) }
+        submitted = KeyPressed(&ctx.input, .ENTER)
+    }
+    shown: string = string(buffer[:length^])
+    if len(shown) == 0 && !focused^ {
+        DrawText(ctx, placeholder, {rect.x + 6, rect.y + (rect.w - GUI_TEXT_SIZE) * 0.5}, GUI_TEXT_SIZE, GRAY)
+        return
+    }
+    // the end of a long text: drop letters from the start until it fits
+    for len(shown) > 1 && MeasureText(ctx, shown, GUI_TEXT_SIZE).x > rect.z - 14 { shown = shown[1:] }
+    DrawText(ctx, shown, {rect.x + 6, rect.y + (rect.w - GUI_TEXT_SIZE) * 0.5}, GUI_TEXT_SIZE, BLACK)
+    if focused^ && int(ctx.time * 2) % 2 == 0 {
+        width: f32 = MeasureText(ctx, shown, GUI_TEXT_SIZE).x
+        DrawRect(ctx, {rect.x + 7 + width, rect.y + 4, 2, rect.w - 8}, BLACK)
+    }
+    return
+}
+
+// Adds the clipboard to a text field's buffer (the first line of it, printable characters only)
+TextFieldPaste :: proc(ctx: ^Context, buffer: []u8, length: ^int) {
+    scratch: [CLIPBOARD_LOCAL]u8
+    pasted: string = ClipboardGet(ctx, scratch[:])
+    for i in 0 ..< len(pasted) {
+        character: u8 = pasted[i]
+        if character == '\n' || character == '\r' { break }
+        if character >= 32 && character < 127 && length^ < len(buffer) {
+            buffer[length^] = character
+            length^ += 1
+        }
+    }
+}

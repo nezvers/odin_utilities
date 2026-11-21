@@ -111,6 +111,11 @@ ServerStop :: proc(server: ^Server) {
     _ = os.process_kill(server.process)
     _, _ = os.process_wait(server.process)
     server.running = false
+    // the port is free when nothing answers any more: a server that is started right after on the same port (a test, a game that goes back to its start screen) would find the old one
+    for _ in 0 ..< 100 {
+        if !ServerPing(server.endpoint) { break }
+        time.sleep(50 * time.Millisecond)
+    }
 }
 
 // Removes the folder of a server that was stopped. The files of its database are released a moment after the process is gone, so a first try can fail: it tries again for two seconds.

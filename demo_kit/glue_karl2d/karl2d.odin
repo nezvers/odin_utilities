@@ -192,6 +192,8 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             if u32(texture) == 0 || u32(texture) > state.texture_count { return }
             karl2d.draw_texture_fit(state.textures[texture], transmute(karl2d.Rect)source, transmute(karl2d.Rect)destination, origin, rotation * (3.14159265 / 180), tint)
         },
+        clipboard_get = proc(backend: ^kit.Backend, buffer: []u8) -> int { return systemClipboardGet(buffer) },
+        clipboard_set = proc(backend: ^kit.Backend, text: string) { systemClipboardSet(text) },
         mouse_capture = proc(backend: ^kit.Backend, captured: bool) {
             karl2d.set_mouse_locked(captured)
             karl2d.set_cursor_hidden(captured)

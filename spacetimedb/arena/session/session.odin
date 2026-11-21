@@ -57,8 +57,13 @@ HostStart :: proc(host: ^Host, options: HostOptions) -> bool {
     }
     defer delete(module)
     port: int = options.port if options.port > 0 else SERVER_PORT
-    if !st.ServerStart(&host.server, {root = options.root, port = port}) {
+    log_file: string = fmt.tprintf("%s/server.log", options.root)
+    os.make_directory_all(options.root)
+    if !st.ServerStart(&host.server, {root = options.root, port = port, log_file = log_file}) {
         host.error = "the server does not start"
+        if log, log_error := os.read_entire_file(log_file, context.temp_allocator); log_error == nil && len(log) > 0 {
+            host.error = fmt.tprintf("the server does not start: %s", string(log[max(0, len(log) - 2500):]))
+        }
         return false
     }
     response := make([]u8, 1 << 16)

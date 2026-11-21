@@ -408,3 +408,67 @@ test_the_log_goes_to_a_file_with_the_wall_clock_in_every_line :: proc(t: ^testin
     testing.expect(t, strings.contains(text, "check PASS \"fine\""))
     testing.expect(t, !LogOpen(&log, "no_such_folder_for_the_log/x.log"), "a file that cannot be made is refused")
 }
+
+// ---- the text field and the clipboard ----------------------------------------------------------------------------------------------------------------------
+
+@(private = "file")
+Field :: struct {
+    buffer: [32]u8,
+    length: int,
+    focused: bool,
+    submitted: int,
+}
+@(private = "file")
+field: Field
+field_lock: sync.Mutex
+
+@(private = "file")
+field_script: []Step = {
+    Wait(2),
+    Type("ab"),                                         // not focused yet: nothing is typed into the field
+    Wait(2),
+    Check(proc(ctx: ^Context) -> bool { return field.length == 0 && !field.focused }, "a field that is not focused takes no text"),
+    Click({100, 34}),
+    Type("hello"),
+    Wait(2),
+    Check(proc(ctx: ^Context) -> bool { return field.focused && string(field.buffer[:field.length]) == "hello" }, "a click focuses it and typing adds the letters"),
+    Tap(.BACKSPACE),
+    Wait(2),
+    Check(proc(ctx: ^Context) -> bool { return string(field.buffer[:field.length]) == "hell" }, "backspace removes the last one"),
+    Check(proc(ctx: ^Context) -> bool { ClipboardSet(ctx, "XY\nsecond line"); return true }, "the clipboard takes text"),
+    KeyDownStep(.LEFT_CTRL),
+    Tap(.V),
+    KeyUpStep(.LEFT_CTRL),
+    Wait(2),
+    Check(proc(ctx: ^Context) -> bool { return string(field.buffer[:field.length]) == "hellXY" }, "ctrl+v pastes the first line of the clipboard"),
+    Tap(.ENTER),
+    Wait(2),
+    Check(proc(ctx: ^Context) -> bool { return field.submitted == 1 }, "enter submits"),
+    Click({600, 300}),
+    Wait(2),
+    Check(proc(ctx: ^Context) -> bool { return !field.focused }, "a click elsewhere takes the focus away"),
+}
+
+@(private = "file")
+field_demo: Demo = {
+    name = "field",
+    init = proc(ctx: ^Context) { field = {} },
+    draw = proc(ctx: ^Context) {
+        if TextField(ctx, {20, 20, 200, 28}, field.buffer[:], &field.length, &field.focused, "name") { field.submitted += 1 }
+    },
+    script = field_script,
+}
+
+@(test)
+test_a_text_field_takes_typing_and_pastes :: proc(t: ^testing.T) {
+    sync.mutex_lock(&field_lock)
+    defer sync.mutex_unlock(&field_lock)
+    state: HeadlessState
+    backend: Backend
+    HeadlessInit(&backend, &state)
+    report: Report = TestDemo(field_demo, &backend)
+    for failure in report.failures[:min(report.failed, MAX_FAILURES)] {
+        testing.expectf(t, false, "frame %d: %s", failure.frame, failure.message)
+    }
+    testing.expect(t, report.finished)
+}

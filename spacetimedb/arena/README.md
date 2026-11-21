@@ -23,7 +23,7 @@ The host keeps the world in `arena_server/` (a persistent database, owned by the
 - `game/`: the client without a window (`Game`): connection, cache of the two tables, the input, smoothing of the 20 steps per second. Used by every front end.
 - `session/`: the p2p side: `HostStart` (server, published module, invite code), `GuestJoin` (the codes, the tunnel to the host's database).
 - `../tunnel/`: TCP over a p2p Link, so a client reaches a server that is on another computer behind NATs.
-- `demo_common/`, `demo_raylib/`, `demo_karl2d/`: the window (one demo written against `odin_utilities/demo_kit`), with a script that plays a solo game headless.
+- `demo_common/`, `demo_raylib/`, `demo_karl2d/`: the window (one demo written against `odin_utilities/demo_kit`): the start screen, the game, and two scripts (the start screen with its buttons, paste and copy; a solo game) that play headless.
 
 ## Tests
 - `odin test spacetimedb/arena/session`: the whole chain on one computer (host, guest, codes, tunnel, two clients that play); `ARENA_LIVE=1` also joins through a real DERP relay with one code.

@@ -70,6 +70,11 @@ Backend :: struct {
     // `source` of the texture on `destination` of the screen, turned around `origin` (a point of destination, from its top left)
     texture_draw: proc(backend: ^Backend, texture: Texture, source: Rect, destination: Rect, origin: Vec2, rotation: f32, tint: Color),
 
+    // the clipboard of the system, optional: nil where the framework has none (`ClipboardGet` / `ClipboardSet` then keep a copy inside of the program, so copy and paste still work between the
+    // fields of a demo). `clipboard_get` writes the text (UTF-8) into `buffer` and returns its length.
+    clipboard_get: proc(backend: ^Backend, buffer: []u8) -> int,
+    clipboard_set: proc(backend: ^Backend, text: string),
+
     // the mouse is hidden and gives only movement (a first person camera); the position keeps counting but is not the pointer anymore
     mouse_capture: proc(backend: ^Backend, captured: bool),
 
@@ -258,3 +263,28 @@ YELLOW :: Color{253, 249, 0, 255}
 ORANGE :: Color{255, 161, 0, 255}
 PURPLE :: Color{200, 122, 255, 255}
 RAY_WHITE :: Color{245, 245, 245, 255}
+
+// ---- the clipboard ------------------------------------------------------------------------------------------------------------------------------------------------
+
+CLIPBOARD_LOCAL :: 4096
+
+@(private)
+local_clipboard: [CLIPBOARD_LOCAL]u8
+@(private)
+local_clipboard_length: int
+
+// Puts text on the clipboard: the system's when the backend has one, and always the copy of the program
+ClipboardSet :: proc(ctx: ^Context, text: string) {
+    local_clipboard_length = copy(local_clipboard[:], text)
+    if ctx.backend.clipboard_set != nil { ctx.backend.clipboard_set(ctx.backend, text) }
+}
+
+// The text on the clipboard, written into `buffer` (a slice of it). The system's when the backend has one and it holds text, else the copy of the program.
+ClipboardGet :: proc(ctx: ^Context, buffer: []u8) -> string {
+    if ctx.backend.clipboard_get != nil {
+        count: int = ctx.backend.clipboard_get(ctx.backend, buffer)
+        if count > 0 { return string(buffer[:count]) }
+    }
+    count: int = copy(buffer, local_clipboard[:local_clipboard_length])
+    return string(buffer[:count])
+}
