@@ -19,6 +19,7 @@ package spacetimedb
 import "core:fmt"
 import "core:os"
 import "core:strings"
+import web_build "../web_build"
 
 SPACETIMEDB_VERSION :: "v2.16.1"                  // the release that the library is tested with: the protocol and the module ABI are of this one
 
@@ -224,19 +225,25 @@ SetupOdinModule :: proc(options: SetupOptions, name: string, root: string = "") 
     return BuildModule(fmt.tprintf("%s/spacetimedb/module/example/%s", base, name), out)
 }
 
-// Builds a module written in Odin (a package that uses spacetimedb/module) to WebAssembly: `odin build <package> -target:freestanding_wasm32 -no-entry-point -out:<wasm>`. The module has no heap and
-// no entry point; the host calls its exports. `extra` are more flags (`-o:size`, `-debug`).
+// The namespaces of host functions that a SpacetimeDB module may import (the ABI versions of the server of SPACETIMEDB_VERSION): a module that imports another one does not load
+MODULE_IMPORT_MODULES :: [?]string{"spacetime_10.0", "spacetime_10.1", "spacetime_10.2", "spacetime_10.3", "spacetime_10.4", "spacetime_10.5", "spacetime_10.6"}
+
+// Builds a module written in Odin (a package that uses spacetimedb/module) to WebAssembly with `web_build.WasmBuild` (`-target:freestanding_wasm32 -no-entry-point`) and checks the result: it
+// exports `__describe_module__`, `__call_reducer__` and its memory, and imports only from the namespaces of the ABI. The module has no heap and no entry point; the host calls its exports.
+// `extra` are more flags (`-o:size`, `-debug`). The message of a failed build goes to stderr.
 BuildModule :: proc(package_path: string, out: string, extra: []string = nil) -> bool {
-    command: [dynamic]string
-    command.allocator = context.temp_allocator
-    append(&command, "odin", "build", package_path, "-target:freestanding_wasm32", "-no-entry-point", "-strict-style", "-vet", fmt.tprintf("-out:%s", out))
-    append(&command, ..extra)
-    state, _, stderr, err := os.process_exec({command = command[:]}, context.temp_allocator)
-    if err != nil || !state.success {
-        fmt.eprintln(string(stderr))
-        return false
-    }
-    return os.exists(out)
+    imports := MODULE_IMPORT_MODULES
+    result: web_build.WasmBuildResult = web_build.WasmBuild({
+        source_directory = package_path,
+        output = out,
+        strict = true,
+        odin_arguments = extra,
+        require_exports = {"__describe_module__", "__call_reducer__"},
+        require_memory = true,
+        allowed_import_modules = imports[:],
+    })
+    if !result.ok { fmt.eprintln(result.message) }
+    return result.ok
 }
 
 // The path of the cloned reference, "" when it is not there (run setup). SpacetimeDB itself is in this library's folder, the others in references/.

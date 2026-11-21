@@ -31,6 +31,16 @@ It writes `<source>/build/web` (generated entry) and `<source>/bin/web` (index.h
 `python -m http.server` inside of it. Needs `odin` in PATH.
 For JavaScript that the program needs (karl2d audio) use `copy_files`, `scripts`, `imports_js` and `start_js`, see `demo_karl2d/build_web/main.odin`.
 
+## WebAssembly that is not a page (`wasm_build.odin`, `wasm_inspect.odin`)
+`WebBuild` is for a program in a browser. A module for a host (a SpacetimeDB module, a plugin, a game mod) is another kind of wasm: `-target:freestanding_wasm32 -no-entry-point`, no runtime, no JavaScript, the host calls its exports and offers the imports it declares.
+```odin
+result := web_build.WasmBuild({
+    source_directory = "module", output = "bin/module.wasm", strict = true, odin_arguments = {"-o:size"},
+    require_exports = {"__describe_module__"}, require_memory = true, allowed_import_modules = {"spacetime_10.0"},
+})
+```
+After the compiler the result is read with `WasmInspect` (the import and export sections, no runtime needed, builds for every target): a missing export, a missing memory or an import from a namespace the host does not offer fails the build with a message, not the first call of the host. `spacetimedb.BuildModule` is a call of this. `target = .JS` builds `js_wasm32` without an entry for a page that brings its own JavaScript.
+
 ## Demo
 Both show the same: textures, a font and a text file loaded by name.
 - `odin run demo_raylib` (desktop only, raylib in a browser needs emscripten)
