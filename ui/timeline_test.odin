@@ -775,6 +775,12 @@ test_every_level_of_the_ramp_and_the_exponential_kernels_gives_the_same_samples 
             expected, got = {}, {}
             expBase(expected[:length], 1.3, 1.01, -0.2, 0.7)
             kernels.exp_run(got[:length], 1.3, 1.01, -0.2, 0.7)
+            for kind in ([?]AutomationStepKind{.STAIRS, .SMOOTH_STAIRS, .PULSE}) {
+                expected, got = {}, {}
+                stepsBase(expected[:length], 0.013, 0.0071, kind, 7, true, 1, 3)
+                kernels.steps(got[:length], 0.013, 0.0071, kind, 7, true, 1, 3)
+                testing.expectf(t, expected == got, "%v: %v of %d samples", level, kind, length)
+            }
             for i in 0 ..< length {
                 testing.expectf(t, abs(expected[i] - got[i]) <= 1e-5 * max(abs(expected[i]), 1), "%v: the exponential at %d of %d: %v and %v", level, i, length, expected[i], got[i])
             }

@@ -178,34 +178,11 @@ automationSegmentFill :: proc(segment: ^AutomationSegment, time: f64, step: f64,
             i += left
         }
     case .STAIRS, .SMOOTH_STAIRS, .PULSE:
-        // the edges of these are exact to the sample (a ramp between anchors would smear a step): one evaluation per sample, with the shape chosen once for the whole run and the floor taken by a
-        // conversion to an integer (x * n is never negative: the same number as math.floor, which without SSE4.1 is a call), so that the loop is a loop of vector code
+        // the edges of these are exact to the sample (a ramp between anchors would smear a step): one evaluation per sample, by the kernel of the level (the times in f64, then the shape on f32 positions)
         x0: f64 = (time - segment.start) * segment.inverse_length
         delta_x: f64 = step * segment.inverse_length
-        n: f32 = abs(segment.coefficient)
-        #partial switch shape {
-        case .STAIRS:
-            count: f32 = max(n, 2)
-            for i in 0 ..< len(out) {
-                x: f32 = f32(clamp(x0 + f64(i) * delta_x, 0, 1))
-                out[i] = segment.value + segment.change * min(f32(int(x * count)) / (count - 1), 1)
-            }
-        case .SMOOTH_STAIRS:
-            for i in 0 ..< len(out) {
-                x: f32 = f32(clamp(x0 + f64(i) * delta_x, 0, 1))
-                k: f32 = min(f32(int(x * n)), n - 1)
-                f: f32 = x * n - k
-                out[i] = segment.value + segment.change * ((k + f * f * (3 - 2 * f)) / n)
-            }
-        case:
-            positive: bool = segment.coefficient >= 0
-            for i in 0 ..< len(out) {
-                x: f32 = f32(clamp(x0 + f64(i) * delta_x, 0, 1))
-                high: bool = x * n - f32(int(x * n)) >= 0.5
-                shape_value: f32 = 1 if x >= 1 else (1 if high == positive else 0)
-                out[i] = segment.value + segment.change * shape_value
-            }
-        }
+        kind: AutomationStepKind = .STAIRS if shape == .STAIRS else (.SMOOTH_STAIRS if shape == .SMOOTH_STAIRS else .PULSE)
+        automation_current.steps(out, x0, delta_x, kind, abs(segment.coefficient), segment.coefficient >= 0, segment.value, segment.change)
     case .SMOOTH, .CURVE, .S_CURVE, .HERMITE:
         samples_in_segment: f64 = (segment.end - segment.start) / step
         spacing: int = clamp(int(samples_in_segment / AUTOMATION_ANCHOR_PART), 1, AUTOMATION_ANCHOR)
