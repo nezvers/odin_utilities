@@ -29,6 +29,7 @@ WebBuildConfig :: struct {
     scripts: []string,          // names of copied files that index.html loads with <script> before odin.js
     imports_js: string,         // JavaScript expression of an object that is merged into the wasm imports. Empty - {}
     start_js: string,           // JavaScript statements that run once the wasm memory exists. `exports` is in scope
+    quiet: bool,                // do not print what went wrong (a test that expects the build to fail; the result of WebBuild is the same)
 }
 
 WebBuildPaths :: struct {
@@ -72,6 +73,11 @@ WebBuildOdinJs :: proc() -> (path: string, ok: bool) {
     return path, os.exists(path)
 }
 
+@(private)
+report :: proc(config: WebBuildConfig, format: string, args: ..any) {
+    if !config.quiet { fmt.eprintfln(format, ..args) }
+}
+
 // Build the web version. Needs `odin` in PATH. Messages of the compiler go to stderr when the build fails.
 // Allocates temporary strings with the temp allocator, free it afterwards.
 WebBuild :: proc(config: WebBuildConfig) -> bool {
@@ -79,33 +85,33 @@ WebBuild :: proc(config: WebBuildConfig) -> bool {
     paths: WebBuildPaths = WebBuildGetPaths(config, context.temp_allocator)
 
     if os.make_directory_all(paths.build_directory) != nil || os.make_directory_all(paths.output_directory) != nil {
-        fmt.eprintfln("web_build: could not create the folders in %s", config.source_directory)
+        report(config, "web_build: could not create the folders in %s", config.source_directory)
         return false
     }
 
     // the entry imports the source package, which is two folders up from build/web
     if os.write_entire_file(fmt.tprintf("%s/web_entry.odin", paths.build_directory), WEB_ENTRY_TEMPLATE) != nil {
-        fmt.eprintln("web_build: could not write the entry")
+        report(config, "web_build: could not write the entry")
         return false
     }
     if os.write_entire_file(fmt.tprintf("%s/index.html", paths.output_directory), WebBuildIndexHtml(config, context.temp_allocator)) != nil {
-        fmt.eprintln("web_build: could not write index.html")
+        report(config, "web_build: could not write index.html")
         return false
     }
 
     odin_js, odin_js_ok := WebBuildOdinJs()
     if !odin_js_ok {
-        fmt.eprintln("web_build: odin.js of the Odin runtime was not found, is odin in PATH?")
+        report(config, "web_build: odin.js of the Odin runtime was not found, is odin in PATH?")
         return false
     }
     if os.copy_file(fmt.tprintf("%s/odin.js", paths.output_directory), odin_js) != nil {
-        fmt.eprintln("web_build: could not copy odin.js")
+        report(config, "web_build: could not copy odin.js")
         return false
     }
     for file in config.copy_files {
         name: string = file[max(strings.last_index_byte(file, '/'), strings.last_index_byte(file, '\\')) + 1:]
         if os.copy_file(fmt.tprintf("%s/%s", paths.output_directory, name), file) != nil {
-            fmt.eprintfln("web_build: could not copy %s", file)
+            report(config, "web_build: could not copy %s", file)
             return false
         }
     }
@@ -116,7 +122,7 @@ WebBuild :: proc(config: WebBuildConfig) -> bool {
     append(&command, ..config.odin_arguments)
     state, _, errors, error := os.process_exec({command = command[:]}, context.temp_allocator)
     if error != nil || state.exit_code != 0 {
-        fmt.eprintfln("web_build: building main.wasm failed\n%s", string(errors))
+        report(config, "web_build: building main.wasm failed\n%s", string(errors))
         return false
     }
     return true
@@ -201,6 +207,8 @@ shutdown :: proc() {}
     // a program that does not follow the contract fails and says so, instead of leaving an old wasm behind
     testing.expect_value(t, os.write_entire_file(fmt.tprintf("%s/tiny.odin", directory), "package tiny\n"), nil)
     os.remove(fmt.tprintf("%s/main.wasm", output))
-    testing.expect(t, !WebBuild(config))
+    quiet_config: WebBuildConfig = config
+    quiet_config.quiet = true                   // the compiler's complaint is expected here, not something for the output of the tests
+    testing.expect(t, !WebBuild(quiet_config))
     testing.expect(t, !os.exists(fmt.tprintf("%s/main.wasm", output)))
 }

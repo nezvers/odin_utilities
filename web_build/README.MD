@@ -27,7 +27,7 @@ The source directory is a package with `init`, `step` (returns false to stop) an
 ```odin
 web_build.WebBuild({source_directory = "game", title = "My game", odin_arguments = {"-o:size"}})
 ```
-It writes `<source>/build/web` (generated entry) and `<source>/bin/web` (index.html, odin.js, main.wasm, copied files). Serve `bin/web`, a browser refuses wasm from file://:
+`quiet = true` keeps its messages from the output (a test that expects a failure). It writes `<source>/build/web` (generated entry) and `<source>/bin/web` (index.html, odin.js, main.wasm, copied files). Serve `bin/web`, a browser refuses wasm from file://:
 `python -m http.server` inside of it. Needs `odin` in PATH.
 For JavaScript that the program needs (karl2d audio) use `copy_files`, `scripts`, `imports_js` and `start_js`, see `demo_karl2d/build_web/main.odin`.
 
