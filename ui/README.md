@@ -167,6 +167,8 @@ in `default_style/chart.odin`). A style of your own draws with `ChartPlotRect`, 
 ## The gallery of Baldr, remade
 `demo_common/demo_emoji.odin` is Baldr's 31_emoji as the `emoji` demo: a composer with an Emoji button that opens a picker in a popover (`UiMenu` with any content; the app sets `ctx.open_menu = 0` to close it), a skin tone, categories, recents, and the chosen emoji written at the caret with `UiTextInsert`. There is no color emoji font, so each emoji is drawn from shapes (circles, quads, triangles) by a CUSTOM draw proc: 25 of them (faces, hands that take the skin tone, symbols); the text holds a shortcode (`:thumbs_up~3:`) that the messages draw as the shape again, inline with the words.
 
+`demo_common/demo_windows.odin` is the `windows` demo: Baldr's 23_chrome, 38_windows and 14_bar_applets. A window draws its own frame (title bar with `UiInteract`: drag, double click maximises; three grips resize; a press raises it by the order of the floating z indices), two windows read and write one state, and the bar holds applet slots that show a Restart button when their applet stopped. The windows are floating elements of one kit window, not windows of the operating system.
+
 `demo_common/demo_shell.odin` is the `shell` demo: Baldr's desktop shell examples with the same widgets and plain data in place of a compositor: a control centre (round icon toggles, sliders whose icon follows the value and mutes, a segmented power mode, a Sound page), a launcher (a search field over results walked with the arrows while it keeps the focus, Ctrl+P pins, Shift+Delete removes), a dock (icons grow with the distance of the pointer, a download on one, marks under the running ones), a taskbar (windows with raise, minimise, maximise, close, titles cut with an ellipsis, workspaces), a desktop (icons that stay where they are dropped) and a clock applet with a calendar.
 
 `demo_common/demo_gallery.odin` is the first page of Baldr's gallery (`examples/00_gallery`) with this library: the same cards (Buttons, Inputs, Menus, Choices, Project, Badges,
@@ -332,6 +334,8 @@ runs. The text is read every frame it is shown, nothing is kept or allocated. Bo
 clearing) is skipped: `UiAnsiText` shows a log. A program that moves the cursor needs the screen below.
 
 ## A screen of cells
+**Print by slices.** A program that writes a line at a time may call `AnsiScreenWrite` once per chunk: the cost is per byte and per control sequence, not per call (a cut letter or sequence is carried to the next call).
+
 `ansi_screen.odin`: `screen := ui.AnsiScreenMake(cells[:], 80, 24)`, `ui.AnsiScreenWrite(&screen, bytes)` (in any pieces: an escape sequence or a letter may be cut between two
 writes), `ui.UiAnsiScreen(&ctx, &screen)`. The caller owns the cells (`ui.AnsiCell`: a letter and its style), nothing is allocated. Read: letters (UTF-8, one cell each),
 `\r \n \b \t`, the cursor moves (`A B C D E F G H f d s u`, ESC 7 and 8), erasing (`J K X P @`, an erased cell keeps the ground that is set), inserting and deleting lines
