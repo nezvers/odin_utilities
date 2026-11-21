@@ -13,7 +13,10 @@ import "core:strings"
 import "core:time"
 import "../p2p"
 
+// Per thread, so that a test that steps a provider in its own thread does not touch the requests of another thread.
+@(thread_local)
 HttpIdle: proc(user: rawptr)
+@(thread_local)
 HttpIdleUser: rawptr
 
 HTTP_TIMEOUT :: 15 * time.Second

@@ -24,7 +24,7 @@ import "core:fmt"
 import "core:time"
 
 CONNECTION_SEND_BUFFER :: 1 << 16
-CONNECTION_TOKEN_LENGTH :: 1024
+CONNECTION_TOKEN_LENGTH :: 4096
 
 CONNECTION_SUBSCRIPTIONS :: 16
 CONNECTION_QUERIES :: 8
@@ -34,6 +34,8 @@ ConnectionConfig :: struct {
     database: string,           // the name or the identity (hex) of the database (kept by reference: it has to live as long as the connection, for a reconnect)
     token: string,              // "": a new identity is made
     confirmed: bool,            // `confirmed=true`: the server tells a change only when it is durable (slower, never taken back)
+    refresh: proc(user: rawptr) -> string,      // for a login that expires (OIDC, see auth.odin): asked for the token again at every reconnect; "" keeps the one in use. The text is copied.
+    refresh_user: rawptr,
 }
 
 // What the connection subscribed to, to do it again after a reconnect (the query strings are kept by reference)
@@ -94,6 +96,11 @@ ConnectionOpen :: proc(connection: ^Connection, config: ConnectionConfig, receiv
 @(private)
 connectSocket :: proc(connection: ^Connection) -> bool {
     config: ConnectionConfig = connection.config
+    if config.refresh != nil {
+        // a token that expires is asked for again: the reconnect must not present the one of the first connection
+        renewed: string = config.refresh(config.refresh_user)
+        if renewed != "" && len(renewed) <= CONNECTION_TOKEN_LENGTH { connection.token_length = copy(connection.token[:], renewed) }
+    }
     token: string = ConnectionToken(connection)
     path: string = fmt.tprintf("/v1/database/%s/subscribe?compression=None%s", config.database, "&confirmed=true" if config.confirmed else "")
     headers: [1]HttpHeader = {{"Authorization", fmt.tprintf("Bearer %s", token)}}

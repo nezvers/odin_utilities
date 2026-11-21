@@ -15,7 +15,10 @@ StreamStatus :: enum u8 {
 
 // A program that reaches the server through something that has to be stepped by the same thread (a tunnel over a p2p Link, see tunnel/) sets this: every wait of a blocking call
 // (an HTTP request, the websocket handshake) calls it in between, so the other end keeps being served while this one waits. Plain sockets only.
+// Per thread: a test thread that plays a server in the same thread must not slow down the sockets of another thread.
+@(thread_local)
 StreamIdle: proc(user: rawptr)
+@(thread_local)
 StreamIdleUser: rawptr
 
 Stream :: struct {

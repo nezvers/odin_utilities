@@ -37,6 +37,15 @@ LOG_DEBUG :: u8(3)
 LOG_TRACE :: u8(4)
 LOG_PANIC :: u8(101)
 
+foreign import spacetime_2 "spacetime_10.2"
+
+@(default_calling_convention = "c")
+foreign spacetime_2 {
+    // the payload of the JWT that a connection was made with; the source is 0 when there is none. Inside of a transaction only (a reducer).
+    @(link_name = "get_jwt")
+    host_get_jwt :: proc(connection_id: [^]u8, source: ^BytesSource) -> u16 ---
+}
+
 foreign import spacetime_5 "spacetime_10.5"
 
 @(default_calling_convention = "c")

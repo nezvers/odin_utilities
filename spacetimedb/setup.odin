@@ -133,6 +133,7 @@ SetupRun :: proc(options: SetupOptions = {}) -> (result: SetupResult) {
         if SetupOdinModule(options, "basic", root) { result.fixtures += 1 }
         if SetupOdinModule(options, "rich", root) { result.fixtures += 1 }
         if SetupOdinModule(options, "arena", root) { result.fixtures += 1 }
+        if SetupOdinModule(options, "auth", root) { result.fixtures += 1 }
     }
     return
 }

@@ -15,7 +15,7 @@ Stale build outputs in a library folder (`demo.exe`, `*.pdb`, `log.txt`) are git
 ## Per library notes (read only the one you touch)
 Every library below has its own `AGENTS.md` (`CLAUDE.md` there only imports it) with what is not obvious from the code: file roles, decisions, limits, commands. Open `<lib>/AGENTS.md` before working in `<lib>`; do not read the others. Big inventories live in `<lib>/docs/` (grep them by name, do not read whole).
 
-`ui`, `font`, `tilemap`, `tween`, `grid_collision_map`, `microui`, `atlas_packer`, `box2d_odin`, `3d_models`, `hot_reload`, `web_build`, `web_serve`, `scene`, `serial`, `signal`, `ai_messaging`, `reports`, `p2p`, `browser_extension`, `icons`, `unicode_data`, `simd`, `spacetimedb`, `gdextension` (with `gdextension/godot_spacetimedb`), `scratch`, `lanes`, `demo_kit`
+`ui`, `font`, `tilemap`, `tween`, `grid_collision_map`, `microui`, `atlas_packer`, `box2d_odin`, `3d_models`, `hot_reload`, `web_build`, `web_serve`, `scene`, `serial`, `signal`, `ai_messaging`, `reports`, `p2p`, `browser_extension`, `icons`, `unicode_data`, `simd`, `spacetimedb`, `oidc`, `gdextension` (with `gdextension/godot_spacetimedb`), `scratch`, `lanes`, `demo_kit`
 
 ## Library structure (every odin_utilities library, template in odin_utilities/templates/library)
 ```

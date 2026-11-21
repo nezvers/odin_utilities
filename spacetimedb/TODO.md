@@ -18,7 +18,7 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] Reconnect (`ConnectionReconnect`, `ConnectionMaintain` with backoff): same token, subscriptions again; `confirmed` reads (`ConnectionConfig.confirmed`). Open: the session id parameter
 - [ ] (medium) Websocket protocol v3 (several messages in one frame) and compressed frames (Gzip is in core:compress, Brotli is not).
 - [x] `ConnectionCallProcedure`, `ConnectionSubscribeBatch` (the cache applies `SubscribeBatchApplied`), event tables in the cache. Open: views and procedures in the generator (schema v10)
-- [ ] (medium) Authentication: the OIDC side (identities from an issuer, `POST /v1/identity/websocket-token`, SpacetimeAuth).
+- [x] Authentication with OIDC: `oidc` library, `auth.odin`, module claims (`module/jwt.odin`), tested against a real server; open: a real provider (SpacetimeAuth), the identity from `iss|sub` needs blake3
 - [ ] (low) The test module of the library in more shapes (a table with a primary key and an index, a scheduled reducer, an event table, a view): the references have them under modules/ (sdk-test).
 - [x] A sample game: `arena/` (a multiplayer game in the database, a window on raylib and Karl2D, p2p host and join through `tunnel/`); its own TODO.md has what is next
 - [x] Server log file on every system (`ServerOptions.log_file`; on Windows through a batch file with a redirection)
