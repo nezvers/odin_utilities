@@ -21,7 +21,7 @@ demo: kit.Demo = {name = "loop", init = init, update = update, draw = draw, scri
 
 update :: proc(ctx: ^kit.Context) {
     if kit.KeyPressed(&ctx.input, .SPACE) { ... }
-    if kit.MousePressed(&ctx.input) && !ctx.ui_hover { ... }     // ui_hover: the mouse is on the kit's demo menu
+    if kit.MousePressed(&ctx.input) && !ctx.ui_hover { ... }     // ui_hover: the mouse is on the kit's demo dropdown (the box at the top right, and its list while it is open)
 }
 draw :: proc(ctx: ^kit.Context) {
     kit.DrawRect(ctx, {10, 10, 100, 20}, kit.GREEN)

@@ -165,6 +165,42 @@ test_the_menu_switches_demos_by_click :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_the_menu_is_a_dropdown_that_opens_selects_and_closes :: proc(t: ^testing.T) {
+    sync.mutex_guard(&toy_lock)
+    state: HeadlessState
+    backend: Backend
+    HeadlessInit(&backend, &state)
+    toy = {}
+    demos: [3]Demo = {{name = "first"}, {name = "second"}, {name = "third"}}
+    runner: Runner
+    RunnerInit(&runner, demos[:], &backend)
+    runner.fixed_delta = 1.0 / 60.0
+    RunnerStep(&runner)
+    click :: proc(runner: ^Runner, rect: Rect) {
+        runner.ctx.input.mouse_position = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+        runner.ctx.input.mouse_pressed = {.LEFT}
+        runnerMenuInput(runner)
+        runner.ctx.input.mouse_pressed = {}
+    }
+    testing.expect(t, !runner.menu_open, "closed: one box")
+    runner.ctx.input.mouse_position = {runner.ctx.screen.x - 20, 20}
+    testing.expect(t, menuHover(&runner), "the box takes the pointer")
+    runner.ctx.input.mouse_position = {runner.ctx.screen.x - 20, 20 + 2 * (MENU_BUTTON_HEIGHT + 2)}
+    testing.expect(t, !menuHover(&runner), "the rows are not there while it is closed")
+    click(&runner, menuRect(&runner, -1))
+    testing.expect(t, runner.menu_open)
+    testing.expect(t, menuHover(&runner), "the open list takes the pointer")
+    click(&runner, menuRect(&runner, 2))
+    testing.expect(t, !runner.menu_open, "a choice closes the list")
+    testing.expect_value(t, runner.current, 2)
+    click(&runner, menuRect(&runner, -1))
+    click(&runner, {10, 400, 10, 10})
+    testing.expect(t, !runner.menu_open, "a click elsewhere closes it")
+    testing.expect_value(t, runner.current, 2)
+    RunnerShutdown(&runner)
+}
+
+@(test)
 test_headless_backend_measures_text_and_reads_png_sizes :: proc(t: ^testing.T) {
     state: HeadlessState
     backend: Backend

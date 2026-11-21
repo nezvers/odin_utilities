@@ -2,7 +2,7 @@ package demo_kit
 
 import "core:fmt"
 
-// Runs the demos of a library on a backend: one demo at a time, a menu on the right to switch (mouse, or PAGE_UP / PAGE_DOWN), and a
+// Runs the demos of a library on a backend: one demo at a time, a dropdown on the right to switch (mouse, or PAGE_UP / PAGE_DOWN), and a
 // test mode that plays the script of every demo with simulated input.
 //
 //     // demo_raylib/main.odin and demo_karl2d/main.odin are one line each
@@ -36,6 +36,7 @@ Runner :: struct {
     playing: bool,              // the input comes from the player
     fixed_delta: f32,           // 0: the time the backend measures. A test uses 1/60
     show_menu: bool,
+    menu_open: bool,            // the dropdown of the demos is open
     run_time: f64,
     escape_exits: bool,         // escape closes a demo in a window (not in a scripted test, where Escape is input for the demo)
 }
@@ -191,15 +192,19 @@ runnerFinishDemo :: proc(runner: ^Runner) {
     if demo.finit != nil { demo.finit(&runner.ctx) }
 }
 
+// The menu is a dropdown: a box with the name of the demo that runs (index -1) and, when it is open, a row for every demo below it
 @(private)
 menuRect :: proc(runner: ^Runner, index: int) -> Rect {
-    return {runner.ctx.screen.x - MENU_WIDTH - MENU_MARGIN, MENU_MARGIN + f32(index) * (MENU_BUTTON_HEIGHT + 2), MENU_WIDTH, MENU_BUTTON_HEIGHT}
+    return {runner.ctx.screen.x - MENU_WIDTH - MENU_MARGIN, MENU_MARGIN + f32(index + 1) * (MENU_BUTTON_HEIGHT + 2), MENU_WIDTH, MENU_BUTTON_HEIGHT}
 }
 
 @(private)
 menuHover :: proc(runner: ^Runner) -> bool {
+    point: Vec2 = runner.ctx.input.mouse_position
+    if PointInRect(point, menuRect(runner, -1)) { return true }
+    if !runner.menu_open { return false }
     for i in 0 ..< len(runner.demos) {
-        if PointInRect(runner.ctx.input.mouse_position, menuRect(runner, i)) { return true }
+        if PointInRect(point, menuRect(runner, i)) { return true }
     }
     return false
 }
@@ -210,14 +215,25 @@ runnerMenuInput :: proc(runner: ^Runner) {
     if KeyPressed(input, .PAGE_DOWN) { RunnerSelect(runner, (runner.current + 1) % len(runner.demos)) }
     if KeyPressed(input, .PAGE_UP) { RunnerSelect(runner, (runner.current + len(runner.demos) - 1) % len(runner.demos)) }
     if !MousePressed(input) { return }
+    if PointInRect(input.mouse_position, menuRect(runner, -1)) {
+        runner.menu_open = !runner.menu_open
+        return
+    }
+    if !runner.menu_open { return }
     for i in 0 ..< len(runner.demos) {
         if PointInRect(input.mouse_position, menuRect(runner, i)) { RunnerSelect(runner, i) }
     }
+    runner.menu_open = false         // a click anywhere else closes the list too
 }
 
 @(private)
 runnerMenuDraw :: proc(runner: ^Runner) {
     ctx: ^Context = &runner.ctx
+    box: Rect = menuRect(runner, -1)
+    DrawRect(ctx, box, LIGHT_GRAY)
+    DrawText(ctx, runner.demos[runner.current].name, {box.x + 6, box.y + 4}, 16, BLACK)
+    DrawText(ctx, "^" if runner.menu_open else "v", {box.x + box.z - 16, box.y + 4}, 16, BLACK)
+    if !runner.menu_open { return }
     for demo, i in runner.demos {
         rect: Rect = menuRect(runner, i)
         DrawRect(ctx, rect, DARK_GRAY if i == runner.current else LIGHT_GRAY)
