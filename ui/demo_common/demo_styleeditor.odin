@@ -105,7 +105,7 @@ script: []kit.Step = {
     kit.MoveTo({20, 700}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.editor.pick && state.ctx.edit.on }, "edit mode is on"),
-    // the element under the pointer is covered: the masked picture holds only the button and its veil (the veil is the white of `edit_overlay`, 0.05 of it)
+    // the element under the pointer is covered: the masked picture holds only the button and its veil (the veil is the white of `edit_overlay`, alpha 6 of 255)
     kit.Check(proc(ctx: ^kit.Context) -> bool { return aim("page", "Plain") && frameOf("page", "Plain") }, "the Plain button"),
     kit.MoveAt(&point),
     kit.Wait(3),

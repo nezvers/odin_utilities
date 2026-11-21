@@ -1,4 +1,5 @@
 #+build !js
+#+build !arm64
 package font
 
 // The parser of this library (sfnt.odin, truetype.odin, cff.odin) against stb_truetype, which it is a port of and which read the fonts before: every glyph of a font has to give the

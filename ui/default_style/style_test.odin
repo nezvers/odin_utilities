@@ -646,11 +646,22 @@ test_the_style_editor_loads_saves_and_deletes_styles_edits_fields_and_picks_elem
     frame(test, pointer(page))
     hover, hovering := ui.UiEditHover(&test.ctx)
     testing.expect(t, hovering && hover.kind == .BUTTON, "the element under the pointer")
+    // the cover is behind the editing panel: it comes before the first command of the window in the list, and the panel is drawn over it
+    window: ui.Id = ui.UiId(&test.ctx, STYLE_EDITOR_TITLE)
+    cover_at, window_at: int = -1, -1
+    for command, i in ui.UiCommands(&test.ctx) {
+        if command.kind == .DRAW && command.info.kind == .EDIT_COVER && cover_at < 0 { cover_at = i }
+        if command.kind == .DRAW && command.info.id == window && window_at < 0 { window_at = i }
+    }
+    testing.expect(t, cover_at >= 0 && window_at > cover_at, "the cover is drawn behind the editor")
     frame(test, pointer(page, true, true))
     frame(test, pointer(page, false, false, true))
     picked, was_picked := ui.UiEditPicked(&test.ctx)
     testing.expect(t, was_picked && picked.kind == .BUTTON)
     testing.expect(t, styleFieldUsed(.BUTTON, "control_hover") && !styleFieldUsed(.BUTTON, "scrim") && styleFieldUsed(.EDIT_COVER, "edit_overlay"))
+    // a panel that the style draws as a well (the code block) lists the radius of the controls, not the one of the panels; a plain panel the other way round
+    testing.expect(t, styleFieldUsed(.PANEL, "max_radius", "code") && !styleFieldUsed(.PANEL, "panel_max_radius", "code") && styleFieldUsed(.PANEL, "panel_max_radius", "") && styleFieldUsed(.PANEL, "panel_max_radius", "something else"))
+    testing.expect(t, THEME_DARK.edit_overlay.a == 6 && THEME_LIGHT.edit_overlay.a == 6, "the veil is half of what it was")
     // the cover is drawn in the color of the theme: the last rectangle of the frame is the picked one in `edit_selected`
     testing.expect_value(t, test.recorder.fill_count > 0, true)
     // off again: no mask

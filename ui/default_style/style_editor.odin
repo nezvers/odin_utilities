@@ -50,45 +50,56 @@ StyleEditorInit :: proc(editor: ^StyleEditor, theme: Theme, position: ui.Vec2 = 
 @(private)
 EDIT_FIELDS :: [?]struct {
     kind: ui.StyleKind,
+    name: string,               // only for the elements of this name (the style draws a panel called "code" as a well, a "tooltip" as a raised card): "" for every element of the kind
     fields: string,
 }{
-    {.PANEL, "panel,border_soft,border,surface_high,panel_rounding,panel_max_radius,border_width,shadow"},
-    {.LABEL, "text,text_dim,accent"},
-    {.BUTTON, "control,control_hover,control_pressed,text,accent,accent_text,accent_soft,accent_soft_text,danger,danger_text,border,rounding,max_radius,border_width,hover,press,focus"},
-    {.TOGGLE, "track,track_strong,accent,accent_text,border,text,rounding,max_radius,border_width,focus"},
-    {.SWITCH, "track_strong,accent,accent_text,panel,focus"},
-    {.RADIO, "track,accent,border,text,focus"},
-    {.SLIDER, "track,accent_soft,accent,accent_text,border,text,rounding,max_radius,border_width,focus"},
-    {.PROGRESS, "track,accent,accent_text,text,max_radius"},
-    {.TEXT_FIELD, "track,border,accent,text,text_dim,rounding,max_radius,border_width,focus"},
-    {.TEXT_AREA, "track,border,accent,text,text_dim,rounding,max_radius,border_width,focus"},
-    {.DROPDOWN, "track,border,accent,text,rounding,max_radius,border_width,surface_high"},
-    {.DROPDOWN_ITEM, "surface_high,accent_soft,accent_soft_text,text,control_hover"},
-    {.SEPARATOR, "border_soft"},
-    {.SCROLLBAR, "track,track_strong,control_hover"},
-    {.TAB, "accent,text,text_dim,border_soft,control_hover"},
-    {.SEGMENTED, "track,surface_high,text,text_dim,rounding,max_radius"},
-    {.SEGMENT, "surface_high,text,text_dim,rounding,max_radius"},
-    {.CHIP, "control,accent_soft,accent_soft_text,text,border,rounding"},
-    {.BADGE, "accent_soft,accent_soft_text,danger,warning,success,text"},
-    {.WINDOW_TITLE, "track,text,text_dim,panel_max_radius,border_width"},
-    {.MENU_BAR, "panel,border_soft,text"},
-    {.MENU, "surface_high,border,text,control_hover,max_radius"},
-    {.MENU_ITEM, "surface_high,control_hover,text,text_dim,accent_soft"},
-    {.COLLAPSING, "control,control_hover,text,accent"},
-    {.SELECTABLE, "accent_soft,accent_soft_text,control_hover,text"},
-    {.BACKDROP, "scrim"},
-    {.GRAPH_NODE, "panel,border,accent,track,panel_rounding,max_radius,border_width,text"},
-    {.GRAPH_PIN, "accent,track,text"},
-    {.EDIT_COVER, "edit_overlay,edit_selected"},
+    {.PANEL, "code", "track,border_soft,rounding,max_radius,border_width"},
+    {.PANEL, "tooltip", "surface_high,border,panel_rounding,max_radius,border_width,shadow"},
+    {.PANEL, "dropdown", "surface_high,border,panel_rounding,max_radius,border_width,shadow"},
+    {.PANEL, "combo", "surface_high,border,panel_rounding,max_radius,border_width,shadow"},
+    {.PANEL, "menu", "surface_high,border,panel_rounding,max_radius,border_width,shadow"},
+    {.PANEL, "", "panel,border_soft,border,surface_high,panel_rounding,panel_max_radius,border_width,shadow"},
+    {.LABEL, "", "text,text_dim,accent"},
+    {.BUTTON, "", "control,control_hover,control_pressed,text,accent,accent_text,accent_soft,accent_soft_text,danger,danger_text,border,rounding,max_radius,border_width,hover,press,focus"},
+    {.TOGGLE, "", "track,track_strong,accent,accent_text,border,text,rounding,max_radius,border_width,focus"},
+    {.SWITCH, "", "track_strong,accent,accent_text,panel,focus"},
+    {.RADIO, "", "track,accent,border,text,focus"},
+    {.SLIDER, "", "track,accent_soft,accent,accent_text,border,text,rounding,max_radius,border_width,focus"},
+    {.PROGRESS, "", "track,accent,accent_text,text,max_radius"},
+    {.TEXT_FIELD, "", "track,border,accent,text,text_dim,rounding,max_radius,border_width,focus"},
+    {.TEXT_AREA, "", "track,border,accent,text,text_dim,rounding,max_radius,border_width,focus"},
+    {.DROPDOWN, "", "track,border,accent,text,rounding,max_radius,border_width,surface_high"},
+    {.DROPDOWN_ITEM, "", "surface_high,accent_soft,accent_soft_text,text,control_hover"},
+    {.SEPARATOR, "", "border_soft"},
+    {.SCROLLBAR, "", "track,track_strong,control_hover"},
+    {.TAB, "", "accent,text,text_dim,border_soft,control_hover"},
+    {.SEGMENTED, "", "track,surface_high,text,text_dim,rounding,max_radius"},
+    {.SEGMENT, "", "surface_high,text,text_dim,rounding,max_radius"},
+    {.CHIP, "", "control,accent_soft,accent_soft_text,text,border,rounding"},
+    {.BADGE, "", "accent_soft,accent_soft_text,danger,warning,success,text"},
+    {.WINDOW_TITLE, "", "track,text,text_dim,panel_max_radius,border_width"},
+    {.MENU_BAR, "", "panel,border_soft,text"},
+    {.MENU, "", "surface_high,border,text,control_hover,max_radius"},
+    {.MENU_ITEM, "", "surface_high,control_hover,text,text_dim,accent_soft"},
+    {.COLLAPSING, "", "control,control_hover,text,accent"},
+    {.SELECTABLE, "", "accent_soft,accent_soft_text,control_hover,text"},
+    {.BACKDROP, "", "scrim"},
+    {.GRAPH_NODE, "", "panel,border,accent,track,panel_rounding,max_radius,border_width,text"},
+    {.GRAPH_PIN, "", "accent,track,text"},
+    {.EDIT_COVER, "", "edit_overlay,edit_selected"},
 }
 
-// Whether a field is one of those the picked kind is drawn with
+// Whether a field is one of those the picked element is drawn with: the entry of its kind and its name when there is one, else the entry of the kind
 @(private)
-styleFieldUsed :: proc(kind: ui.StyleKind, name: string) -> bool {
+styleFieldUsed :: proc(kind: ui.StyleKind, name: string, element: string = "") -> bool {
     table := EDIT_FIELDS
+    named: bool
+    for entry in table {
+        if entry.kind == kind && entry.name != "" && entry.name == element { named = true }
+    }
     for entry in table {
         if entry.kind != kind { continue }
+        if named ? entry.name != element : entry.name != "" { continue }
         rest: string = entry.fields
         for len(rest) > 0 {
             comma: int = -1
@@ -207,7 +218,7 @@ UiStyleEditor :: proc(ctx: ^ui.Context, editor: ^StyleEditor, store: ^StyleStore
                     name: string = ThemeFieldName(i)
                     kind: ThemeFieldKind = ThemeFieldKindOf(i)
                     if kind == .NONE || !styleFieldMatches(name, filter) { continue }
-                    used: bool = was_picked && editor.pick && styleFieldUsed(picked.kind, name)
+                    used: bool = was_picked && editor.pick && styleFieldUsed(picked.kind, name, ui.EditTargetName(&picked))
                     if used != (pass == 0) { continue }
                     ui.ElementOpen(ctx, {layout = {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 6, align = {y = .CENTER}}})
                     if kind == .COLOR {

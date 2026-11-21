@@ -51,7 +51,7 @@ Theme :: struct {
     success: ui.Color,
     shadow: ui.Color,               // under panels and popups (its alpha is the strength: a light theme needs it, a dark one separates by lightness)
     scrim: ui.Color,                // what dims the screen behind a dialog
-    edit_overlay: ui.Color,         // style editing (StyleEditor): the cover over the element under the pointer, drawn above everything (a light veil: alpha 13 of 255 is 0.05)
+    edit_overlay: ui.Color,         // style editing (StyleEditor): the cover over the element under the pointer, drawn above everything (a light veil: alpha 6 of 255 is 0.024)
     edit_selected: ui.Color,        // and over the element that was picked
     hover: f32,                     // how much of the text color is mixed into a control under the pointer
     press: f32,                     // and while it is pressed
@@ -87,7 +87,7 @@ THEME_DARK :: Theme{
     success = {98, 195, 122, 255},
     shadow = {0, 0, 0, 110},
     scrim = {0, 0, 0, 128},
-    edit_overlay = {255, 255, 255, 13},
+    edit_overlay = {255, 255, 255, 6},
     edit_selected = {121, 171, 252, 60},
     hover = 0.08,
     press = 0.14,
@@ -123,7 +123,7 @@ THEME_LIGHT :: Theme{
     success = {19, 153, 72, 255},
     shadow = {0, 0, 0, 70},
     scrim = {0, 0, 0, 89},
-    edit_overlay = {0, 0, 0, 13},
+    edit_overlay = {0, 0, 0, 6},
     edit_selected = {121, 171, 252, 60},
     hover = 0.08,
     press = 0.14,

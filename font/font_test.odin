@@ -1,4 +1,5 @@
 #+build !js
+#+build !arm64
 package font
 
 import "core:c"

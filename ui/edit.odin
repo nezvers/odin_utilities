@@ -7,7 +7,7 @@ package ui
 //     if target, found := ui.UiEditPicked(&ctx); found { ... }   // the element that was pressed
 //
 // While it is on, the library masks the ui: a press outside of the panel does not reach any widget (it is the pick, like the picking of the inspector), and after the layout the element under the pointer
-// is covered by one more command, `EDIT_COVER`, at the end of the list so that it is drawn above everything (the style gives it a color: `Theme.edit_overlay`, a light veil of white, and
+// is covered by one more command, `EDIT_COVER`, put in the list just before the commands of the editing panel (at the end when there is none): above the ui that is edited and behind the panel (the style gives it a color: `Theme.edit_overlay`, a light veil of white, and
 // `Theme.edit_selected` for the picked one; a style of your own draws it the way it wants). The element is the topmost thing that was drawn at the pointer, inside of the clips it lives in.
 
 EditTarget :: struct {
@@ -127,10 +127,28 @@ editResolve :: proc(ctx: ^Context) {
     _ = picked_seen
     if edit.pressed && edit.hover.found { edit.picked = edit.hover }
     // the covers: the element under the pointer (when it is not the picked one), then the picked one
+    covers: [2]Command
+    count: int
     if edit.hover.found && !(edit.picked.found && edit.picked.rect == edit.hover.rect && edit.picked.kind == edit.hover.kind) {
-        layoutCommand(ctx, {kind = .DRAW, info = {kind = .EDIT_COVER, rect = edit.hover.rect}})
+        covers[count] = {kind = .DRAW, info = {kind = .EDIT_COVER, rect = edit.hover.rect}}
+        count += 1
     }
     if edit.picked.found {
-        layoutCommand(ctx, {kind = .DRAW, info = {kind = .EDIT_COVER, rect = edit.picked.rect, flags = {.SELECTED}}})
+        covers[count] = {kind = .DRAW, info = {kind = .EDIT_COVER, rect = edit.picked.rect, flags = {.SELECTED}}}
+        count += 1
     }
+    if count == 0 || ctx.command_count + count > len(ctx.commands) { return }
+    // above everything of the page, behind the editing panel: just before the first command of the panel (a panel that is not found, or none: at the end)
+    at: int = ctx.command_count
+    if edit.panel_id != 0 {
+        for i in 0 ..< ctx.command_count {
+            if ctx.commands[i].kind == .DRAW && ctx.commands[i].info.id == edit.panel_id {
+                at = i
+                break
+            }
+        }
+    }
+    for i := ctx.command_count - 1; i >= at; i -= 1 { ctx.commands[i + count] = ctx.commands[i] }
+    for i in 0 ..< count { ctx.commands[at + i] = covers[i] }
+    ctx.command_count += count
 }
