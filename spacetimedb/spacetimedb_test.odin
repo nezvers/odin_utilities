@@ -4,6 +4,7 @@ package spacetimedb
 import "base:runtime"
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -215,8 +216,19 @@ contains :: proc(text: string, part: string) -> bool {
 }
 
 @(test)
-test_a_session_on_a_server_of_our_own_publishes_a_module_and_two_clients_see_the_same_row :: proc(t: ^testing.T) {
-    module_path: string = FixturePath("basic-rs")
+test_a_session_with_a_module_in_rust :: proc(t: ^testing.T) {
+    runSession(t, FixturePath("basic-rs"), 3199)
+}
+
+@(test)
+test_a_session_with_a_module_in_odin :: proc(t: ^testing.T) {
+    runSession(t, FixturePath("basic-odin"), 3198)
+}
+
+// The session: a server, a module published under a name, two clients subscribed to `person`, a reducer that adds a row (both clients get it), a reducer that refuses a call, the SQL answer
+// and the log of the module. The same steps for a module in Rust and one in Odin: what the client sees does not depend on the language of the module.
+@(private = "file")
+runSession :: proc(t: ^testing.T, module_path: string, port: int) {
     if module_path == "" || !os.exists(ServerCliPath()) {
         fmt.println("[spacetimedb] no server or no test module: run `odin run spacetimedb/tool/setup` to test a session")
         return
@@ -224,10 +236,10 @@ test_a_session_on_a_server_of_our_own_publishes_a_module_and_two_clients_see_the
     module, read_error := os.read_entire_file(module_path, context.temp_allocator)
     testing.expect(t, read_error == nil)
 
-    root: string = "spacetimedb_test_server"
+    root: string = fmt.tprintf("spacetimedb_test_server_%d", port)
     defer os.remove_all(root)
     server: Server
-    testing.expect(t, ServerStart(&server, {root = root, port = 3199, in_memory = true}), "the server starts and answers")
+    testing.expect(t, ServerStart(&server, {root = root, port = port, in_memory = true}), "the server starts and answers")
     defer ServerStop(&server)
     testing.expect(t, ServerPing(server.endpoint))
 
@@ -300,6 +312,30 @@ test_a_session_on_a_server_of_our_own_publishes_a_module_and_two_clients_see_the
         }
     }
     testing.expect(t, seen_by[0] && seen_by[1], "both clients saw the row")
+
+    // a reducer that refuses: the call is rolled back and the caller is told (the Odin module refuses an empty name; the Rust one inserts it: only the first is checked for the error)
+    nothing: [8]u8
+    empty: Writer = WriterMake(nothing[:])
+    WriteString(&empty, "")
+    refused: u32 = ConnectionCallReducer(&first, "add", WriterBytes(&empty))
+    testing.expect(t, refused != 0)
+    for {
+        message, got := ConnectionWait(&first, isUpdateOrResult, nil, allocator)
+        if !got { break }
+        if result, is_result := message.(ReducerResult); is_result && result.request_id == refused {
+            if strings.has_suffix(module_path, "-odin.wasm") { testing.expect_value(t, result.outcome, ReducerOutcomeKind.ERROR) }
+            break
+        }
+    }
+    // a reducer without arguments that writes to the log of the database
+    ConnectionCallReducer(&second, "say_hello", nil)
+    for {
+        message, got := ConnectionWait(&second, isUpdateOrResult, nil, allocator)
+        if !got { break }
+        if _, is_result := message.(ReducerResult); is_result { break }
+    }
+    logs: HttpResult = DatabaseLogs(server.endpoint, "odin-session", 20, token, response[:])
+    testing.expect(t, logs.ok && contains(string(logs.body), "Hello, World!") && contains(string(logs.body), "Ada"), "the module wrote the names to the log")
 
     // the same row by SQL over HTTP, then the database is deleted
     sql: HttpResult = DatabaseSql(server.endpoint, "odin-session", "SELECT * FROM person", token, response[:])

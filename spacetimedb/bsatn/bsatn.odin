@@ -1,5 +1,8 @@
-package spacetimedb
+package bsatn
 
+// This package is free of the operating system (no sockets, no files), so the same code runs in a client of the library and in a module of Odin that is built for WebAssembly (module/). The package
+// `spacetimedb` re-exports every name of it, a client program uses them from there.
+//
 // BSATN, the binary format of SpacetimeDB (references/SpacetimeDB/docs/docs/00300-resources/00300-internals/00300-bsatn.md): little endian numbers, a string or an array is a u32 length and
 // its elements, a product (a struct, a row) is its fields one after the other with no names, a sum (an enum, an option) is a u8 tag and the data of the variant. `Writer` and `Reader` are the two
 // halves; nothing allocates: a Writer fills a buffer of the caller, a Reader hands out slices and strings that point into the bytes it reads (they live as long as those bytes do).

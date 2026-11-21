@@ -124,7 +124,10 @@ SetupRun :: proc(options: SetupOptions = {}) -> (result: SetupResult) {
         result.server = SetupServer(options, root)
         if !result.server { result.failed += 1 }
     }
-    if !options.skip_fixtures && SetupFixture(options, "basic-rs", root) { result.fixtures += 1 }
+    if !options.skip_fixtures {
+        if SetupFixture(options, "basic-rs", root) { result.fixtures += 1 }
+        if SetupOdinModule(options, "basic", root) { result.fixtures += 1 }
+    }
     return
 }
 
@@ -201,6 +204,31 @@ SetupServer :: proc(options: SetupOptions = {}, root: string = "") -> bool {
     }
     os.remove(file)
     return os.exists(cli)
+}
+
+// The module written in Odin of `module/example/<name>`, built into bin/<name>-odin.wasm when it is not there (the compiler is the one that runs setup: `odin` in the PATH)
+SetupOdinModule :: proc(options: SetupOptions, name: string, root: string = "") -> bool {
+    base: string = root if root != "" else SetupRoot()
+    out: string = fmt.tprintf("%s/%s-odin.wasm", ServerBinFolder(base), name)
+    if os.exists(out) { return true }
+    setupSay(options, fmt.tprintf("building the module %s in Odin", name))
+    os.make_directory_all(ServerBinFolder(base))
+    return BuildModule(fmt.tprintf("%s/spacetimedb/module/example/%s", base, name), out)
+}
+
+// Builds a module written in Odin (a package that uses spacetimedb/module) to WebAssembly: `odin build <package> -target:freestanding_wasm32 -no-entry-point -out:<wasm>`. The module has no heap and
+// no entry point; the host calls its exports. `extra` are more flags (`-o:size`, `-debug`).
+BuildModule :: proc(package_path: string, out: string, extra: []string = nil) -> bool {
+    command: [dynamic]string
+    command.allocator = context.temp_allocator
+    append(&command, "odin", "build", package_path, "-target:freestanding_wasm32", "-no-entry-point", "-strict-style", "-vet", fmt.tprintf("-out:%s", out))
+    append(&command, ..extra)
+    state, _, stderr, err := os.process_exec({command = command[:]}, context.temp_allocator)
+    if err != nil || !state.success {
+        fmt.eprintln(string(stderr))
+        return false
+    }
+    return os.exists(out)
 }
 
 // The path of the cloned reference, "" when it is not there (run setup)
