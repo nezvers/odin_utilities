@@ -17,7 +17,6 @@ import "core:crypto"
 import "core:crypto/legacy/sha1"
 import "core:encoding/base64"
 import "core:fmt"
-import "core:net"
 import "core:strings"
 import "core:time"
 
@@ -39,7 +38,7 @@ WebSocketOpcode :: enum u8 {
 }
 
 WebSocket :: struct {
-    socket: net.TCP_Socket,
+    stream: Stream,
     open: bool,
     receive: []u8,                  // bytes that came and are not used yet
     received: int,
@@ -60,13 +59,10 @@ WEBSOCKET_GUID :: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 // `Authorization: Bearer <token>`). False with `socket.error` set when the server refuses or does not answer.
 WebSocketOpen :: proc(ws: ^WebSocket, endpoint: Endpoint, path: string, protocols: []string, headers: []HttpHeader, receive: []u8, message: []u8, timeout: time.Duration = HTTP_TIMEOUT) -> bool {
     ws^ = {receive = receive, message = message}
-    socket, dial_error := net.dial_tcp_from_hostname_with_port_override(endpoint.host, endpoint.port)
-    if dial_error != nil {
-        ws.error = "could not connect"
+    if opened, open_error := streamOpen(&ws.stream, endpoint, timeout); !opened {
+        ws.error = open_error
         return false
     }
-    net.set_option(socket, .Receive_Timeout, timeout)
-    net.set_option(socket, .Send_Timeout, timeout)
 
     key_bytes: [16]u8
     crypto.rand_bytes(key_bytes[:])
@@ -77,8 +73,8 @@ WebSocketOpen :: proc(ws: ^WebSocket, endpoint: Endpoint, path: string, protocol
     if len(protocols) > 0 { fmt.sbprintf(&head, "Sec-WebSocket-Protocol: %s\r\n", strings.join(protocols, ", ", context.temp_allocator)) }
     for header in headers { fmt.sbprintf(&head, "%s: %s\r\n", header.name, header.value) }
     strings.write_string(&head, "\r\n")
-    if !sendAll(socket, transmute([]u8)strings.to_string(head)) {
-        net.close(socket)
+    if !streamSend(&ws.stream, transmute([]u8)strings.to_string(head)) {
+        streamClose(&ws.stream)
         ws.error = "could not send the request"
         return false
     }
@@ -87,19 +83,19 @@ WebSocketOpen :: proc(ws: ^WebSocket, endpoint: Endpoint, path: string, protocol
     length: int
     end: int = -1
     for end < 0 && length < len(receive) {
-        count, error := net.recv_tcp(socket, receive[length:])
+        count, status := streamRecv(&ws.stream, receive[length:], true)
         if count > 0 { length += count }
         end = indexOf(receive[:length], "\r\n\r\n")
-        if error != nil || count == 0 { break }
+        if status != .OK { break }
     }
     if end < 0 {
-        net.close(socket)
+        streamClose(&ws.stream)
         ws.error = "no answer to the upgrade"
         return false
     }
     answer: string = string(receive[:end])
     if !strings.has_prefix(answer, "HTTP/1.1 101") {
-        net.close(socket)
+        streamClose(&ws.stream)
         ws.error = "the server refused the upgrade" if strings.has_prefix(answer, "HTTP/1.1 ") else "not an HTTP answer"
         return false
     }
@@ -112,16 +108,15 @@ WebSocketOpen :: proc(ws: ^WebSocket, endpoint: Endpoint, path: string, protocol
     sha1.final(&context_sha, digest[:])
     accept: string = base64.encode(digest[:], allocator = context.temp_allocator)
     if headerValue(answer, "Sec-WebSocket-Accept") != accept {
-        net.close(socket)
+        streamClose(&ws.stream)
         ws.error = "the accept key is wrong"
         return false
     }
     leftover: int = length - (end + 4)
     copy(receive[:leftover], receive[end + 4:length])
     ws.received = leftover
-    ws.socket = socket
     ws.open = true
-    net.set_blocking(socket, false)
+    streamNonBlocking(&ws.stream)
     return true
 }
 
@@ -129,7 +124,7 @@ WebSocketClose :: proc(ws: ^WebSocket, code: u16 = 1000) {
     if !ws.open { return }
     payload: [2]u8 = {u8(code >> 8), u8(code)}
     WebSocketSend(ws, .CLOSE, payload[:])
-    net.close(ws.socket)
+    streamClose(&ws.stream)
     ws.open = false
 }
 
@@ -170,23 +165,9 @@ WebSocketSend :: proc(ws: ^WebSocket, opcode: WebSocketOpcode, payload: []u8) ->
 // A non blocking socket: a send that cannot go at once is tried again until it does (a frame is small next to the buffers of the system; a stalled peer is a closed socket after the time limit)
 @(private)
 wsSend :: proc(ws: ^WebSocket, bytes: []u8) -> bool {
-    sent: int
-    deadline: time.Tick = time.tick_now()
-    for sent < len(bytes) {
-        count, error := net.send_tcp(ws.socket, bytes[sent:])
-        if error == .Would_Block {
-            if time.duration_seconds(time.tick_since(deadline)) > 5 {
-                wsFail(ws, "a send did not go")
-                return false
-            }
-            time.sleep(time.Millisecond)
-            continue
-        }
-        if error != nil || count <= 0 {
-            wsFail(ws, "the socket broke")
-            return false
-        }
-        sent += count
+    if !streamSend(&ws.stream, bytes, 5 * time.Second) {
+        wsFail(ws, "the socket broke or a send did not go")
+        return false
     }
     return true
 }
@@ -194,7 +175,7 @@ wsSend :: proc(ws: ^WebSocket, bytes: []u8) -> bool {
 @(private)
 wsFail :: proc(ws: ^WebSocket, why: string) {
     ws.error = why
-    if ws.open { net.close(ws.socket) }
+    if ws.open { streamClose(&ws.stream) }
     ws.open = false
 }
 
@@ -209,14 +190,10 @@ WebSocketPoll :: proc(ws: ^WebSocket) -> (event: WebSocketEvent, payload: []u8) 
     if !ws.open && ws.received == 0 { return .NONE, nil }
     // what the socket has, as much as fits
     if ws.open && ws.received < len(ws.receive) {
-        count, error := net.recv_tcp(ws.socket, ws.receive[ws.received:])
+        count, status := streamRecv(&ws.stream, ws.receive[ws.received:], false)
         if count > 0 { ws.received += count }
-        if error != nil && error != .Would_Block {
-            wsFail(ws, "the socket broke")
-            return .CLOSED, nil
-        }
-        if count == 0 && error == nil {
-            wsFail(ws, "the server closed the socket")
+        if status == .CLOSED {
+            wsFail(ws, "the server closed the socket or it broke")
             return .CLOSED, nil
         }
     }
@@ -282,7 +259,7 @@ wsFrame :: proc(ws: ^WebSocket) -> (event: WebSocketEvent, payload: []u8, used: 
         if len(body) >= 2 { ws.close_code = u16(body[0]) << 8 | u16(body[1]) }
         if ws.open {
             WebSocketSend(ws, .CLOSE, body[:min(len(body), 2)])
-            net.close(ws.socket)
+            streamClose(&ws.stream)
             ws.open = false
         }
         return .CLOSED, nil, used, true

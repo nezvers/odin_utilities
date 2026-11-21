@@ -35,22 +35,24 @@ main :: proc() {
         }
         schema = string(bytes)
     } else if server != "" && database != "" {
+        secure: bool = strings.has_prefix(server, "https://")
+        server = strings.trim_prefix(strings.trim_prefix(server, "https://"), "http://")
         colon: int = strings.last_index_byte(server, ':')
-        port: int = 3000
+        port: int = 443 if secure else 3000
         host: string = server
         if colon >= 0 {
             host = server[:colon]
-            port = strconv.parse_int(server[colon + 1:]) or_else 3000
+            port = strconv.parse_int(server[colon + 1:]) or_else port
         }
         response := make([]u8, 1 << 20)
-        result: spacetimedb.HttpResult = spacetimedb.DatabaseSchema({host, port}, database, "", response)
+        result: spacetimedb.HttpResult = spacetimedb.DatabaseSchema({host = host, port = port, secure = secure}, database, "", response)
         if !result.ok || result.status != 200 {
             fmt.eprintln("could not read the schema of", database, "from", server)
             os.exit(1)
         }
         schema = string(result.body)
     } else {
-        fmt.eprintln("usage: generate (--schema file.json | --server host:port --database name) [--out file.odin] [--package name] [--library import path]")
+        fmt.eprintln("usage: generate (--schema file.json | --server [https://]host[:port] --database name) [--out file.odin] [--package name] [--library import path]")
         os.exit(2)
     }
     source, ok := spacetimedb.GenerateSource(schema, {package_name = package_name, library = library}, context.allocator)

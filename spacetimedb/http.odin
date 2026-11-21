@@ -2,14 +2,13 @@ package spacetimedb
 
 // A small HTTP/1.1 client over a TCP socket (core:net), enough for the REST side of SpacetimeDB: ping, identities, publishing a module, SQL, calling a reducer. One request on one connection
 // (`Connection: close`), blocking with a time limit, the answer read into a buffer of the caller; a body with a Content-Length or a chunked one is understood. Plain `http://` only: a database
-// behind TLS goes through a proxy or the CLI for now (see TODO.md).
+// behind TLS: `Endpoint.secure` puts TLS 1.3 under the socket (stream.odin).
 //
 //     response: [4096]u8
 //     result: HttpResult = HttpRequest({host = "127.0.0.1", port = 3000}, .GET, "/v1/ping", nil, nil, response[:])
 //     if result.ok && result.status == 200 { ... string(result.body) ... }
 
 import "core:fmt"
-import "core:net"
 import "core:strconv"
 import "core:strings"
 import "core:time"
@@ -29,6 +28,7 @@ HttpHeader :: struct {
 Endpoint :: struct {
     host: string,       // an address or a name
     port: int,
+    secure: bool,       // https / wss: TLS 1.3 over the socket (the certificate is checked against `host`)
 }
 
 HttpResult :: struct {
@@ -42,11 +42,9 @@ HTTP_TIMEOUT :: 10 * time.Second
 
 // Sends the request and reads the whole answer into `response`. The headers `Host`, `Connection` and `Content-Length` are added. An answer that does not fit in `response` is an error.
 HttpRequest :: proc(endpoint: Endpoint, method: HttpMethod, path: string, headers: []HttpHeader, body: []u8, response: []u8, timeout: time.Duration = HTTP_TIMEOUT) -> HttpResult {
-    socket, dial_error := net.dial_tcp_from_hostname_with_port_override(endpoint.host, endpoint.port)
-    if dial_error != nil { return {error = "could not connect"} }
-    defer net.close(socket)
-    net.set_option(socket, .Receive_Timeout, timeout)
-    net.set_option(socket, .Send_Timeout, timeout)
+    stream: Stream
+    if opened, open_error := streamOpen(&stream, endpoint, timeout); !opened { return {error = open_error} }
+    defer streamClose(&stream)
 
     names: [HttpMethod]string = {.GET = "GET", .POST = "POST", .PUT = "PUT", .DELETE = "DELETE"}
     head: strings.Builder
@@ -55,30 +53,19 @@ HttpRequest :: proc(endpoint: Endpoint, method: HttpMethod, path: string, header
     for header in headers { fmt.sbprintf(&head, "%s: %s\r\n", header.name, header.value) }
     if body != nil || method == .POST || method == .PUT { fmt.sbprintf(&head, "Content-Length: %d\r\n", len(body)) }
     strings.write_string(&head, "\r\n")
-    if !sendAll(socket, transmute([]u8)strings.to_string(head)) || !sendAll(socket, body) { return {error = "could not send"} }
+    if !streamSend(&stream, transmute([]u8)strings.to_string(head)) || !streamSend(&stream, body) { return {error = "could not send"} }
 
     length: int
     header_end: int = -1
     for length < len(response) {
-        count, error := net.recv_tcp(socket, response[length:])
+        count, status := streamRecv(&stream, response[length:], true)
         if count > 0 { length += count }
         if header_end < 0 { header_end = indexOf(response[:length], "\r\n\r\n") }
-        if error != nil || count == 0 { break }
+        if status != .OK { break }
         if header_end >= 0 && httpComplete(response[:length], header_end) { break }
     }
     if header_end < 0 { return {error = "no answer"} }
     return httpParse(response[:length], header_end)
-}
-
-@(private)
-sendAll :: proc(socket: net.TCP_Socket, bytes: []u8) -> bool {
-    sent: int
-    for sent < len(bytes) {
-        count, error := net.send_tcp(socket, bytes[sent:])
-        if error != nil || count <= 0 { return false }
-        sent += count
-    }
-    return true
 }
 
 @(private)

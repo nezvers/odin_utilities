@@ -81,6 +81,9 @@ No. The server is a release binary that setup downloads, the client is Odin, a m
 ## Code generation
 `odin run spacetimedb/tool/generate -- --server 127.0.0.1:3000 --database chat --package game_data --library ../spacetimedb --out game/data.odin` (or `--schema file.json`) writes the row structs with `<Type>Read` / `<Type>Write`, a `Call<Reducer>(&connection, ...)` per reducer, `TablesAdd(&cache)` and `SubscribeAll(&connection, id)`. Then a game does `CacheCollect(&cache, tables.person, PersonRead, people[:])`.
 
+## TLS
+Give the endpoint `secure = true` (port 443) to reach a database on maincloud or behind a proxy: `ConnectionOpen(&c, {endpoint = {host = "maincloud.spacetimedb.com", port = 443, secure = true}, database = "mygame"}, ...)`. The certificate is checked against the host (p2p `P2P_CA_FILE`, `P2P_TLS_VERIFY` apply).
+
 ## The cache
 `Cache` keeps the rows of your subscriptions by table (`CacheApply` every message of `ConnectionPoll`), so a game reads rows and not messages: `CacheCollect(&cache, table, PersonRead, people[:])`, `CacheFind` by key, `CacheEvents` for what changed this frame (INSERT, UPDATE with the old row, DELETE). All storage is yours (slots, buckets, bytes, events); a full cache sets `failed` instead of growing.
 
