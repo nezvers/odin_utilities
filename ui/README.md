@@ -518,7 +518,7 @@ ticked off in `TODO.md`. Look here before relying on a widget for something it m
   - HighlightCode reads languages like C or Odin by a table of words: no grammar, no language detection, a string in quotes ends with its row, numbers are a guess (digits and letters)
   - at most AREA_SPANS (96) spans in a row; the state of a row is one number, so it carries block comments and raw strings and nothing more; all rows are read again when the text changes
 - **UiAnsiText** (`ansi.odin`):
-  - SGR only: bold, dim, italic, underline, reverse video, the 16, 256 and RGB colors and the ground; no blink, strike or hidden text, no hyperlinks
+  - SGR only: bold, dim, italic, underline, strike, hidden text, reverse video, the 16, 256 and RGB colors and the ground; no blink, no hyperlinks
   - it is a log: the cursor moves and clears are skipped, and the text is read again every frame it is shown (declare only the lines in view for a long one)
 - **AnsiScreen** (`ansi_screen.odin`):
   - a fixed grid (no resize: make another screen and write the output again), no origin or wrap modes, no tab stops that are set; a scroll region feeds no history unless it is the whole screen

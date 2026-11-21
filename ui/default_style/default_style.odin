@@ -676,7 +676,7 @@ SyntaxColor :: proc(theme: ^Theme, info: ^ui.DrawInfo) -> (color: ui.Color, foun
 }
 
 // A text. With the tag "title" or "strong" it is in the strong face, with "italic" in the italic one, with "mono" in the code face,
-// with "dim" in the dim color, with "link" in the accent with a line under it, with "underline" with a line under it in its own color, with "reverse" and no color of its own in the panel color (its ground, a FILL with the tag, is in the text color).
+// with "dim" in the dim color, with "link" in the accent with a line under it, with "underline" with a line under it in its own color, with "strike" with a line through it, with "hidden" no text at all (its room stays), with "reverse" and no color of its own in the panel color (its ground, a FILL with the tag, is in the text color).
 DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
@@ -685,8 +685,11 @@ DrawLabel :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     if info.color.a == 0 && ui.DrawInfoHasTag(info, "reverse") { color = theme.panel }                      // the text of a reversed run that has no color of its own: on the ground of the text color
     if syntax, is_syntax := SyntaxColor(theme, info); is_syntax && info.color.a == 0 { color = syntax }
     painter.face = TagFace(ui.DrawInfoHasTag(info, "title") || ui.DrawInfoHasTag(info, "strong"), ui.DrawInfoHasTag(info, "mono"), ui.DrawInfoHasTag(info, "italic"))
-    painter.draw_text(painter, info.text, {info.rect.x, info.rect.y}, info.font_size, color)
+    if !ui.DrawInfoHasTag(info, "hidden") { painter.draw_text(painter, info.text, {info.rect.x, info.rect.y}, info.font_size, color) }
     painter.face = .REGULAR
+    if ui.DrawInfoHasTag(info, "strike") && !ui.DrawInfoHasTag(info, "hidden") {
+        painter.fill_rect(painter, {info.rect.x, info.rect.y + info.rect.w * 0.5, info.rect.z, 1}, color)
+    }
     // the line under a link is faint until the pointer or the focus is on it
     if link {
         painter.fill_rect(painter, {info.rect.x, info.rect.y + info.rect.w - 1, info.rect.z, 1}, {color.r, color.g, color.b, 255 if ui.DrawInfoHasTag(info, "hover") else 150})

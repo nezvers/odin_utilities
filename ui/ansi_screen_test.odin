@@ -1009,8 +1009,8 @@ test_a_cell_is_16_bytes_and_packs_characters_and_style_without_loss :: proc(t: ^
     // a style goes in and comes out: colors with their alpha as set or not set, every attribute alone and together
     cases := [?]AnsiState{
         {}, {color = {1, 2, 3, 255}}, {background = {250, 251, 252, 255}}, {color = {255, 0, 128, 255}, background = {0, 255, 7, 255}},
-        {bold = true}, {dim = true}, {italic = true}, {underline = true}, {reverse = true},
-        {color = {9, 8, 7, 255}, background = {6, 5, 4, 255}, bold = true, dim = true, italic = true, underline = true, reverse = true},
+        {bold = true}, {dim = true}, {italic = true}, {underline = true}, {reverse = true}, {strike = true}, {hidden = true},
+        {color = {9, 8, 7, 255}, background = {6, 5, 4, 255}, bold = true, dim = true, italic = true, underline = true, reverse = true, strike = true, hidden = true},
     }
     for state in cases {
         cell: AnsiCell = AnsiCellMake('x', state)

@@ -36,13 +36,14 @@ test_escape_sequences_set_the_style_of_the_runs :: proc(t: ^testing.T) {
     check(t, "\x1b[38;5;2ma\x1b[38;5;196mb\x1b[38;5;244mc", {{"a", {color = green}, false}, {"b", {color = {255, 0, 0, 255}}, false}, {"c", {color = {128, 128, 128, 255}}, false}})
     check(t, "\x1b[38;2;10;20;30mx\x1b[48;5;1my\x1b[48;2;1;2;3;1mz", {{"x", {color = {10, 20, 30, 255}}, false}, {"y", {color = {10, 20, 30, 255}, background = red}, false}, {"z", {color = {10, 20, 30, 255}, background = {1, 2, 3, 255}, bold = true}, false}})
     check(t, "\x1b[41;4mhot\x1b[49mplain\x1b[24;102mbright\x1b[0m", {{"hot", {background = red, underline = true}, false}, {"plain", {underline = true}, false}, {"bright", {background = dark[10]}, false}})
+    check(t, "[9mgone[29mback[8mhid[28mshown", {{"gone", {strike = true}, false}, {"back", {}, false}, {"hid", {hidden = true}, false}, {"shown", {}, false}})
     // lines: a new line ends a run and is not a part of it, the style goes on; a carriage return before it is dropped
     last: AnsiState = check(t, "one\x1b[31m\ntwo\r\nthree", {{"one", {}, false}, {"", {color = red}, true}, {"two", {color = red}, true}, {"three", {color = red}, false}})
     testing.expect_value(t, last, AnsiState{color = red})
     // other sequences are skipped: clearing a line, moving the cursor, a private mode, an escape that is no sequence
     check(t, "a\x1b[2Kb\x1b[10;5Hc\x1b[?25ld\x1b7e", {{"a", {}, false}, {"b", {}, false}, {"c", {}, false}, {"d", {}, false}, {"e", {}, false}})
     // numbers that mean nothing here change nothing; too many numbers do no harm
-    check(t, "\x1b[5;8;999mx", {{"x", {}, false}})
+    check(t, "\x1b[5;6;999mx", {{"x", {}, false}})
     check(t, "\x1b[1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;31mx", {{"x", {bold = true}, false}})
     // a sequence that is not whole (the output still arrives): what is before it is shown, nothing of it
     check(t, "shown\x1b[3", {{"shown", {}, false}})

@@ -61,6 +61,8 @@ AnsiCell :: struct {
         italic: bool | 1,
         underline: bool | 1,
         reverse: bool | 1,
+        strike: bool | 1,
+        hidden: bool | 1,
         color_set: bool | 1,        // the text has a color of its own (else the style's)
         ground_set: bool | 1,       // there is a ground
         wide: bool | 1,             // the character takes this cell and the next one, which is its continuation
@@ -70,7 +72,7 @@ AnsiCell :: struct {
 
 #assert(size_of(AnsiCell) == 16 && align_of(AnsiCell) == 8)       // screenPutRun writes a cell as two words
 
-ANSI_CELL_STYLE_BITS :: u16(0x7f)       // the attribute bits that are the style: the wide flags are not
+ANSI_CELL_STYLE_BITS :: u16(0x1ff)       // the attribute bits that are the style: the wide flags are not
 
 // A cell with a character and a style
 AnsiCellMake :: proc "contextless" (character: rune, style: AnsiState) -> (cell: AnsiCell) {
@@ -81,7 +83,7 @@ AnsiCellMake :: proc "contextless" (character: rune, style: AnsiState) -> (cell:
 
 // The style of a cell as the state the ui draws (colors with the alpha of a color that is set)
 AnsiCellStyle :: proc "contextless" (cell: ^AnsiCell) -> AnsiState {
-    state: AnsiState = {bold = cell.bold, dim = cell.dim, italic = cell.italic, underline = cell.underline, reverse = cell.reverse}
+    state: AnsiState = {bold = cell.bold, dim = cell.dim, italic = cell.italic, underline = cell.underline, reverse = cell.reverse, strike = cell.strike, hidden = cell.hidden}
     if cell.color_set { state.color = {cell.color[0], cell.color[1], cell.color[2], 255} }
     if cell.ground_set { state.background = {cell.ground[0], cell.ground[1], cell.ground[2], 255} }
     return state
@@ -91,6 +93,7 @@ AnsiCellSetStyle :: proc "contextless" (cell: ^AnsiCell, style: AnsiState) {
     cell.color = {style.color.r, style.color.g, style.color.b}
     cell.ground = {style.background.r, style.background.g, style.background.b}
     cell.bold, cell.dim, cell.italic, cell.underline, cell.reverse = style.bold, style.dim, style.italic, style.underline, style.reverse
+    cell.strike, cell.hidden = style.strike, style.hidden
     cell.color_set, cell.ground_set = style.color.a > 0, style.background.a > 0
 }
 
@@ -983,6 +986,14 @@ UiAnsiScreen :: proc(ctx: ^Context, screen: ^AnsiScreen, cursor: bool = true, na
             }
             if style.underline {
                 UiPushTag(ctx, "underline")
+                pushed += 1
+            }
+            if style.strike {
+                UiPushTag(ctx, "strike")
+                pushed += 1
+            }
+            if style.hidden {
+                UiPushTag(ctx, "hidden")
                 pushed += 1
             }
             width: f32 = cell.x * f32(stop - column)

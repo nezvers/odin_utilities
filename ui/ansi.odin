@@ -9,7 +9,7 @@ package ui
 // color by its parts (38;2;r;g;b), the default color, the same for the ground behind the text (40 to 47, 100 to 107, 48;..., 49), underline. Every other
 // escape sequence (moving the cursor, clearing) is skipped: this shows a log, it is not a screen.
 //
-// Limits: SGR only: bold, dim, italic, underline, reverse video, the 16, 256 and RGB colors and the ground; no blink, strike or hidden text, no hyperlinks
+// Limits: SGR only: bold, dim, italic, underline, strike, hidden text, reverse video, the 16, 256 and RGB colors and the ground; no blink, no hyperlinks
 //     it is a log: the cursor moves and clears are skipped, and the text is read again every frame it is shown (declare only the lines in view for a long one)
 //
 // Baldr's terminal screen (examples/25_terminal) was the reason to have it; the code is written for this library.
@@ -20,6 +20,8 @@ AnsiState :: struct {
     background: Color,          // alpha 0: none
     bold: bool,
     underline: bool,
+    strike: bool,               // a line through the text (SGR 9, off with 29)
+    hidden: bool,               // the text is not drawn, the room is kept (SGR 8, off with 28)
     dim: bool,
     italic: bool,
     reverse: bool,              // text and ground swapped (SGR 7): the colors are exchanged, a color that is not set is the theme's (the tag "reverse")
@@ -71,6 +73,10 @@ ansiApply :: proc(state: ^AnsiState, numbers: []int, palette: ^[16]Color) {
         case number == 3: state.italic = true
         case number == 4: state.underline = true
         case number == 24: state.underline = false
+        case number == 9: state.strike = true
+        case number == 29: state.strike = false
+        case number == 8: state.hidden = true
+        case number == 28: state.hidden = false
         case number == 7: state.reverse = true
         case number == 27: state.reverse = false
         case number >= 40 && number <= 47: state.background = palette[number - 40]
@@ -178,6 +184,14 @@ UiAnsiLine :: proc(ctx: ^Context, line: string, state: ^AnsiState, palette: ^[16
         }
         if state.underline {
             UiPushTag(ctx, "underline")
+            pushed += 1
+        }
+        if state.strike {
+            UiPushTag(ctx, "strike")
+            pushed += 1
+        }
+        if state.hidden {
+            UiPushTag(ctx, "hidden")
             pushed += 1
         }
         if state.reverse {
