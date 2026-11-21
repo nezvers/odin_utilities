@@ -47,6 +47,57 @@ Cpu :: struct {
     family: Family,
     vendor: [12]u8,                 // "GenuineIntel", "AuthenticAMD" ... (x86)
     brand: [48]u8,                  // "AMD Ryzen 9 9950X 16-Core Processor" (x86, zero padded)
+    caches: Caches,                 // the sizes of the data caches of one core (x86: CPUID; elsewhere not known, `known` false)
+}
+
+// The data caches that an algorithm chooses its block sizes from: bytes of the first level data cache, the second level cache (per core on the CPUs that have it
+// per core, per cluster on others: what CPUID says) and the last level (shared), and the length of a line. A size that is 0 is not known. The sizes are what the
+// hardware reports, not what a program may use: a hyper threaded core shares its L1 and L2 with the other thread, which halves it for a program that cannot
+// know whether the sibling is busy (a 1 MB working set measured 1.15 to 1.20 times slower in odin_plug while it was).
+Caches :: struct {
+    l1d: u32,
+    l2: u32,
+    l3: u32,
+    line: u32,
+    known: bool,                    // the data came from the CPU (CPUID), not from a default or an override
+    overridden: bool,               // `SIMD_L1D_KB`, `SIMD_L2_KB`, `SIMD_L3_KB` or `CacheOverride` set at least one size
+}
+
+// What one CPUID cache leaf (leaf 4 of Intel, 0x8000001D of AMD: the same layout) says about one cache. `kind` 0 ends the list, 1 is data, 2 instruction, 3 unified.
+CacheLeaf :: struct {
+    kind: u8,
+    level: u8,
+    size: u32,
+    line: u32,
+}
+
+CacheFromLeaf :: proc "contextless" (eax, ebx, ecx: u32) -> CacheLeaf {
+    leaf: CacheLeaf
+    leaf.kind = u8(eax & 31)
+    leaf.level = u8(eax >> 5 & 7)
+    if leaf.kind == 0 { return leaf }
+    ways: u32 = (ebx >> 22) + 1
+    partitions: u32 = (ebx >> 12 & 1023) + 1
+    leaf.line = (ebx & 4095) + 1
+    sets: u32 = ecx + 1
+    leaf.size = ways * partitions * leaf.line * sets
+    return leaf
+}
+
+// Fills the record from a list of leaves (the data and unified caches by level: L1 data, L2, L3)
+CachesFromLeaves :: proc "contextless" (leaves: []CacheLeaf) -> Caches {
+    caches: Caches
+    for leaf in leaves {
+        if leaf.kind != 1 && leaf.kind != 3 { continue }
+        switch leaf.level {
+        case 1: if leaf.kind == 1 { caches.l1d = leaf.size }
+        case 2: caches.l2 = leaf.size
+        case 3: caches.l3 = leaf.size
+        }
+        if caches.line == 0 { caches.line = leaf.line }
+    }
+    caches.known = caches.l1d != 0 || caches.l2 != 0 || caches.l3 != 0
+    return caches
 }
 
 // The ladder of x86: every step needs the one below and its own features. AVX512 asks for F, DQ, BW and VL (Skylake-X and later, Zen 4 and later): Knights Landing, which has
@@ -192,4 +243,17 @@ FeatureName :: proc "contextless" (feature: Feature) -> string {
     case .SIMD128: return "SIMD128"
     }
     return ""
+}
+
+// The caches of this machine (what the algorithms that block for a cache read): see `Caches`
+CpuCaches :: proc "contextless" () -> Caches {
+    return CpuGet().caches
+}
+
+// Replaces the sizes that are not 0 (in kilobytes: 0 keeps what the CPU said): a test, a program that knows a machine it cannot ask, `SIMD_L2_KB` in the environment
+CacheOverride :: proc "contextless" (caches: ^Caches, l1d_kb, l2_kb, l3_kb: u32) {
+    if l1d_kb != 0 { caches.l1d = l1d_kb * 1024 }
+    if l2_kb != 0 { caches.l2 = l2_kb * 1024 }
+    if l3_kb != 0 { caches.l3 = l3_kb * 1024 }
+    if l1d_kb != 0 || l2_kb != 0 || l3_kb != 0 { caches.overridden = true }
 }

@@ -390,3 +390,66 @@ test_the_lanes_of_a_hot_loop_are_twice_the_native_vector_and_the_build_level_is_
     when ODIN_ARCH == .amd64 { testing.expect(t, BuildCovers(.SSE2)) }
     testing.expect(t, !BuildCovers(.AVX512) || LevelBuild() == .AVX512)
 }
+
+// The registers of a CPUID cache leaf for a cache of this geometry (the encoding of leaf 4 / 0x8000001D: ways, partitions and line minus one, sets minus one)
+@(private="file")
+leafRegisters :: proc(kind, level, ways, partitions, line, sets: u32) -> (eax, ebx, ecx: u32) {
+    return kind | level << 5, (ways - 1) << 22 | (partitions - 1) << 12 | (line - 1), sets - 1
+}
+
+@(test)
+test_a_cache_leaf_gives_its_size_and_the_record_takes_data_and_unified_caches :: proc(t: ^testing.T) {
+    // a Zen like core: 48 KB 12 way L1 data, 32 KB L1 instructions, 1 MB 16 way L2, 32 MB 16 way L3
+    zen: [4]CacheLeaf
+    zen[0] = CacheFromLeaf(leafRegisters(1, 1, 12, 1, 64, 64))
+    zen[1] = CacheFromLeaf(leafRegisters(2, 1, 8, 1, 64, 64))
+    zen[2] = CacheFromLeaf(leafRegisters(3, 2, 16, 1, 64, 1024))
+    zen[3] = CacheFromLeaf(leafRegisters(3, 3, 16, 1, 64, 32768))
+    testing.expect_value(t, zen[0].size, u32(48 * 1024))
+    testing.expect_value(t, zen[1].size, u32(32 * 1024))
+    testing.expect_value(t, zen[2].size, u32(1024 * 1024))
+    testing.expect_value(t, zen[3].size, u32(32 * 1024 * 1024))
+    caches: Caches = CachesFromLeaves(zen[:])
+    testing.expect_value(t, caches.l1d, u32(48 * 1024))                  // the instruction cache is not the L1 data cache
+    testing.expect_value(t, caches.l2, u32(1024 * 1024))
+    testing.expect_value(t, caches.l3, u32(32 * 1024 * 1024))
+    testing.expect_value(t, caches.line, u32(64))
+    testing.expect(t, caches.known && !caches.overridden)
+    // a Skylake like core: 32 KB 8 way L1 data, 1 MB 16 way L2, 8 MB 16 way L3, the list ends with a leaf of kind 0
+    skylake: [4]CacheLeaf
+    skylake[0] = CacheFromLeaf(leafRegisters(1, 1, 8, 1, 64, 64))
+    skylake[1] = CacheFromLeaf(leafRegisters(3, 2, 16, 1, 64, 1024))
+    skylake[2] = CacheFromLeaf(leafRegisters(3, 3, 16, 1, 64, 8192))
+    skylake[3] = CacheFromLeaf(0, 0, 0)
+    testing.expect_value(t, skylake[3].kind, u8(0))
+    caches = CachesFromLeaves(skylake[:])
+    testing.expect_value(t, caches.l1d, u32(32 * 1024))
+    testing.expect_value(t, caches.l3, u32(8 * 1024 * 1024))
+    // nothing known stays nothing known
+    testing.expect(t, !CachesFromLeaves({}).known)
+}
+
+@(test)
+test_cache_sizes_can_be_overridden_and_say_so :: proc(t: ^testing.T) {
+    caches: Caches = {l1d = 48 * 1024, l2 = 1024 * 1024, l3 = 32 * 1024 * 1024, line = 64, known = true}
+    CacheOverride(&caches, 0, 0, 0)
+    testing.expect(t, !caches.overridden)
+    CacheOverride(&caches, 0, 2048, 0)
+    testing.expect_value(t, caches.l2, u32(2048 * 1024))
+    testing.expect_value(t, caches.l1d, u32(48 * 1024))                  // a size of 0 keeps what the CPU said
+    testing.expect(t, caches.overridden)
+}
+
+@(test)
+test_this_machine_reports_its_caches :: proc(t: ^testing.T) {
+    caches: Caches = CpuCaches()
+    when ODIN_ARCH == .amd64 || ODIN_ARCH == .i386 {
+        // every x86-64 CPU this runs on reports a data cache through CPUID (a virtual machine that hides the leaves would fail here: that is worth knowing)
+        testing.expect(t, caches.known)
+        testing.expect(t, caches.l1d >= 8 * 1024 && caches.l1d <= 1024 * 1024)
+        testing.expect(t, caches.line == 64 || caches.line == 32 || caches.line == 128)
+        if caches.l2 != 0 { testing.expect(t, caches.l2 >= caches.l1d) }
+    } else {
+        testing.expect(t, !caches.known)
+    }
+}

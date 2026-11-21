@@ -7,7 +7,7 @@ that have several libraries competing for the same vector units. Builds for js_w
 | File | What |
 |---|---|
 | `simd.odin` | `Level` (the ladder), `LevelFromName`, `LevelClamp`, the `FEATURES_*` strings for `@(enable_target_feature)`, `LevelBuild()` |
-| `cpu.odin`, `cpu_x86.odin`, `cpu_other.odin`, `cpu_env.odin` | `Cpu`: features, level, vendor and brand, found once at start up; `SIMD_LEVEL=avx2` and `CpuForce` lower it |
+| `cpu.odin`, `cpu_x86.odin`, `cpu_other.odin`, `cpu_env.odin` | `Cpu`: features, level, vendor and brand, the data cache sizes (`Cpu.caches`: `CpuCaches()`), found once at start up; `SIMD_LEVEL=avx2` and `CpuForce` lower it, `SIMD_L1D_KB` / `SIMD_L2_KB` / `SIMD_L3_KB` replace the cache sizes |
 | `table.odin` | `Table($P)`: one kernel per level, `TablePick` takes the best at or below a level, `TableUseful` caps an algorithm where width stops paying |
 | `manager.odin` | `Manager`: clients with a priority, a policy for the wide level, a queue, `ManagerSelect` |
 | `example/` | a dot product with a kernel per level, tests that every level agrees, written to be copied |
@@ -154,3 +154,13 @@ read from any. `SIMD_LEVEL` is read once at start up (a program changes the leve
 
 The reasons behind this layout (what was measured, what was tried and dropped) are in `odin_plug/docs/SIMD_LEVELS.md`, `FFT_TECHNIQUES.md` and `SIMD_CHECKLIST.md`; nothing is copied
 from there, and `dsp` does not use this library yet (it has the same `Cpu_Level` of four steps inline: moving it over is a task for that repository).
+
+## Caches
+
+`Cpu.caches` (`Caches`: `l1d`, `l2`, `l3` in bytes, `line`, `known`, `overridden`) is what a kernel set or an algorithm reads when its best choice depends on how much fits: the sizes at which a pass fusion
+or a blocked loop starts to pay in odin_plug's FFT (a working set of the size of the L2 was the most sensitive size there), the tile of a transform, the block of a convolution. x86: CPUID leaf 4, or
+0x8000001D on AMD with TOPOEXT (the same layout, decoded by `CacheFromLeaf` / `CachesFromLeaves`, which take the registers so a test can feed the geometry of any CPU), the old AMD leaves 0x80000005 / 6
+before that. The numbers are what the hardware reports for one core's view (a Zen core's L2 is its own 1 MB, its L3 the 32 MB of its chiplet), not what a program may use: the other hardware thread of a core
+shares its L1 and L2 and the same program ran 1.15 to 1.20 times slower while that thread was busy, so choose with a margin and measure before moving a threshold. Elsewhere (arm64, the web) the sizes are
+not known (`known` false) and a library keeps its defaults. `SIMD_L2_KB=2048 odin run simd/tool/info` shows what a program would do on a machine with a 2 MB L2: the way to try the other rows of a table that
+only one CPU has measured. `CacheOverride` does the same in a test.

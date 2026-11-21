@@ -69,6 +69,8 @@ cpuDetect :: proc "contextless" () -> Cpu {
         }
     }
     cpu.features = features
+    vendor_text: string = CpuVendor(&cpu)
+    cpu.caches = cpuDetectCaches(max_leaf, max_extended, vendor_text == "AuthenticAMD" || vendor_text == "HygonGenuine")
     return cpuFinish(cpu)
 }
 
@@ -79,4 +81,40 @@ cpuFinish :: proc "contextless" (cpu: Cpu) -> Cpu {
     result.throttles = cpuThrottles(&result)
     // a 32 bit x86 build without SSE2 in the build target still runs SSE2 code through the kernels' own feature attributes, so the level is what the CPU has
     return result
+}
+
+// The data caches from CPUID: leaf 4 (Intel and most others) or 0x8000001D (AMD with TOPOEXT: Zen), the same layout; the old AMD leaves 0x80000005 / 6 when there is
+// neither. Sizes of one core's view (what the leaf says for the cache this core reaches): the L2 of a Zen core is its own 1 MB, the L3 the 32 MB of its CCD.
+@(private)
+cpuDetectCaches :: proc "contextless" (max_leaf, max_extended: u32, amd: bool) -> Caches {
+    leaves: [16]CacheLeaf
+    count: int
+    first: u32 = 4
+    available: bool = max_leaf >= 4
+    if amd {
+        available = false
+        if max_extended >= 0x80000001 {
+            _, _, ecx81, _ := intrinsics.x86_cpuid(0x80000001, 0)
+            if ecx81 >> 22 & 1 != 0 && max_extended >= 0x8000001D { available = true; first = 0x8000001D }       // TOPOEXT
+        }
+    }
+    if available {
+        for sub in 0 ..< u32(len(leaves)) {
+            eax, ebx, ecx, _ := intrinsics.x86_cpuid(first, sub)
+            leaf: CacheLeaf = CacheFromLeaf(eax, ebx, ecx)
+            if leaf.kind == 0 { break }
+            leaves[count] = leaf
+            count += 1
+        }
+        return CachesFromLeaves(leaves[:count])
+    }
+    if amd && max_extended >= 0x80000006 {
+        // before TOPOEXT: L1 data in KB and the line in leaf 0x80000005 ecx, L2 in KB in 0x80000006 ecx, L3 in units of 512 KB in edx
+        _, _, ecx5, _ := intrinsics.x86_cpuid(0x80000005, 0)
+        _, _, ecx6, edx6 := intrinsics.x86_cpuid(0x80000006, 0)
+        caches: Caches = {l1d = (ecx5 >> 24) * 1024, line = ecx5 & 255, l2 = (ecx6 >> 16) * 1024, l3 = (edx6 >> 18) * 512 * 1024}
+        caches.known = caches.l1d != 0 || caches.l2 != 0 || caches.l3 != 0
+        return caches
+    }
+    return {}
 }

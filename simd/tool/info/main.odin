@@ -19,6 +19,11 @@ main :: proc() {
         if feature in cpu.features { fmt.print("", su.FeatureName(feature)) }
     }
     fmt.println()
+    if cpu.caches.known {
+        fmt.printfln("caches   L1 data %d KB, L2 %d KB, L3 %d KB, line %d bytes%s", cpu.caches.l1d / 1024, cpu.caches.l2 / 1024, cpu.caches.l3 / 1024, cpu.caches.line, " (overridden)" if cpu.caches.overridden else "")
+    } else {
+        fmt.println("caches   not known on this target")
+    }
     fmt.println()
     fmt.println("ladder")
     for level in su.Level {
