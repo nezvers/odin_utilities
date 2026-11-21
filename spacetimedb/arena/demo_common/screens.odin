@@ -167,7 +167,7 @@ menuScreen :: proc(c: ^ui.Context) {
 joinScreen :: proc(c: ^ui.Context) {
     if ui.UiWindow(c, "join", centered(c, 760, 120), {ui.Fixed(760), ui.Fit()}, column()) {
         ui.UiSeparatorText(c, "Join a game")
-        ui.UiLabelColored(c, "Paste the invite code that the host gave you (Ctrl+V in the field, or the button).", DIM, .WORDS)
+        ui.UiLabelColored(c, "Type the room name that the host gave you (like maple-otter-22), or paste an invite code (Ctrl+V in the field, or the button).", DIM, .WORDS)
         ui.UiTextField(c, "Code", state.code[:], &state.code_length, {ui.Grow(), {}})
         if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 10}) {
             if ui.UiButton(c, "Paste", {ui.Grow(), ui.Fixed(38)}) {
@@ -216,10 +216,13 @@ connectingScreen :: proc(c: ^ui.Context) {
         stage: session.Stage = guest.stage
         relay: bool = guest.invite.derp_server != 0 && !guest.options.no_derp
         stageStep(c, stage > .GATHERING, stage == .GATHERING, "finding the addresses of this computer")
-        if relay { stageStep(c, stage > .RELAY, stage == .RELAY, "reaching the free relay named by the code") }
+        if guest.room_mode {
+            stageStep(c, stage > .RELAY, stage == .RELAY, "reaching the free relay of the room")
+            stageStep(c, stage > .FINDING, stage == .FINDING, "asking who hosts the room")
+        } else if relay { stageStep(c, stage > .RELAY, stage == .RELAY, "reaching the free relay named by the code") }
         stageStep(c, stage >= .CONNECTED, stage == .READY, "the host answers")
         stageStep(c, state.guest_tunnel_open, stage == .CONNECTED, "opening the game's way to the host's database")
-        steps := [session.Stage]f32{.IDLE = 0, .GATHERING = 0.2, .RELAY = 0.45, .READY = 0.7, .CONNECTED = 0.9, .FAILED = 0}
+        steps := [session.Stage]f32{.IDLE = 0, .GATHERING = 0.15, .RELAY = 0.35, .FINDING = 0.55, .READY = 0.7, .CONNECTED = 0.9, .FAILED = 0}
         progress: f32 = steps[stage]
         ui.UiProgress(c, "connect", progress, 0, 1, {ui.Grow(), {}}, "")
         if stage == .READY && !relay {
@@ -297,11 +300,19 @@ hostPanel :: proc(c: ^ui.Context, host: ^session.Host) {
     case .GATHERING:
         ui.UiLabel(c, "finding the addresses of this computer...")
         ui.UiProgress(c, "gather", min(1, f32(session.HostElapsedMs(host)) / 5000), 0, 1, {ui.Grow(), {}}, "")
+    case .FINDING:
+        ui.UiLabel(c, "preparing the room...")
     case .RELAY:
         ui.UiLabel(c, "reaching the free relay...")
         ui.UiProgress(c, "relay", min(1, f32(session.HostElapsedMs(host)) / 8000), 0, 1, {ui.Grow(), {}}, "")
     case .READY, .CONNECTED:
         code: string = session.HostInvite(host)
+        if room := session.HostRoom(host); room != "" && host.link.derp.state == .READY {
+            ui.UiLabelColored(c, "Room: friends type this name:", GOOD)
+            ui.UiLabelColored(c, room, RAY)
+            if ui.UiButton(c, "Copy the room name", {ui.Grow(), ui.Fixed(32)}) { kit.ClipboardSet(frame_context, room) }
+            ui.UiLabelColored(c, "or give them the invite code:", DIM)
+        }
         ui.UiLabelColored(c, cutCode(shownCode(code, 3 * 38), 38), RAY, .NEWLINES)
         if ui.UiButton(c, "Copy the invite code", {ui.Grow(), ui.Fixed(32)}) { kit.ClipboardSet(frame_context, code) }
         if host.relay_used && host.link.derp.state == .READY {

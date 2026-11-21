@@ -12,6 +12,7 @@ package arena_session
 // The blocking calls of the client (an HTTP request, the websocket handshake) go through the tunnel too, so the thread that waits has to keep stepping the tunnel: `SetIdle(guest)` makes
 // every wait of the client step it (spacetimedb.StreamIdle). A host process steps itself in its frame loop.
 
+import "core:crypto"
 import "core:fmt"
 import "core:net"
 import "core:os"
@@ -29,6 +30,7 @@ HostOptions :: struct {
     module_path: string,        // the built game module ("": bin/arena-odin.wasm of the library)
     name: string,               // the name of the host in the p2p session
     internet: bool,             // gather the public address with STUN so that a guest on another network can connect (needs the internet at the start)
+    room: string,               // with `derp`: the name of the room ("" makes one): friends join by `HostRoom` (name and relay number), no long code. The name is the secret of the room.
     derp: bool,                 // also use a free DERP relay (Tailscale, no account): the invite names it, a guest connects through it with no reply code to send back, even behind strict NATs
     loopback: bool,             // also offer 127.0.0.1: two programs on one computer (tests)
 }
@@ -38,6 +40,7 @@ Stage :: enum u8 {
     IDLE,
     GATHERING,          // finding the addresses that a friend can reach (the network cards, the public one through STUN)
     RELAY,              // waiting for the free relay (DERP)
+    FINDING,            // a guest with a room name: asking the relay who hosts it
     READY,              // a host: the invite code is made; a guest: joined, the reply code is made, waiting for the host to answer
     CONNECTED,          // a guest: the host answered (a host counts its friends: HostGuests)
     FAILED,
@@ -45,6 +48,7 @@ Stage :: enum u8 {
 
 STAGE_GATHER_MS :: 5000
 STAGE_RELAY_MS :: 8000
+STAGE_FIND_MS :: 15000
 
 Host :: struct {
     server: st.Server,
@@ -58,6 +62,8 @@ Host :: struct {
     options: HostOptions,
     port: int,
     relay_used: bool,
+    room: [64]u8,               // "maple-otter-22": the name of the room and the number of the relay, what a friend types
+    room_length: int,
     notice: [200]u8,            // the last thing the link wanted to say (a relay that failed, a friend who joined or left): shown by the window
     notice_length: int,
 }
@@ -131,7 +137,7 @@ HostBegin :: proc(host: ^Host, options: HostOptions) -> bool {
         host.error = "no UDP socket"
         return false
     }
-    if options.derp { host.relay_used = derpBegin(host.link) }
+    if options.derp { host.relay_used = derpBegin(host.link, host) }
     gatherBegin(host.link, options.internet)
     host.port = port
     host.stage, host.stage_started = .GATHERING, time.tick_now()
@@ -157,14 +163,34 @@ HostElapsedMs :: proc(host: ^Host) -> int {
     return int(time.duration_milliseconds(time.tick_since(host.stage_started)))
 }
 
-// The fastest of a few relays, connected before the invite is made (the invite then carries it); the connection takes a moment, so the gathering waits for it
+// The fastest of a few relays, connected before the invite is made (the invite then carries it); the connection takes a moment, so the gathering waits for it. The host is also the key of a room at
+// that relay (`DerpChannelKey` of the room name): a guest that knows the name and the relay number asks the relay who is there and gets the invite from the host, as in ai_messaging (channels).
 @(private)
-derpBegin :: proc(link: ^p2p.Link) -> bool {
+derpBegin :: proc(link: ^p2p.Link, host: ^Host) -> bool {
     candidates: [6]int = {4, 8, 1, 14, 22, 2}
     server: int = p2p.DerpRace(candidates[:], 6000)
     if server == 0 { return false }
+    room: string = host.options.room if host.options.room != "" else randomRoom()
+    private, _ := p2p.DerpChannelKey(room)
+    link.config.derp_private, link.config.derp_private_set = private, true
+    host.room_length = copy(host.room[:], fmt.tprintf("%s-%d", room, server))
     p2p.LinkDerpBegin(link, server, p2p.LinkNow())
     return true
+}
+
+ROOM_WORDS :: [?]string{"amber", "birch", "cedar", "dune", "ember", "fjord", "grove", "harbor", "iris", "juniper", "kelp", "lagoon", "maple", "nectar", "otter", "pebble"}
+
+@(private)
+randomRoom :: proc() -> string {
+    words := ROOM_WORDS
+    random: [2]u8
+    crypto.rand_bytes(random[:])
+    return fmt.tprintf("%s-%s", words[int(random[0]) % len(words)], words[int(random[1]) % len(words)])
+}
+
+// The room name and relay number to give to friends ("" when there is no relay)
+HostRoom :: proc(host: ^Host) -> string {
+    return string(host.room[:host.room_length])
 }
 
 // Looks up the public address (STUN) and starts the gathering; `LinkUpdate` finishes it
@@ -191,7 +217,7 @@ HostAcceptReply :: proc(host: ^Host, reply_text: string) -> bool {
 
 // Reading the events of the link, as ai_messaging does: a relay that failed or moved, a friend who came or went. The last one is kept as a notice for the window.
 @(private)
-linkEvents :: proc(link: ^p2p.Link, notice: []u8, notice_length: ^int, guest: bool) -> (peer_failed: bool) {
+linkEvents :: proc(link: ^p2p.Link, notice: []u8, notice_length: ^int, guest: bool) -> (peer_failed: bool, host_found: bool) {
     say :: proc(notice: []u8, notice_length: ^int, text: string) {
         notice_length^ = copy(notice, text)
     }
@@ -212,7 +238,9 @@ linkEvents :: proc(link: ^p2p.Link, notice: []u8, notice_length: ^int, guest: bo
         case .PEER_FAILED:
             say(notice, notice_length, "nobody answered: the code may be old, or a firewall blocks both ways (the free relay helps)")
             peer_failed = true
-        case .GATHERED, .NAT_MEASURED, .RELAY_READY, .RELAY_FAILED, .DERP_READY, .DERP_HOST_FOUND:
+        case .DERP_HOST_FOUND:
+            host_found = true
+        case .GATHERED, .NAT_MEASURED, .RELAY_READY, .RELAY_FAILED, .DERP_READY:
         }
     }
     return
@@ -235,7 +263,7 @@ HostUpdate :: proc(host: ^Host) {
     now: i64 = p2p.LinkNow()
     p2p.LinkUpdate(host.link, now)
     tunnel.TunnelUpdate(host.tunnel, now)
-    linkEvents(host.link, host.notice[:], &host.notice_length, false)
+    _, _ = linkEvents(host.link, host.notice[:], &host.notice_length, false)
     switch host.stage {
     case .GATHERING:
         if p2p.LinkGathered(host.link) || HostElapsedMs(host) > STAGE_GATHER_MS {
@@ -247,7 +275,7 @@ HostUpdate :: proc(host: ^Host) {
         }
     case .RELAY:
         if host.link.derp.state != .CONNECTING || HostElapsedMs(host) > STAGE_RELAY_MS { hostFinish(host) }
-    case .IDLE, .READY, .CONNECTED, .FAILED:
+    case .IDLE, .FINDING, .READY, .CONNECTED, .FAILED:
     }
 }
 
@@ -286,6 +314,9 @@ Guest :: struct {
     name_length: int,
     notice: [200]u8,
     notice_length: int,
+    room_mode: bool,            // joining by a room name: the host is found through the relay
+    room_public: p2p.BoxKey,
+    relay_server: int,
 }
 
 // Takes the invite code of a host and waits until the reply code is made (`GuestBegin` and the waiting); `guest.reply` (GuestReply) is the code to send back
@@ -322,6 +353,37 @@ GuestBegin :: proc(guest: ^Guest, invite_text: string, options: GuestOptions) ->
     return true
 }
 
+// Joins by the room that a host gave ("maple-otter-22": the name and the number of the relay): the relay says who hosts it and the host answers with its invite. Needs the internet; no code to paste.
+GuestBeginRoom :: proc(guest: ^Guest, room: string, options: GuestOptions) -> bool {
+    guest^ = {}
+    guest.options = options
+    guest.name_length = copy(guest.name[:], options.name if options.name != "" else "guest")
+    dash: int = strings.last_index_byte(room, '-')
+    server: int
+    if dash > 0 && dash + 1 < len(room) {
+        for c in room[dash + 1:] {
+            if c < '0' || c > '9' { server = 0; break }
+            server = server * 10 + int(c - '0')
+        }
+    }
+    if server < 1 || server > len(p2p.DERP_SERVERS) {
+        guest.error, guest.stage = "that is not a room name (name-name-number) or an invite code", .FAILED
+        return false
+    }
+    _, guest.room_public = p2p.DerpChannelKey(room[:dash])
+    guest.room_mode, guest.relay_server = true, server
+    guest.link = new(p2p.Link)
+    guest.tunnel = new(tunnel.Tunnel)
+    if !p2p.LinkInit(guest.link, {include_loopback = true}) {
+        guest.error, guest.stage = "no UDP socket", .FAILED
+        return false
+    }
+    gatherBegin(guest.link, options.internet)
+    p2p.LinkDerpBegin(guest.link, server, p2p.LinkNow())
+    guest.stage, guest.stage_started = .GATHERING, time.tick_now()
+    return true
+}
+
 GuestElapsedMs :: proc(guest: ^Guest) -> int {
     return int(time.duration_milliseconds(time.tick_since(guest.stage_started)))
 }
@@ -351,20 +413,39 @@ GuestUpdate :: proc(guest: ^Guest) {
     p2p.LinkUpdate(guest.link, now)
     if guest.tunnel_started { tunnel.TunnelUpdate(guest.tunnel, now) }
     relay_wanted: bool = guest.invite.derp_server != 0 && !guest.options.no_derp
-    if linkEvents(guest.link, guest.notice[:], &guest.notice_length, true) && guest.stage == .READY {
+    peer_failed, host_found := linkEvents(guest.link, guest.notice[:], &guest.notice_length, true)
+    if peer_failed && guest.stage == .READY {
         guest.error, guest.stage = GuestNotice(guest), .FAILED
     }
     switch guest.stage {
     case .GATHERING:
         if p2p.LinkGathered(guest.link) || GuestElapsedMs(guest) > STAGE_GATHER_MS {
-            if relay_wanted && guest.link.derp.state == .CONNECTING {
+            if guest.room_mode {
+                guest.stage, guest.stage_started = .RELAY, time.tick_now()
+            } else if relay_wanted && guest.link.derp.state == .CONNECTING {
                 guest.stage, guest.stage_started = .RELAY, time.tick_now()
             } else {
                 guestFinish(guest)
             }
         }
     case .RELAY:
-        if guest.link.derp.state != .CONNECTING || GuestElapsedMs(guest) > STAGE_RELAY_MS { guestFinish(guest) }
+        if guest.room_mode {
+            if guest.link.derp.state == .READY {
+                p2p.LinkDerpFind(guest.link, guest.room_public, now)
+                guest.stage, guest.stage_started = .FINDING, time.tick_now()
+            } else if guest.link.derp.state != .CONNECTING || GuestElapsedMs(guest) > STAGE_RELAY_MS {
+                guest.error, guest.stage = "the relay of the room cannot be reached (offline, or TCP 443 is blocked)", .FAILED
+            }
+        } else if guest.link.derp.state != .CONNECTING || GuestElapsedMs(guest) > STAGE_RELAY_MS {
+            guestFinish(guest)
+        }
+    case .FINDING:
+        if host_found {
+            guest.invite = guest.link.derp.found
+            guestFinish(guest)
+        } else if GuestElapsedMs(guest) > STAGE_FIND_MS {
+            guest.error, guest.stage = "nobody hosts that room (is the name right? has the host started?)", .FAILED
+        }
     case .READY:
         if p2p.LinkPeerCount(guest.link) == 1 { guest.stage = .CONNECTED }
     case .IDLE, .CONNECTED, .FAILED:

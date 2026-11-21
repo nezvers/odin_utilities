@@ -3,6 +3,7 @@ package arena_session
 
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import "core:testing"
 import "core:time"
 import st "../.."
@@ -136,4 +137,36 @@ test_a_guest_joins_through_a_derp_relay_without_a_reply_code :: proc(t: ^testing
         if GuestConnected(guest) && HostGuests(host) == 1 { break }
     }
     testing.expect(t, GuestConnected(guest) && HostGuests(host) == 1, "connected with the one code")
+}
+
+// Needs the internet (`ARENA_LIVE=1`): the host has a room name, the guest types only that name: the relay says who hosts it, the host answers with its invite, they connect. No code at all.
+@(test)
+test_a_guest_joins_a_room_by_its_name :: proc(t: ^testing.T) {
+    if os.get_env("ARENA_LIVE", context.temp_allocator) != "1" { return }
+    if st.FixturePath("arena-odin") == "" || !os.exists(st.ServerCliPath()) { return }
+    root: string = "arena_test_room"
+    defer st.ServerRemove(root)
+    host := new(Host)
+    defer free(host)
+    if !HostStart(host, {root = root, port = 3148, internet = true, derp = true, name = "Ada"}) { testing.fail_now(t, host.error) }
+    defer HostStop(host)
+    room: string = HostRoom(host)
+    testing.expect(t, room != "" && strings.count(room, "-") == 2, "the host has a room name and the number of its relay")
+    guest := new(Guest)
+    defer free(guest)
+    testing.expect(t, GuestBeginRoom(guest, room, {internet = true, name = "Bob"}), guest.error)
+    defer GuestStop(guest)
+    for _ in 0 ..< 3000 {
+        HostUpdate(host)
+        GuestUpdate(guest)
+        time.sleep(10 * time.Millisecond)
+        if guest.stage == .CONNECTED || guest.stage == .FAILED { break }
+    }
+    testing.expectf(t, guest.stage == .CONNECTED && HostGuests(host) == 1, "joined by the room name %s: %v %s", room, guest.stage, guest.error)
+    // a room that nobody hosts
+    lonely := new(Guest)
+    defer free(lonely)
+    testing.expect(t, GuestBeginRoom(lonely, "no-such-room-4", {internet = true, name = "Eve"}))
+    defer GuestStop(lonely)
+    _ = lonely
 }

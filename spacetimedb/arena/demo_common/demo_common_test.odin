@@ -55,3 +55,13 @@ test_the_arena_start_screen_plays_its_script :: proc(t: ^testing.T) {
     }
     testing.expect(t, report.finished, "the script reached its end")
 }
+
+@(test)
+test_room_names_are_told_from_invite_codes :: proc(t: ^testing.T) {
+    testing.expect(t, looksLikeRoom("maple-otter-22"))
+    testing.expect(t, looksLikeRoom("amber-fjord-4"))
+    testing.expect(t, !looksLikeRoom("0M0TC-2WC12-0P280-R1TJ2-1BR6A-HJQ6X-35E81-09B0R-P00Z9-S84R2-M5G1Q-MWM00"), "an invite code")
+    testing.expect(t, !looksLikeRoom("maple otter 22"), "spaces")
+    testing.expect(t, !looksLikeRoom("maple-otter"), "no relay number")
+    testing.expect(t, !looksLikeRoom(""))
+}

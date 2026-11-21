@@ -238,12 +238,23 @@ launch :: proc(mode: Mode) {
             fail("paste the code of the host first")
             return
         }
-        if !session.GuestBegin(state.guest, code, {internet = state.stun, name = name, loopback = config.loopback}) {
+        options: session.GuestOptions = {internet = state.stun, name = name, loopback = config.loopback}
+        began: bool = session.GuestBeginRoom(state.guest, code, options) if looksLikeRoom(code) else session.GuestBegin(state.guest, code, options)
+        if !began {
             fail(state.guest.error)
             return
         }
         state.phase = .CONNECTING
     }
+}
+
+// A room name is short (maple-otter-22); an invite code is a hundred letters in groups of five
+looksLikeRoom :: proc(text: string) -> bool {
+    if len(text) > 48 || strings.contains_rune(text, ' ') { return false }
+    dash: int = strings.last_index_byte(text, '-')
+    if dash <= 0 || dash + 1 >= len(text) { return false }
+    for c in text[dash + 1:] { if c < '0' || c > '9' { return false } }
+    return strings.count(text, "-") <= 3
 }
 
 update :: proc(ctx: ^kit.Context) {
@@ -266,6 +277,7 @@ update :: proc(ctx: ^kit.Context) {
             state.printed = true
             fmt.println("Give this code to your friends (arena join <code>):")
             fmt.println(session.HostInvite(state.host))
+            if room := session.HostRoom(state.host); room != "" { fmt.printfln("Or the room name (arena join %s) when the relay is up.", room) }
             if state.console { fmt.println("If it does not use a relay (--derp), paste the reply code of each friend here and press Enter.") }
         }
         if state.console {

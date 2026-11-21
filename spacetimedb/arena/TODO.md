@@ -12,3 +12,5 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (medium) Client side prediction for the own player (the 50 ms step and the round trip make the own circle feel slightly late)
 - [ ] (low) The same game from Godot (`gdextension/godot_spacetimedb` and a scene)
 - [ ] (low) A dedicated server mode (`host --no-window`) for a machine that only hosts
+- [x] Join by a room name through the relay (no code to paste)
+- [ ] (medium) Sign in with OIDC in the game (the `oidc` library, the `ui` library for the window): the name of the player from the claims, a module that only lets in the trusted provider (`module/example/auth` shows how)
