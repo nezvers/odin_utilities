@@ -233,5 +233,6 @@ ThemeFromAccent :: proc(accent: ui.Color, dark: bool) -> (theme: Theme) {
     theme.danger_text = fromLinear(on_danger)
     theme.warning = fromLinear(warning)
     theme.success = fromLinear(success)
+    theme.edit_selected = {theme.accent.r, theme.accent.g, theme.accent.b, 60}
     return
 }

@@ -5287,3 +5287,64 @@ test_a_paste_of_bad_utf8_is_cleaned_at_the_edge :: proc(t: ^testing.T) {
     fieldFrame(harness, paste, buffer[:], &length)
     testing.expect_value(t, fieldText(buffer[:], length), "café 日本 \U0001F600")
 }
+
+@(test)
+test_edit_mode_keeps_presses_from_the_widgets_picks_the_element_and_covers_it_last :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    clicked: int
+    page :: proc(harness: ^Harness, input: Input, clicked: ^int) {
+        frame(harness, input)
+        ctx: ^Context = &harness.ctx
+        if UiWindow(ctx, "window", {0, 0}, {Fixed(300), {}}) {
+            UiLabel(ctx, "a text")
+            if UiButton(ctx, "Press", {Fixed(100), Fixed(28)}) { clicked^ += 1 }
+        }
+        UiEnd(ctx)
+    }
+    for _ in 0 ..< 3 { page(harness, pointerAt({-50, -50}), &clicked) }
+    button, found := UiElementRect(&harness.ctx, UiIdPath("window", "Press"))
+    testing.expect(t, found && button.z > 0)
+    middle: Vec2 = {button.x + button.z * 0.5, button.y + button.w * 0.5}
+    // without edit mode the click goes through
+    page(harness, pointerAt(middle), &clicked)
+    page(harness, pointerAt(middle, true, true), &clicked)
+    page(harness, pointerAt(middle, false, false, true), &clicked)
+    testing.expect_value(t, clicked, 1)
+    // with it: the pointer over the button covers it, the press is the pick and the button does not get it
+    panel: Rect = {500, 0, 200, 300}
+    UiEditMode(&harness.ctx, true, panel)
+    page(harness, pointerAt(middle), &clicked)
+    hover, hovering := UiEditHover(&harness.ctx)
+    testing.expect(t, hovering && hover.kind == .BUTTON && hover.rect == button, "the element under the pointer")
+    covers: int
+    last: Command
+    for command in UiCommands(&harness.ctx) {
+        if command.kind == .DRAW && command.info.kind == .EDIT_COVER { covers += 1 }
+    }
+    last = UiCommands(&harness.ctx)[len(UiCommands(&harness.ctx)) - 1]
+    testing.expect_value(t, covers, 1)
+    testing.expect(t, last.kind == .DRAW && last.info.kind == .EDIT_COVER && last.info.rect == button && .SELECTED not_in last.info.flags, "the cover is the last command: above everything")
+    page(harness, pointerAt(middle, true, true), &clicked)
+    page(harness, pointerAt(middle, false, false, true), &clicked)
+    testing.expect_value(t, clicked, 1)                             // not clicked again
+    picked, was_picked := UiEditPicked(&harness.ctx)
+    testing.expect(t, was_picked && picked.kind == .BUTTON && picked.rect == button && EditTargetName(&picked) == "Press")
+    last = UiCommands(&harness.ctx)[len(UiCommands(&harness.ctx)) - 1]
+    testing.expect(t, last.info.kind == .EDIT_COVER && .SELECTED in last.info.flags, "the picked element has its own cover")
+    // the panel is the panel's: a press there is not a pick and the pointer there covers nothing
+    page(harness, pointerAt({550, 100}), &clicked)
+    _, hovering = UiEditHover(&harness.ctx)
+    testing.expect(t, !hovering)
+    page(harness, pointerAt({550, 100}, true, true), &clicked)
+    picked, _ = UiEditPicked(&harness.ctx)
+    testing.expect(t, picked.rect == button, "the pick stays")
+    // off: widgets work again and no cover is added
+    UiEditMode(&harness.ctx, false)
+    page(harness, pointerAt(middle), &clicked)
+    page(harness, pointerAt(middle, true, true), &clicked)
+    page(harness, pointerAt(middle, false, false, true), &clicked)
+    testing.expect_value(t, clicked, 2)
+    for command in UiCommands(&harness.ctx) { testing.expect(t, command.info.kind != .EDIT_COVER) }
+}

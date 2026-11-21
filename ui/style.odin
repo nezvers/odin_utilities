@@ -80,6 +80,7 @@ StyleKind :: enum u8 {
     GLYPH,              // the picture of an input (glyph.odin): text the label, actual the GlyphShape, color (alpha 0: the theme's), texture + source: the program's picture
     CUSTOM,             // DrawInfo.custom is called instead of a table entry
     FILL,               // a plain rectangle in `color` (the ground of a piece of text)
+    EDIT_COVER,         // edit mode (edit.odin): a veil over the element under the pointer, rect = the element, flags SELECTED for the picked one; the last commands of the frame
 }
 
 Flag :: enum u8 {

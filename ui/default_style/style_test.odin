@@ -4,6 +4,7 @@ package ui_default
 // The style without a window: a frame with the widgets of the library is rendered into a painter that only writes down what it was asked to draw. The pictures of the
 // demos check how it looks; this checks that every kind draws, with and without icons, in both themes, and leaves the painter as it found it.
 
+import "core:fmt"
 import "core:math"
 import "core:testing"
 import ui ".."
@@ -566,4 +567,93 @@ test_a_dropdown_item_draws_the_part_that_matched_in_the_strong_face :: proc(t: ^
         testing.expect(t, test.recorder.found[0] && test.recorder.strong_texts == 0)
         testing.expect_value(t, test.painter.face, Face.REGULAR)
     }
+}
+
+@(test)
+test_the_style_editor_loads_saves_and_deletes_styles_edits_fields_and_picks_elements :: proc(t: ^testing.T) {
+    Test :: struct {
+        storage: ui.Storage(1024, 2048, 256, 16384),
+        ctx: ui.Context,
+        style: ui.Style,
+        painter: Painter,
+        recorder: Recorder,
+        editor: StyleEditor,
+        memory: MemoryStyles,
+        store: StyleStore,
+        clicked: int,
+        changed: int,
+    }
+    test: ^Test = new(Test)
+    defer free(test)
+    recorderPainter(&test.painter, &test.recorder, THEME_DARK, false)
+    test.style = StyleMake()
+    ui.UiInit(&test.ctx, &test.storage, Measure, &test.painter)
+    test.store = MemoryStyleStoreMake(&test.memory)
+    StyleEditorInit(&test.editor, THEME_DARK)
+    test.editor.name_length = copy(test.editor.name[:], "mine")
+    frame :: proc(test: ^Test, input: ui.Input) {
+        ui.UiBegin(&test.ctx, input, 1.0 / 60, {1000, 900}, &test.style)
+        ui.ElementOpen(&test.ctx, {id = 7, layout = {size = {ui.Fixed(60), ui.Fixed(20)}}, draw = {kind = .BUTTON, name = "page"}})
+        ui.ElementClose(&test.ctx)
+        if UiStyleEditor(&test.ctx, &test.editor, &test.store) { test.changed += 1 }
+        ui.UiEnd(&test.ctx)
+        ui.UiRender(&test.ctx)
+    }
+    pointer :: proc(position: ui.Vec2, down: bool = false, pressed: bool = false, released: bool = false) -> ui.Input {
+        return {mouse_position = position, mouse_down = down, mouse_pressed = pressed, mouse_released = released}
+    }
+    click :: proc(test: ^Test, path: ..string) -> bool {
+        id: ui.Id = ui.UiIdPath(..path)
+        rect, found := ui.UiElementRect(&test.ctx, id)
+        if !found || rect.z <= 0 { return false }
+        at: ui.Vec2 = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+        frame(test, pointer(at))
+        frame(test, pointer(at, true, true))
+        frame(test, pointer(at, false, false, true))
+        frame(test, pointer({-50, -50}))
+        return true
+    }
+    for _ in 0 ..< 4 { frame(test, pointer({-50, -50})) }
+    // a style is saved under the name in the box, then listed
+    testing.expect(t, click(test, STYLE_EDITOR_TITLE, "Save"), "the Save button is there")
+    testing.expect_value(t, test.memory.count, 1)
+    testing.expect(t, test.memory.themes[0] == THEME_DARK)
+    // a field is edited: the number slider of border_width, by a click in the middle of it (the range of the field is 0 .. 6)
+    test.editor.selected = ThemeFieldFind("border_width")
+    for _ in 0 ..< 3 { frame(test, pointer({-50, -50})) }
+    full: string = fmt.tprintf("border_width##number%d", test.editor.selected)
+    rect, found := ui.UiElementRect(&test.ctx, ui.UiIdPath(STYLE_EDITOR_TITLE, full))
+    testing.expect(t, found && rect.z > 0, "the slider of a number field")
+    middle: ui.Vec2 = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    frame(test, pointer(middle))
+    frame(test, pointer(middle, true, true))
+    frame(test, pointer(middle, false, false, true))
+    testing.expect(t, test.changed > 0 && abs(test.editor.theme.border_width - 3) < 0.4, "the slider changed the theme")
+    // loading the saved style brings the old value back
+    frame(test, pointer({-50, -50}))
+    testing.expect(t, click(test, STYLE_EDITOR_TITLE, "Load"))
+    testing.expect_value(t, test.editor.theme.border_width, THEME_DARK.border_width)
+    // delete takes it out of the list
+    testing.expect(t, click(test, STYLE_EDITOR_TITLE, "Delete"))
+    testing.expect_value(t, test.memory.count, 0)
+    for _ in 0 ..< 2 { frame(test, pointer({-50, -50})) }
+    testing.expect_value(t, test.editor.names.count, 0)
+    // edit mode: the toggle turns the mask on, the element under the pointer is covered and a press picks it and puts the fields it uses first
+    testing.expect(t, click(test, STYLE_EDITOR_TITLE, "Pick element"))
+    testing.expect(t, test.editor.pick && test.ctx.edit.on)
+    testing.expect(t, test.ctx.edit.panel.z > 100 && test.ctx.edit.panel.w > 100, "the panel is the window: the library found its rectangle")
+    page: ui.Vec2 = {30, 10}
+    frame(test, pointer(page))
+    hover, hovering := ui.UiEditHover(&test.ctx)
+    testing.expect(t, hovering && hover.kind == .BUTTON, "the element under the pointer")
+    frame(test, pointer(page, true, true))
+    frame(test, pointer(page, false, false, true))
+    picked, was_picked := ui.UiEditPicked(&test.ctx)
+    testing.expect(t, was_picked && picked.kind == .BUTTON)
+    testing.expect(t, styleFieldUsed(.BUTTON, "control_hover") && !styleFieldUsed(.BUTTON, "scrim") && styleFieldUsed(.EDIT_COVER, "edit_overlay"))
+    // the cover is drawn in the color of the theme: the last rectangle of the frame is the picked one in `edit_selected`
+    testing.expect_value(t, test.recorder.fill_count > 0, true)
+    // off again: no mask
+    testing.expect(t, click(test, STYLE_EDITOR_TITLE, "Pick element"))
+    testing.expect(t, !test.editor.pick && !test.ctx.edit.on)
 }

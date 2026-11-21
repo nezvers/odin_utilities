@@ -13,6 +13,7 @@ UiDemo :: struct {
     ctx: ui.Context,
     painter: ui_default.Painter,
     style: ui.Style,
+    kit_ctx: ^kit.Context,           // of the frame that began: the style editor needs the screen and the keys at its end
 }
 
 ui_demo_init :: proc(demo: ^UiDemo) {
@@ -23,10 +24,13 @@ ui_demo_init :: proc(demo: ^UiDemo) {
 
 // The frame of the ui: begin, the widgets of the demo, then end (layout and drawing in the batch of the kit)
 ui_demo_begin :: proc(demo: ^UiDemo, kit_ctx: ^kit.Context) {
+    demo.kit_ctx = kit_ctx
+    demoStyleBegin(&demo.painter, kit_ctx)
     ui_kit.Begin(&demo.ctx, &demo.painter, &demo.style, kit_ctx)
 }
 
 ui_demo_end :: proc(demo: ^UiDemo) {
+    demoStyleEnd(&demo.ctx, &demo.painter, demo.kit_ctx)
     ui.UiEnd(&demo.ctx)
     ui.UiRender(&demo.ctx)
 }

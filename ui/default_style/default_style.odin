@@ -51,6 +51,8 @@ Theme :: struct {
     success: ui.Color,
     shadow: ui.Color,               // under panels and popups (its alpha is the strength: a light theme needs it, a dark one separates by lightness)
     scrim: ui.Color,                // what dims the screen behind a dialog
+    edit_overlay: ui.Color,         // style editing (StyleEditor): the cover over the element under the pointer, drawn above everything (a light veil: alpha 13 of 255 is 0.05)
+    edit_selected: ui.Color,        // and over the element that was picked
     hover: f32,                     // how much of the text color is mixed into a control under the pointer
     press: f32,                     // and while it is pressed
     rounding: f32,                  // controls: 0 sharp .. 1 full round
@@ -85,6 +87,8 @@ THEME_DARK :: Theme{
     success = {98, 195, 122, 255},
     shadow = {0, 0, 0, 110},
     scrim = {0, 0, 0, 128},
+    edit_overlay = {255, 255, 255, 13},
+    edit_selected = {121, 171, 252, 60},
     hover = 0.08,
     press = 0.14,
     rounding = 1,
@@ -119,6 +123,8 @@ THEME_LIGHT :: Theme{
     success = {19, 153, 72, 255},
     shadow = {0, 0, 0, 70},
     scrim = {0, 0, 0, 89},
+    edit_overlay = {0, 0, 0, 13},
+    edit_selected = {121, 171, 252, 60},
     hover = 0.08,
     press = 0.14,
     rounding = 1,
@@ -380,6 +386,7 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.MENU] = DrawMenu
     style.procs[.MENU_ITEM] = DrawMenuItem
     style.procs[.WINDOW_TITLE] = DrawWindowTitle
+    style.procs[.EDIT_COVER] = DrawEditCover
     style.procs[.SPLITTER] = DrawSplitter
     style.procs[.RESIZE_GRIP] = DrawResizeGrip
     style.procs[.BULLET] = DrawBullet
@@ -1100,6 +1107,23 @@ FillRoundedCorners :: proc(painter: ^Painter, rect: ui.Rect, radii: [4]f32, colo
     buffer: ui.RoundedBuffer
     points: []ui.Vec2 = ui.RoundedPoints(rect, radii, ui.RoundedSegments(biggest), buffer[:])
     painter.fill_polygon(painter, points, color)
+}
+
+// Edit mode (ui.UiEditMode): the veil over the element under the pointer, drawn above everything; the picked element gets its own color and a line around it
+DrawEditCover :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
+    painter: ^Painter = painterOf(ctx)
+    theme: ^Theme = &painter.theme
+    if .SELECTED in info.flags {
+        painter.fill_rect(painter, info.rect, theme.edit_selected)
+        outline: ui.Color = {theme.edit_selected.r, theme.edit_selected.g, theme.edit_selected.b, 255}
+        rect: ui.Rect = info.rect
+        painter.fill_rect(painter, {rect.x, rect.y, rect.z, 1}, outline)
+        painter.fill_rect(painter, {rect.x, rect.y + rect.w - 1, rect.z, 1}, outline)
+        painter.fill_rect(painter, {rect.x, rect.y, 1, rect.w}, outline)
+        painter.fill_rect(painter, {rect.x + rect.z - 1, rect.y, 1, rect.w}, outline)
+        return
+    }
+    painter.fill_rect(painter, info.rect, theme.edit_overlay)
 }
 
 // The handle between two sections: a thin line in the middle of its rectangle that lights up under the pointer and while it is dragged

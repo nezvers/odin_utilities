@@ -395,6 +395,7 @@ pageIcons :: proc(c: ^ui.Context) {
 draw :: proc(ctx: ^kit.Context) {
     state.painter.theme = ui_default.THEME_LIGHT if state.theme == 1 else ui_default.THEME_DARK
     ctx.background = kit.Color(state.painter.theme.background)
+    demoStyleBegin(&state.painter, ctx)
     ui_kit.Begin(&state.ctx, &state.painter, &state.style, ctx)
     c: ^ui.Context = &state.ctx
     metrics: ^ui.Metrics = &c.style.metrics
@@ -433,6 +434,7 @@ draw :: proc(ctx: ^kit.Context) {
             }
         }
     }
+    demoStyleEnd(c, &state.painter, ctx)
     ui.UiEnd(c)
     ui.UiRender(c)
 }

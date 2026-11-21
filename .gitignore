@@ -31,3 +31,5 @@ log.txt
 /browser_extension/youtube_shorts/tool/signing.odin
 # the name of the display the screenshot tests run on (written by the person who runs them, read by demo_kit/tool/captures)
 /demo_kit/monitor.txt
+
+ui/styles/current.style
