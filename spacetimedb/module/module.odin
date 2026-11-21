@@ -46,7 +46,7 @@ DESCRIPTION_BUFFER :: 1 << 15       // the biggest description of the module
 ROW_BUFFER :: 1 << 16               // the biggest row, and the buffer a scan reads its rows through
 CALL_ARENA :: 1 << 16               // the memory of one reducer call
 
-// The type of a column: the number is the tag of the type in the description (references/SpacetimeDB/crates/sats/src/algebraic_type.rs)
+// The type of a column: the number is the tag of the type in the description (spacetimedb/SpacetimeDB/crates/sats/src/algebraic_type.rs)
 ColumnType :: enum u8 {
     STRING = 4,
     BOOL = 5,

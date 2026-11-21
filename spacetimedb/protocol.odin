@@ -1,6 +1,6 @@
 package spacetimedb
 
-// The websocket protocol v2 of SpacetimeDB (`v2.bsatn.spacetimedb`, references/SpacetimeDB/crates/client-api-messages/src/websocket/v2.rs): the messages a client sends and the ones it
+// The websocket protocol v2 of SpacetimeDB (`v2.bsatn.spacetimedb`, spacetimedb/SpacetimeDB/crates/client-api-messages/src/websocket/v2.rs): the messages a client sends and the ones it
 // receives, as BSATN. Encoding writes into a Writer of the caller. Decoding (`ServerMessageDecode`) gives a `ServerMessage` whose strings and byte slices point into the frame that was
 // decoded (keep the frame until you are done with the message); the arrays of it (the tables of an update) are made with the `allocator` you pass: an arena that is cleared after every message is
 // the way (nothing here keeps a pointer between two messages).

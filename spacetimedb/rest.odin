@@ -1,6 +1,6 @@
 package spacetimedb
 
-// The REST side of a SpacetimeDB server (references/SpacetimeDB/docs/docs/00300-resources/00200-http-api): make an identity, publish and delete a database, run SQL, call a reducer, read the log.
+// The REST side of a SpacetimeDB server (spacetimedb/SpacetimeDB/docs/docs/00300-resources/00200-http-api): make an identity, publish and delete a database, run SQL, call a reducer, read the log.
 // Every call is one HttpRequest into a buffer of the caller; the answers are JSON, read by `JsonString` (the value of a key of an object, no allocation). A token is a bearer token: the
 // `token` of `IdentityCreate` identifies the same client again and owns what it publishes.
 

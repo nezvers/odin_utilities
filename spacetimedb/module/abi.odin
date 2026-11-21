@@ -1,6 +1,6 @@
 package spacetimedb_module
 
-// The host functions that a SpacetimeDB module imports (references/SpacetimeDB/crates/bindings-sys/src/lib.rs, `spacetime_10.0`): the datastore (tables and their rows by BSATN), the bytes that
+// The host functions that a SpacetimeDB module imports (spacetimedb/SpacetimeDB/crates/bindings-sys/src/lib.rs, `spacetime_10.0`): the datastore (tables and their rows by BSATN), the bytes that
 // come in (the arguments of a reducer) and go out (the description of the module, an error message), and the log. All of them take and return numbers and pointers into the linear memory of
 // the module; the ones that return a u16 return 0 for success and an `Errno` otherwise. A module is built for `freestanding_wasm32`, where `uint` is 32 bits like `usize` of the ABI.
 

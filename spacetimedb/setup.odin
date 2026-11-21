@@ -5,7 +5,9 @@ package spacetimedb
 // pulls it), and downloads the server of the release that matches them into `spacetimedb/bin`. Everything it makes is untracked (`references/` and `spacetimedb/bin/` are in .gitignore).
 //
 // What it clones (shallow, only the newest state; a tool that reads the history clones in full by hand):
-//   SpacetimeDB             the server, the protocol (crates/client-api-messages), the module ABI (crates/bindings-sys), the SDKs and the docs: the reference of every part of this library
+//   SpacetimeDB             the server, the protocol (crates/client-api-messages), the module ABI (crates/bindings-sys), the SDKs and the docs: the reference of every part of this library.
+//                           It is vendored into this library (`spacetimedb/SpacetimeDB`, ignored by `spacetimedb/.gitignore`) and not into references/: it is the source this library is written
+//                           against and the one that a build of the server for a platform without a release would use, so it lives next to the code that follows it. The others are references/.
 //   BitCraftPublic          the server code of a real MMO that runs on SpacetimeDB: what a big module looks like
 //   spacetimedb-python-sdk  an SDK of a language that is not Rust, C# or TypeScript
 //   spacetimedb-bindings-cpp  the module bindings for C++: the nearest thing to what an Odin module needs
@@ -24,15 +26,16 @@ Reference :: struct {
     name: string,               // the folder in references/
     url: string,
     purpose: string,
+    local: bool,                // vendored into spacetimedb/<name> (untracked by the .gitignore of the library) and not into references/
 }
 
 REFERENCES :: [?]Reference{
-    {"SpacetimeDB", "https://github.com/clockworklabs/SpacetimeDB.git", "the server, the protocol, the module ABI, the SDKs, the docs"},
-    {"BitCraftPublic", "https://github.com/clockworklabs/BitCraftPublic.git", "the server of an MMO on SpacetimeDB"},
-    {"spacetimedb-python-sdk", "https://github.com/clockworklabs/spacetimedb-python-sdk.git", "a client SDK in another language"},
-    {"spacetimedb-bindings-cpp", "https://github.com/clockworklabs/spacetimedb-bindings-cpp.git", "module bindings in C++"},
-    {"spacetimedb-cookbook", "https://github.com/clockworklabs/spacetimedb-cookbook.git", "examples"},
-    {"spacetime-studio", "https://github.com/ElegonCode/spacetime-studio.git", "a desktop manager of a database: the REST side in use"},
+    {"SpacetimeDB", "https://github.com/clockworklabs/SpacetimeDB.git", "the server, the protocol, the module ABI, the SDKs, the docs", true},
+    {"BitCraftPublic", "https://github.com/clockworklabs/BitCraftPublic.git", "the server of an MMO on SpacetimeDB", false},
+    {"spacetimedb-python-sdk", "https://github.com/clockworklabs/spacetimedb-python-sdk.git", "a client SDK in another language", false},
+    {"spacetimedb-bindings-cpp", "https://github.com/clockworklabs/spacetimedb-bindings-cpp.git", "module bindings in C++", false},
+    {"spacetimedb-cookbook", "https://github.com/clockworklabs/spacetimedb-cookbook.git", "examples", false},
+    {"spacetime-studio", "https://github.com/ElegonCode/spacetime-studio.git", "a desktop manager of a database: the REST side in use", false},
 }
 
 SetupOptions :: struct {
@@ -105,7 +108,7 @@ SetupRun :: proc(options: SetupOptions = {}) -> (result: SetupResult) {
         if !os.exists(ignore) { _ = os.write_entire_file(ignore, transmute([]u8)string("*\n")) }
         table := REFERENCES
         for reference in table {
-            path: string = fmt.tprintf("%s/%s", folder, reference.name)
+            path: string = fmt.tprintf("%s/spacetimedb/%s", root, reference.name) if reference.local else fmt.tprintf("%s/%s", folder, reference.name)
             if os.exists(path) {
                 result.present += 1
                 if options.update && runCommand({"git", "pull", "--ff-only"}, path) { setupSay(options, fmt.tprintf("updated %s", reference.name)) }
@@ -182,7 +185,7 @@ SetupServer :: proc(options: SetupOptions = {}, root: string = "") -> bool {
     if os.exists(cli) { return true }
     archive, zipped, supported := releaseArchive()
     if !supported {
-        setupSay(options, "no release of the server for this system: build it from references/SpacetimeDB (cargo build -p spacetimedb-cli -p spacetimedb-standalone --release)")
+        setupSay(options, "no release of the server for this system: build it from spacetimedb/SpacetimeDB (cargo build -p spacetimedb-cli -p spacetimedb-standalone --release)")
         return false
     }
     folder: string = ServerBinFolder(base)
@@ -231,9 +234,10 @@ BuildModule :: proc(package_path: string, out: string, extra: []string = nil) ->
     return os.exists(out)
 }
 
-// The path of the cloned reference, "" when it is not there (run setup)
+// The path of the cloned reference, "" when it is not there (run setup). SpacetimeDB itself is in this library's folder, the others in references/.
 ReferencePath :: proc(name: string, root: string = "") -> string {
-    path: string = fmt.tprintf("%s/references/%s", root if root != "" else SetupRoot(), name)
+    base: string = root if root != "" else SetupRoot()
+    path: string = fmt.tprintf("%s/spacetimedb/%s", base, name) if name == "SpacetimeDB" else fmt.tprintf("%s/references/%s", base, name)
     return path if os.exists(path) else ""
 }
 

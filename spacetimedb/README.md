@@ -23,8 +23,9 @@ odin run spacetimedb/tool/setup        # clones the references (untracked), down
 odin run spacetimedb/tool/session      # starts a server, publishes a module, two clients subscribe and call a reducer, prints what they see
 odin test spacetimedb                  # the same checked by assertions (a few seconds; the session is skipped when the server or the module is not set up)
 ```
-A library that builds on this one calls `spacetimedb.SetupRun(options)` from its own setup: the references and the server are fetched once for all of them (`odin_utilities/references/`, ignored by git by
-a `.gitignore` of its own in the folder; `spacetimedb/bin/`, ignored too).
+A library that builds on this one calls `spacetimedb.SetupRun(options)` from its own setup: the sources and the server are fetched once for all of them. The main repository of SpacetimeDB is vendored into this
+library (`spacetimedb/SpacetimeDB/`, untracked: it is the source the protocol and the module ABI are written against, and what a build of the server for a platform without a release uses); the other references
+are in `odin_utilities/references/` (ignored by a `.gitignore` of its own in the folder); `spacetimedb/bin/` (the server, the built modules) is ignored too.
 
 ## What a program does
 ```odin
@@ -76,10 +77,10 @@ add :: proc(ctx: ^module.ReducerContext, args: ^bsatn.Reader) -> string {
   it is not called, so it fits an engine that owns its threads.
 - **No hidden allocations.** The buffers of the socket, the send buffer and the writers are the caller's (or fixed arrays of the struct); decoding a message takes an allocator for its arrays (an arena that is
   cleared after each message), strings and byte slices point into the received frame. `-define` and the sizes of the buffers are the application's decision.
-- **The protocol is the server's own.** `bsatn.odin` and `protocol.odin` are written from `references/SpacetimeDB/crates/client-api-messages/src/websocket/v2.rs` and the BSATN document of its docs, and
+- **The protocol is the server's own.** `bsatn.odin` and `protocol.odin` are written from `spacetimedb/SpacetimeDB/crates/client-api-messages/src/websocket/v2.rs` and the BSATN document of its docs, and
   tested against a real server of the release the library names (`SPACETIMEDB_VERSION` in setup.odin). Frames are not compressed (`compression=None` is asked for), Brotli and Gzip are not read.
 - **A server is a process.** The CLI makes the keys and starts the standalone server as a child; the library stops the whole tree. Everything the server writes lives in the folder you give.
-- **The references are the manual.** Setup clones SpacetimeDB (server, protocol, module ABI, the C#, Rust and TypeScript SDKs, docs), BitCraftPublic (the server of a real MMO), the Python SDK, the C++ module
+- **The sources are the manual.** Setup clones SpacetimeDB into the library (server, protocol, module ABI, the C#, Rust and TypeScript SDKs, docs) and, into references/, BitCraftPublic (the server of a real MMO), the Python SDK, the C++ module
   bindings, the cookbook of clockworklabs and spacetime-studio of ElegonCode (a desktop manager that uses the REST side). They are the first place to look for how something is meant to work.
 
 ## Limits
