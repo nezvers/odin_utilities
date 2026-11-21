@@ -20,10 +20,18 @@ Table :: struct($P: typeid) {
     procs: [Level]P,
     useful: Level,          // the highest level worth running; only when `capped`
     capped: bool,
+    min_size: [Level]int,   // a kernel that is for sizes from here (0: no lower limit): see TableSetRange
+    max_size: [Level]int,   // and up to here (0: no upper limit)
 }
 
 TableSet :: proc(table: ^Table($P), level: Level, kernel: P) {
     table.procs[level] = kernel
+}
+
+// A kernel for a range of sizes: an algorithm where AVX2 beats AVX-512 below 8192 points (the radix 8 passes of the AVX-512 FFT of odin_plug lose above it: strides that alias in L1) is two
+// kernels, the AVX2 one for every size and the AVX-512 one for `max_size = 8192`; `TablePickSized` takes the best kernel whose range has the size
+TableSetRange :: proc(table: ^Table($P), level: Level, kernel: P, min_size: int, max_size: int) {
+    table.procs[level], table.min_size[level], table.max_size[level] = kernel, min_size, max_size
 }
 
 TableHas :: proc(table: ^Table($P), level: Level) -> bool {
@@ -59,4 +67,16 @@ TablePickFor :: proc(table: ^Table($P), level: Level) -> (kernel: P, got: Level,
     if table.capped && LevelFamily(table.useful) == LevelFamily(target) { target = min(target, table.useful) }
     if table.capped && table.useful == .SCALAR { target = .SCALAR }
     return TablePick(table, target)
+}
+
+// The best kernel at or below `level` that is for this size (a measured rank: the kernels of the ranges that do not have it are passed over)
+TablePickSized :: proc(table: ^Table($P), level: Level, size: int) -> (kernel: P, got: Level, ok: bool) {
+    at: Level = level
+    for {
+        low: int = table.min_size[at]
+        high: int = table.max_size[at]
+        if table.procs[at] != nil && size >= low && (high == 0 || size <= high) { return table.procs[at], at, true }
+        if at == .SCALAR { return }
+        at = LevelBelow(at)
+    }
 }

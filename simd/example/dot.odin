@@ -99,6 +99,30 @@ DotAvx2 :: proc "contextless" (a: []f32, b: []f32) -> f32 {
     return total
 }
 
+// The AVX2 kernel with a prefetch of the data a few cache lines ahead: simdutf8 uses one on AVX2 and found it helped on some Intel CPUs on synthetic benchmarks only. It is here to measure
+// (`odin run simd/tool/info -o:speed -- --bench` times it on 64 MB, where the loop waits for memory): on the machine of the benchmark the hardware prefetcher already does the work and the hint
+// changes nothing (see TODO.md), so no kernel of the library has one.
+@(enable_target_feature = su.FEATURES_AVX2)
+DotAvx2Prefetch :: proc "contextless" (a: []f32, b: []f32) -> f32 {
+    count: int = min(len(a), len(b))
+    V :: #simd[8]f32
+    s0, s1, s2, s3: V
+    i: int
+    for ; i + 32 <= count; i += 32 {
+        if i + 256 < count {
+            intrinsics.prefetch_read_data(&a[i + 256], 3)
+            intrinsics.prefetch_read_data(&b[i + 256], 3)
+        }
+        s0 = simd.fma(intrinsics.unaligned_load(cast(^V)&a[i]), intrinsics.unaligned_load(cast(^V)&b[i]), s0)
+        s1 = simd.fma(intrinsics.unaligned_load(cast(^V)&a[i + 8]), intrinsics.unaligned_load(cast(^V)&b[i + 8]), s1)
+        s2 = simd.fma(intrinsics.unaligned_load(cast(^V)&a[i + 16]), intrinsics.unaligned_load(cast(^V)&b[i + 16]), s2)
+        s3 = simd.fma(intrinsics.unaligned_load(cast(^V)&a[i + 24]), intrinsics.unaligned_load(cast(^V)&b[i + 24]), s3)
+    }
+    total: f32 = simd.reduce_add_ordered((s0 + s1) + (s2 + s3))
+    for ; i < count; i += 1 { total = intrinsics.fused_mul_add(a[i], b[i], total) }
+    return total
+}
+
 @(enable_target_feature = su.FEATURES_AVX512)
 DotAvx512 :: proc "contextless" (a: []f32, b: []f32) -> f32 {
     count: int = min(len(a), len(b))

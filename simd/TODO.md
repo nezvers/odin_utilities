@@ -10,29 +10,20 @@ Tasks; a task starts with `(high)`, `(medium)` (the default) or `(low)`; tick it
       bytes, the edges of the ranges), the standard library as the judge of validity, every length and position of the byte that ends a run, the examples of Unicode table 3-8, cuts of a
       stream, and everything again at `-o:none`, `-o:minimal`, `-o:speed`. The pitfall of the research showed up as written: a `load32` helper without the target feature lost the upper
       half of a 256 bit value at `-o:none`; every wide kernel loads inline now. Not done: the 32 byte ASCII skip inside the validator (AVX2 on ASCII is 75, the same as SSSE3).
-- [ ] (medium) The AVX-512 throttling rule: simdutf8 selects its 512 bit kernel only on CPUs with VBMI2 (Ice Lake and later) because the earlier ones lower the clock of the core while
-      they run 512 bit instructions. Add `Feature.AVX512VBMI2` (CPUID 7, ECX bit 6) and, for the manager, a way to say "wide, but only where it does not throttle": a `Policy` field
-      `wide_needs: Features` (default `{.AVX512VBMI2}` when the vendor is Intel, nothing on AMD Zen 4 and later, which does not throttle) so that on a Skylake-X the AVX-512 level goes to
-      a client only when its slot rules say so and everyone else gets AVX2 without configuration. Measure before trusting the list: the dev machine is a Zen 5 and cannot show it.
-- [ ] (low) A `prefetch` hint (`intrinsics.prefetch_read_data`) in the long block loops of the examples: simdutf8 uses it on AVX2 for a few Intel CPUs and found it helped on synthetic
-      benchmarks only; measure before keeping it.
-- [ ] (low) `LevelBuild()` and a note in the README on how simdutf8 treats a build that targets the wide level (`-C target-cpu=native` there, `-microarch:native` here): the run time
-      selection is off in that case. For the table this means a kernel of the build's level needs no `enable_target_feature` and no run time check.
+- [x] The AVX-512 throttling rule: `Feature.AVX512VBMI2` (CPUID 7 ecx bit 6, with AVX512BF16 and AVX-VNNI from subleaf 1), `Cpu.throttles` (Intel with AVX-512 and no VBMI2: Skylake-X, Cascade Lake; AMD and Ice Lake and later are not), `Policy.allow_throttling` (false by default): on such a CPU a client that asks for "the best" gets AVX2 (reason THROTTLES), only a client that names AVX-512 gets it. Tested on synthetic records of Skylake-X, Ice Lake, Zen 4, an AMD CPU with the same features and an unknown vendor. Not measured on a real Skylake-X (the dev machine is a Zen 5): the rule is simdutf8's
+- [x] A prefetch hint, measured: `DotAvx2Prefetch` (the example) against `DotAvx2` on 64 MB: 74 GB/s with the hint, 80 to 86 without (three runs: 5 to 12 percent slower with it) on the Zen 5; the hardware prefetcher does the work. No kernel of the library has one; a measurement on an Intel CPU where simdutf8 found a gain would change that (the tool is `odin run simd/tool/info -o:speed -- --bench`)
+- [x] `BuildCovers(level)`: does the build itself run the level (`-microarch:native` targets it: its kernels need no `enable_target_feature` and no run time check); simdutf8 does the same (the run time selection is off when the build targets the wide level). README says so
 
 ## From the reading of ghostty (`references/ghostty/src/simd`)
 - [x] `IndexOfByte` and `IndexOfAny` (see the text kernels above: 4 byte set, 16, 32 and 64 byte steps, move mask and count trailing zeros)
 - [x] `ScanText(bytes, stop)`: where `stop` is first and whether everything before it is ASCII, in one pass (SIMD at 16, 32, 64 bytes)
 - [x] `RuneWidthRanges` is not needed: the width comes from the two stage table of `unicode_data` (two array reads; measured faster than the chain of ranges, and exact by construction from the Unicode files). The range vector kernel of ghostty would only pay for a table too big for the cache
-- [ ] (low) A `Lanes($T)` helper: twice the native vector length (the number of lanes for a hot loop at the level, `LevelLanes` / size of T times two) so the loops of one level are written once for
-      the element type.
+- [x] `LanesOf(level, T)`: twice the native vector for a hot loop (two registers an iteration)
 - [x] The maximal subpart decoder as a library piece: `Utf8Next`, `Utf8TrimPartial`, `Utf8Clean` (`font`, `ui` and the cell screen move to it next)
-- [ ] (low) A benchmark convention for the library: a generator tool that writes inputs to files with a fixed seed, and a bench tool that reads them, so two revisions run the same bytes
-      (`tool/info --bench` makes its data in the process: fine for a screen, not for a comparison).
+- [x] A benchmark convention: `odin run simd/tool/gen -- <folder> [megabytes]` writes `ascii.txt`, `mixed.txt` and `damaged.txt` from a fixed seed, `odin run simd/tool/info -o:speed -- --bench --data <folder>` reads them, so two revisions run the same bytes and the generator is not measured
 
 ## The library
-- [ ] (medium) `dsp` of odin_plug could use `Cpu`, `Table` and the manager instead of its own `Cpu_Level` (four steps) and `DSP_LEVEL`; that is a task for that repository (the
-      level names differ: its `BASELINE` is `SSE2` here; its `AVX` kernels are generated by `tools/avxgen`).
-- [ ] (medium) `ManagerSelect` for kernels that have a measured rank rather than a ladder (an algorithm where AVX2 beats AVX-512 below 8192 points: a `useful` that depends on the size).
-      A `TablePickSized(table, level, size)` with a per kernel size limit, or the caller builds two tables.
-- [ ] (low) SVE and the dot product extensions of ARM, F16C / BF16 / VNNI levels for the kernels that use them (features are detected on x86 already).
-- [ ] (low) A test run per level: `SIMD_LEVEL` for every level in `tool/test`, so a kernel of a lower level runs on the dev machine in the same command.
+- [ ] (later) `dsp` of odin_plug could use `Cpu`, `Table` and the manager instead of its own `Cpu_Level` (four steps) and `DSP_LEVEL`: a change in the other repository, which has its own benchmarks and its own checklist (its `BASELINE` is `SSE2` here; its `AVX` kernels are generated by `tools/avxgen`): the owner decides
+- [x] Kernels with a measured range of sizes: `TableSetRange(table, level, kernel, min_size, max_size)`, `TablePickSized`, `ManagerSelectSized` (AVX-512 for 8192 points and under, AVX2 above)
+- [x] Features that are not levels: `CpuHas`, `CpuAddFeatures`, F16C, AVX-VNNI, AVX512VNNI, VBMI, VBMI2, BF16 detected on x86; NEON_DOTPROD, SVE and FP16 are in the list and are not detected (no portable way to ask: a program that asked the operating system says so with `CpuAddFeatures`)
+- [x] A test run per level: `odin run tool/test -- --levels [packages]` builds the test program of every package that uses `simd` once and runs it with `SIMD_LEVEL` = scalar, sse2, sse4.2, avx, avx2, avx512 (a level above the CPU runs its best)

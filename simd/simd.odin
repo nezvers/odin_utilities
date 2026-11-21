@@ -175,3 +175,15 @@ LevelBuild :: proc "contextless" () -> Level {
         return .SCALAR
     }
 }
+
+// Does the build itself run `level` (see LevelBuild): its kernels need no `enable_target_feature` and no run time check
+BuildCovers :: proc "contextless" (level: Level) -> bool {
+    return LevelUsable(level, LevelBuild())
+}
+
+// How many elements of type T a hot loop of the level handles in one step: TWICE the native vector, two registers an iteration for the parallelism of the units (the same lesson as four
+// accumulators: one register of work in flight uses a fraction of the units). 1 for the scalar level.
+LanesOf :: proc "contextless" (level: Level, $T: typeid) -> int {
+    if level == .SCALAR { return 1 }
+    return max(2 * LevelLanes(level) * 4 / size_of(T), 1)
+}

@@ -27,7 +27,13 @@ Feature :: enum u8 {
     AVX512CD,
     AVX512VNNI,
     AVX512VBMI,
+    AVX512VBMI2,                    // Ice Lake and later on Intel (and Zen 4): the first AVX-512 that does not lower the clock (see `Cpu.throttles`)
+    AVX512BF16,
+    AVX_VNNI,
     NEON,
+    NEON_DOTPROD,                   // arm64 SDOT / UDOT (not detected: a program that knows says so with CpuAddFeatures)
+    SVE,                            // the same
+    FP16,                           // the same
     SIMD128,
 }
 Features :: bit_set[Feature; u32]
@@ -37,6 +43,7 @@ Cpu :: struct {
     level: Level,                   // the best level of the ladder that this machine runs
     forced: Level,                  // what the program or the environment limited it to (`level` when nothing did)
     was_forced: bool,
+    throttles: bool,                // AVX-512 on this CPU lowers the clock of the core: an Intel CPU with AVX-512 but without VBMI2 (Skylake-X, Cascade Lake). AMD Zen 4 and later and Ice Lake and later do not
     family: Family,
     vendor: [12]u8,                 // "GenuineIntel", "AuthenticAMD" ... (x86)
     brand: [48]u8,                  // "AMD Ryzen 9 9950X 16-Core Processor" (x86, zero padded)
@@ -66,9 +73,32 @@ LevelFromFeatures :: proc "contextless" (features: Features) -> Level {
     return level
 }
 
-CpuFromFeatures :: proc "contextless" (features: Features) -> Cpu {
+// A record from a list of features (and the vendor string, which the throttling rule needs: "GenuineIntel", "AuthenticAMD"; unknown is taken as not throttling)
+CpuFromFeatures :: proc "contextless" (features: Features, vendor: string = "") -> (cpu: Cpu) {
     level: Level = LevelFromFeatures(features)
-    return {features = features, level = level, forced = level, family = LevelFamily(level)}
+    cpu = {features = features, level = level, forced = level, family = LevelFamily(level)}
+    for i in 0 ..< min(len(vendor), len(cpu.vendor)) { cpu.vendor[i] = vendor[i] }
+    cpu.throttles = cpuThrottles(&cpu)
+    return
+}
+
+// The rule that simdutf8 uses to choose its 512 bit kernel: AVX-512 on an Intel CPU before Ice Lake (no VBMI2) lowers the clock of the whole core while it runs, so the wide
+// level is for a program that asks for it and not for every library by default. Written from their note; the dev machine (Zen 5) cannot show it.
+@(private)
+cpuThrottles :: proc "contextless" (cpu: ^Cpu) -> bool {
+    return cpu.level == .AVX512 && .AVX512VBMI2 not_in cpu.features && CpuVendor(cpu) == "GenuineIntel"
+}
+
+// Does the machine have the feature (the vector extensions that are not a level: F16C, VNNI, BF16, ARM dot products ...)
+CpuHas :: proc "contextless" (cpu: ^Cpu, feature: Feature) -> bool {
+    return feature in cpu.features
+}
+
+// Adds features that were learned elsewhere (an arm64 program that asked the operating system for SVE); the level is made again
+CpuAddFeatures :: proc "contextless" (cpu: ^Cpu, features: Features) {
+    cpu.features += features
+    cpu.level = LevelFromFeatures(cpu.features)
+    cpu.throttles = cpuThrottles(cpu)
 }
 
 @(private) cpu_global: Cpu
@@ -152,7 +182,13 @@ FeatureName :: proc "contextless" (feature: Feature) -> string {
     case .AVX512CD: return "AVX512CD"
     case .AVX512VNNI: return "AVX512VNNI"
     case .AVX512VBMI: return "AVX512VBMI"
+    case .AVX512VBMI2: return "AVX512VBMI2"
+    case .AVX512BF16: return "AVX512BF16"
+    case .AVX_VNNI: return "AVX-VNNI"
     case .NEON: return "NEON"
+    case .NEON_DOTPROD: return "NEON dot product"
+    case .SVE: return "SVE"
+    case .FP16: return "FP16"
     case .SIMD128: return "SIMD128"
     }
     return ""

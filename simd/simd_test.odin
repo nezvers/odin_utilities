@@ -289,3 +289,104 @@ test_the_explanation_names_the_level_and_why :: proc(t: ^testing.T) {
     testing.expect_value(t, ManagerExplain(&manager, physics, buffer[:]), "physics: AVX2 + FMA (waiting for a wide slot, place 1 in the queue)")
     testing.expect_value(t, ManagerExplain(&manager, 0, buffer[:]), "")
 }
+
+@(test)
+test_a_cpu_that_lowers_its_clock_for_avx512_gives_it_only_to_a_client_that_names_it :: proc(t: ^testing.T) {
+    base: Features = FULL_X86
+    skylake: Cpu = CpuFromFeatures(base, "GenuineIntel")                      // AVX-512 without VBMI2: Skylake-X, Cascade Lake
+    ice_lake: Cpu = CpuFromFeatures(base + {.AVX512VBMI2}, "GenuineIntel")    // Ice Lake and later
+    zen4: Cpu = CpuFromFeatures(base + {.AVX512VBMI2}, "AuthenticAMD")
+    amd_without: Cpu = CpuFromFeatures(base, "AuthenticAMD")                  // an AMD CPU is not taken as throttling whatever the features say
+    unknown: Cpu = CpuFromFeatures(base)
+    testing.expect(t, skylake.throttles && !ice_lake.throttles && !zen4.throttles && !amd_without.throttles && !unknown.throttles)
+    testing.expect_value(t, CpuVendor(&skylake), "GenuineIntel")
+    avx2_only: Cpu = CpuFromFeatures(FULL_X86 - {.AVX512F, .AVX512DQ, .AVX512BW, .AVX512VL}, "GenuineIntel")
+    testing.expect(t, !avx2_only.throttles, "no AVX-512, nothing to throttle")
+
+    manager: Manager
+    ManagerInit(&manager, &skylake)
+    everyone, _ := ManagerRegister(&manager, "everyone")                      // asks for the best there is
+    named, _ := ManagerRegister(&manager, "named", wants = .AVX512)           // asks for AVX-512 by name
+    testing.expect_value(t, ClientLevel(&manager, everyone), Level.AVX2)
+    testing.expect_value(t, ClientInfo(&manager, everyone).reason, Reason.THROTTLES)
+    testing.expect_value(t, ClientLevel(&manager, named), Level.AVX512)
+    buffer: [128]u8
+    testing.expect_value(t, ManagerExplain(&manager, everyone, buffer[:]), "everyone: AVX2 + FMA (this CPU lowers its clock for AVX-512)")
+    // the program that does not care
+    policy: Policy = manager.policy
+    policy.allow_throttling = true
+    ManagerSetPolicy(&manager, policy)
+    testing.expect_value(t, ClientLevel(&manager, everyone), Level.AVX512)
+    // the others: the best level, as before
+    for cpu in ([?]^Cpu{&ice_lake, &zen4, &amd_without, &unknown}) {
+        other: Manager
+        ManagerInit(&other, cpu)
+        client, _ := ManagerRegister(&other, "client")
+        testing.expect_value(t, ClientLevel(&other, client), Level.AVX512)
+    }
+}
+
+@(test)
+test_features_that_are_not_levels_are_asked_with_cpu_has :: proc(t: ^testing.T) {
+    cpu: Cpu = CpuFromFeatures({.SSE2, .SSE3, .SSSE3, .SSE41, .SSE42, .AVX, .AVX2, .FMA, .F16C, .AVX_VNNI})
+    testing.expect(t, CpuHas(&cpu, .F16C) && CpuHas(&cpu, .AVX_VNNI) && !CpuHas(&cpu, .AVX512BF16))
+    testing.expect_value(t, cpu.level, Level.AVX2)
+    arm: Cpu = CpuFromFeatures({.NEON})
+    testing.expect(t, !CpuHas(&arm, .SVE))
+    CpuAddFeatures(&arm, {.SVE, .NEON_DOTPROD})                                // learned from the operating system by the program
+    testing.expect(t, CpuHas(&arm, .SVE) && CpuHas(&arm, .NEON_DOTPROD))
+    testing.expect_value(t, arm.level, Level.NEON)
+    testing.expect_value(t, FeatureName(.AVX512VBMI2), "AVX512VBMI2")
+    // the machine this runs on: a feature implies the ones it needs
+    host: ^Cpu = CpuGet()
+    if CpuHas(host, .AVX512VBMI2) { testing.expect(t, CpuHas(host, .AVX512BW) && CpuHas(host, .AVX512F)) }
+}
+
+@(test)
+test_a_kernel_with_a_range_of_sizes_is_picked_only_for_those_sizes :: proc(t: ^testing.T) {
+    Kernel :: #type proc "contextless" (x: int) -> int
+    table: Table(Kernel)
+    TableSet(&table, .SCALAR, proc "contextless" (x: int) -> int { return 1 })
+    TableSet(&table, .AVX2, proc "contextless" (x: int) -> int { return 2 })
+    // the 512 bit kernel is for 8192 points and under, the other one for every size
+    TableSetRange(&table, .AVX512, proc "contextless" (x: int) -> int { return 5 }, 0, 8192)
+    TableSetRange(&table, .SSE42, proc "contextless" (x: int) -> int { return 4 }, 64, 0)       // from 64 points up
+    kernel, got, ok := TablePickSized(&table, .AVX512, 1024)
+    testing.expect(t, ok && got == .AVX512 && kernel(0) == 5)
+    kernel, got, ok = TablePickSized(&table, .AVX512, 8192)
+    testing.expect(t, ok && got == .AVX512 && kernel(0) == 5)
+    kernel, got, ok = TablePickSized(&table, .AVX512, 8193)
+    testing.expect(t, ok && got == .AVX2 && kernel(0) == 2, "above the range the next kernel down")
+    kernel, got, ok = TablePickSized(&table, .AVX2, 100000)
+    testing.expect(t, ok && got == .AVX2 && kernel(0) == 2)
+    kernel, got, ok = TablePickSized(&table, .SSE42, 32)
+    testing.expect(t, ok && got == .SCALAR && kernel(0) == 1, "the SSE4.2 kernel is for 64 and up")
+    kernel, got, ok = TablePickSized(&table, .SSE42, 64)
+    testing.expect(t, ok && got == .SSE42 && kernel(0) == 4)
+    // through the manager
+    cpu: Cpu = CpuFromFeatures(FULL_X86)
+    manager: Manager
+    ManagerInit(&manager, &cpu)
+    audio, _ := ManagerRegister(&manager, "audio")
+    kernel, got, ok = ManagerSelectSized(&manager, audio, &table, 4096)
+    testing.expect(t, ok && got == .AVX512)
+    kernel, got, ok = ManagerSelectSized(&manager, audio, &table, 65536)
+    testing.expect(t, ok && got == .AVX2)
+    _ = kernel
+}
+
+@(test)
+test_the_lanes_of_a_hot_loop_are_twice_the_native_vector_and_the_build_level_is_covered :: proc(t: ^testing.T) {
+    testing.expect_value(t, LanesOf(.SCALAR, f32), 1)
+    testing.expect_value(t, LanesOf(.SSE2, f32), 8)           // two 4 lane registers
+    testing.expect_value(t, LanesOf(.AVX2, f32), 16)
+    testing.expect_value(t, LanesOf(.AVX512, f32), 32)
+    testing.expect_value(t, LanesOf(.AVX2, f64), 8)
+    testing.expect_value(t, LanesOf(.AVX2, u8), 64)
+    testing.expect_value(t, LanesOf(.NEON, f32), 8)
+    // what the build targets is covered; the portable code always is
+    testing.expect(t, BuildCovers(.SCALAR))
+    testing.expect(t, BuildCovers(LevelBuild()))
+    when ODIN_ARCH == .amd64 { testing.expect(t, BuildCovers(.SSE2)) }
+    testing.expect(t, !BuildCovers(.AVX512) || LevelBuild() == .AVX512)
+}

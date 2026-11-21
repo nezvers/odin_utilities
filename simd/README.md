@@ -131,6 +131,19 @@ and its rules are worth keeping:
 - **Benchmark discipline** (`src/benchmark/AGENTS.md`): generate the data first and benchmark it later (never pipe the generator into the benchmark), reuse the exact files across
   revisions, fixed seeds, medians of several runs after warm ups, never two benchmarks at once on a machine, release mode only.
 
+## The throttling rule, ranges of sizes, features
+- **AVX-512 and the clock.** On Intel before Ice Lake (no VBMI2) AVX-512 lowers the clock of the whole core while it runs; simdutf8 selects its 512 bit kernel only with VBMI2 for that reason. `Cpu.throttles`
+  is true for an Intel CPU with AVX-512 and without VBMI2; the manager then gives AVX2 to a client that asks for "the best" (reason `THROTTLES`) and AVX-512 only to one that names it, unless
+  `Policy.allow_throttling` is set. AMD Zen 4 and later and Ice Lake and later are not affected. (Written from simdutf8's note; this repository's dev machine is a Zen 5 and cannot show it.)
+- **Ranges of sizes.** `TableSetRange(&table, .AVX512, kernel, 0, 8192)` makes a kernel for 8192 points and under (the radix 8 passes of odin_plug's AVX-512 FFT lose above that), `TablePickSized` and
+  `ManagerSelectSized` take the best kernel whose range has the size.
+- **Features.** `CpuHas(cpu, .F16C)` for the extensions that are not a level (F16C, VNNI, BF16, VBMI2; the ARM ones are not detected: `CpuAddFeatures`).
+- **The build level.** A build that targets a level (`-microarch:native`) runs its kernels without `enable_target_feature` and without a run time check: `BuildCovers(level)`.
+- **`LanesOf(level, T)`** is the number of elements a hot loop takes in a step: twice the native vector.
+- **A prefetch hint** was measured (`DotAvx2Prefetch` in `example/`): 5 to 12 percent slower than none on 64 MB on a Zen 5; the library's kernels have none.
+- **Per level tests:** `odin run tool/test -- --levels simd font ui` runs the packages that use this library at every level. **Benchmarks on the same bytes:** `odin run simd/tool/gen -- <folder>` and
+  `odin run simd/tool/info -o:speed -- --bench --data <folder>`.
+
 ## Limits
 
 x86 and x86-64 are detected completely (CPUID leaves 0, 1, 7, 0x80000002 to 4, XGETBV); arm64 is NEON by definition, the web is SIMD128 when the build says so, nothing else

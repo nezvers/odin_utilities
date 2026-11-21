@@ -58,6 +58,14 @@ cpuDetect :: proc "contextless" () -> Cpu {
             if ebx7 >> 31 & 1 != 0 { features += {.AVX512VL} }
             if ecx7 >> 1 & 1 != 0 { features += {.AVX512VBMI} }
             if ecx7 >> 11 & 1 != 0 { features += {.AVX512VNNI} }
+            if ecx7 >> 6 & 1 != 0 { features += {.AVX512VBMI2} }
+        }
+        // subleaf 1: AVX-VNNI (bit 4 of eax) and BF16 (bit 5)
+        eax_max, _, _, _ := intrinsics.x86_cpuid(7, 0)
+        if eax_max >= 1 {
+            eax71, _, _, _ := intrinsics.x86_cpuid(7, 1)
+            if ymm_ok && eax71 >> 4 & 1 != 0 { features += {.AVX_VNNI} }
+            if ymm_ok && xcr0 & 0xE0 == 0xE0 && eax71 >> 5 & 1 != 0 { features += {.AVX512BF16} }
         }
     }
     cpu.features = features
@@ -68,6 +76,7 @@ cpuDetect :: proc "contextless" () -> Cpu {
 cpuFinish :: proc "contextless" (cpu: Cpu) -> Cpu {
     result: Cpu = cpu
     result.level = LevelFromFeatures(result.features)
+    result.throttles = cpuThrottles(&result)
     // a 32 bit x86 build without SSE2 in the build target still runs SSE2 code through the kernels' own feature attributes, so the level is what the CPU has
     return result
 }

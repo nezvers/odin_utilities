@@ -6,6 +6,8 @@
 //     odin run tool/test -- --all           every package that has tests
 //     odin run tool/test -- --list          only say which packages would run
 //     odin run tool/test -- --verbose       print the whole output of a failing package, not only its errors
+//     odin run tool/test -- --levels        also run the packages that use the `simd` library once per instruction set level (SIMD_LEVEL=scalar, sse2, sse4.2, avx, avx2, avx512;
+//                                           a level above the CPU runs its best), so the kernels of the lower levels run on a machine that has more
 //
 // Run it from odin_utilities. A package is a folder with .odin files; one is tested when it has an @(test) proc. A change in a folder
 // counts for that package and, through the imports (`import x "../ui"`), for every package that uses it, so a change of `ui` also runs
@@ -34,13 +36,14 @@ Package :: struct {
 main :: proc() {
     explicit: [dynamic]string
     since: string
-    all, list, verbose: bool
+    all, list, verbose, levels: bool
     arguments: []string = os.args[1:]
     for i := 0; i < len(arguments); i += 1 {
         switch arguments[i] {
         case "--all": all = true
         case "--list": list = true
         case "--verbose": verbose = true
+        case "--levels": levels = true
         case "--since":
             i += 1
             if i >= len(arguments) { fail("--since needs a commit or branch") }
@@ -109,6 +112,15 @@ main :: proc() {
     start: time.Tick = time.tick_now()
     for dir in order {
         if !runPackage(dir, verbose) { failures += 1 }
+    }
+    if levels {
+        for dir in order {
+            uses: bool = dir == "simd" || dir == "simd/example"
+            for imported in packages[dir].imports {
+                if imported == "simd" { uses = true }
+            }
+            if uses && !runLevels(dir, verbose) { failures += 1 }
+        }
     }
     seconds: f64 = time.duration_seconds(time.tick_since(start))
     if failures > 0 {
@@ -243,6 +255,48 @@ runPackage :: proc(dir: string, verbose: bool) -> bool {
         printed += 1
         if !verbose && printed >= MAX_ERROR_LINES * 2 { fmt.println("     ... (--verbose for everything)"); break }
     }
+    return false
+}
+
+// The levels of the instruction set that a package that uses the `simd` library is run at: the test program is built once and run once for each, with SIMD_LEVEL in its environment
+LEVELS :: [?]string{"scalar", "sse2", "sse4.2", "avx", "avx2", "avx512"}
+
+runLevels :: proc(dir: string, verbose: bool) -> bool {
+    start: time.Tick = time.tick_now()
+    program: string = fmt.tprintf("%s_levels.exe", baseName(dir))
+    build, _, build_stderr, build_err := os.process_exec({command = {"odin", "build", dir, "-build-mode:test", "-strict-style", "-vet", fmt.tprintf("-out:%s", program)}}, context.allocator)
+    if build_err != nil || !build.success {
+        fmt.printfln("FAIL %-28s levels: did not build", dir)
+        if verbose { fmt.println(string(build_stderr)) }
+        return false
+    }
+    defer os.remove(program)
+    environment: [dynamic]string
+    current, environ_error := os.environ(context.allocator)
+    if environ_error == nil {
+        for entry in current { if !strings.has_prefix(entry, "SIMD_LEVEL=") { append(&environment, entry) } }
+    }
+    base: int = len(environment)
+    names: [dynamic]string
+    failed: [dynamic]string
+    for level in LEVELS {
+        resize(&environment, base)
+        append(&environment, fmt.tprintf("SIMD_LEVEL=%s", level))
+        state, stdout, stderr, err := os.process_exec({command = {fmt.tprintf("./%s", program)}, env = environment[:]}, context.allocator)
+        output: string = strings.concatenate({string(stdout), "\n", string(stderr)})
+        summary: string
+        for line in strings.split_lines(output, context.temp_allocator) {
+            if strings.has_prefix(line, "Finished ") { summary = strings.trim_space(line) }
+        }
+        append(&names, level)
+        if err != nil || !state.success || summary == "" || strings.contains(summary, "failed") { append(&failed, level) }
+    }
+    seconds: f64 = time.duration_seconds(time.tick_since(start))
+    if len(failed) == 0 {
+        fmt.printfln("ok   %-28s at the levels %s (%.1f s)", dir, strings.join(names[:], ", ", context.temp_allocator), seconds)
+        return true
+    }
+    fmt.printfln("FAIL %-28s at the levels %s (%.1f s)", dir, strings.join(failed[:], ", ", context.temp_allocator), seconds)
     return false
 }
 

@@ -41,6 +41,7 @@ Reason :: enum u8 {
     MACHINE,        // limited by what the CPU runs
     FORCED,         // limited by SIMD_LEVEL or CpuForce
     QUEUED,         // the wide level is taken by clients of higher priority: waiting in the queue, running the fallback
+    THROTTLES,      // the CPU lowers its clock for AVX-512 (Intel before Ice Lake): the best level it gives a client that asked for the best is AVX2
     IDLE,           // released: it holds nothing
 }
 
@@ -60,6 +61,7 @@ Policy :: struct {
     wide: Level,                // levels from this one up are scarce (AVX512)
     slots: int,                 // how many clients run at `wide` or above at once; 0: no limit, everyone gets what it asks for
     fallback: Level,            // what a client without a slot runs; SCALAR here means "the level below `wide`"
+    allow_throttling: bool,     // false (the default): on a CPU that throttles with AVX-512, a client that asks for "the best" gets AVX2; only a client that names AVX-512 gets it
 }
 
 Manager :: struct {
@@ -194,6 +196,10 @@ ManagerResolve :: proc(manager: ^Manager) {
         } else {
             granted: Level = cpu.level
             reason: Reason = .BEST
+            // a CPU that lowers its clock for AVX-512 gives it to the clients that ask for it by name, not to "the best" of everyone
+            if client.wants == LEVEL_BEST && cpu.throttles && !manager.policy.allow_throttling && granted > .AVX2 {
+                granted, reason = .AVX2, .THROTTLES
+            }
             // what it asks for, limited to the machine (a level of another family means the best there is)
             if client.wants != LEVEL_BEST {
                 wanted: Level = LevelClamp(client.wants, cpu.level)
@@ -245,6 +251,7 @@ ReasonName :: proc "contextless" (reason: Reason) -> string {
     case .MACHINE: return "what the machine runs"
     case .FORCED: return "limited to SIMD_LEVEL"
     case .QUEUED: return "waiting for a wide slot"
+    case .THROTTLES: return "this CPU lowers its clock for AVX-512"
     case .IDLE: return "released"
     }
     return ""
@@ -258,4 +265,12 @@ ManagerExplain :: proc(manager: ^Manager, id: ClientId, out: []u8) -> string {
         return fmt.bprintf(out, "%s: %s (%s, place %d in the queue)", client.name, LevelName(client.granted), ReasonName(client.reason), client.queue)
     }
     return fmt.bprintf(out, "%s: %s (%s%s)", client.name, LevelName(client.granted), ReasonName(client.reason), ", wide slot" if client.wide && manager.policy.slots > 0 else "")
+}
+
+// ManagerSelect for kernels with a measured range of sizes (TableSetRange)
+ManagerSelectSized :: proc(manager: ^Manager, id: ClientId, table: ^Table($P), size: int) -> (kernel: P, got: Level, ok: bool) {
+    level: Level = ClientLevel(manager, id)
+    if table.capped && LevelFamily(table.useful) == LevelFamily(level) { level = min(level, table.useful) }
+    if table.capped && table.useful == .SCALAR { level = .SCALAR }
+    return TablePickSized(table, level, size)
 }
