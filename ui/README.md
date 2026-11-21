@@ -495,7 +495,7 @@ What the widgets do not do (yet): the same words are in the header of the source
 ticked off in `TODO.md`. Look here before relying on a widget for something it may not do.
 
 - **UiMarkdown** (`markdown.odin`):
-  - no images, no HTML, no footnotes, no reference links or bare addresses as links, no setext headings (underlined with = or -), no `~~~` fences, no language for a fenced block
+  - no images, no HTML, no footnotes, no reference links or bare addresses as links, no language for a fenced block
   - a list is nested by two spaces of indent and is not checked (a list item holds one paragraph: no block of its own inside), a quote is its lines as text (no block inside)
   - a heading is one text in the strong face: its marks are taken away, not drawn; a table has no alignment of its columns and every column is as wide as the others
 - **UiRichText** (`richtext.odin`):

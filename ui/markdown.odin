@@ -7,7 +7,7 @@ package ui
 // code (three backticks, kept as it is, in the code face), rules (`---`), tables (`| a | b |` with a line of dashes under the header). Inside of a paragraph, an entry of a list and a quote the marks are styles (richtext.odin):
 // `**strong**`, `*italic*`, `` `code` `` and `[links](address)`. A heading is one text in the strong face: its marks are taken away.
 //
-// Limits: no images, no HTML, no footnotes, no reference links or bare addresses as links, no setext headings (underlined with = or -), no `~~~` fences, no language for a fenced block
+// Limits: no images, no HTML, no footnotes, no reference links or bare addresses as links, no language for a fenced block
 //     a list is nested by two spaces of indent and is not checked (a list item holds one paragraph: no block of its own inside), a quote is its lines as text (no block inside)
 //     a heading is one text in the strong face: its marks are taken away, not drawn; a table has no alignment of its columns and every column is as wide as the others
 //
@@ -57,7 +57,7 @@ markdownTrim :: proc(text: string) -> string {
 @(private)
 markdownLineKind :: proc(line: string) -> (kind: MarkdownKind, level: int, marker: string, text: string, fence: bool) {
     rest, indent := markdownTrimLeft(line)
-    if len(rest) >= 3 && rest[:3] == "```" { return .CODE, 0, "", "", true }
+    if len(rest) >= 3 && (rest[:3] == "```" || rest[:3] == "~~~") { return .CODE, 0, "", "", true }
     if len(rest) > 0 && rest[0] == '#' {
         hashes: int
         for hashes < len(rest) && rest[hashes] == '#' { hashes += 1 }
@@ -80,6 +80,16 @@ markdownLineKind :: proc(line: string) -> (kind: MarkdownKind, level: int, marke
     if digits > 0 && digits + 1 < len(rest) && rest[digits] == '.' && rest[digits + 1] == ' ' { return .ORDERED, indent / 2, rest[:digits + 1], markdownTrim(rest[digits + 2:]), false }
     if len(rest) > 0 && rest[0] == '>' { return .QUOTE, 0, "", markdownTrim(rest[1:]), false }
     return .PARAGRAPH, 0, "", markdownTrim(line), false
+}
+
+// A line that is only `mark`, at least `least` times
+@(private)
+markdownIsUnderline :: proc(line: string, mark: u8, least: int) -> bool {
+    if len(line) < least { return false }
+    for i in 0 ..< len(line) {
+        if line[i] != mark { return false }
+    }
+    return true
 }
 
 // The line at `at` is the header of a table: it starts with a bar and the line under it is bars, dashes and colons
@@ -149,10 +159,12 @@ MarkdownNext :: proc(source: string, cursor: int) -> (block: MarkdownBlock, next
         start: int = line_end
         end: int = start
         scan: int = start
+        opening, _ := markdownTrimLeft(line)
+        closing: string = opening[:3]            // a fence is closed by the same kind: backticks or tildes
         for scan < len(source) {
             inner, after := markdownLine(source, scan)
             trimmed, _ := markdownTrimLeft(inner)
-            if len(trimmed) >= 3 && trimmed[:3] == "```" {
+            if len(trimmed) >= 3 && trimmed[:3] == closing {
                 scan = after
                 break
             }
@@ -184,6 +196,12 @@ MarkdownNext :: proc(source: string, cursor: int) -> (block: MarkdownBlock, next
     for scan < len(source) {
         more, after := markdownLine(source, scan)
         if markdownTrim(more) == "" { break }
+        if kind == .PARAGRAPH {
+            // a line of = or - under the text makes all of it a heading (setext): 1 for =, 2 for -
+            underline: string = markdownTrim(more)
+            if markdownIsUnderline(underline, '=', 1) { return {kind = .HEADING, level = 1, text = markdownTrim(source[start_of_text:end_of_text])}, after, true }
+            if markdownIsUnderline(underline, '-', 2) { return {kind = .HEADING, level = 2, text = markdownTrim(source[start_of_text:end_of_text])}, after, true }
+        }
         more_kind, _, _, _, more_fence := markdownLineKind(more)
         if more_fence || more_kind != kind { break }
         if kind == .PARAGRAPH && markdownTableStarts(source, scan) { break }

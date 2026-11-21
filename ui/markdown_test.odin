@@ -249,3 +249,25 @@ test_markdown_is_shown_at_every_length_of_a_text :: proc(t: ^testing.T) {
         }
     }
 }
+
+@(test)
+test_markdown_reads_setext_headings_and_tilde_fences :: proc(t: ^testing.T) {
+    source: string = "Title\n=====\n\nA section\nover two lines\n--\n\nplain\n\n~~~\ncode ``` stays\n~~~\n\n```\nand ~~~ stays\n```\n\nafter"
+    block, next, ok := MarkdownNext(source, 0)
+    testing.expect(t, ok && block.kind == .HEADING && block.level == 1 && block.text == "Title")
+    block, next, ok = MarkdownNext(source, next)
+    testing.expect(t, ok && block.kind == .HEADING && block.level == 2 && block.text == "A section\nover two lines", "a heading of two lines")
+    block, next, ok = MarkdownNext(source, next)
+    testing.expect(t, ok && block.kind == .PARAGRAPH && block.text == "plain")
+    block, next, ok = MarkdownNext(source, next)
+    testing.expect(t, ok && block.kind == .CODE && block.text == "code ``` stays", "a tilde fence is closed by tildes")
+    block, next, ok = MarkdownNext(source, next)
+    testing.expect(t, ok && block.kind == .CODE && block.text == "and ~~~ stays", "a backtick fence is closed by backticks")
+    block, next, ok = MarkdownNext(source, next)
+    testing.expect(t, ok && block.kind == .PARAGRAPH && block.text == "after")
+    // a rule after an empty line is still a rule, and a lone dash under text is not an underline
+    block, _, ok = MarkdownNext("text\n-\n", 0)
+    testing.expect(t, ok && block.kind != .HEADING)
+    block, _, ok = MarkdownNext("\n---\n", 0)
+    testing.expect(t, ok && block.kind == .RULE)
+}
