@@ -122,7 +122,8 @@ parseArguments :: proc() {
     config.menu = true
     // the sign in of the user is remembered, except in a run of the tests or the pictures: a stored login of the person who runs them must not change what they see
     when !kit.DEMO_TEST {
-        if path, ok := oidc.StorePath("odin_utilities_arena"); ok { config.signin_store = strings.clone(path) }
+        // only where the system can protect a credential: a plain file of a token is never made
+        if path, ok := oidc.StorePath("odin_utilities_arena"); ok && oidc.StoreAvailable() { config.signin_store = strings.clone(path) }
     }
     if len(positional) > 0 && positional[0] == "host" {
         config.mode, config.menu = .HOST, false

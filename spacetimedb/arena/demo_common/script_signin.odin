@@ -159,10 +159,13 @@ signin_script: []kit.Step = {
     kit.Capture("signed_in"),
     kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
         token, found := stored_token()
         data, _ := os.read_entire_file(config.signin_store, context.temp_allocator)
-        return found && signin.account != nil && token == signin.account.session.tokens.refresh_token && !strings.contains(string(data), "eyJ") && strings.contains(string(data), "Ada Lovelace")
-    }, "the sign in is remembered: the refresh token is in the store file, no ID token"),
+        // what is on the disk is encrypted: no token, no name, no provider in it
+        text: string = string(data)
+        return found && signin.account != nil && token == signin.account.session.tokens.refresh_token && !strings.contains(text, "eyJ") && !strings.contains(text, "Ada Lovelace") && !strings.contains(text, token) && !strings.contains(text, "arena")
+    }, "the sign in is remembered: it is in the store file, encrypted (no token, no name, no ID token to read)"),
     // the first game: the identity of the account
     kit.Check(aimPlaySolo, "the start screen has Play solo"),
     kit.ClickAt(&target),
@@ -178,6 +181,7 @@ signin_script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .MENU && signin.account != nil }, "Escape leaves the game and the account stays"),
     // the program is started again: the account comes back without the browser, and the refresh token in the file is the new one
     kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
         before, _ := stored_token()
         @(static) previous: [512]u8
         copy(previous[:], before)
@@ -185,6 +189,7 @@ signin_script: []kit.Step = {
     }, "after a restart the stored sign in begins to be restored"),
     kit.Wait(40),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
         token, found := stored_token()
         return state.phase == .MENU && signin.account != nil && launched_address == "" && string(state.name[:state.name_length]) == "Ada Lovelace" && found && token == signin.account.session.tokens.refresh_token
     }, "the account is back with its name, no browser was opened, the file has the rotated token"),
@@ -203,7 +208,7 @@ signin_script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return signin.account == nil && aimSignIn(ctx) }, "Sign out forgets the account"),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return !os.exists(config.signin_store) && restart(ctx) && state.phase == .MENU && signin.account == nil }, "Sign out deletes the store file: a restart restores nothing"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { if !oidc.StoreAvailable() { return true }; return !os.exists(config.signin_store) && restart(ctx) && state.phase == .MENU && signin.account == nil }, "Sign out deletes the store file: a restart restores nothing"),
     // an anonymous game: not the identity of the account
     kit.Check(hooksOn, "the provider is stepped again"),
     kit.Check(aimPlaySolo, "the start screen has Play solo"),
@@ -222,15 +227,17 @@ signin_script: []kit.Step = {
     kit.Wait(30),
     kit.Check(playBrowser, "the browser signs in again"),
     kit.Wait(40),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { _, found := stored_token(); return signin.account != nil && found }, "signed in again, and remembered"),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { mock.RevokeRefreshTokens(signin_mock); return restart(ctx) && state.phase == .SIGNING_IN }, "the provider ended the session, the program is started again"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { if !oidc.StoreAvailable() { return true }; _, found := stored_token(); return signin.account != nil && found }, "signed in again, and remembered"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { if !oidc.StoreAvailable() { return true }; mock.RevokeRefreshTokens(signin_mock); return restart(ctx) && state.phase == .SIGNING_IN }, "the provider ended the session, the program is started again"),
     kit.Wait(40),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
         _, found := stored_token()
         return state.phase == .MENU && signin.account == nil && !found && strings.contains(string(state.status[:state.status_length]), "has ended")
     }, "the refused sign in is not restored, the file is deleted, the person is told to sign in"),
     // a provider that cannot be reached (offline): the file stays, the person is told
     kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
         signinLoad()
         signin.providers[0].config.issuer = "http://127.0.0.1:9"
         launched_address = ""
@@ -241,11 +248,13 @@ signin_script: []kit.Step = {
     }, "a stored sign in of a provider that cannot be reached begins to be restored"),
     kit.Wait(40),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
         _, found := stored_token()
         return state.phase == .MENU && signin.account == nil && found && strings.contains(string(state.status[:state.status_length]), "cannot be reached")
     }, "offline is not the end of the sign in: the file stays and the person is told"),
     // a file of another client id, or one that is not a store: nothing is restored and the file is not touched by the restore
     kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
         restart(ctx)
         signinLoad()
         if !writeStore(signin.providers[0].config.issuer, "somebody-else") { return false }
@@ -253,6 +262,7 @@ signin_script: []kit.Step = {
         return state.phase == .MENU && signin.account == nil && os.exists(config.signin_store)
     }, "a stored sign in of another client id is left alone"),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
         restart(ctx)
         _ = os.write_entire_file(config.signin_store, "junk that is not a store")
         signinRestoreBegin()

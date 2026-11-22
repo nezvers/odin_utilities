@@ -171,6 +171,8 @@ signinDone :: proc() {
     state.phase = .MENU
     setStatus("")
     signinSave()
+    // a system that cannot protect a credential stores none: the person is told that the next start asks again
+    if !oidc.StoreAvailable() { setStatus("Signed in. This system cannot keep a sign in safely yet, so you will sign in again next time.") }
 }
 
 signinOut :: proc() {
@@ -216,6 +218,7 @@ signinRestoreBegin :: proc() {
     if config.signin_store == "" { return }
     signinLoad()
     buffer: [oidc.STORE_MAX_SIZE]u8
+    defer oidc.StoreWipe(buffer[:])                        // the token must not stay on the stack
     stored, found := oidc.StoreRead(config.signin_store, buffer[:])
     if !found { return }
     for i in 0 ..< signin.provider_count {
@@ -234,6 +237,7 @@ signinRestore :: proc() {
     signin.restoring = false
     provider: Provider = signin.providers[signin.chosen]
     buffer: [oidc.STORE_MAX_SIZE]u8
+    defer oidc.StoreWipe(buffer[:])                        // the token must not stay on the stack
     stored, found := oidc.StoreRead(config.signin_store, buffer[:])
     if !found {
         state.phase = .MENU
