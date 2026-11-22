@@ -66,6 +66,9 @@ uiFrame :: proc(kit_ctx: ^kit.Context) {
         playersWindow(c)
         connectionWindow(c)
     case .FAILED: failedScreen(c)
+    case .SIGN_IN: signInScreen(c)
+    case .SIGNING_IN: signingInScreen(c)
+    case .SIGN_IN_WAIT: signInWaitScreen(c)
     }
     ui.UiEnd(c)
     ui.UiRender(c)
@@ -136,6 +139,7 @@ menuScreen :: proc(c: ^ui.Context) {
         ui.UiLabelColored(c, "A game on a SpacetimeDB database. Friends join over p2p: no server of anybody's.", DIM, .WORDS)
         ui.UiLabel(c, "Your name")
         ui.UiTextField(c, "Name", state.name[:], &state.name_length, {ui.Grow(), {}})
+        accountSection(c)
         ui.UiSeparatorText(c, "Play")
         if ui.UiButton(c, "Play solo", {ui.Grow(), ui.Fixed(40)}, state.name_length == 0) {
             state.pending, state.phase = .SOLO, .STARTING
@@ -159,6 +163,66 @@ menuScreen :: proc(c: ^ui.Context) {
         ui.UiTooltip(c, "Asks public STUN servers for the address the internet sees, and puts it in the invite.")
         statusLine(c)
         ui.UiLabelColored(c, "WASD or the arrows move, Escape leaves a game.", DIM)
+    }
+}
+
+// ---- an account ---------------------------------------------------------------------------------------------------------------------------------------------------
+
+// Signed in: who, and Sign out. Not signed in: Sign in. The identity of a signed in player is the one of the account in every game.
+@(private = "file")
+accountSection :: proc(c: ^ui.Context) {
+    account: ^Account = signin.account
+    if account != nil {
+        ui.UiLabelColored(c, fmt.tprintf("Signed in with %s as %s", string(account.provider[:account.provider_length]), string(account.name[:account.name_length])), GOOD, .WORDS)
+        if ui.UiButton(c, "Sign out", {ui.Grow(), ui.Fixed(32)}) { signinOut() }
+        ui.UiTooltip(c, "Your next game has a new anonymous identity.")
+        return
+    }
+    if ui.UiButton(c, "Sign in", {ui.Grow(), ui.Fixed(32)}) {
+        signinLoad()
+        signin.message_length = 0
+        state.phase = .SIGN_IN
+        setStatus("")
+    }
+    ui.UiTooltip(c, "Sign in with an account (Google, Discord ...): you are the same player in every game, with the name of your account.")
+}
+
+signInScreen :: proc(c: ^ui.Context) {
+    if ui.UiWindow(c, "signin", centered(c, 520, 120), {ui.Fixed(520), ui.Fit()}, column()) {
+        ui.UiSeparatorText(c, "Sign in")
+        ui.UiLabelColored(c, "A page of the account opens in your browser. The game never sees a password: it gets a proof of who you are.", DIM, .WORDS)
+        if signin.provider_count == 0 {
+            ui.UiLabelColored(c, "No account is set up. Put a client id into oidc/providers/providers.local.txt (oidc/README.md, Getting a client id).", WARNING, .WORDS)
+        }
+        for i in 0 ..< signin.provider_count {
+            if ui.UiButton(c, fmt.tprintf("Sign in with %s", signin.providers[i].label), {ui.Grow(), ui.Fixed(40)}) { signinChoose(i) }
+        }
+        if signin.message_length > 0 { ui.UiLabelColored(c, signinMessage(), WARNING, .WORDS) }
+        if ui.UiButton(c, "Back", {ui.Grow(), ui.Fixed(34)}) {
+            state.phase = .MENU
+            setStatus("")
+        }
+    }
+}
+
+signingInScreen :: proc(c: ^ui.Context) {
+    if ui.UiWindow(c, "signing", centered(c, 420, 260), {ui.Fixed(420), ui.Fit()}, column()) {
+        ui.UiSeparatorText(c, "Signing in")
+        ui.UiLabel(c, fmt.tprintf("Contacting %s...", signin.providers[signin.chosen].label))
+        ui.UiProgress(c, "working", 0.5, 0, 1, {ui.Grow(), {}}, "")
+    }
+}
+
+signInWaitScreen :: proc(c: ^ui.Context) {
+    if ui.UiWindow(c, "signin_wait", centered(c, 660, 120), {ui.Fixed(660), ui.Fit()}, column()) {
+        ui.UiSeparatorText(c, fmt.tprintf("Sign in with %s", signin.providers[signin.chosen].label))
+        ui.UiLabelColored(c, "A page was opened in your browser: sign in there, then come back to this window. If no page appeared, copy this address into a browser.", DIM, .WORDS)
+        ui.UiLabelColored(c, cutCode(shownCode(signinAddress(), 300), 70), RAY, .NEWLINES)
+        if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 10}) {
+            if ui.UiButton(c, "Copy the address", {ui.Grow(), ui.Fixed(36)}) { kit.ClipboardSet(frame_context, signinAddress()) }
+            if ui.UiButton(c, "Open the browser", {ui.Grow(), ui.Fixed(36)}) { signinOpenBrowser() }
+            if ui.UiButton(c, "Cancel", {ui.Grow(), ui.Fixed(36)}) { signinCancel() }
+        }
     }
 }
 

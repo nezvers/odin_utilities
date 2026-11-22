@@ -34,6 +34,7 @@ A client id is what the provider gives an application you register with it. It i
 6. **Use it in code:** `PresetConfig(.DISCORD, client_id)` (or `ClientConfigRead(text, "discord", ...)` for the file) gives the `ClientConfig` for `LoginBegin`; GitHub uses `PresetMetadataGithub` and `DeviceStart`.
 
 ## Used by
+- `odin_utilities/spacetimedb/arena`: the start screen has Sign in (the `ui` library, `signin.odin`): the name and the identity of the player are the ones of the account.
 - `odin_utilities/spacetimedb`: `AuthSession` / `AuthToken` / `AuthRefresh` hand the ID token to a connection (`spacetimedb/auth.odin`); a module reads and checks the claims of its callers with `module.Claims` / `module.RequireClaims` (`spacetimedb/module/jwt.odin`, example `module/example/auth`).
 
 ## Tests

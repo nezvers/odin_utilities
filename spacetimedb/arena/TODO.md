@@ -13,4 +13,6 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (low) The same game from Godot (`gdextension/godot_spacetimedb` and a scene)
 - [ ] (low) A dedicated server mode (`host --no-window`) for a machine that only hosts
 - [x] Join by a room name through the relay (no code to paste)
-- [ ] (medium) Sign in with OIDC in the game (the `oidc` library, the `ui` library for the window): the name of the player from the claims, a module that only lets in the trusted provider (`module/example/auth` shows how)
+- [x] Sign in with an account in the game (`oidc`, `ui`): the name from the claims and the identity of the person in the database (tested with a provider of our own and real servers)
+- [ ] (medium) Remember the sign in between runs (the refresh token in a file of the user only, `offline_access`) and a module that keeps scores per person
+- [ ] (low) A module that only lets in a trusted provider (`module/example/auth` shows how)

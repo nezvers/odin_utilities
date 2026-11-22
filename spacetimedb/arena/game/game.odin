@@ -65,13 +65,14 @@ GameName :: proc(game: ^Game) -> string {
 }
 
 // Connects. The phases follow in GamePoll. False when the socket could not be opened.
-GameOpen :: proc(game: ^Game, endpoint: st.Endpoint, name: string, token: string = "") -> bool {
+// `token`: the ID token of a signed in player (oidc, see spacetimedb/auth.odin): the identity is then the one of the person, the same in every game. `refresh` (with `refresh_user`) renews it at a reconnect.
+GameOpen :: proc(game: ^Game, endpoint: st.Endpoint, name: string, token: string = "", refresh: proc(user: rawptr) -> string = nil, refresh_user: rawptr = nil) -> bool {
     game^ = {}
     game.name_length = copy(game.name[:], name)
     game.host_length = copy(game.host[:], endpoint.host)
     st.CacheInit(&game.cache, {slots = game.slots[:], buckets = game.buckets[:], bytes = game.bytes[:], events = game.events[:], tables = game.tables_storage[:]})
     game.tables = schema.TablesAdd(&game.cache)
-    config: st.ConnectionConfig = {endpoint = {host = string(game.host[:game.host_length]), port = endpoint.port, secure = endpoint.secure}, database = "arena", token = token}
+    config: st.ConnectionConfig = {endpoint = {host = string(game.host[:game.host_length]), port = endpoint.port, secure = endpoint.secure}, database = "arena", token = token, refresh = refresh, refresh_user = refresh_user}
     if !st.ConnectionOpen(&game.connection, config, game.receive[:], game.message[:]) {
         game.error = game.connection.error
         return false

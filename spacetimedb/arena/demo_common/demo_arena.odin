@@ -43,6 +43,7 @@ Config :: struct {
     loopback: bool,         // a test: also offer 127.0.0.1 in the p2p codes
     mask_codes: bool,       // pictures: the codes are shown as a fixed text (see screens.odin)
     idle_host: ^session.Host,   // a test that hosts in the same process: stepped while the guest waits in a blocking call
+    signin_providers: []Provider,   // the accounts the start screen offers (a test or a script); empty: the ones of oidc/providers/providers.local.txt
 }
 
 // A test that has something to do every frame (another host to step)
@@ -57,6 +58,9 @@ Phase :: enum u8 {
     CONNECTING,             // a guest: the p2p connection to the host is being made (the steps are shown)
     PLAYING,
     FAILED,
+    SIGN_IN,                // the accounts to sign in with
+    SIGNING_IN,             // the provider is being contacted (a moment): drawn first, done in a later update
+    SIGN_IN_WAIT,           // the browser page is open: waiting for the person to come back
 }
 
 State :: struct {
@@ -164,6 +168,7 @@ init :: proc(ctx: ^kit.Context) {
     state.relay, state.stun = config.derp, config.internet
     if config.invite != "" { state.code_length = copy(state.code[:], config.invite) }
     uiInit()
+    signinReset()
     if config.menu {
         state.phase = .MENU
     } else {
@@ -205,6 +210,7 @@ teardown :: proc() {
 
 finit :: proc(ctx: ^kit.Context) {
     teardown()
+    signinReset()
     state = {}
 }
 
@@ -226,7 +232,8 @@ launch :: proc(mode: Mode) {
             consoleStart()
             state.console = true
         }
-        if !game_lib.GameOpen(state.game, state.host.server.endpoint, name) {
+        token, refresh, refresh_user := signinToken()
+        if !game_lib.GameOpen(state.game, state.host.server.endpoint, name, token, refresh, refresh_user) {
             fail(state.game.error)
             return
         }
@@ -265,7 +272,8 @@ update :: proc(ctx: ^kit.Context) {
         launch(mode)
         return
     }
-    if state.phase == .MENU || state.phase == .JOIN_FORM || state.phase == .STARTING { return }
+    signinUpdate()
+    if state.phase == .MENU || state.phase == .JOIN_FORM || state.phase == .STARTING || state.phase == .SIGN_IN || state.phase == .SIGNING_IN || state.phase == .SIGN_IN_WAIT { return }
     if config.menu && kit.KeyPressed(&ctx.input, .ESCAPE) {
         backToMenu()
         return
@@ -299,7 +307,8 @@ update :: proc(ctx: ^kit.Context) {
         if state.phase == .CONNECTING && state.guest.stage == .CONNECTED && session.GuestStartTunnel(state.guest) {
             state.guest_tunnel_open = true
             session.SetIdle(state.guest, config.idle_host)
-            if !game_lib.GameOpen(state.game, session.GuestEndpoint(state.guest), playerName()) {
+            token, refresh, refresh_user := signinToken()
+            if !game_lib.GameOpen(state.game, session.GuestEndpoint(state.guest), playerName(), token, refresh, refresh_user) {
                 fail(state.game.error)
                 return
             }
@@ -395,4 +404,14 @@ demo_arena_solo: kit.Demo = {
     update = update,
     draw = draw,
     script = script,
+}
+
+// Signing in with an account: a provider of our own, the identity of the person in the database (see signin.odin and script_signin.odin)
+demo_arena_signin: kit.Demo = {
+    name = "arena sign in",
+    init = init,
+    finit = finit,
+    update = update,
+    draw = draw,
+    script = signin_script,
 }

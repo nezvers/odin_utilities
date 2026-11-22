@@ -56,6 +56,27 @@ test_the_arena_start_screen_plays_its_script :: proc(t: ^testing.T) {
     testing.expect(t, report.finished, "the script reached its end")
 }
 
+// Signing in: the whole flow against a provider of our own and a real server: the identity of the account is the same in two games on two servers, an anonymous player's is not.
+@(test)
+test_the_arena_sign_in_plays_its_script :: proc(t: ^testing.T) {
+    if st.FixturePath("arena-odin") == "" || !os.exists(st.ServerCliPath()) {
+        fmt.println("[arena] no server or no arena module: the sign in test is skipped")
+        return
+    }
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    config = {parsed = true, menu = true, name = "Tester", root = "arena_test_signin", port = 3149, sleep_ms = 2, loopback = true}
+    defer st.ServerRemove("arena_test_signin")
+    headless: kit.HeadlessState
+    backend: kit.Backend
+    kit.HeadlessInit(&backend, &headless)
+    report: kit.Report = kit.TestDemo(demo_arena_signin, &backend)
+    for failure in report.failures[:min(report.failed, kit.MAX_FAILURES)] {
+        testing.expectf(t, false, "frame %d: %s", failure.frame, failure.message)
+    }
+    testing.expect(t, report.finished, "the script reached its end")
+}
+
 @(test)
 test_room_names_are_told_from_invite_codes :: proc(t: ^testing.T) {
     testing.expect(t, looksLikeRoom("maple-otter-22"))

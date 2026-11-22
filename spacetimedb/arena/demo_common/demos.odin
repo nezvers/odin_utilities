@@ -5,4 +5,4 @@ package demo_common
 
 import kit "../../../demo_kit"
 
-demos: []kit.Demo = {demo_arena}
+demos: []kit.Demo = {demo_arena, demo_arena_signin}
