@@ -11,6 +11,7 @@ package arena_game
 // The rows come from the generated code of arena/schema (`odin run spacetimedb/arena/tool/schema` writes it from the module): `schema.Player`, `schema.CallJoin`, `schema.CallSetInput`.
 
 import "base:runtime"
+import "core:time"
 import st "../.."
 import schema "../schema"
 
@@ -58,6 +59,15 @@ Game :: struct {
     sent_dx, sent_dy: i8,
     error: string,                      // the last refusal of the server (a reducer result) or of the connection
     picked_up: int,                     // coins that disappeared from the field since the start (for sounds and effects: read and reset)
+    opened: time.Tick,                  // when `GameOpen` was called
+    greeted_ms: f32,                    // how long after that the server greeted us (InitialConnection), 0: not yet
+    synced_ms: f32,                     // and how long until the first rows of the database came (SubscribeApplied): the field is drawn from then on, 0: not yet
+}
+
+// How long the game has been waiting for the first rows of the database, in milliseconds (0 once they came): what a window shows instead of an empty field
+GameWaitingMs :: proc(game: ^Game) -> f32 {
+    if game.phase == .CLOSED || game.synced_ms > 0 { return 0 }
+    return f32(time.duration_milliseconds(time.tick_since(game.opened)))
 }
 
 GameName :: proc(game: ^Game) -> string {
@@ -68,6 +78,7 @@ GameName :: proc(game: ^Game) -> string {
 // `token`: the ID token of a signed in player (oidc, see spacetimedb/auth.odin): the identity is then the one of the person, the same in every game. `refresh` (with `refresh_user`) renews it at a reconnect.
 GameOpen :: proc(game: ^Game, endpoint: st.Endpoint, name: string, token: string = "", refresh: proc(user: rawptr) -> string = nil, refresh_user: rawptr = nil) -> bool {
     game^ = {}
+    game.opened = time.tick_now()
     game.name_length = copy(game.name[:], name)
     game.host_length = copy(game.host[:], endpoint.host)
     st.CacheInit(&game.cache, {slots = game.slots[:], buckets = game.buckets[:], bytes = game.bytes[:], events = game.events[:], tables = game.tables_storage[:]})
@@ -112,11 +123,13 @@ GamePoll :: proc(game: ^Game) {
         st.CacheApply(&game.cache, message)
         #partial switch value in message {
         case st.InitialConnection:
+            game.greeted_ms = max(f32(time.duration_milliseconds(time.tick_since(game.opened))), 1)
             schema.SubscribeAll(&game.connection, 1)
             schema.CallJoin(&game.connection, GameName(game))
             game.phase = .JOINING
         case st.SubscribeApplied:
             game.phase = .PLAYING
+            if game.synced_ms == 0 { game.synced_ms = max(f32(time.duration_milliseconds(time.tick_since(game.opened))), 1) }
         case st.ReducerResult:
             if value.outcome == .ERROR {
                 reader: st.Reader = st.ReaderMake(value.value)

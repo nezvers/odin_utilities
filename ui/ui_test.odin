@@ -5378,3 +5378,173 @@ test_a_press_on_a_node_selects_it_and_a_press_on_another_selects_only_that_one :
     coveredGraphFrame(harness, graph, &view, pointerAt({-50, -50}))
     testing.expect(t, !a.selected && b.selected, "a press on the body of another node selects only that one")
 }
+
+// A text longer than the field: it moves to the left so that the caret stays in view, a click lands on the character that is under the pointer, and it goes back to its start when the focus is lost
+@(test)
+test_a_text_longer_than_the_field_scrolls_with_the_caret :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    buffer: [256]u8
+    length: int
+    for _ in 0 ..< 2 { fieldFrame(harness, pointerAt({20, 10}), buffer[:], &length) }
+    fieldFrame(harness, pointerAt({20, 10}, true, true), buffer[:], &length)
+    fieldFrame(harness, pointerAt({20, 10}, false, false, true), buffer[:], &length)
+    chunk: Input = pointerAt({20, 10})
+    copy(chunk.text[:], "0123456789")
+    chunk.text_count = 10
+    for _ in 0 ..< 8 { fieldFrame(harness, chunk, buffer[:], &length) }          // 80 characters
+    testing.expect_value(t, length, 80)
+
+    metrics: Metrics = DEFAULT_METRICS
+    char_width: f32 = metrics.font_size * 0.5
+    info: DrawInfo = seen.last[.TEXT_FIELD]
+    visible: f32 = info.rect.z - 2 * metrics.padding.x
+    caret: f32 = f32(info.cursor) * char_width
+    testing.expect(t, caret > visible, "the text is longer than the field")
+    testing.expect(t, info.scroll > 0, "the text moved to the left")
+    testing.expect(t, caret - info.scroll <= visible && caret - info.scroll >= 0, "and the caret is in view")
+    testing.expect(t, near(info.scroll, caret - visible + 2), "the caret is at the right edge: the least that shows it")
+
+    // Home: the start is shown again; End: the end
+    home: Input = pointerAt({20, 10})
+    home.keys = {.HOME}
+    fieldFrame(harness, home, buffer[:], &length)
+    testing.expect(t, near(seen.last[.TEXT_FIELD].scroll, 0), "Home shows the start")
+    end: Input = pointerAt({20, 10})
+    end.keys = {.END}
+    fieldFrame(harness, end, buffer[:], &length)
+    scrolled: f32 = seen.last[.TEXT_FIELD].scroll
+    testing.expect(t, scrolled > 0, "End shows the end")
+
+    // a few steps left: the view stays until the caret would leave it on the left, then follows
+    left: Input = pointerAt({20, 10})
+    left.keys = {.LEFT}
+    for _ in 0 ..< 5 { fieldFrame(harness, left, buffer[:], &length) }
+    testing.expect(t, near(seen.last[.TEXT_FIELD].scroll, scrolled), "a caret that is still in view does not move the text")
+    for _ in 0 ..< 70 { fieldFrame(harness, left, buffer[:], &length) }
+    info = seen.last[.TEXT_FIELD]
+    testing.expect_value(t, info.cursor, 5)
+    testing.expect(t, near(info.scroll, f32(info.cursor) * char_width), "walking left past the edge: the caret is at the left edge")
+
+    // a click lands on the character that is at that place of the field, whatever the scroll is
+    fieldFrame(harness, end, buffer[:], &length)
+    info = seen.last[.TEXT_FIELD]
+    shown_first: int = int((info.scroll / char_width) + 0.5)
+    click_x: f32 = info.rect.x + metrics.padding.x + 10 * char_width + 1       // the 11th character that is shown
+    fieldFrame(harness, pointerAt({click_x, 10}, true, true), buffer[:], &length)
+    fieldFrame(harness, pointerAt({click_x, 10}, false, false, true), buffer[:], &length)
+    testing.expect(t, abs(seen.last[.TEXT_FIELD].cursor - (shown_first + 10)) <= 1, "the click is mapped through the scroll")
+
+    // a shorter text needs no scroll, and a field that has lost the focus shows its start
+    length = 3
+    fieldFrame(harness, pointerAt({20, 10}), buffer[:], &length)
+    testing.expect(t, near(seen.last[.TEXT_FIELD].scroll, 0), "a text that fits is not moved")
+    length = 80
+    fieldFrame(harness, end, buffer[:], &length)
+    testing.expect(t, seen.last[.TEXT_FIELD].scroll > 0)
+    harness.ctx.focus = 0
+    fieldFrame(harness, pointerAt({300, 250}), buffer[:], &length)
+    testing.expect(t, near(seen.last[.TEXT_FIELD].scroll, 0), "without the focus the start is shown")
+}
+
+@(private = "file")
+readOnlyFieldFrame :: proc(harness: ^Harness, input: Input, buffer: []u8, length: ^int) -> bool {
+    frame(harness, input)
+    changed, _ := UiTextField(&harness.ctx, "Field", buffer, length, {Fixed(200), Fixed(28)}, false, true)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return changed
+}
+
+@(private = "file")
+readOnlyAreaFrame :: proc(harness: ^Harness, input: Input, buffer: []u8, length: ^int) -> bool {
+    frame(harness, input)
+    changed := UiTextArea(&harness.ctx, "Area", buffer, length, {Fixed(200), Fixed(80)}, true, false, nil, nil, true)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return changed
+}
+
+// A text that is to be read, selected and copied (an invite code, a log): nothing changes it
+@(test)
+test_a_read_only_field_and_area_can_be_selected_and_copied_but_not_changed :: proc(t: ^testing.T) {
+    Case :: struct { area: bool }
+    for item in ([]Case{{false}, {true}}) {
+        harness: ^Harness = new(Harness)
+        defer free(harness)
+        harnessInit(harness)
+        buffer: [64]u8
+        text: string = "ABCDE-FGHIJ-KLMNO"
+        length: int = copy(buffer[:], text)
+        frame_of :: proc(harness: ^Harness, area: bool, input: Input, buffer: []u8, length: ^int) -> bool {
+            return readOnlyAreaFrame(harness, input, buffer, length) if area else readOnlyFieldFrame(harness, input, buffer, length)
+        }
+        at: Vec2 = {20, 10}
+        for _ in 0 ..< 2 { frame_of(harness, item.area, pointerAt(at), buffer[:], &length) }
+        frame_of(harness, item.area, pointerAt(at, true, true), buffer[:], &length)
+        frame_of(harness, item.area, pointerAt(at, false, false, true), buffer[:], &length)
+        testing.expect(t, harness.ctx.focus != 0, "a read only text has the focus: it can be selected")
+
+        // select all and copy: the clipboard has the text
+        select: Input = pointerAt(at)
+        select.actions = {.SELECT_ALL, .COPY}
+        frame_of(harness, item.area, select, buffer[:], &length)
+        clip: [64]u8
+        copied: int = UiClipboardGet(&harness.ctx, clip[:])
+        testing.expect_value(t, string(clip[:copied]), text)
+
+        // nothing of this changes the text
+        typing: Input = pointerAt(at)
+        copy(typing.text[:], "xyz")
+        typing.text_count = 3
+        testing.expect(t, !frame_of(harness, item.area, typing, buffer[:], &length), "typing")
+        back: Input = pointerAt(at)
+        back.keys = {.BACKSPACE}
+        testing.expect(t, !frame_of(harness, item.area, back, buffer[:], &length), "backspace")
+        delete_key: Input = pointerAt(at)
+        delete_key.keys = {.DELETE}
+        testing.expect(t, !frame_of(harness, item.area, delete_key, buffer[:], &length), "delete")
+        enter: Input = pointerAt(at)
+        enter.keys = {.ENTER}
+        testing.expect(t, !frame_of(harness, item.area, enter, buffer[:], &length), "enter")
+        cut: Input = pointerAt(at)
+        cut.actions = {.SELECT_ALL, .CUT}
+        testing.expect(t, !frame_of(harness, item.area, cut, buffer[:], &length), "cut")
+        copied = UiClipboardGet(&harness.ctx, clip[:])
+        testing.expect_value(t, string(clip[:copied]), text)                            // cut copied, and removed nothing
+        UiClipboardSet(&harness.ctx, "pasted text")
+        paste: Input = pointerAt(at)
+        paste.actions = {.PASTE}
+        testing.expect(t, !frame_of(harness, item.area, paste, buffer[:], &length), "paste")
+        undo: Input = pointerAt(at)
+        undo.actions = {.UNDO}
+        testing.expect(t, !frame_of(harness, item.area, undo, buffer[:], &length), "undo")
+        testing.expect_value(t, string(buffer[:length]), text)
+
+        // the caret and the selection still move: a part of the text can be selected and copied
+        id: Id = UiIdPath("Area" if item.area else "Field")
+        left: Input = pointerAt(at)
+        left.keys = {.LEFT}
+        frame_of(harness, item.area, left, buffer[:], &length)                         // the selection (all of it) closes at its start
+        cursor, anchor, found := UiTextCursor(&harness.ctx, id)
+        testing.expect(t, found)
+        testing.expect_value(t, cursor, 0)
+        testing.expect_value(t, anchor, 0)
+        right: Input = pointerAt(at)
+        right.keys = {.RIGHT}
+        for _ in 0 ..< 3 { frame_of(harness, item.area, right, buffer[:], &length) }
+        cursor, anchor, _ = UiTextCursor(&harness.ctx, id)
+        testing.expect_value(t, cursor, 3)
+        // shift + right selects the next characters, and copy gives them
+        shift_right: Input = pointerAt(at)
+        shift_right.keys = {.RIGHT}
+        shift_right.modifiers = {.SHIFT}
+        for _ in 0 ..< 2 { frame_of(harness, item.area, shift_right, buffer[:], &length) }
+        copy_part: Input = pointerAt(at)
+        copy_part.actions = {.COPY}
+        frame_of(harness, item.area, copy_part, buffer[:], &length)
+        copied = UiClipboardGet(&harness.ctx, clip[:])
+        testing.expect_value(t, string(clip[:copied]), "DE")
+    }
+}

@@ -472,3 +472,58 @@ test_a_text_field_takes_typing_and_pastes :: proc(t: ^testing.T) {
     }
     testing.expect(t, report.finished)
 }
+
+@(test)
+test_a_held_key_repeats_after_a_delay_like_a_keyboard :: proc(t: ^testing.T) {
+    state: KeyRepeatState
+    input: Input
+    dt: f32 = 1.0 / 60.0
+    repeats: int
+    first_repeat_at: f32 = -1
+    elapsed: f32
+    // frame 0: the key goes down
+    input.keys_down, input.keys_pressed = {.BACKSPACE}, {.BACKSPACE}
+    InputRepeat(&input, &state, dt)
+    testing.expect(t, .BACKSPACE in input.keys_repeat, "the press counts")
+    // held for 2 seconds
+    input.keys_pressed = {}
+    for _ in 0 ..< 120 {
+        elapsed += dt
+        InputRepeat(&input, &state, dt)
+        if .BACKSPACE in input.keys_repeat {
+            repeats += 1
+            if first_repeat_at < 0 { first_repeat_at = elapsed }
+        }
+    }
+    testing.expect(t, first_repeat_at >= KEY_REPEAT_DELAY - dt && first_repeat_at <= KEY_REPEAT_DELAY + 2 * dt, "nothing before the delay, then the first repeat")
+    // (2 - 0.4) s at 25 a second: about 40, the frames are 1/60 so the rate is a little under
+    testing.expect(t, repeats >= 30 && repeats <= 42, "the repeats come at the rate of a keyboard")
+    // letting go stops it and the next press starts the delay again
+    input.keys_down = {}
+    InputRepeat(&input, &state, dt)
+    testing.expect(t, input.keys_repeat == {}, "no repeat after release")
+    input.keys_down, input.keys_pressed = {.BACKSPACE}, {.BACKSPACE}
+    InputRepeat(&input, &state, dt)
+    input.keys_pressed = {}
+    for _ in 0 ..< 20 { InputRepeat(&input, &state, dt) }             // 0.33 s
+    testing.expect(t, .BACKSPACE not_in input.keys_repeat, "a new press waits for the delay again")
+}
+
+@(test)
+test_keys_repeat_on_their_own_and_a_long_frame_does_not_burst :: proc(t: ^testing.T) {
+    state: KeyRepeatState
+    input: Input
+    input.keys_down, input.keys_pressed = {.LEFT, .A}, {.LEFT, .A}
+    InputRepeat(&input, &state, 0.016)
+    input.keys_pressed = {}
+    // A is let go, LEFT goes on: separate timers
+    input.keys_down = {.LEFT}
+    InputRepeat(&input, &state, 0.5)                                   // one frame of half a second (the window was dragged)
+    testing.expect(t, .LEFT in input.keys_repeat, "it repeats after the delay")
+    testing.expect(t, .A not_in input.keys_repeat, "the key that was let go does not")
+    InputRepeat(&input, &state, 0.016)
+    testing.expect(t, .LEFT not_in input.keys_repeat, "and the next frame is not another repeat: one repeat per frame at most, no burst")
+    // the game's own sets are not changed by the repeat
+    input.keys_pressed = {}
+    testing.expect(t, KeyRepeated(&input, .LEFT) == (.LEFT in input.keys_repeat))
+}

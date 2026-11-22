@@ -74,7 +74,7 @@ textUndoPush :: proc(undo: ^TextUndo, text: []u8, cursor: int, anchor: int) {
 
 // What the keyboard does to a focused field (textFieldEditKeys), with its history around it.
 @(private)
-textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: ^int, multiline: bool = false) -> (changed: bool, submitted: bool) {
+textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: ^int, multiline: bool = false, read_only: bool = false) -> (changed: bool, submitted: bool) {
     undo: ^TextUndo = &ctx.text_undo
     fits: bool = length^ * 2 <= len(undo.pool)
     if undo.owner != ctx.focus || (undo.count > 0 && string(buffer[:length^]) != string(textUndoText(undo, undo.current))) {
@@ -84,7 +84,7 @@ textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: 
         if fits { textUndoPush(undo, buffer[:length^], state.cursor, state.anchor) }
     }
     actions: Actions = ctx.input.actions
-    if undo.count > 0 && (.UNDO in actions || .REDO in actions) {
+    if undo.count > 0 && !read_only && (.UNDO in actions || .REDO in actions) {
         target: int = undo.current - 1 if .UNDO in actions else undo.current + 1
         if target >= 0 && target < undo.count {
             undo.current = target
@@ -103,7 +103,7 @@ textFieldEdit :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: 
     input: ^Input = &ctx.input
     typed: bool = input.text_count > 0 && .PASTE not_in input.actions && .CUT not_in input.actions && .BACKSPACE not_in input.keys && .DELETE not_in input.keys
     erased: bool = input.text_count == 0 && .BACKSPACE in input.keys && .DELETE not_in input.keys && .PASTE not_in input.actions && .CUT not_in input.actions
-    changed, submitted = textFieldEditKeys(ctx, state, buffer, length, multiline)
+    changed, submitted = textFieldEditKeys(ctx, state, buffer, length, multiline, read_only)
     if changed && undo.count > 0 {
         kind: TextUndoKind = .NONE
         if typed && !had_selection { kind = .TYPING }

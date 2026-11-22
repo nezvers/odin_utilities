@@ -171,7 +171,11 @@ KeyMapOf :: proc() -> ^ui.KeyMap {
 inputProbe :: proc(user: rawptr, device: ui.InputDevice, code: u16) -> bool {
     source: ^kit.Input = cast(^kit.Input)user
     switch device {
-    case .KEYBOARD: return kit.Key(u8(code)) in source.keys_pressed
+    case .KEYBOARD:
+        key: kit.Key = kit.Key(u8(code))
+        // the directions and the pages repeat while held (lists, menus, tables), the other keys act once
+        if key == .UP || key == .DOWN || key == .LEFT || key == .RIGHT || key == .PAGE_UP || key == .PAGE_DOWN { return key in source.keys_repeat }
+        return key in source.keys_pressed
     case .MOUSE: return kit.MouseButton(u8(code)) in source.mouse_pressed
     case .GAMEPAD: return kit.PadButton(u8(code)) in source.pad_pressed
     case .NONE: return false
@@ -304,8 +308,10 @@ InputFrom :: proc(ctx: ^kit.Context, scale: f32 = 1) -> ui.Input {
         .BACKSPACE = .BACKSPACE, .DELETE = .DELETE, .LEFT = .LEFT, .RIGHT = .RIGHT, .HOME = .HOME, .END = .END,
         .ENTER = .ENTER, .ESCAPE = .ESCAPE, .TAB = .TAB,
     }
+    // the keys of editing repeat while held, like in any text editor (the kit makes `keys_repeat`); Enter, Escape and Tab act once
     for key in ui.Key {
-        if keys[key] in source.keys_pressed { result.keys += {key} }
+        repeats: bool = key == .BACKSPACE || key == .DELETE || key == .LEFT || key == .RIGHT || key == .HOME || key == .END
+        if keys[key] in (source.keys_repeat if repeats else source.keys_pressed) { result.keys += {key} }
     }
     // the actions: what the table of hotkeys says (KeyMapOf), by the keys, the mouse buttons and the buttons of a gamepad that went down in this frame
     result.actions += ui.KeyMapActions(KeyMapOf(), inputProbe, source, result.modifiers)

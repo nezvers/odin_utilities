@@ -15,6 +15,7 @@ import ui_kit "../../../ui/kit"
 import kit "../../../demo_kit"
 import "../../../p2p"
 import "../session"
+import game_lib "../game"
 import schema "../schema"
 
 UiState :: struct {
@@ -63,6 +64,7 @@ uiFrame :: proc(kit_ctx: ^kit.Context) {
     case .STARTING: startingScreen(c)
     case .CONNECTING: connectingScreen(c)
     case .PLAYING:
+        waitingNotice(c, state.game)
         playersWindow(c)
         connectionWindow(c)
     case .FAILED: failedScreen(c)
@@ -78,7 +80,8 @@ uiFrame :: proc(kit_ctx: ^kit.Context) {
 textFieldFocused :: proc() -> bool {
     focused: ui.Id = ui.UiFocused(&ui_state.ctx)
     if focused == 0 { return false }
-    return focused == ui.UiIdPath(CONNECTION_WINDOW, "Reply") || focused == ui.UiIdPath("menu", "Name") || focused == ui.UiIdPath("join", "Code")
+    // a read only area (the invite) takes the focus too, to select and copy: the keys of the game are not for the player then
+    return focused == ui.UiIdPath(CONNECTION_WINDOW, "Reply") || focused == ui.UiIdPath(CONNECTION_WINDOW, "Invite") || focused == ui.UiIdPath("menu", "Name") || focused == ui.UiIdPath("join", "Code")
 }
 
 @(private = "file")
@@ -124,6 +127,33 @@ cutCode :: proc(code: string, width: int) -> string {
         strings.write_string(&builder, code[i:min(i + width, len(code))])
     }
     return strings.to_string(builder)
+}
+
+// While the game has no rows yet the field is not empty-looking: it says what is awaited and for how long. (The first data of a guest comes through the host's window: a slow host window means a slow start.)
+@(private = "file")
+waitingNotice :: proc(c: ^ui.Context, game: ^game_lib.Game) {
+    waiting: f32 = game_lib.GameWaitingMs(game)
+    if waiting < 300 { return }                      // 0: the data is here; a fast start does not flash the notice
+    if ui.UiWindow(c, "waiting", centered(c, 420, 250), {ui.Fixed(420), ui.Fit()}, column()) {
+        ui.UiSeparatorText(c, "Joining the game")
+        if game.greeted_ms == 0 {
+            ui.UiLabel(c, "waiting for the server to answer...")
+        } else {
+            ui.UiLabel(c, "connected: waiting for the first data of the game...")
+        }
+        ui.UiProgress(c, "waiting", min(1, waiting / 5000), 0, 1, {ui.Grow(), {}}, "")
+        if waiting > 3000 {
+            ui.UiLabelColored(c, fmt.tprintf("%.0f seconds. The data comes through the host's window: if it is minimized or busy, it is slow.", waiting / 1000), WARNING, .WORDS)
+        }
+    }
+}
+
+// A code that people read, select and copy: a read only text area that wraps it (a code has no spaces: the area breaks it where it must) and scrolls when it is longer than the box. The area keeps its
+// own copy of the text in `buffer` (the caret and the selection stay while the text is the same).
+@(private = "file")
+codeBox :: proc(c: ^ui.Context, name: string, text: string, buffer: []u8, length: ^int, height: f32) {
+    if string(buffer[:length^]) != text { length^ = copy(buffer, text) }
+    _ = ui.UiTextArea(c, name, buffer, length, {ui.Grow(), ui.Fixed(height)}, true, false, nil, nil, true)
 }
 
 @(private = "file")
@@ -232,7 +262,7 @@ joinScreen :: proc(c: ^ui.Context) {
     if ui.UiWindow(c, "join", centered(c, 760, 120), {ui.Fixed(760), ui.Fit()}, column()) {
         ui.UiSeparatorText(c, "Join a game")
         ui.UiLabelColored(c, "Type the room name that the host gave you (like maple-otter-22), or paste an invite code (Ctrl+V in the field, or the button).", DIM, .WORDS)
-        ui.UiTextField(c, "Code", state.code[:], &state.code_length, {ui.Grow(), {}})
+        _ = ui.UiTextArea(c, "Code", state.code[:], &state.code_length, {ui.Grow(), ui.Fixed(86)})          // a code is long: a text area wraps it and shows all of it
         if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 10}) {
             if ui.UiButton(c, "Paste", {ui.Grow(), ui.Fixed(38)}) {
                 buffer: [1024]u8
@@ -292,7 +322,7 @@ connectingScreen :: proc(c: ^ui.Context) {
         if stage == .READY && !relay {
             ui.UiLabelColored(c, "This code names no relay, so the host needs a reply code from you. Send it to the host:", WARNING, .WORDS)
             reply: string = session.GuestReply(guest)
-            ui.UiLabelColored(c, cutCode(shownCode(reply, 2 * 70), 70), RAY, .NEWLINES)
+            codeBox(c, "ReplyCode", shownCode(reply, 190), state.reply_view[:], &state.reply_view_length, 96)       // a real reply is about 190
             if ui.UiButton(c, "Copy the reply code", {ui.Grow(), ui.Fixed(34)}) { kit.ClipboardSet(frame_context, reply) }
         } else if stage == .READY {
             ui.UiLabelColored(c, "Waiting for the host. Nothing needs to be sent back: the relay carries the answer.", DIM, .WORDS)
@@ -349,6 +379,9 @@ connectionWindow :: proc(c: ^ui.Context) {
         } else {
             ui.UiLabel(c, "server: this computer")
         }
+        // a window that runs slowly serves the guests slowly (the host answers the p2p link once per frame): said when it is the case
+        if host != nil && state.frame_ms > 60 { ui.UiLabelColored(c, fmt.tprintf("this window runs at %.0f frames a second: friends connect slowly", 1000 / state.frame_ms), WARNING, .WORDS) }
+        if state.game.synced_ms > 2500 { ui.UiLabelColored(c, fmt.tprintf("the first data took %.1f seconds", state.game.synced_ms / 1000), WARNING, .WORDS) }
         if host != nil && state.hosting { hostPanel(c, host) }
         if state.game.error != "" { ui.UiLabelColored(c, state.game.error, WARNING, .WORDS) }
         if host != nil && session.HostNotice(host) != "" { ui.UiLabelColored(c, session.HostNotice(host), WARNING, .WORDS) }
@@ -377,17 +410,23 @@ hostPanel :: proc(c: ^ui.Context, host: ^session.Host) {
             if ui.UiButton(c, "Copy the room name", {ui.Grow(), ui.Fixed(32)}) { kit.ClipboardSet(frame_context, room) }
             ui.UiLabelColored(c, "or give them the invite code:", DIM)
         }
-        ui.UiLabelColored(c, cutCode(shownCode(code, 3 * 38), 38), RAY, .NEWLINES)
+        codeBox(c, "Invite", shownCode(code, 330), state.invite_view[:], &state.invite_view_length, 120)     // a real invite is about 330 characters
         if ui.UiButton(c, "Copy the invite code", {ui.Grow(), ui.Fixed(32)}) { kit.ClipboardSet(frame_context, code) }
         if host.relay_used && host.link.derp.state == .READY {
             ui.UiLabelColored(c, "A friend needs only this code: the relay carries the answer.", GOOD, .WORDS)
         } else {
             ui.UiLabelColored(c, "No relay: a friend sends a reply code back. Paste it here:", WARNING, .WORDS)
-            submitted: bool
-            _, submitted = ui.UiTextField(c, "Reply", state.reply[:], &state.reply_length, {ui.Grow(), {}})
-            if ui.UiButton(c, "Accept the reply", {ui.Grow(), ui.Fixed(32)}, state.reply_length == 0) || submitted {
-                acceptReply(string(state.reply[:state.reply_length]))
-                state.reply_length = 0
+            _ = ui.UiTextArea(c, "Reply", state.reply[:], &state.reply_length, {ui.Grow(), ui.Fixed(92)})          // a reply code is as long as an invite: a text area, not a line
+            if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 8}) {
+                if ui.UiButton(c, "Paste", {ui.Grow(), ui.Fixed(32)}) {
+                    buffer: [1024]u8
+                    pasted: string = firstLine(kit.ClipboardGet(frame_context, buffer[:]))
+                    state.reply_length = copy(state.reply[:], pasted)
+                }
+                if ui.UiButton(c, "Accept the reply", {ui.Grow(), ui.Fixed(32)}, strings.trim_space(string(state.reply[:state.reply_length])) == "") {
+                    acceptReply(string(state.reply[:state.reply_length]))
+                    state.reply_length = 0
+                }
             }
             if state.paste_length > 0 { ui.UiLabelColored(c, string(state.paste_message[:state.paste_length]), WARNING, .WORDS) }
         }

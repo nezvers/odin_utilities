@@ -33,3 +33,4 @@ What is not obvious from the code of this library. The rules that hold for every
 
 ## Tests
 - `odin test ui`, `odin test ui/demo_common`, `odin test ui/default_style` (theme generator; `style_test.odin` renders a frame with every widget into a counting painter, both themes, with and without icons: add a new widget to its frame).
+- Long text and keys: `UiTextField` keeps the caret in view with `state.scroll.x` (computed from the caret and the width of the last frame, 0 without the focus) and passes it as `DrawInfo.scroll`; a style that draws `TEXT_FIELD` must move the text by it and clip to the box (`default_style` `DrawTextField` does, tests in `style_test.odin` and `ui_test.odin`). `read_only` is a parameter of `textFieldEdit(Keys)`: add every new editing operation behind it. The kit repeats held keys (`demo_kit` `InputRepeat`, `Input.keys_repeat`); a new glue must either feed repeats into `keys` itself (raylib, Karl2D do) or use `keys_repeat`.

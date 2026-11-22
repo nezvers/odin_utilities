@@ -18,6 +18,11 @@ aimPaste :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "join", "Paste
 aimConnect :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "join", "Connect") }
 aimBack :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "join", "Back") }
 aimCopyInvite :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Copy the invite code") }
+aimName :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "menu", "Name") }
+aimInvite :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Invite") }
+aimReply :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Reply") }
+aimReplyPaste :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Paste") }
+aimReplyAccept :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Accept the reply") }
 
 // The right of the screen: the Players and the Connection windows (the field is on the left and changes all the time)
 panel_frames: []kit.Rect = {{880, 40, 380, 660}}
@@ -29,6 +34,24 @@ menu_script: []kit.Step = {
         state.name_length = copy(state.name[:], "player")
         return state.phase == .MENU && state.name_length > 0
     }, "the start screen is shown with a name"),
+    // a held key repeats like in any editor: backspace erases a whole name while it is held
+    kit.Check(proc(ctx: ^kit.Context) -> bool { state.name_length = 0; return aimName(ctx) }, "the name field is on the screen"),
+    kit.ClickAt(&target),
+    kit.Type("abcdefghijklmnop"),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.name[:state.name_length]) == "abcdefghijklmnop" }, "the name field takes typing"),
+    kit.Hold(.BACKSPACE, 1100),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.name_length == 0 }, "holding backspace erased all 16 letters (a tap erases one)"),
+    kit.Tap(.BACKSPACE),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { state.name_length = copy(state.name[:], "player"); return aimName(ctx) }, "the name for the pictures"),
+    kit.ClickAt(&target),                          // a click past the end of the text puts the caret at the end
+    kit.Wait(3),
+    kit.Tap(.BACKSPACE),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.name_length == 5 }, "one tap erases one letter, not more"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { state.name_length = copy(state.name[:], "player"); return true }, "the name for the pictures again"),
     kit.Check(aimJoin, "the Join a game button is on the screen"),
     kit.ClickAt(&target),
     kit.Wait(3),
@@ -77,7 +100,22 @@ menu_script: []kit.Step = {
     kit.Wait(15),
     kit.CaptureIn("host_ready", panel_frames),
     kit.Wait(1),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, ""); return true }, "the clipboard is emptied"),
+    // the invite code is a read only text area: it can be selected, and what is typed into it does not change it
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return aimInvite(ctx) && state.invite_view_length > 100 }, "the invite code is shown in a text area"),
+    kit.ClickAt(&target),
+    kit.Type("zzz"),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !strings.contains(string(state.invite_view[:state.invite_view_length]), "zzz") && textFieldFocused() }, "typing into the invite changes nothing, and the keys stay out of the game"),
+    // the reply of a friend: pasted with a button into a text area (a reply is as long as an invite), accepted or refused
+    kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, "this is not a reply code\nsecond line"); return aimReplyPaste(ctx) }, "the connection window has a Paste button for the reply"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.reply[:state.reply_length]) == "this is not a reply code" }, "Paste puts the first line of the clipboard into the reply"),
+    kit.Check(aimReplyAccept, "and Accept the reply is on the screen"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.reply_length == 0 && strings.contains(string(state.paste_message[:state.paste_length]), "not a reply code") }, "a text that is not a reply code is refused and the field is cleared"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, ""); return aimCopyInvite(ctx) }, "the clipboard is emptied"),
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool {

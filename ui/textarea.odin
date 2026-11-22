@@ -194,7 +194,8 @@ areaLineLimit :: proc(text: string, line: AreaLine, last: bool) -> int {
 
 // A text of several lines in a scrolling box. True when the text changed. `wrap` breaks long lines at words (else they are cut by the box).
 // `highlight` colors the words of the rows (highlight.odin: `ui.HighlightCode` for code), `highlight_user` is passed to it.
-UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size: Size = {}, wrap: bool = true, disabled: bool = false, highlight: TextHighlight = nil, highlight_user: rawptr = nil) -> (changed: bool) {
+// `read_only`: for a text that is to be read, selected and copied, not changed (an invite code, a log): it has the focus, the caret, the selection, Copy and the scrollbar like any area, and no key changes the text.
+UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size: Size = {}, wrap: bool = true, disabled: bool = false, highlight: TextHighlight = nil, highlight_user: rawptr = nil, read_only: bool = false) -> (changed: bool) {
     // the lines are measured with the tags the area is declared in (a "mono" area wraps by the widths of the code face)
     for i in 0 ..< min(ctx.tag_count, DRAW_TAGS) { ctx.measure_tags[i] = ctx.tag_stack[ctx.tag_count - 1 - i] }
     defer ctx.measure_tags = {}
@@ -248,11 +249,11 @@ UiTextArea :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size
             position, _ := cursor_on_screen(ctx, text, lines, count, state.cursor, line_height, padding)
             state.column = position.x - padding.x
         }
-        changed, _ = textFieldEdit(ctx, state, buffer, length, true)
+        changed, _ = textFieldEdit(ctx, state, buffer, length, true, read_only)
         input: ^Input = &ctx.input
         shift: bool = .SHIFT in input.modifiers
         ctrl: bool = .CTRL in input.modifiers
-        if .ENTER in input.keys && !ctrl {
+        if .ENTER in input.keys && !ctrl && !read_only {
             changed = textInsert(state, buffer, length, "\n") || changed
         }
         text = string(buffer[:length^])

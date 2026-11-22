@@ -39,6 +39,7 @@ Runner :: struct {
     menu_open: bool,            // the dropdown of the demos is open
     run_time: f64,
     escape_exits: bool,         // escape closes a demo in a window (not in a scripted test, where Escape is input for the demo)
+    repeat: KeyRepeatState,     // the held keys that repeat (Input.keys_repeat)
 }
 
 // `demos` has to live as long as the runner. With playing = false the devices drive the demo.
@@ -61,6 +62,7 @@ RunnerStep :: proc(runner: ^Runner) -> bool {
     ctx.time = runner.run_time
     ctx.screen = backend.screen_size(backend)
     if runner.playing { PlayerFrame(&runner.player, ctx, &ctx.input) }
+    InputRepeat(&ctx.input, &runner.repeat, delta_time)           // after the player: a script that holds a key repeats it too
 
     // the menu is checked first: a click on it is not for the demo
     ctx.ui_hover = runner.show_menu && !runner.playing && menuHover(runner)

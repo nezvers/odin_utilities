@@ -14,6 +14,7 @@ table_lock: sync.Mutex
 actionsOf :: proc(keys: kit.KeySet, mouse: kit.MouseButtons = {}) -> ui.Actions {
     ctx: kit.Context
     ctx.input.keys_pressed = keys
+    ctx.input.keys_repeat = keys            // a key that goes down is a repeat too (the kit makes the set)
     ctx.input.keys_down = keys
     ctx.input.mouse_pressed = mouse
     return InputFrom(&ctx).actions
@@ -118,4 +119,39 @@ test_the_pressed_binding_is_the_pad_then_the_key_then_the_mouse_and_a_pad_button
     testing.expect_value(t, InputFrom(&ctx).actions, ui.Actions{.ACCEPT})
     ctx.input.pad_pressed = {.BACK}
     testing.expect_value(t, InputFrom(&ctx).actions, ui.Actions{})
+}
+
+// Editing keys repeat while held and the others act once: the text fields and the lists of every kit demo
+@(test)
+test_the_editing_keys_repeat_and_enter_does_not :: proc(t: ^testing.T) {
+    sync.mutex_lock(&table_lock)                  // the actions come from the table of the kit, a global that other tests rebind
+    defer sync.mutex_unlock(&table_lock)
+    KeyMapOf()^ = KeyMapDefault()
+    defer KeyMapOf()^ = KeyMapDefault()
+    ctx: kit.Context
+    // BACKSPACE, LEFT and ENTER are held; the kit says BACKSPACE, LEFT and A repeat now, ENTER does not (it went down earlier)
+    ctx.input.keys_down = {.BACKSPACE, .ENTER, .LEFT, .A}
+    ctx.input.keys_pressed = {}
+    ctx.input.keys_repeat = {.BACKSPACE, .LEFT, .A}
+    input: ui.Input = InputFrom(&ctx)
+    testing.expect(t, .BACKSPACE in input.keys, "backspace repeats")
+    testing.expect(t, .LEFT in input.keys, "left repeats (the caret walks)")
+    testing.expect(t, .LEFT in input.actions, "and the arrow is an action that repeats (lists, menus)")
+    testing.expect(t, .ENTER not_in input.keys, "a held enter does not act again")
+    testing.expect(t, .ACCEPT not_in input.actions, "nor accept again")
+    // enter that goes down this frame acts: the kit puts it in both sets
+    ctx.input.keys_pressed = {.ENTER}
+    ctx.input.keys_repeat = {.ENTER}
+    input = InputFrom(&ctx)
+    testing.expect(t, .ENTER in input.keys && .ACCEPT in input.actions, "enter acts when it goes down")
+    // a held enter does not repeat even when the kit lists it as repeating (Enter submits a field: once per press)
+    ctx.input.keys_pressed = {}
+    ctx.input.keys_repeat = {.ENTER}
+    testing.expect(t, .ENTER not_in InputFrom(&ctx).keys, "the repeat of enter is not passed on")
+    // the directions of a list repeat as actions
+    ctx.input.keys_down = {.DOWN}
+    ctx.input.keys_repeat = {.DOWN}
+    testing.expect(t, .DOWN in InputFrom(&ctx).actions)
+    ctx.input.keys_repeat = {}
+    testing.expect(t, .DOWN not_in InputFrom(&ctx).actions, "held but not repeating this frame: no action")
 }

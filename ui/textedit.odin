@@ -129,8 +129,9 @@ textInsert :: proc(state: ^WidgetState, buffer: []u8, length: ^int, text: string
 }
 
 // What the keyboard does to a focused field. Shift extends the selection, Ctrl moves and deletes by words, the actions copy, cut, paste and select all.
+// `read_only`: the text is looked at, not changed: the caret moves, the selection grows and Copy works; cut, paste, typing, backspace and delete do nothing.
 @(private)
-textFieldEditKeys :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: ^int, multiline: bool = false) -> (changed: bool, submitted: bool) {
+textFieldEditKeys :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, length: ^int, multiline: bool = false, read_only: bool = false) -> (changed: bool, submitted: bool) {
     input: ^Input = &ctx.input
     shift: bool = .SHIFT in input.modifiers
     ctrl: bool = .CTRL in input.modifiers
@@ -141,9 +142,9 @@ textFieldEditKeys :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, leng
     low, high: int = textSelection(state)
     if (.COPY in input.actions || .CUT in input.actions) && high > low {
         UiClipboardSet(ctx, string(buffer[low:high]))
-        if .CUT in input.actions { changed = textDeleteSelection(state, buffer, length) || changed }
+        if .CUT in input.actions && !read_only { changed = textDeleteSelection(state, buffer, length) || changed }
     }
-    if .PASTE in input.actions {
+    if .PASTE in input.actions && !read_only {
         pasted: [CLIPBOARD_LOCAL]u8
         count: int = UiClipboardGet(ctx, pasted[:])
         kept: int
@@ -161,7 +162,7 @@ textFieldEditKeys :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, leng
         changed = textInsert(state, buffer, length, string(cleaned[:written])) || changed
     }
     // typed text goes in at the cursor, in place of the selection
-    if input.text_count > 0 {
+    if input.text_count > 0 && !read_only {
         changed = textInsert(state, buffer, length, string(input.text[:input.text_count])) || changed
     }
 
@@ -191,7 +192,7 @@ textFieldEditKeys :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, leng
     if .END in input.keys && !multiline { move(state, length^, shift) }
 
     text = string(buffer[:length^])
-    if .BACKSPACE in input.keys {
+    if .BACKSPACE in input.keys && !read_only {
         removed: bool = textDeleteSelection(state, buffer, length)
         if !removed && state.cursor > 0 {
             _, width := utf8.decode_last_rune_in_string(text[:state.cursor])
@@ -204,7 +205,7 @@ textFieldEditKeys :: proc(ctx: ^Context, state: ^WidgetState, buffer: []u8, leng
         changed = changed || removed
     }
     text = string(buffer[:length^])
-    if .DELETE in input.keys {
+    if .DELETE in input.keys && !read_only {
         removed: bool = textDeleteSelection(state, buffer, length)
         if !removed && state.cursor < length^ {
             _, width := utf8.decode_rune_in_string(text[state.cursor:])

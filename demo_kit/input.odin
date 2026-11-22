@@ -43,6 +43,7 @@ Input :: struct {
     keys_down: KeySet,                  // held now
     keys_pressed: KeySet,               // went down this frame
     keys_released: KeySet,              // went up this frame
+    keys_repeat: KeySet,                // went down this frame, or repeats while held (after KEY_REPEAT_DELAY, every KEY_REPEAT_INTERVAL): what a text editor or a list wants. A game reads keys_down / keys_pressed.
     mouse_position: Vec2,               // in pixels of the window
     mouse_delta: Vec2,
     mouse_wheel: f32,                   // lines scrolled this frame, up is positive
@@ -53,6 +54,41 @@ Input :: struct {
     pad_pressed: PadButtons,            // went down this frame
     text: [TEXT_CAPACITY]u8,            // characters typed this frame (ASCII), for text fields
     text_count: u8,
+}
+
+KEY_REPEAT_DELAY :: 0.4                 // seconds a key is held before it repeats
+KEY_REPEAT_INTERVAL :: 0.04             // seconds between repeats (25 a second, like the keyboard of an operating system)
+
+// How long each key has been held and when it repeats next. The runner keeps one and calls `InputRepeat` every frame, so every demo has the repeat whatever the backend.
+KeyRepeatState :: struct {
+    held: [Key]f32,
+    next: [Key]f32,
+}
+
+// Fills `input.keys_repeat`: the keys that went down this frame, and the held ones that repeat now (at most one repeat per key per frame, however long the frame was)
+InputRepeat :: proc(input: ^Input, state: ^KeyRepeatState, delta_time: f32) {
+    input.keys_repeat = input.keys_pressed
+    for key in Key {
+        if key not_in input.keys_down {
+            state.held[key] = 0
+            continue
+        }
+        if key in input.keys_pressed {
+            state.held[key], state.next[key] = 0, KEY_REPEAT_DELAY
+            continue
+        }
+        state.held[key] += delta_time
+        if state.held[key] >= state.next[key] {
+            input.keys_repeat += {key}
+            state.next[key] += KEY_REPEAT_INTERVAL
+            if state.next[key] <= state.held[key] { state.next[key] = state.held[key] + KEY_REPEAT_INTERVAL }       // a long frame does not make a burst
+        }
+    }
+}
+
+// Did the key go down this frame or repeat (held long enough)
+KeyRepeated :: proc(input: ^Input, key: Key) -> bool {
+    return key in input.keys_repeat
 }
 
 KeyDown :: proc(input: ^Input, key: Key) -> bool {

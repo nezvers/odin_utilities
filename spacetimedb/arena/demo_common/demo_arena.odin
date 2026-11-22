@@ -80,6 +80,8 @@ State :: struct {
     printed: bool,          // the invite or the reply code went to the console
     reply_line: [1024]u8,   // a line typed into the console of a host
     min_x, max_x: f32,      // where this player has been (the test of the demo reads it)
+    frame_ms: f32,          // how long a frame of this window takes, smoothed: a window that runs slowly serves a guest slowly (the host serves the p2p link once per frame)
+    sync_told: bool,        // the time of the first data was written to the console (once per game)
     started: time.Tick,
     paste_message: [96]u8,
     paste_length: int,
@@ -89,6 +91,10 @@ State :: struct {
     code_length: int,
     reply: [1024]u8,
     reply_length: int,
+    invite_view: [1024]u8,  // the invite code as the read only text area of the host shows it (a copy: the area keeps its caret and selection while the text is the same)
+    invite_view_length: int,
+    reply_view: [1024]u8,    // the same for the reply code of a guest
+    reply_view_length: int,
     relay, stun: bool,
     console: bool,          // the console of the process is read for reply codes (started from the command line)
 }
@@ -213,6 +219,7 @@ teardown :: proc() {
         state.guest = nil
     }
     state.hosting, state.guest_tunnel_open, state.printed = false, false, false
+    state.sync_told, state.frame_ms = false, 0
     state.paste_length = 0
 }
 
@@ -326,6 +333,12 @@ update :: proc(ctx: ^kit.Context) {
     if state.phase != .PLAYING { return }
     game: ^game_lib.Game = state.game
     game_lib.GamePoll(game)
+    state.frame_ms += (ctx.delta_time * 1000 - state.frame_ms) * 0.05
+    if game.synced_ms > 0 && !state.sync_told {
+        state.sync_told = true
+        // one line per game in the console: where a slow start went (the server answered at `greeted`, the first rows came at `synced`)
+        fmt.printfln("arena: connected after %.0f ms, the first data after %.0f ms", game.greeted_ms, game.synced_ms)
+    }
     // the keys go to the game unless a text field has the keyboard
     if !textFieldFocused() {
         dx: i8 = i8(kit.AxisKeys(&ctx.input, .A, .D)) + i8(kit.AxisKeys(&ctx.input, .LEFT, .RIGHT))

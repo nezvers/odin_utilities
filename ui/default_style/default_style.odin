@@ -826,21 +826,26 @@ DrawTextField :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
         TextLeft(painter, info.name, info.rect, info.font_size, padding, theme.text_dim)
         return
     }
+    // a text longer than the field is clipped to it and moved to the left by `info.scroll` (the widget keeps the caret in view); the box and its border are drawn before the clip
+    inside: ui.Rect = {info.rect.x + 1, info.rect.y + 1, max(info.rect.z - 2, 0), max(info.rect.w - 2, 0)}
+    if painter.clip != nil { painter.clip(painter, inside, true) }
+    defer if painter.clip != nil { painter.clip(painter, inside, false) }
+    shift: f32 = padding - info.scroll
     // the selection under the text: the accent, with the text of the selection drawn over it in the color that reads on the accent
     low: int = clamp(min(info.anchor, info.cursor), 0, len(info.text))
     high: int = clamp(max(info.anchor, info.cursor), 0, len(info.text))
     start: f32 = painter.measure_text(painter, info.text[:low], info.font_size).x
     finish: f32 = painter.measure_text(painter, info.text[:high], info.font_size).x
     if focused && low != high {
-        FillRounded(painter, {info.rect.x + padding + start, info.rect.y + 5, finish - start, info.rect.w - 10}, 1, theme.accent, 3)
+        FillRounded(painter, {info.rect.x + shift + start, info.rect.y + 5, finish - start, info.rect.w - 10}, 1, theme.accent, 3)
     }
-    TextLeft(painter, info.text, info.rect, info.font_size, padding, textColor(theme, info))
+    TextLeft(painter, info.text, info.rect, info.font_size, shift, textColor(theme, info))
     if focused && low != high {
-        TextLeft(painter, info.text[low:high], info.rect, info.font_size, padding + start, theme.accent_text)
+        TextLeft(painter, info.text[low:high], info.rect, info.font_size, shift + start, theme.accent_text)
     }
     // the caret blinks twice a second
     if focused && math.mod(ctx.time, 1.0) < 0.5 {
-        x: f32 = info.rect.x + padding + painter.measure_text(painter, info.text[:info.cursor], info.font_size).x
+        x: f32 = info.rect.x + shift + painter.measure_text(painter, info.text[:info.cursor], info.font_size).x
         painter.fill_rect(painter, {x, info.rect.y + 6, 1.5, info.rect.w - 12}, theme.text)
     }
 }

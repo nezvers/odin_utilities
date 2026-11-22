@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "core:thread"
 import "core:time"
 import st "../.."
 import game_lib "../game"
@@ -295,4 +296,90 @@ test_a_guest_can_join_again_after_the_first_one_was_closed_without_goodbye :: pr
     testing.expectf(t, GuestConnected(second), "the second start connects to the host: %v %s", second.stage, second.error)
     testing.expect(t, GuestStartTunnel(second), "and reaches the database")
     GuestStop(first)
+}
+
+// The host is another program: it serves the p2p link and the tunnel once per frame of ITS window. How long a guest takes to see the field when that frame is 16 ms (60 fps), 100 ms, 250 ms: measured with the
+// host in a thread of its own, as a second process would be.
+@(private = "file")
+SlowHost :: struct {
+    host: ^Host,
+    game: ^game_lib.Game,
+    interval_ms: int,
+    stop: bool,
+}
+
+@(private = "file")
+slowHostRun :: proc(data: rawptr) {
+    slow: ^SlowHost = cast(^SlowHost)data
+    for !slow.stop {
+        HostUpdate(slow.host)
+        game_lib.GamePoll(slow.game)
+        time.sleep(time.Duration(slow.interval_ms) * time.Millisecond)
+    }
+}
+
+@(test)
+test_how_the_host_frame_rate_changes_the_time_to_the_field :: proc(t: ^testing.T) {
+    if st.FixturePath("arena-odin") == "" || !os.exists(st.ServerCliPath()) {
+        fmt.println("[arena] no server or no arena module: run `odin run spacetimedb/tool/setup` to test the game")
+        return
+    }
+    intervals: [3]int = {16, 100, 250}
+    for interval, round in intervals {
+        root: string = fmt.tprintf("arena_test_pace_%d", round)
+        defer st.ServerRemove(root)
+        host := new(Host)
+        defer free(host)
+        if !HostStart(host, {root = root, port = 3154 + round, loopback = true, name = "Ada"}) { testing.fail_now(t, host.error) }
+        defer HostStop(host)
+        guest := new(Guest)
+        defer free(guest)
+        testing.expect(t, GuestJoin(guest, HostInvite(host), {loopback = true, name = "Bob"}), guest.error)
+        defer GuestStop(guest)
+        testing.expect(t, HostAcceptReply(host, GuestReply(guest)))
+        for _ in 0 ..< 800 {
+            HostUpdate(host)
+            GuestUpdate(guest)
+            time.sleep(time.Millisecond)
+            if GuestConnected(guest) && HostGuests(host) == 1 { break }
+        }
+        host_game := new(game_lib.Game)
+        defer free(host_game)
+        testing.expect(t, game_lib.GameOpen(host_game, host.server.endpoint, "Ada"), host_game.error)
+        defer game_lib.GameClose(host_game)
+        for _ in 0 ..< 3000 {
+            HostUpdate(host)
+            game_lib.GamePoll(host_game)
+            time.sleep(time.Millisecond)
+            if host_game.phase == .PLAYING { break }
+        }
+        slow: SlowHost = {host = host, game = host_game, interval_ms = interval}
+        worker := thread.create_and_start_with_data(&slow, slowHostRun)
+        started: time.Tick = time.tick_now()
+        testing.expect(t, GuestStartTunnel(guest))
+        SetIdle(guest, nil)                            // the guest's own link is stepped while it waits in a blocking call, as the program does; the host is another thread
+        defer ClearIdle()
+        guest_game := new(game_lib.Game)
+        defer free(guest_game)
+        testing.expect(t, game_lib.GameOpen(guest_game, GuestEndpoint(guest), "Bob"), guest_game.error)
+        defer game_lib.GameClose(guest_game)
+        opened_ms: f64 = time.duration_milliseconds(time.tick_since(started))
+        testing.expect(t, game_lib.GameWaitingMs(guest_game) > 0, "a game that has no rows yet is waiting")
+        for _ in 0 ..< 20000 {
+            GuestUpdate(guest)
+            game_lib.GamePoll(guest_game)
+            time.sleep(2 * time.Millisecond)
+            if guest_game.phase == .PLAYING && guest_game.player_count == 2 && guest_game.coin_count > 0 { break }
+        }
+        ready_ms: f64 = time.duration_milliseconds(time.tick_since(started))
+        slow.stop = true
+        thread.join(worker)
+        thread.destroy(worker)
+        fmt.printfln("[arena timing] the host runs a frame every %3d ms: game connection open after %5.0f ms, the whole field after %5.0f ms", interval, opened_ms, ready_ms)
+        // the guest needs about six frames of the host: the time to the field is a few frames of the host, not seconds more
+        testing.expectf(t, ready_ms < f64(interval) * 14 + 800, "with a host frame of %d ms the field came after %.0f ms", interval, ready_ms)
+        // the game says when it connected and when the first data came, and nothing is awaited any more
+        testing.expect(t, guest_game.greeted_ms > 0 && guest_game.synced_ms >= guest_game.greeted_ms, "the game noted when the server answered and when the first rows came")
+        testing.expect_value(t, game_lib.GameWaitingMs(guest_game), 0)
+    }
 }

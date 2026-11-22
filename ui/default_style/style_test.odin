@@ -668,3 +668,88 @@ test_the_style_editor_loads_saves_and_deletes_styles_edits_fields_and_picks_elem
     testing.expect(t, click(test, STYLE_EDITOR_TITLE, "Pick element"))
     testing.expect(t, !test.editor.pick && !test.ctx.edit.on)
 }
+
+@(private = "file")
+FieldRecorder :: struct {
+    using base: Recorder,                       // the first field: the painter procs of the recorder cast `user` to it
+    drawn_texts: [8]string,
+    text_x: [8]f32,
+    text_count: int,
+    caret: ui.Rect,
+    carets: int,
+    clip_rects: [4]ui.Rect,
+    clip_begins: [4]bool,
+    clip_count: int,
+}
+
+// A text field whose text is longer than the box: the text is drawn moved to the left by the scroll and clipped to the box, the caret follows the text, and the clip is closed
+@(test)
+test_a_text_field_draws_a_long_text_moved_and_clipped :: proc(t: ^testing.T) {
+    recorder: FieldRecorder
+    painter: Painter
+    recorderPainter(&painter, &recorder, THEME_DARK, false)
+    painter.draw_text = proc(painter: ^Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
+        r: ^FieldRecorder = cast(^FieldRecorder)painter.user
+        if r.text_count < len(r.drawn_texts) { r.drawn_texts[r.text_count], r.text_x[r.text_count] = text, position.x }
+        r.text_count += 1
+    }
+    painter.clip = proc(painter: ^Painter, rect: ui.Rect, begin: bool) {
+        r: ^FieldRecorder = cast(^FieldRecorder)painter.user
+        if r.clip_count < len(r.clip_rects) { r.clip_rects[r.clip_count], r.clip_begins[r.clip_count] = rect, begin }
+        r.clip_count += 1
+    }
+    painter.fill_rect = proc(painter: ^Painter, rect: ui.Rect, color: ui.Color) {
+        r: ^FieldRecorder = cast(^FieldRecorder)painter.user
+        if rect.z == 1.5 { r.caret, r.carets = rect, r.carets + 1 }          // the caret is the only rectangle of this width
+    }
+    ctx: ^ui.Context = new(ui.Context)             // a context is big: not on the stack
+    defer free(ctx)
+    ctx.user = &painter
+    style: ui.Style = {metrics = ui.DEFAULT_METRICS}
+    ctx.style = &style
+    padding: f32 = ctx.style.metrics.padding.x
+    size: f32 = ctx.style.metrics.font_size
+    text: string = "0123456789012345678901234567890123456789"          // 40 characters, each half as wide as the font is high
+    total: f32 = f32(len(text)) * size * 0.5
+    box: ui.Rect = {100, 50, 200, 28}
+    visible: f32 = box.z - 2 * padding
+    testing.expect(t, total > visible, "the text is longer than the box")
+
+    // the caret at the end, the text moved so that the caret is at the right edge
+    scroll: f32 = total - visible + 2
+    info: ui.DrawInfo = {kind = .TEXT_FIELD, rect = box, text = text, cursor = len(text), anchor = len(text), font_size = size, flags = {.FOCUSED}, scroll = scroll}
+    DrawTextField(ctx, &info)
+    testing.expect_value(t, recorder.text_count, 1)
+    testing.expect_value(t, recorder.drawn_texts[0], text)
+    testing.expect(t, abs(recorder.text_x[0] - (box.x + padding - scroll)) < 0.01, "the text starts to the left of the box by the scroll")
+    testing.expect_value(t, recorder.clip_count, 2)
+    testing.expect(t, recorder.clip_begins[0] && !recorder.clip_begins[1], "the clip is opened and closed")
+    inside: ui.Rect = recorder.clip_rects[0]
+    testing.expect(t, inside.x >= box.x && inside.y >= box.y && inside.x + inside.z <= box.x + box.z && inside.y + inside.w <= box.y + box.w, "the clip is the inside of the box")
+    testing.expect_value(t, recorder.carets, 1)
+    testing.expect(t, recorder.caret.x >= inside.x && recorder.caret.x + recorder.caret.z <= inside.x + inside.z, "the caret is in view")
+    testing.expect(t, abs(recorder.caret.x - (box.x + padding + visible - 2)) < 0.01, "at the right edge of the text area of the box")
+
+    // no scroll: the start of the text, the caret at its place in the text (outside of the view: the clip hides it)
+    recorder = {}
+    info.scroll, info.cursor, info.anchor = 0, 3, 3
+    DrawTextField(ctx, &info)
+    testing.expect(t, abs(recorder.text_x[0] - (box.x + padding)) < 0.01, "without the scroll the text starts at the padding")
+    testing.expect(t, abs(recorder.caret.x - (box.x + padding + 3 * size * 0.5)) < 0.01)
+
+    // a selection is drawn moved too: the text of the selection over it
+    recorder = {}
+    info.scroll, info.cursor, info.anchor = scroll, len(text), len(text) - 4
+    DrawTextField(ctx, &info)
+    testing.expect_value(t, recorder.text_count, 2)
+    testing.expect_value(t, recorder.drawn_texts[1], "6789")
+    testing.expect(t, abs(recorder.text_x[1] - (box.x + padding - scroll + f32(len(text) - 4) * size * 0.5)) < 0.01, "the selected text is over the selection")
+
+    // an empty field that has no focus shows its name and clips nothing
+    recorder = {}
+    empty: ui.DrawInfo = {kind = .TEXT_FIELD, rect = box, name = "Name", font_size = size}
+    DrawTextField(ctx, &empty)
+    testing.expect_value(t, recorder.text_count, 1)
+    testing.expect_value(t, recorder.clip_count, 0)
+    testing.expect(t, !recorder.bad_rect)
+}

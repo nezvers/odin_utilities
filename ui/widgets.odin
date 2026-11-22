@@ -490,7 +490,9 @@ UiProgress :: proc(ctx: ^Context, name: string, value: f32, minimum: f32 = 0, ma
 
 // A line of text the person edits. The text lives in `buffer` (`length` bytes of it are used): no allocations. `changed` when the
 // content changed, `submitted` in the frame Enter was pressed. The text starts `metrics.padding.x` from the left edge of the rect.
-UiTextField :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size: Size = {}, disabled: bool = false) -> (changed: bool, submitted: bool) {
+// A text longer than the field moves to the left to keep the caret in view (and is clipped to the field); for a long text that people read or paste (a code, an address, a token) a `UiTextArea`
+// wraps it instead. `read_only`: the text can be selected and copied but not changed.
+UiTextField :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, size: Size = {}, disabled: bool = false, read_only: bool = false) -> (changed: bool, submitted: bool) {
     id: Id = UiId(ctx, name)
     state: ^WidgetState = stateGet(ctx, id)
     interaction: Interaction = widgetBehavior(ctx, id, disabled)
@@ -501,21 +503,36 @@ UiTextField :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, siz
     state.anchor = clamp(state.anchor, 0, length^)
     if interaction.hovered && ctx.input.mouse_pressed {
         ctx.focus = id
-        state.cursor = textFieldCursorAt(ctx, string(buffer[:length^]), ctx.input.mouse_position.x - state.rect.x - metrics.padding.x)
+        state.cursor = textFieldCursorAt(ctx, string(buffer[:length^]), ctx.input.mouse_position.x - state.rect.x - metrics.padding.x + state.scroll.x)
         if .SHIFT not_in ctx.input.modifiers { state.anchor = state.cursor }       // shift keeps the old end: the selection grows to the pointer
         if interaction.double_clicked {
             state.anchor, state.cursor = textWordAt(string(buffer[:length^]), state.cursor)
         }
     } else if interaction.pressed && ctx.input.mouse_down && !ctx.input.mouse_pressed && ctx.focus == id {
-        // dragging with the button held selects from where it went down
-        state.cursor = textFieldCursorAt(ctx, string(buffer[:length^]), ctx.input.mouse_position.x - state.rect.x - metrics.padding.x)
+        // dragging with the button held selects from where it went down (and a pointer past the edge of a long text moves the view: the clamp below follows the cursor)
+        state.cursor = textFieldCursorAt(ctx, string(buffer[:length^]), ctx.input.mouse_position.x - state.rect.x - metrics.padding.x + state.scroll.x)
     }
     state.editing = ctx.focus == id
     if state.editing {
-        changed, submitted = textFieldEdit(ctx, state, buffer, length)
+        changed, submitted = textFieldEdit(ctx, state, buffer, length, false, read_only)
+    }
+    // A text longer than the field: the text moves to the left so that the caret stays in view (like every text field), and goes back to its start when the field loses the focus
+    if state.editing {
+        text: string = string(buffer[:length^])
+        caret_x: f32 = measureText(ctx, text[:state.cursor], metrics.font_size).x
+        visible: f32 = state.rect.z - 2 * metrics.padding.x
+        if visible > 8 {
+            room: f32 = 2                                      // the caret is a line of its own: it must fit
+            if caret_x - state.scroll.x > visible - room { state.scroll.x = caret_x - visible + room }
+            if caret_x - state.scroll.x < 0 { state.scroll.x = caret_x }
+            total: f32 = measureText(ctx, text, metrics.font_size).x
+            state.scroll.x = clamp(state.scroll.x, 0, max(0, total - visible + room))
+        }
         // where the caret is in the field, under the text: a list that opens at the caret (UiComplete) is placed by it
-        state.caret = {metrics.padding.x + measureText(ctx, string(buffer[:state.cursor]), metrics.font_size).x, max(state.rect.w, metrics.control_height)}
+        state.caret = {metrics.padding.x + caret_x - state.scroll.x, max(state.rect.w, metrics.control_height)}
         state.caret_top = 0
+    } else {
+        state.scroll.x = 0
     }
 
     flags: Flags = {.DISABLED} if disabled else {}
@@ -527,7 +544,7 @@ UiTextField :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, siz
         cursor = .TEXT,
         draw = {
             kind = .TEXT_FIELD, name = IdSplitName(name), text = string(buffer[:length^]),
-            cursor = state.cursor, anchor = state.anchor, font_size = metrics.font_size, flags = flags,
+            cursor = state.cursor, anchor = state.anchor, scroll = state.scroll.x, font_size = metrics.font_size, flags = flags,
         },
     })
     ElementClose(ctx)

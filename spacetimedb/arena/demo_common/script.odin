@@ -18,9 +18,9 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .PLAYING }, "the solo game started its server and opened the game"),
     kit.Wait(1200),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.game.phase == .PLAYING && state.game.player_count == 1 && state.game.coin_count > 0 }, "the player joined and the coins are on the field"),
-    kit.Hold(.D, 500),
-    kit.Hold(.A, 500),
-    kit.Wait(100),
+    kit.Hold(.D, 900),                      // long enough for the 20 steps per second of the server to move the player when the computer is busy (the whole test suite runs at once)
+    kit.Hold(.A, 900),
+    kit.Wait(200),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.max_x - state.min_x > 30 }, "the player moved when the keys were held"),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         me, found := game_lib.GameMe(state.game)
