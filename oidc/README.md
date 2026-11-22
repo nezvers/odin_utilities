@@ -23,6 +23,16 @@ This is the flow that RFC 8252 asks of native apps: the authorization code flow 
 | `presets.odin`, `providers/` | settings for Google, Discord, GitHub (device flow, OAuth 2.0 only) and SpacetimeAuth (`PresetConfig`), a settings file reader (`ClientConfigRead`), and the setup steps per provider (`providers/README.md`, `providers.example.txt`). |
 | `mock/` | a provider that runs inside of a test (ES256 or RS256, the code flow with PKCE, refresh, device flow, `fault` to make it cheat). |
 
+## Getting a client id (Discord, Google, GitHub)
+A client id is what the provider gives an application you register with it. It is public (it is in the login address), so it may be shared and committed; a client secret and any token may not. Full steps with the exact menus: [providers/README.md](providers/README.md).
+
+1. **Discord:** https://discord.com/developers/applications > New Application > OAuth2 > Redirects: add `http://127.0.0.1:48217/callback` and press Save > copy the **Client ID**. No secret needed for the login (refreshing a token needs it).
+2. **Google:** https://console.cloud.google.com > APIs and Services > OAuth consent screen (External, add yourself as a test user) > Credentials > Create credentials > OAuth client ID > **Desktop app** > copy the **Client ID** (`....apps.googleusercontent.com`). Any loopback port works, nothing to register.
+3. **GitHub:** https://github.com/settings/developers > OAuth Apps > New OAuth App (callback `http://127.0.0.1:48217/callback`) > tick **Enable Device Flow** > copy the **Client ID** (`Ov23...`). GitHub is OAuth 2.0 only: an access token, no ID token.
+4. **Put them in a file that stays out of git:** copy `providers/providers.example.txt` to `providers/providers.local.txt` (git ignored at any depth) and fill in `discord.client_id = ...`, `google.client_id = ...`, `github.client_id = ...`. A secret, when a provider insists on one, goes only into that file (`google.client_secret`), never into a committed one.
+5. **Try it:** `odin run oidc/tool/login -- discord|google|github|spacetimeauth` (add `--no-browser` to print the address and paste it into a browser yourself). It prints the verified claims, or the provider's error.
+6. **Use it in code:** `PresetConfig(.DISCORD, client_id)` (or `ClientConfigRead(text, "discord", ...)` for the file) gives the `ClientConfig` for `LoginBegin`; GitHub uses `PresetMetadataGithub` and `DeviceStart`.
+
 ## Used by
 - `odin_utilities/spacetimedb`: `AuthSession` / `AuthToken` / `AuthRefresh` hand the ID token to a connection (`spacetimedb/auth.odin`); a module reads and checks the claims of its callers with `module.Claims` / `module.RequireClaims` (`spacetimedb/module/jwt.odin`, example `module/example/auth`).
 
