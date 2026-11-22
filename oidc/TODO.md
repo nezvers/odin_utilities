@@ -13,6 +13,9 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (low) ES384/PS256/EdDSA verification (Auth0 and Keycloak can be set to ES256/RS256: all that is needed now)
 - [ ] (low) Dynamic client registration (RFC 7591) and the OIDC session management
 - [x] `tool/login` (`odin run oidc/tool/login -- <discord|google|github|spacetimeauth>`): a whole login from providers.local.txt; Discord tried live (ID token verified; refresh needs the secret)
-- [ ] (high) Try Google, GitHub (device flow) and SpacetimeAuth with the tool
+- [x] Google tried live with the tool (ID token verified, name and email claims, user info, refresh works)
+- [x] GitHub tried live with the tool (device flow, user from api.github.com)
+- [ ] (high) Try SpacetimeAuth with the tool, then a SpacetimeDB login with a Discord or Google ID token (module.RequireClaims)
+- [ ] (low) `JsonString` returns escapes as written (`\\"` in a name): add a decoding variant that writes into a buffer
 - [ ] (medium) `BrowserOpen` gives no sign when Firefox starts slowly (about 10 s cold): print the address always
 - [ ] (medium) GitHub inside the browser flow (OAuth 2.0 without an ID token: `Login` expects one)
