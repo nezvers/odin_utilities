@@ -39,7 +39,7 @@ PresetConfig :: proc(preset: Preset, client_id: string, client_secret: string = 
         config.scopes = "read:user"
     case .SPACETIMEAUTH:
         config.issuer = "https://auth.spacetimedb.com/oidc"
-        config.scopes = "openid profile email"
+        config.scopes = "openid profile email offline_access"      // its ID tokens last 15 minutes: only `offline_access` gives a refresh token
     }
     return config
 }
@@ -91,6 +91,7 @@ test_presets_and_the_settings_file :: proc(t: ^testing.T) {
     google: ClientConfig = PresetConfig(.GOOGLE, "id-g")
     testing.expect_value(t, google.issuer, "https://accounts.google.com")
     testing.expect_value(t, google.redirect_port, 0)
+    testing.expect_value(t, PresetConfig(.SPACETIMEAUTH, "x").scopes, "openid profile email offline_access")
     discord: ClientConfig = PresetConfig(.DISCORD, "id-d")
     testing.expect_value(t, discord.redirect_port, PRESET_PORT_DEFAULT)
 

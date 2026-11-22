@@ -144,6 +144,13 @@ browserLogin :: proc(config: oidc.ClientConfig, open_browser: bool, timeout: f64
     say(fmt.tprintf("  issuer   %s", claims.issuer))
     say(fmt.tprintf("  subject  %s", claims.subject))
     say(fmt.tprintf("  audience is the client id: %v", oidc.JwtAudienceHas(claims, config.client_id)))
+    switch login.tokens.client_auth {
+    case .NONE: say("  client authentication: none (a public client, no secret in the settings)")
+    case .BASIC: say("  client authentication: the secret in the Authorization header (HTTP Basic)")
+    case .FORM: say("  client authentication: the secret in the form")
+    case .WITHOUT_SECRET:
+        say("  client authentication: the provider refused the secret and accepted the request WITHOUT it: this client is a public client (PKCE, no secret). Delete client_secret of this provider from the settings file.")
+    }
     if name, has_name := oidc.LoginDisplayName(login); has_name { say(fmt.tprintf("  name     %s", name)) }
     for field in ([]string{"email", "email_verified", "picture"}) {
         if value, has := oidc.JsonString(claims.payload, field); has { say(fmt.tprintf("  %-8s %s", field, value)) }

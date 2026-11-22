@@ -14,6 +14,7 @@ package oidc_mock
 import "core:crypto/ecdsa"
 import "core:crypto/hash"
 import "core:crypto/rsa"
+import "core:encoding/base64"
 import "core:fmt"
 import "core:net"
 import "core:strings"
@@ -35,7 +36,17 @@ Fault :: enum u8 {
     HS256,                  // an algorithm that must never be accepted
 }
 
+// How the client may present its secret at the token endpoint (a client is registered for one of the two at most providers)
+ClientAuth :: enum u8 {
+    EITHER,                 // HTTP Basic or the form
+    BASIC_ONLY,             // SpacetimeAuth for a client registered with client_secret_basic
+    POST_ONLY,              // client_secret_post
+    PUBLIC,                 // a public client (SpacetimeAuth `none`): the request must carry NO secret, one that does is `invalid_client`
+}
+
 Options :: struct {
+    client_secret: string,  // not "": the token endpoint wants this secret (code exchange, refresh, client credentials), `invalid_client` without it
+    client_auth: ClientAuth,
     algorithm: Algorithm,
     client_id: string,
     subject: string,
@@ -73,6 +84,7 @@ Provider :: struct {
     other_key: ecdsa.Private_Key,       // the key of a wrong signature
     codes: [MAX_CODES]Code,
     fault: Fault,
+    failed_authentications: int,        // token requests refused for their client authentication (a test sees the retry)
     requests: int,                      // how many requests were answered (a test can see that the provider was asked)
     authorize_requests: int,
     nonce_of_last_code: [64]u8,
@@ -170,7 +182,7 @@ Step :: proc(provider: ^Provider) {
         location: string = fmt.tprintf("%s%scode=%s&state=%s", redirect, "&" if strings.contains(redirect, "?") else "?", string(code.value[:code.value_length]), state)
         redirectTo(client, location)
     case "/token":
-        token(provider, client, body)
+        token(provider, client, body, head)
     case "/device":
         code := newCode(provider, 3, "", "")
         respond(client, 200, "application/json", fmt.tprintf("{{\"device_code\":\"%s\",\"user_code\":\"WDJB-MJHT\",\"verification_uri\":\"%s/activate\",\"expires_in\":300,\"interval\":1}}", string(code.value[:code.value_length]), Issuer(provider)))
@@ -217,10 +229,49 @@ findCode :: proc(provider: ^Provider, value: string, kind: u8) -> ^Code {
     return nil
 }
 
+// Does the request prove the client: the secret in an `Authorization: Basic` header (`id:secret`, each percent encoded, base64) or in the form, as far as `client_auth` allows
 @(private)
-token :: proc(provider: ^Provider, client: net.TCP_Socket, form: string) {
+clientAuthenticated :: proc(provider: ^Provider, form: string, head: string) -> bool {
+    wanted: string = provider.options.client_secret
+    scratch: [512]u8
+    if provider.options.client_auth == .PUBLIC {
+        return oidc.QueryValue(form, "client_secret", scratch[:]) == "" && !strings.contains(head, "Authorization: Basic ")
+    }
+    if wanted == "" { return true }
+    if provider.options.client_auth != .BASIC_ONLY && oidc.QueryValue(form, "client_secret", scratch[:]) == wanted { return true }
+    if provider.options.client_auth != .POST_ONLY {
+        marker: string = "Authorization: Basic "
+        at: int = strings.index(head, marker)
+        if at >= 0 {
+            rest: string = head[at + len(marker):]
+            end: int = strings.index_byte(rest, 13)          // the end of the header line (CR)
+            if end < 0 { end = len(rest) }
+            decoded, error := base64.decode(rest[:end], allocator = context.temp_allocator)
+            if error == nil {
+                pair: string = string(decoded)
+                colon: int = strings.index_byte(pair, ':')
+                if colon >= 0 {
+                    id_scratch: [128]u8
+                    secret_scratch: [128]u8
+                    id: string = oidc.QueryValue(fmt.tprintf("v=%s", pair[:colon]), "v", id_scratch[:])
+                    secret: string = oidc.QueryValue(fmt.tprintf("v=%s", pair[colon + 1:]), "v", secret_scratch[:])
+                    return id == provider.options.client_id && secret == wanted
+                }
+            }
+        }
+    }
+    return false
+}
+
+@(private)
+token :: proc(provider: ^Provider, client: net.TCP_Socket, form: string, head: string) {
     scratch: [512]u8
     grant: string = strings.clone(oidc.QueryValue(form, "grant_type", scratch[:]), context.temp_allocator)
+    if grant != "urn:ietf:params:oauth:grant-type:device_code" && !clientAuthenticated(provider, form, head) {
+        provider.failed_authentications += 1
+        respond(client, 401, "application/json", `{"error":"invalid_client","error_description":"client authentication failed"}`)
+        return
+    }
     switch grant {
     case "authorization_code":
         code := findCode(provider, oidc.QueryValue(form, "code", scratch[:]), 1)
@@ -238,7 +289,9 @@ token :: proc(provider: ^Provider, client: net.TCP_Socket, form: string) {
         }
         issue(provider, client, string(code.nonce[:code.nonce_length]))
     case "client_credentials":
-        if provider.options.service_secret == "" || oidc.QueryValue(form, "client_secret", scratch[:]) != provider.options.service_secret || oidc.QueryValue(form, "client_id", scratch[:]) != provider.options.client_id {
+        // with `client_secret` the client was authenticated above (Basic or form); with only `service_secret` the secret has to be in the form
+        service_allowed: bool = provider.options.client_secret != "" || (provider.options.service_secret != "" && oidc.QueryValue(form, "client_secret", scratch[:]) == provider.options.service_secret)
+        if !service_allowed || oidc.QueryValue(form, "client_id", scratch[:]) != provider.options.client_id {
             respond(client, 401, "application/json", "{\"error\":\"invalid_client\"}")
             return
         }

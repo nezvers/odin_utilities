@@ -393,6 +393,73 @@ test_the_user_info_is_read_when_the_answer_has_big_headers :: proc(t: ^testing.T
     testing.expect(t, strings.contains(page, "Name: Grace Hopper"), page)
 }
 
+// A client with a secret (SpacetimeAuth, Discord's refresh): the secret goes in HTTP Basic first and in the form when the provider refuses that, for the code exchange, the refresh and the client credentials.
+// Found with a real SpacetimeAuth client: the secret in the form only was `invalid_client`.
+@(test)
+test_the_client_secret_is_sent_the_way_the_provider_wants :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    // a secret with characters that need encoding in both ways of sending it (the colon of Basic, `&` and `+` of a form)
+    secret: string = "p@ss:w/rd+&%é d"
+    cases := [?]struct { auth: ClientAuth, retries: int, used: oidc.ClientAuthUsed }{{.EITHER, 0, .BASIC}, {.BASIC_ONLY, 0, .BASIC}, {.POST_ONLY, 1, .FORM}, {.PUBLIC, 2, .WITHOUT_SECRET}}
+    for item in cases {
+        pair: Pair
+        if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-11", client_secret = secret, client_auth = item.auth, service_secret = secret}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+        config: oidc.ClientConfig = {issuer = Issuer(pair.provider), client_id = "game", client_secret = secret}
+        testing.expect(t, oidc.LoginBegin(pair.login, config), oidc.LoginError(pair.login))
+        browse(t, pair.login)
+        testing.expectf(t, pair.login.state == .DONE, "%v: the code is exchanged: %s", item.auth, oidc.LoginError(pair.login))
+        testing.expectf(t, pair.provider.failed_authentications == item.retries, "%v: %d refused before it worked", item.auth, pair.provider.failed_authentications)
+        testing.expect_value(t, pair.login.tokens.client_auth, item.used)
+
+        refreshed: ^oidc.Tokens = new(oidc.Tokens)
+        defer free(refreshed)
+        refresh: string = strings.clone(pair.login.tokens.refresh_token, context.temp_allocator)
+        testing.expectf(t, oidc.Refresh(&pair.login.metadata, config, refresh, refreshed), "%v: the refresh: %s", item.auth, refreshed.error)
+        service: ^oidc.Tokens = new(oidc.Tokens)
+        defer free(service)
+        if item.auth != .PUBLIC {          // a public client has no client credentials grant (that is for a client with a secret)
+            testing.expectf(t, oidc.ClientCredentials(&pair.login.metadata, config, "api", service), "%v: client credentials: %s", item.auth, service.error)
+        }
+        without(&pair)
+    }
+
+    // a wrong secret fails both ways and says so; no secret at all fails too
+    pair: Pair
+    if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-11", client_secret = "right"}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+    defer without(&pair)
+    wrong: oidc.ClientConfig = {issuer = Issuer(pair.provider), client_id = "game", client_secret = "wrong"}
+    testing.expect(t, oidc.LoginBegin(pair.login, wrong), oidc.LoginError(pair.login))
+    browse(t, pair.login)
+    testing.expect_value(t, pair.login.state, oidc.LoginState.FAILED)
+    testing.expect(t, strings.contains(oidc.LoginError(pair.login), "invalid_client"), oidc.LoginError(pair.login))
+    testing.expect_value(t, pair.provider.failed_authentications, 3)             // Basic, the form, then without a secret: none of it is right
+    anonymous: oidc.ClientConfig = {issuer = Issuer(pair.provider), client_id = "game"}
+    other: ^oidc.Login = new(oidc.Login)
+    defer free(other)
+    original: ^oidc.Login = pair.login
+    testing.expect(t, oidc.LoginBegin(other, anonymous), oidc.LoginError(other))
+    pair.login = other                                  // the idle hook polls the login of the pair
+    browse(t, other)
+    pair.login = original                               // `without` frees it
+    testing.expect_value(t, other.state, oidc.LoginState.FAILED)
+    testing.expect_value(t, pair.provider.failed_authentications, 4)             // one try: there is no secret to send another way
+}
+
+// A login of a public client (no secret) does not send any client authentication: nothing to retry
+@(test)
+test_a_public_client_sends_no_secret :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    pair: Pair
+    if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-12"}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+    defer without(&pair)
+    testing.expect(t, oidc.LoginBegin(pair.login, {issuer = Issuer(pair.provider), client_id = "game"}), oidc.LoginError(pair.login))
+    browse(t, pair.login)
+    testing.expect_value(t, pair.login.state, oidc.LoginState.DONE)
+    testing.expect_value(t, pair.provider.failed_authentications, 0)
+}
+
 // A login that is cancelled: the port is closed (a second login can use it), the state says so, and a later poll does not bring it back
 @(test)
 test_a_cancelled_login_closes_its_port :: proc(t: ^testing.T) {

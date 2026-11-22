@@ -6,6 +6,7 @@ package oidc
 
 import "core:crypto"
 import "core:crypto/hash"
+import "core:encoding/base64"
 import "core:encoding/json"
 import "core:fmt"
 import "core:mem"
@@ -95,8 +96,17 @@ SCOPES_DEFAULT :: "openid profile email"
 
 TOKEN_STORAGE :: 8192
 
+// How the client proved itself at the token endpoint
+ClientAuthUsed :: enum u8 {
+    NONE,                   // no secret was configured
+    BASIC,                  // the secret in the Authorization header
+    FORM,                   // the secret in the form
+    WITHOUT_SECRET,         // the provider refused the secret both ways and accepted the request without it: the client is a public one and the secret that was configured is not needed
+}
+
 // What a login gives
 Tokens :: struct {
+    client_auth: ClientAuthUsed,
     id_token: string,
     access_token: string,
     refresh_token: string,
@@ -140,6 +150,39 @@ clientAuthorization :: proc(config: ClientConfig, form: ^strings.Builder) -> str
 }
 
 // The code of a login for tokens (RFC 6749 section 4.1.3, with the PKCE verifier of RFC 7636)
+// A request to the token endpoint, with the client authentication when there is a secret. RFC 6749 asks every provider to take HTTP Basic (`client_id:client_secret`, each percent encoded, then base64), many
+// also take the secret in the form; a client is registered for one of the two (SpacetimeAuth: `invalid_client` for the form when the client wants Basic). So Basic goes first and, when the provider says
+// `invalid_client` (or 401), the secret is sent in the form. A PUBLIC client (SpacetimeAuth's `none`) is refused when it sends a secret at all: the last try is the request without one. `form` has no secret in
+// it; the answer is in `buffer`; `used` says which way worked (or the last one that was tried).
+@(private)
+tokenRequest :: proc(metadata: ^Metadata, config: ClientConfig, form: string, buffer: []u8) -> (response: Response, ok: bool, used: ClientAuthUsed) {
+    if config.client_secret == "" {
+        response, ok = PostForm(metadata.token_endpoint, form, buffer)
+        return response, ok, .NONE
+    }
+    credentials: strings.Builder
+    strings.builder_init(&credentials, context.temp_allocator)
+    UrlEncode(config.client_id, &credentials)
+    strings.write_byte(&credentials, ':')
+    UrlEncode(config.client_secret, &credentials)
+    encoded, _ := base64.encode(transmute([]u8)strings.to_string(credentials), allocator = context.temp_allocator)
+    response, ok = PostForm(metadata.token_endpoint, form, buffer, strings.concatenate({"Basic ", encoded}, context.temp_allocator))
+    if !ok || !clientRefused(response) { return response, ok, .BASIC }
+    in_form: strings.Builder
+    strings.builder_init(&in_form, context.temp_allocator)
+    strings.write_string(&in_form, form)
+    FormField(&in_form, "client_secret", config.client_secret)
+    response, ok = PostForm(metadata.token_endpoint, strings.to_string(in_form), buffer)
+    if !ok || !clientRefused(response) { return response, ok, .FORM }
+    response, ok = PostForm(metadata.token_endpoint, form, buffer)
+    return response, ok, .WITHOUT_SECRET
+}
+
+@(private)
+clientRefused :: proc(response: Response) -> bool {
+    return response.status == 401 || strings.contains(string(response.body), "invalid_client")
+}
+
 ExchangeCode :: proc(metadata: ^Metadata, config: ClientConfig, code: string, verifier: string, redirect_uri: string, tokens: ^Tokens) -> bool {
     form: strings.Builder
     strings.builder_init(&form, context.temp_allocator)
@@ -148,15 +191,16 @@ ExchangeCode :: proc(metadata: ^Metadata, config: ClientConfig, code: string, ve
     FormField(&form, "redirect_uri", redirect_uri)
     FormField(&form, "client_id", config.client_id)
     FormField(&form, "code_verifier", verifier)
-    if config.client_secret != "" { FormField(&form, "client_secret", config.client_secret) }
     buffer: [16384]u8
-    response, ok := PostForm(metadata.token_endpoint, strings.to_string(form), buffer[:])
+    response, ok, used := tokenRequest(metadata, config, strings.to_string(form), buffer[:])
     if !ok {
         tokens^ = {}
         tokens.error = "the token endpoint could not be reached"
         return false
     }
-    return readTokens(response, tokens)
+    result: bool = readTokens(response, tokens)
+    tokens.client_auth = used
+    return result
 }
 
 // The client credentials grant (RFC 6749 section 4.4): a program that is not a person (a dedicated server, a service) gets an access token for itself with its client id and secret. The access
@@ -166,16 +210,17 @@ ClientCredentials :: proc(metadata: ^Metadata, config: ClientConfig, scope: stri
     strings.builder_init(&form, context.temp_allocator)
     FormField(&form, "grant_type", "client_credentials")
     FormField(&form, "client_id", config.client_id)
-    FormField(&form, "client_secret", config.client_secret)
     if scope != "" { FormField(&form, "scope", scope) }
     buffer: [16384]u8
-    response, ok := PostForm(metadata.token_endpoint, strings.to_string(form), buffer[:])
+    response, ok, used := tokenRequest(metadata, config, strings.to_string(form), buffer[:])
     if !ok {
         tokens^ = {}
         tokens.error = "the token endpoint could not be reached"
         return false
     }
-    return readTokens(response, tokens)
+    result: bool = readTokens(response, tokens)
+    tokens.client_auth = used
+    return result
 }
 
 // A new access token (and usually a new ID token) from the refresh token, without the person
@@ -185,15 +230,15 @@ Refresh :: proc(metadata: ^Metadata, config: ClientConfig, refresh_token: string
     FormField(&form, "grant_type", "refresh_token")
     FormField(&form, "refresh_token", refresh_token)
     FormField(&form, "client_id", config.client_id)
-    if config.client_secret != "" { FormField(&form, "client_secret", config.client_secret) }
     buffer: [16384]u8
-    response, ok := PostForm(metadata.token_endpoint, strings.to_string(form), buffer[:])
+    response, ok, used := tokenRequest(metadata, config, strings.to_string(form), buffer[:])
     if !ok {
         tokens^ = {}
         tokens.error = "the token endpoint could not be reached"
         return false
     }
     ok = readTokens(response, tokens)
+    tokens.client_auth = used
     if ok && tokens.refresh_token == "" { tokens.refresh_token = keep(tokens.storage[:], &tokens.used, refresh_token) }   // the provider keeps the old one
     return ok
 }

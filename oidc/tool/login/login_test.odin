@@ -130,6 +130,34 @@ test_a_provider_that_wants_the_secret_for_a_refresh :: proc(t: ^testing.T) {
     testing.expect(t, !strings.contains(text, "s3cret"), "the secret is never printed")
 }
 
+// SpacetimeAuth: a client registered as public refuses a secret; the login works without it and the tool tells the person that the secret in the settings is not needed
+@(test)
+test_a_secret_for_a_public_client_is_reported :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    output: strings.Builder
+    defer strings.builder_destroy(&output)
+    code: int = runTool({algorithm = .ES256, client_id = "game", subject = "user-1", client_auth = .PUBLIC}, .NONE, "spacetimeauth", nil, true, &output, "spacetimeauth.client_secret = not-needed\n")
+    text: string = strings.to_string(output)
+    testing.expect_value(t, code, 0)
+    testing.expectf(t, strings.contains(text, "login ok") && strings.contains(text, "WITHOUT it") && strings.contains(text, "Delete client_secret"), "the login works and the person is told: %s", text)
+    testing.expect(t, !strings.contains(text, "not-needed"), "the secret is never printed")
+
+    // a client that takes the secret: Basic, said so
+    strings.builder_reset(&output)
+    code = runTool({algorithm = .ES256, client_id = "game", subject = "user-1", client_secret = "s3", client_auth = .BASIC_ONLY}, .NONE, "spacetimeauth", nil, true, &output, "spacetimeauth.client_secret = s3\n")
+    text = strings.to_string(output)
+    testing.expect_value(t, code, 0)
+    testing.expectf(t, strings.contains(text, "HTTP Basic") && !strings.contains(text, "WITHOUT it"), "Basic: %s", text)
+
+    // no secret in the settings: said so
+    strings.builder_reset(&output)
+    code = runTool({algorithm = .ES256, client_id = "game", subject = "user-1"}, .NONE, "spacetimeauth", nil, true, &output)
+    text = strings.to_string(output)
+    testing.expect_value(t, code, 0)
+    testing.expectf(t, strings.contains(text, "none (a public client"), "no secret: %s", text)
+}
+
 @(test)
 test_the_name_comes_from_the_user_info_when_the_token_has_none :: proc(t: ^testing.T) {
     sync.mutex_lock(&tests_lock)
