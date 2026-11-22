@@ -156,3 +156,13 @@ test_a_module_lets_in_the_players_of_the_provider_it_trusts :: proc(t: ^testing.
     }
     testing.expect(t, stranger_refused, "a token for another application is refused")
 }
+
+@(test)
+test_the_spacetimeauth_settings :: proc(t: ^testing.T) {
+    config: oidc.ClientConfig = AuthSpacetimeAuth("client-1", 48217)
+    testing.expect_value(t, config.issuer, "https://auth.spacetimedb.com/oidc")
+    testing.expect_value(t, config.client_id, "client-1")
+    testing.expect_value(t, config.redirect_port, 48217)
+    testing.expect_value(t, config.client_secret, "")          // a game on a player's computer has no secret
+    testing.expect_value(t, AuthSpacetimeAuth("x").redirect_port, 0)
+}

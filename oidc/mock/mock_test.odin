@@ -260,3 +260,123 @@ test_a_provider_without_discovery_works_through_the_device_flow :: proc(t: ^test
     _, forged := oidc.Userinfo(metadata, "not-a-token", info[:])
     testing.expect(t, !forged, "the lookup of an unknown token fails")
 }
+
+// Discord refuses a refresh without the client secret (`invalid_client`) although the login itself needs none: the client has to report it, and succeed with the secret
+@(test)
+test_a_refresh_that_needs_the_secret :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    pair: Pair
+    if !withProvider({algorithm = .RS256, client_id = "game", subject = "user-5", refresh_secret = "s3cret"}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+    defer without(&pair)
+    config: oidc.ClientConfig = {issuer = Issuer(pair.provider), client_id = "game"}
+    testing.expect(t, oidc.LoginBegin(pair.login, config), oidc.LoginError(pair.login))
+    browse(t, pair.login)
+    testing.expect_value(t, pair.login.state, oidc.LoginState.DONE)
+    refresh: string = strings.clone(pair.login.tokens.refresh_token, context.temp_allocator)
+    refreshed: ^oidc.Tokens = new(oidc.Tokens)
+    defer free(refreshed)
+    testing.expect(t, !oidc.Refresh(&pair.login.metadata, config, refresh, refreshed), "no secret: refused")
+    testing.expect_value(t, refreshed.error, "invalid_client")
+    config.client_secret = "wrong"
+    testing.expect(t, !oidc.Refresh(&pair.login.metadata, config, refresh, refreshed), "a wrong secret: refused")
+    config.client_secret = "s3cret"
+    testing.expect(t, oidc.Refresh(&pair.login.metadata, config, refresh, refreshed), refreshed.error)
+    testing.expect(t, refreshed.id_token != "")
+}
+
+// The client credentials grant (a program that is not a person): the access token is a JWT of the provider without `sub`, the audience is the scope, and it is checked like any other token
+@(test)
+test_the_client_credentials_grant :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    for algorithm in ([]Algorithm{.ES256, .RS256}) {
+        pair: Pair
+        if !withProvider({algorithm = algorithm, client_id = "server", subject = "unused", service_secret = "s3cret"}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+        defer without(&pair)
+        metadata: ^oidc.Metadata = new(oidc.Metadata)
+        keys: ^oidc.KeySet = new(oidc.KeySet)
+        tokens: ^oidc.Tokens = new(oidc.Tokens)
+        defer { free(metadata); free(keys); free(tokens) }
+        issuer: string = Issuer(pair.provider)
+        testing.expect(t, oidc.Discover(issuer, metadata))
+        testing.expect(t, oidc.FetchKeys(metadata, keys))
+
+        testing.expectf(t, oidc.ClientCredentials(metadata, {client_id = "server", client_secret = "s3cret"}, "api", tokens), "the token: %s", tokens.error)
+        testing.expect(t, tokens.access_token != "" && tokens.id_token == "" && tokens.refresh_token == "", "an access token and nothing else")
+        scratch: [2048]u8
+        claims, error := oidc.JwtVerify(tokens.access_token, keys, {issuer = issuer, audience = "api", allow_no_subject = true}, scratch[:])
+        testing.expectf(t, error == .NONE, "the service token verifies: %s", oidc.VerifyErrorText(error))
+        testing.expect_value(t, claims.subject, "")
+        client_id, has_client := oidc.JsonString(claims.payload, "client_id")
+        testing.expect(t, has_client)
+        testing.expect_value(t, client_id, "server")
+        // a token without `sub` is not a login unless it is allowed, another audience is refused, a changed byte breaks the signature
+        _, error = oidc.JwtVerify(tokens.access_token, keys, {issuer = issuer, audience = "api"}, scratch[:])
+        testing.expect_value(t, error, oidc.VerifyError.MALFORMED)
+        _, error = oidc.JwtVerify(tokens.access_token, keys, {audience = "other-api", allow_no_subject = true}, scratch[:])
+        testing.expect_value(t, error, oidc.VerifyError.AUDIENCE)
+        changed: [2048]u8
+        copy(changed[:], tokens.access_token)
+        last: int = len(tokens.access_token) - 4
+        changed[last] = 'A' if changed[last] != 'A' else 'B'
+        _, error = oidc.JwtVerify(string(changed[:len(tokens.access_token)]), keys, {allow_no_subject = true}, scratch[:])
+        testing.expect_value(t, error, oidc.VerifyError.SIGNATURE)
+
+        // the secret is the proof: without it, with a wrong one, or for another client the provider says no
+        testing.expect(t, !oidc.ClientCredentials(metadata, {client_id = "server"}, "api", tokens))
+        testing.expect_value(t, tokens.error, "invalid_client")
+        testing.expect(t, !oidc.ClientCredentials(metadata, {client_id = "server", client_secret = "wrong"}, "api", tokens))
+        testing.expect(t, !oidc.ClientCredentials(metadata, {client_id = "someone-else", client_secret = "s3cret"}, "api", tokens))
+    }
+}
+
+// A login that is cancelled: the port is closed (a second login can use it), the state says so, and a later poll does not bring it back
+@(test)
+test_a_cancelled_login_closes_its_port :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    pair: Pair
+    if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-6"}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+    defer without(&pair)
+    config: oidc.ClientConfig = {issuer = Issuer(pair.provider), client_id = "game", redirect_port = 48911}
+    testing.expect(t, oidc.LoginBegin(pair.login, config), oidc.LoginError(pair.login))
+    testing.expect_value(t, pair.login.state, oidc.LoginState.WAITING)
+    // the port is taken while it waits
+    other: ^oidc.Login = new(oidc.Login)
+    defer free(other)
+    testing.expect(t, !oidc.LoginBegin(other, config), "the same port cannot be used twice")
+    oidc.LoginCancel(pair.login)
+    testing.expect_value(t, pair.login.state, oidc.LoginState.CANCELLED)
+    testing.expect_value(t, oidc.LoginPoll(pair.login), oidc.LoginState.CANCELLED)
+    // and it is free again
+    testing.expect(t, oidc.LoginBegin(other, config), oidc.LoginError(other))
+    oidc.LoginCancel(other)
+    // cancelling twice, or a login that never began, is harmless
+    oidc.LoginCancel(other)
+    idle: oidc.Login
+    oidc.LoginCancel(&idle)
+    testing.expect_value(t, idle.state, oidc.LoginState.IDLE)
+}
+
+// The address of the login goes to the opener as one argument
+@(test)
+test_the_login_address_is_given_to_the_opener :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    pair: Pair
+    if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-7"}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+    defer without(&pair)
+    testing.expect(t, oidc.LoginBegin(pair.login, {issuer = Issuer(pair.provider), client_id = "game"}), oidc.LoginError(pair.login))
+    defer oidc.LoginCancel(pair.login)
+    @(static) last: string
+    last = ""
+    oidc.BrowserLauncher = proc(command: []string) -> bool {
+        last = command[len(command) - 1]
+        return true
+    }
+    defer oidc.BrowserLauncher = nil
+    testing.expect(t, oidc.LoginOpenBrowser(pair.login))
+    testing.expect_value(t, last, oidc.LoginUrl(pair.login))
+    testing.expect(t, strings.contains(last, "code_challenge_method=S256"))
+}

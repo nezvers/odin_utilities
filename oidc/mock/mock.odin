@@ -42,6 +42,8 @@ Options :: struct {
     email: string,
     lifetime: i64,          // seconds of the ID token (0: 600)
     port: int,              // 0: any
+    refresh_secret: string, // not "": a refresh needs this client_secret, as at Discord (`invalid_client` without it)
+    service_secret: string, // not "": the client credentials grant works with this client_secret (a service token without `sub`, audience = the scope), otherwise it is `invalid_client`
 }
 
 MAX_CODES :: 8
@@ -229,7 +231,17 @@ token :: proc(provider: ^Provider, client: net.TCP_Socket, form: string) {
             return
         }
         issue(provider, client, string(code.nonce[:code.nonce_length]))
+    case "client_credentials":
+        if provider.options.service_secret == "" || oidc.QueryValue(form, "client_secret", scratch[:]) != provider.options.service_secret || oidc.QueryValue(form, "client_id", scratch[:]) != provider.options.client_id {
+            respond(client, 401, "application/json", "{\"error\":\"invalid_client\"}")
+            return
+        }
+        issueService(provider, client, oidc.QueryValue(form, "scope", scratch[:]))
     case "refresh_token":
+        if provider.options.refresh_secret != "" && oidc.QueryValue(form, "client_secret", scratch[:]) != provider.options.refresh_secret {
+            respond(client, 401, "application/json", "{\"error\":\"invalid_client\"}")
+            return
+        }
         code := findCode(provider, oidc.QueryValue(form, "refresh_token", scratch[:]), 2)
         if code == nil {
             respond(client, 400, "application/json", "{\"error\":\"invalid_grant\"}")
@@ -284,6 +296,22 @@ issue :: proc(provider: ^Provider, client: net.TCP_Socket, nonce: string) {
     refresh := newCode(provider, 2, "", "")
     access: [32]u8
     respond(client, 200, "application/json", fmt.tprintf("{{\"token_type\":\"Bearer\",\"expires_in\":%d,\"id_token\":\"%s\",\"access_token\":\"access-%s\",\"refresh_token\":\"%s\"}}", provider.options.lifetime, id_token, oidc.RandomText(12, access[:]), string(refresh.value[:refresh.value_length])))
+}
+
+// The access token of a service (client credentials): a JWT without `sub`, the audience is the scope that was asked for, no ID token and no refresh token
+@(private)
+issueService :: proc(provider: ^Provider, client: net.TCP_Socket, scope: string) {
+    now: i64 = oidc.NowUnix()
+    lifetime: i64 = provider.options.lifetime if provider.options.lifetime != 0 else 600
+    payload: string = fmt.tprintf("{{\"iss\":\"%s\",\"aud\":\"%s\",\"client_id\":\"%s\",\"exp\":%d,\"iat\":%d}}", Issuer(provider), scope, provider.options.client_id, now + lifetime, now)
+    out: [3072]u8
+    token: string
+    if provider.options.algorithm == .ES256 {
+        token = oidc.JwtSignEs256(&provider.es_key, "mock-key", payload, out[:])
+    } else {
+        token = oidc.JwtSignRs256(&provider.rs_key, "mock-key", payload, out[:])
+    }
+    respond(client, 200, "application/json", fmt.tprintf("{{\"token_type\":\"Bearer\",\"expires_in\":%d,\"access_token\":\"%s\"}}", lifetime, token))
 }
 
 @(private)
