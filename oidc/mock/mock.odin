@@ -43,6 +43,8 @@ Options :: struct {
     lifetime: i64,          // seconds of the ID token (0: 600)
     port: int,              // 0: any
     refresh_secret: string, // not "": a refresh needs this client_secret, as at Discord (`invalid_client` without it)
+    header_padding: int,    // the user info answer has a header of this many bytes (real providers send kilobytes of headers)
+    userinfo_name: string,  // not "": the user info carries this `name` (the ID token never does, as at Discord)
     service_secret: string, // not "": the client credentials grant works with this client_secret (a service token without `sub`, audience = the scope), otherwise it is `invalid_client`
 }
 
@@ -174,7 +176,11 @@ Step :: proc(provider: ^Provider) {
         respond(client, 200, "application/json", fmt.tprintf("{{\"device_code\":\"%s\",\"user_code\":\"WDJB-MJHT\",\"verification_uri\":\"%s/activate\",\"expires_in\":300,\"interval\":1}}", string(code.value[:code.value_length]), Issuer(provider)))
     case "/userinfo":
         if strings.contains(head, "Bearer access-") {
-            respond(client, 200, "application/json", fmt.tprintf("{{\"sub\":\"%s\",\"email\":\"%s\"}}", provider.options.subject, provider.options.email))
+            if provider.options.userinfo_name != "" {
+                respond(client, 200, "application/json", fmt.tprintf("{{\"sub\":\"%s\",\"email\":\"%s\",\"name\":\"%s\"}}", provider.options.subject, provider.options.email, provider.options.userinfo_name), provider.options.header_padding)
+            } else {
+                respond(client, 200, "application/json", fmt.tprintf("{{\"sub\":\"%s\",\"email\":\"%s\"}}", provider.options.subject, provider.options.email), provider.options.header_padding)
+            }
         } else {
             respond(client, 401, "application/json", "{\"error\":\"invalid_token\"}")
         }
@@ -315,8 +321,10 @@ issueService :: proc(provider: ^Provider, client: net.TCP_Socket, scope: string)
 }
 
 @(private)
-respond :: proc(client: net.TCP_Socket, status: int, content_type: string, body: string) {
-    head: string = fmt.tprintf("HTTP/1.1 %d X\r\nContent-Type: %s\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", status, content_type, len(body))
+respond :: proc(client: net.TCP_Socket, status: int, content_type: string, body: string, padding: int = 0) {
+    // `padding`: a header of that many bytes (real providers send kilobytes of headers: CDN, cookies, security policies)
+    extra: string = fmt.tprintf("X-Padding: %s\r\n", strings.repeat("a", padding, context.temp_allocator)) if padding > 0 else ""
+    head: string = fmt.tprintf("HTTP/1.1 %d X\r\nContent-Type: %s\r\nContent-Length: %d\r\n%sConnection: close\r\n\r\n", status, content_type, len(body), extra)
     net.send_tcp(client, transmute([]u8)head)
     net.send_tcp(client, transmute([]u8)body)
 }

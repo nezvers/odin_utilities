@@ -346,6 +346,53 @@ test_the_client_credentials_grant :: proc(t: ^testing.T) {
     }
 }
 
+// Discord keeps the name out of the ID token: the page of the browser and `LoginDisplayName` find it in the user info; without it the page says so
+@(test)
+test_the_name_of_the_person_is_found_where_the_provider_keeps_it :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    pair: Pair
+    if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-8", userinfo_name = "Ada Lovelace"}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+    defer without(&pair)
+    testing.expect(t, oidc.LoginBegin(pair.login, {issuer = Issuer(pair.provider), client_id = "game"}), oidc.LoginError(pair.login))
+    status, page := browse(t, pair.login)
+    testing.expect_value(t, status, 200)
+    testing.expect(t, strings.contains(page, "Name: Ada Lovelace"), page)
+    name, found := oidc.LoginDisplayName(pair.login)
+    testing.expect(t, found)
+    testing.expect_value(t, name, "Ada Lovelace")
+    testing.expect(t, strings.contains(oidc.LoginUserinfo(pair.login), "user-8"))
+
+    // no name anywhere: not found, and the page says so instead of inventing one
+    other: Pair
+    if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-9"}, .NONE, &other) { testing.fail_now(t, "the provider does not start") }
+    defer without(&other)
+    testing.expect(t, oidc.LoginBegin(other.login, {issuer = Issuer(other.provider), client_id = "game"}), oidc.LoginError(other.login))
+    _, other_page := browse(t, other.login)
+    testing.expect(t, strings.contains(other_page, "Name: (none in the token)"), other_page)
+    _, other_found := oidc.LoginDisplayName(other.login)
+    testing.expect(t, !other_found)
+}
+
+// Real providers answer with kilobytes of headers (Discord: about 2 KB with the CDN's): the user info must still be read, and the name found. (The first version of the login kept 2 KB for the whole answer and
+// found no name at Discord.)
+@(test)
+test_the_user_info_is_read_when_the_answer_has_big_headers :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    pair: Pair
+    if !withProvider({algorithm = .RS256, client_id = "game", subject = "user-10", userinfo_name = "Grace Hopper", header_padding = 5000}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+    defer without(&pair)
+    testing.expect(t, oidc.LoginBegin(pair.login, {issuer = Issuer(pair.provider), client_id = "game"}), oidc.LoginError(pair.login))
+    status, page := browse(t, pair.login)
+    testing.expect_value(t, status, 200)
+    testing.expect_value(t, pair.login.state, oidc.LoginState.DONE)       // the login itself does not depend on it
+    name, found := oidc.LoginDisplayName(pair.login)
+    testing.expect(t, found, "the name is found although the answer has 5 KB of headers")
+    testing.expect_value(t, name, "Grace Hopper")
+    testing.expect(t, strings.contains(page, "Name: Grace Hopper"), page)
+}
+
 // A login that is cancelled: the port is closed (a second login can use it), the state says so, and a later poll does not bring it back
 @(test)
 test_a_cancelled_login_closes_its_port :: proc(t: ^testing.T) {

@@ -50,10 +50,28 @@ Login :: struct {
     claims: JwtClaims,
     error: [256]u8,
     error_length: int,
-    rejected: [256]u8,          // what the last callback that was not this login's carried (an older tab, another site), the one-time `code` shown by its length only: to show why it was ignored
+    userinfo: [2048]u8,         // the user info of the provider (JSON) fetched after the login, for the name and the picture that the ID token may not carry
+    userinfo_length: int,
+    rejected: [256]u8,         // what the last callback that was not this login's carried (an older tab, another site), the one-time `code` shown by its length only: to show why it was ignored
     rejected_length: int,
     rejected_count: int,        // how many callbacks were ignored for that reason
     busy: bool,                 // a poll is in progress (its own requests step the waiting code, which must not poll again)
+}
+
+// The JSON of the user info that was fetched after the login ("" when the provider has none)
+LoginUserinfo :: proc(login: ^Login) -> string {
+    return string(login.userinfo[:login.userinfo_length])
+}
+
+// What to call the person: `name`, `global_name`, `preferred_username` or `username`, from the ID token first and from the user info second
+LoginDisplayName :: proc(login: ^Login) -> (name: string, found: bool) {
+    fields: [4]string = {"name", "global_name", "preferred_username", "username"}
+    for source in ([]string{login.claims.payload, LoginUserinfo(login)}) {
+        for field in fields {
+            if value, has := JsonString(source, field); has && value != "" { return value, true }
+        }
+    }
+    return "", false
 }
 
 LoginUrl :: proc(login: ^Login) -> string {
@@ -211,9 +229,14 @@ LoginPoll :: proc(login: ^Login) -> LoginState {
     net.close(login.listener)
     login.listener = {}
     login.state = .DONE
-    name, has_name := JsonString(claims.payload, "name")
-    if !has_name { name, has_name = JsonString(claims.payload, "global_name") }
-    if !has_name { name, _ = JsonString(claims.payload, "preferred_username") }
+    // some providers (Discord) keep the name out of the ID token: the user info has it (best effort: a login does not fail because of it)
+    if login.metadata.userinfo_endpoint != "" && login.tokens.access_token != "" {
+        // the buffer holds the whole answer, headers too (a CDN's are kilobytes): big, and only the body is kept
+        answer: [16384]u8
+        text, fetched := Userinfo(&login.metadata, login.tokens.access_token, answer[:])
+        if fetched { login.userinfo_length = copy(login.userinfo[:], text) }
+    }
+    name, has_name := LoginDisplayName(login)
     reply(client, 200, fmt.tprintf("Login verified. The program checked the ID token (signature, issuer, audience, expiry, nonce).\nIssuer: %s\nSubject: %s\nName: %s\nYou can close this window and go back to the program.", claims.issuer, claims.subject, name if has_name else "(none in the token)"))
     return .DONE
 }

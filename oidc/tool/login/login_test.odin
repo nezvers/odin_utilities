@@ -54,7 +54,7 @@ idle :: proc(login: ^oidc.Login) {
 
 // Starts a provider and the hooks, runs the tool with a settings file that names `provider_name`, returns the exit code and what the tool said
 @(private = "file")
-runTool :: proc(options: mock.Options, fault: mock.Fault, provider_name: string, extra: []string, play: bool, output: ^strings.Builder) -> int {
+runTool :: proc(options: mock.Options, fault: mock.Fault, provider_name: string, extra: []string, play: bool, output: ^strings.Builder, more_settings: string = "") -> int {
     provider := new(mock.Provider)
     defer free(provider)
     if !mock.Start(provider, options) { return -1 }
@@ -69,7 +69,7 @@ runTool :: proc(options: mock.Options, fault: mock.Fault, provider_name: string,
         Idle, capture = nil, nil
     }
     file: string = fmt.tprintf("login_tool_test_%s.txt", provider_name)
-    _ = os.write_entire_file(file, fmt.tprintf("%s.client_id = %s\n", provider_name, options.client_id))
+    _ = os.write_entire_file(file, fmt.tprintf("%s.client_id = %s\n%s", provider_name, options.client_id, more_settings))
     defer _ = os.remove(file)
     arguments: [dynamic]string
     arguments.allocator = context.temp_allocator
@@ -119,6 +119,27 @@ test_a_provider_that_wants_the_secret_for_a_refresh :: proc(t: ^testing.T) {
     text: string = strings.to_string(output)
     testing.expect_value(t, code, 0)
     testing.expectf(t, strings.contains(text, "refresh works: false") && strings.contains(text, "refresh answer: invalid_client"), "the refusal is shown: %s", text)
+    testing.expectf(t, strings.contains(text, "client_secret") && strings.contains(text, "git ignored"), "and what to do about it: %s", text)
+
+    // with the secret in the settings file the refresh works, and the hint is not shown
+    strings.builder_reset(&output)
+    code = runTool({algorithm = .RS256, client_id = "game", subject = "user-1", refresh_secret = "s3cret"}, .NONE, "discord", nil, true, &output, "discord.client_secret = s3cret\n")
+    text = strings.to_string(output)
+    testing.expect_value(t, code, 0)
+    testing.expectf(t, strings.contains(text, "refresh works: true") && !strings.contains(text, "refresh answer"), "the secret of the file is used: %s", text)
+    testing.expect(t, !strings.contains(text, "s3cret"), "the secret is never printed")
+}
+
+@(test)
+test_the_name_comes_from_the_user_info_when_the_token_has_none :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    output: strings.Builder
+    defer strings.builder_destroy(&output)
+    code: int = runTool({algorithm = .RS256, client_id = "game", subject = "user-1", userinfo_name = "Ada Lovelace"}, .NONE, "discord", nil, true, &output)
+    text: string = strings.to_string(output)
+    testing.expect_value(t, code, 0)
+    testing.expectf(t, strings.contains(text, "name     Ada Lovelace"), "the name of the user info is shown: %s", text)
 }
 
 @(test)
@@ -199,4 +220,13 @@ test_usage_and_settings_errors_end_with_code_2 :: proc(t: ^testing.T) {
 test_the_settings_reader_reports_a_missing_file :: proc(t: ^testing.T) {
     _, found := readSettings("login_tool_test_nothing_here.txt")
     testing.expect(t, !found)
+}
+
+@(test)
+test_the_field_names_of_json_are_listed_without_values :: proc(t: ^testing.T) {
+    testing.expect_value(t, fieldNames(`{"sub":"secret-1","email":"a@b.c","picture":"https://x/y.png"}`), "email, picture, sub")
+    testing.expect_value(t, fieldNames(`{}`), "")
+    testing.expect_value(t, fieldNames(`[1,2]`), "(not an object)")
+    testing.expect_value(t, fieldNames(`not json`), "(not JSON)")
+    testing.expect(t, !strings.contains(fieldNames(`{"sub":"secret-1"}`), "secret-1"), "never a value")
 }

@@ -9,8 +9,10 @@ package main
 // `--issuer` replaces the provider's address (a provider of your own, or the mock of the tests); for github it names a server with the GitHub style endpoints /device, /token and /userinfo.
 // The work is in `run` (returns the exit code, writes through `say`) so that login_test.odin can drive it against the mock provider.
 
+import "core:encoding/json"
 import "core:fmt"
 import "core:os"
+import "core:slice"
 import "core:strings"
 import "core:time"
 import oidc "../.."
@@ -142,7 +144,8 @@ browserLogin :: proc(config: oidc.ClientConfig, open_browser: bool, timeout: f64
     say(fmt.tprintf("  issuer   %s", claims.issuer))
     say(fmt.tprintf("  subject  %s", claims.subject))
     say(fmt.tprintf("  audience is the client id: %v", oidc.JwtAudienceHas(claims, config.client_id)))
-    for field in ([]string{"name", "global_name", "preferred_username", "email", "email_verified", "picture"}) {
+    if name, has_name := oidc.LoginDisplayName(login); has_name { say(fmt.tprintf("  name     %s", name)) }
+    for field in ([]string{"email", "email_verified", "picture"}) {
         if value, has := oidc.JsonString(claims.payload, field); has { say(fmt.tprintf("  %-8s %s", field, value)) }
     }
     say(fmt.tprintf("  refresh token: %v, ID token %d characters, expires in %d s", login.tokens.refresh_token != "", len(login.tokens.id_token), login.tokens.expires_in))
@@ -151,11 +154,15 @@ browserLogin :: proc(config: oidc.ClientConfig, open_browser: bool, timeout: f64
         defer free(refreshed)
         say(fmt.tprintf("  refresh works: %v", oidc.Refresh(&login.metadata, config, login.tokens.refresh_token, refreshed)))
         if refreshed.error != "" { say(fmt.tprintf("  refresh answer: %s %s", refreshed.error, refreshed.error_description)) }
+        if refreshed.error == "invalid_client" && config.client_secret == "" {
+            say("  this provider wants the client secret to refresh a token (the login itself needs none): put it as `<provider>.client_secret = ...` in providers.local.txt (git ignored, never a committed file), or let the person log in again when the token ends")
+        }
     }
-    info: [4096]u8
+    info: [16384]u8
     if user, ok := oidc.Userinfo(&login.metadata, login.tokens.access_token, info[:]); ok {
         subject, _ := oidc.JsonString(user, "sub")
         say(fmt.tprintf("  userinfo: %d bytes of JSON, subject %s", len(user), subject))
+        say(fmt.tprintf("  userinfo fields: %s", fieldNames(user)))          // names only: a provider that keeps the name under another key shows up here
     }
     return 0
 }
@@ -195,7 +202,7 @@ githubDevice :: proc(config: oidc.ClientConfig, issuer: string, timeout: f64) ->
         if time.duration_seconds(time.tick_since(started)) > limit { return failed("the code expired", 1) }
         waitTurn(nil)
     }
-    info: [8192]u8
+    info: [16384]u8
     user, ok := oidc.Userinfo(metadata, tokens.access_token, info[:])
     if !ok { return failed("login ok but the user could not be read", 1) }
     say("login ok (GitHub gives an access token, not an ID token)")
@@ -204,4 +211,17 @@ githubDevice :: proc(config: oidc.ClientConfig, issuer: string, timeout: f64) ->
     }
     if id, has := oidc.JsonInt(user, "id"); has { say(fmt.tprintf("  id       %d", id)) }
     return 0
+}
+
+// The names of the top level fields of a JSON object, for the person who tries a provider (never the values)
+fieldNames :: proc(json_text: string) -> string {
+    value, error := json.parse(transmute([]u8)json_text, json.DEFAULT_SPECIFICATION, true, context.temp_allocator)
+    if error != .None { return "(not JSON)" }
+    object, is_object := value.(json.Object)
+    if !is_object { return "(not an object)" }
+    names: [dynamic]string
+    names.allocator = context.temp_allocator
+    for key in object { append(&names, key) }
+    slice.sort(names[:])
+    return strings.join(names[:], ", ", context.temp_allocator)
 }

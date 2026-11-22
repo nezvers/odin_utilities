@@ -198,7 +198,8 @@ Refresh :: proc(metadata: ^Metadata, config: ClientConfig, refresh_token: string
     return ok
 }
 
-// The user info (`sub` and what the scopes allow: email, name ...) as the JSON of the answer
+// The user info (`sub` and what the scopes allow: email, name ...) as the JSON of the answer. `out` holds the whole answer, headers included (a CDN's are kilobytes: 16 KB is safe); the result is a
+// slice of it, and it is empty (not ok) when the answer does not fit.
 Userinfo :: proc(metadata: ^Metadata, access_token: string, out: []u8) -> (json_text: string, ok: bool) {
     if metadata.userinfo_endpoint == "" { return "", false }
     headers: [1]Header = {{"Authorization", fmt.tprintf("Bearer %s", access_token)}}
