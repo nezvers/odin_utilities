@@ -129,6 +129,12 @@ removeStores :: proc() {
     oidc.StoreRemove(config.signin_store)
 }
 
+// A restore of a stored sign in is over (it succeeded, was refused or the provider could not be reached): the start screen is back and nothing is being contacted
+@(private = "file")
+restoreEnded :: proc(ctx: ^kit.Context) -> bool {
+    return state.phase == .MENU && !signin.restoring
+}
+
 // What the store file of the first account holds now
 @(private = "file")
 stored_token :: proc() -> (token: string, found: bool) {
@@ -164,16 +170,14 @@ signin_script: []kit.Step = {
     kit.Wait(1),
     kit.Check(aimMockAccount, "the account of the provider is on the screen"),
     kit.ClickAt(&target),
-    kit.Wait(30),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .SIGN_IN_WAIT && launched_address != "" && strings.contains(signinAddress(), "code_challenge_method=S256") }, "the provider was contacted and the page was opened (not by a real browser)"),
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool { return state.phase == .SIGN_IN_WAIT && launched_address != "" && strings.contains(signinAddress(), "code_challenge_method=S256") }, "the provider was contacted and the page was opened (not by a real browser)", 6000),
     kit.Wait(15),
     kit.Capture("signin_waiting"),
     kit.Wait(1),
     kit.Check(playBrowser, "the browser signs in at the provider and comes back"),
-    kit.Wait(40),
-    kit.Check(proc(ctx: ^kit.Context) -> bool {
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool {
         return state.phase == .MENU && signin.account != nil && string(state.name[:state.name_length]) == "Ada Lovelace" && signin.account.subject_length > 0
-    }, "the ID token is verified, the account is kept and its name is the name of the player"),
+    }, "the ID token is verified, the account is kept and its name is the name of the player", 6000),
     kit.Wait(15),
     kit.Capture("signed_in"),
     kit.Wait(1),
@@ -188,13 +192,12 @@ signin_script: []kit.Step = {
     // the first game: the identity of the account
     kit.Check(aimPlaySolo, "the start screen has Play solo"),
     kit.ClickAt(&target),
-    kit.Wait(1400),
-    kit.Check(proc(ctx: ^kit.Context) -> bool {
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool {
         if !playsSolo(ctx) { return false }
         first_identity = state.game.connection.identity
         me, found := game_lib_me()
         return found && first_identity != st.Identity{} && me == "Ada Lovelace"
-    }, "the server accepted the ID token and the player is Ada Lovelace"),
+    }, "the server accepted the ID token and the player is Ada Lovelace", 6000),
     kit.Tap(.ESCAPE),
     kit.Wait(10),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .MENU && signin.account != nil }, "Escape leaves the game and the account stays"),
@@ -206,18 +209,16 @@ signin_script: []kit.Step = {
         copy(previous[:], before)
         return hooksOn(ctx) && restart(ctx) && state.phase == .SIGNING_IN && signin.account == nil
     }, "after a restart the stored sign in begins to be restored"),
-    kit.Wait(40),
-    kit.Check(proc(ctx: ^kit.Context) -> bool {
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool {
         if !oidc.StoreAvailable() { return true }
         token, found := stored_token()
         return state.phase == .MENU && signin.account != nil && launched_address == "" && string(state.name[:state.name_length]) == "Ada Lovelace" && found && token == signin.account.session.tokens.refresh_token
-    }, "the account is back with its name, no browser was opened, the file has the rotated token"),
+    }, "the account is back with its name, no browser was opened, the file has the rotated token", 6000),
     // the second game, on a new server: the same identity (an anonymous player gets a new one every time)
     kit.Check(hooksOn, "the provider is stepped again"),
     kit.Check(aimPlaySolo, "the start screen has Play solo again"),
     kit.ClickAt(&target),
-    kit.Wait(1400),
-    kit.Check(playsSolo, "the second game started on a new server"),
+    kit.WaitUntil(playsSolo, "the second game started on a new server", 6000),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         return state.game != nil && state.game.connection.identity == first_identity
     }, "and it has the same identity: it is the identity of the person"),
@@ -232,8 +233,7 @@ signin_script: []kit.Step = {
     kit.Check(hooksOn, "the provider is stepped again"),
     kit.Check(aimPlaySolo, "the start screen has Play solo"),
     kit.ClickAt(&target),
-    kit.Wait(1400),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return playsSolo(ctx) && state.game.connection.identity != first_identity }, "without an account the identity is another one"),
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool { return playsSolo(ctx) && state.game.connection.identity != first_identity }, "without an account the identity is another one", 6000),
     kit.Tap(.ESCAPE),
     kit.Wait(10),
     // the session was ended at the provider: the stored sign in is refused, the file is deleted and the person is told
@@ -243,17 +243,14 @@ signin_script: []kit.Step = {
     kit.Wait(3),
     kit.Check(aimMockAccount, "the account is on the screen"),
     kit.ClickAt(&target),
-    kit.Wait(30),
-    kit.Check(playBrowser, "the browser signs in again"),
-    kit.Wait(40),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { if !oidc.StoreAvailable() { return true }; _, found := stored_token(); return signin.account != nil && found }, "signed in again, and remembered"),
+    kit.WaitUntil(playBrowser, "the browser signs in again", 6000),
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool { if !oidc.StoreAvailable() { return true }; _, found := stored_token(); return signin.account != nil && found }, "signed in again, and remembered", 6000),
     kit.Check(proc(ctx: ^kit.Context) -> bool { if !oidc.StoreAvailable() { return true }; mock.RevokeRefreshTokens(signin_mock); return restart(ctx) && state.phase == .SIGNING_IN }, "the provider ended the session, the program is started again"),
-    kit.Wait(40),
-    kit.Check(proc(ctx: ^kit.Context) -> bool {
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool {
         if !oidc.StoreAvailable() { return true }
         _, found := stored_token()
         return state.phase == .MENU && signin.account == nil && !found && strings.contains(string(state.status[:state.status_length]), "has ended")
-    }, "the refused sign in is not restored, the file is deleted, the person is told to sign in"),
+    }, "the refused sign in is not restored, the file is deleted, the person is told to sign in", 6000),
     // a provider that cannot be reached (offline): the file stays, the person is told
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         if !oidc.StoreAvailable() { return true }
@@ -265,12 +262,11 @@ signin_script: []kit.Step = {
         signinRestoreBegin()
         return state.phase == .SIGNING_IN
     }, "a stored sign in of a provider that cannot be reached begins to be restored"),
-    kit.Wait(40),
-    kit.Check(proc(ctx: ^kit.Context) -> bool {
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool {
         if !oidc.StoreAvailable() { return true }
         _, found := stored_token()
         return state.phase == .MENU && signin.account == nil && found && strings.contains(string(state.status[:state.status_length]), "cannot be reached")
-    }, "offline is not the end of the sign in: the file stays and the person is told"),
+    }, "offline is not the end of the sign in: the file stays and the person is told", 6000),
     // a file of another client id, or one that is not a store: nothing is restored and the file is not touched by the restore
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         if !oidc.StoreAvailable() { return true }
@@ -306,18 +302,17 @@ signin_script: []kit.Step = {
         restart(ctx)
         return state.phase == .SIGNING_IN && signin.chosen == 1
     }, "both files are there and the account that was used last is the one that is restored"),
-    kit.Wait(40),
-    kit.Check(proc(ctx: ^kit.Context) -> bool {
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool {
         if !oidc.StoreAvailable() { return true }
         // the stored token of the second account is not one of the provider (it was made up): refused, so ONLY its file is deleted
         return state.phase == .MENU && signin.account == nil && !os.exists(storeFileTwo()) && os.exists(storeFile()) && strings.contains(string(state.status[:state.status_length]), "Second account")
-    }, "a refused sign in deletes the file of its own provider only"),
+    }, "a refused sign in deletes the file of its own provider only", 6000),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         if !oidc.StoreAvailable() { return true }
         restart(ctx)
         return state.phase == .SIGNING_IN && signin.chosen == 0
     }, "the other account is what is restored next"),
-    kit.Wait(40),
+    kit.WaitUntil(restoreEnded, "the restore of that account ended", 6000),
     // the single file of the first version becomes the file of its provider
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         if !oidc.StoreAvailable() { return true }
@@ -331,7 +326,7 @@ signin_script: []kit.Step = {
         token, found := stored_token()
         return state.phase == .SIGNING_IN && found && token == "old-single-file-token" && !os.exists(config.signin_store)
     }, "the old file is moved to the file of its provider"),
-    kit.Wait(40),
+    kit.WaitUntil(restoreEnded, "the restore of the old file's token ended", 6000),
     kit.Check(proc(ctx: ^kit.Context) -> bool { removeStores(); return true }, "the stores are emptied"),
     // a login that is cancelled
     kit.Check(aimSignIn, "the start screen has Sign in"),
@@ -339,8 +334,7 @@ signin_script: []kit.Step = {
     kit.Wait(3),
     kit.Check(aimMockAccount, "the account is on the screen"),
     kit.ClickAt(&target),
-    kit.Wait(30),
-    kit.Check(aimSignInWaitCancel, "the waiting screen has Cancel"),
+    kit.WaitUntil(aimSignInWaitCancel, "the waiting screen has Cancel", 6000),
     kit.ClickAt(&target),
     kit.Wait(5),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .SIGN_IN && signin.login == nil && signin.account == nil }, "Cancel stops the login and shows the accounts again"),

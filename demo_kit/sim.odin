@@ -17,6 +17,7 @@ package demo_kit
 
 StepKind :: enum u8 {
     WAIT,
+    WAIT_UNTIL,
     KEY_DOWN,
     KEY_UP,
     KEY_TAP,
@@ -36,7 +37,7 @@ StepKind :: enum u8 {
 
 Step :: struct {
     kind: StepKind,
-    frames: u32,                // Wait, Hold, Drag
+    frames: u32,                // Wait, Hold, Drag, and the most that WaitUntil waits
     key: Key,
     button: MouseButton,
     pad: PadButton,             // PadTap
@@ -75,6 +76,11 @@ Drag :: proc "contextless" (from: Vec2, to: Vec2, frames: u32, button: MouseButt
 LookBy :: proc "contextless" (delta: Vec2) -> Step { return {kind = .MOUSE_DELTA, position = delta} }
 Scroll :: proc "contextless" (amount: f32) -> Step { return {kind = .WHEEL, amount = amount} }
 Type :: proc "contextless" (text: string) -> Step { return {kind = .TEXT, text = text} }
+// Waits until `check` is true, looking at it in every frame, and goes on in that very frame (a condition that is true already costs no frame). A thing that happens on another clock than the
+// frames of the script (a server that starts, a network that answers, a window of another program) is waited for with this, never with a fixed `Wait` that is right on a quiet computer and
+// short on a busy one. When it is still false after `frames` frames the report says `message` (like a failed Check) and the script goes on.
+WaitUntil :: proc "contextless" (check: proc(ctx: ^Context) -> bool, message: string, frames: u32 = 3000) -> Step { return {kind = .WAIT_UNTIL, check = check, text = message, frames = max(frames, 1)} }
+
 // The check says if what the demo shows is right, `message` is what the report says when it is not
 Check :: proc "contextless" (check: proc(ctx: ^Context) -> bool, message: string) -> Step { return {kind = .CHECK, check = check, text = message} }
 
@@ -171,7 +177,25 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
     // frame: let go and press again in one frame would be no press at all
     skip_steps: bool = false
     extra_delta: Vec2
-    if player.active {
+    if player.active && player.script[player.index - 1].kind == .WAIT_UNTIL {
+        // the condition is looked at in every frame; true: the script goes on in this frame; out of frames: the report says what was waited for
+        waiting: ^Step = &player.script[player.index - 1]
+        player.report.checks += 1
+        if waiting.check != nil && waiting.check(ctx) {
+            player.active = false
+            logCheck(player.log, ctx, waiting.text, true)
+        } else {
+            player.report.checks -= 1                       // not decided yet: it counts when it is
+            if player.wait_left > 0 { player.wait_left -= 1 }
+            if player.wait_left == 0 {
+                player.report.checks += 1
+                if player.report.failed < MAX_FAILURES { player.report.failures[player.report.failed] = {message = waiting.text, frame = ctx.frame} }
+                player.report.failed += 1
+                logCheck(player.log, ctx, waiting.text, false)
+                player.active = false
+            }
+        }
+    } else if player.active {
         if player.drag_total > 0 {
             progress: f32 = 1 - f32(player.wait_left) / f32(player.drag_total)
             player.mouse_position = player.drag_from + (player.drag_to - player.drag_from) * progress
@@ -200,6 +224,14 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
         switch step.kind {
         case .WAIT:
             if step.frames > 0 {
+                player.active = true
+                player.wait_left = step.frames
+            }
+        case .WAIT_UNTIL:
+            if step.check != nil && step.check(ctx) {
+                player.report.checks += 1
+                logCheck(player.log, ctx, step.text, true)
+            } else {
                 player.active = true
                 player.wait_left = step.frames
             }

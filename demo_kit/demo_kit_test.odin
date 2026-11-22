@@ -7,6 +7,7 @@ import "core:slice"
 import "core:sync"
 import "core:strings"
 import "core:testing"
+import "core:time"
 
 @(private="file")
 Toy :: struct {
@@ -526,4 +527,63 @@ test_keys_repeat_on_their_own_and_a_long_frame_does_not_burst :: proc(t: ^testin
     // the game's own sets are not changed by the repeat
     input.keys_pressed = {}
     testing.expect(t, KeyRepeated(&input, .LEFT) == (.LEFT in input.keys_repeat))
+}
+
+@(private = "file")
+until_frame: int                  // the frame of the last step that noted it (a test reads it)
+
+@(test)
+test_wait_until_goes_on_when_the_condition_is_true_and_reports_when_it_is_not :: proc(t: ^testing.T) {
+    sync.mutex_guard(&toy_lock)
+    state: HeadlessState
+    backend: Backend
+    HeadlessInit(&backend, &state)
+    toy = {}
+    script: []Step = {
+        Wait(2),
+        // true after 40 updates: the script waits for it, however long that takes in frames
+        WaitUntil(proc(ctx: ^Context) -> bool { return toy.updates >= 40 }, "forty updates came", 500),
+        Check(proc(ctx: ^Context) -> bool { until_frame = ctx.frame; return toy.updates >= 40 }, "and the script went on after it"),
+        // already true: no frame is spent on it (the next check is in the same frame)
+        WaitUntil(proc(ctx: ^Context) -> bool { return true }, "true already", 500),
+        Check(proc(ctx: ^Context) -> bool { return ctx.frame == until_frame }, "no frame was used"),
+        // never true: the report says what was waited for, after the frames it was given, and the script goes on
+        WaitUntil(proc(ctx: ^Context) -> bool { return false }, "this never happens", 30),
+        Check(proc(ctx: ^Context) -> bool { return ctx.frame >= until_frame + 30 }, "it waited the frames it was given"),
+        Check(proc(ctx: ^Context) -> bool { return true }, "the script went on after the timeout"),
+    }
+    report: Report = TestDemo({name = "until", init = toy_init, update = toy_update, draw = toy_draw, script = script}, &backend)
+    testing.expect_value(t, report.failed, 1)
+    testing.expect_value(t, report.failures[0].message, "this never happens")
+    testing.expect_value(t, report.checks, 7)                 // every step that decides counts: 4 checks and the 3 waits for a condition
+    testing.expect(t, report.finished)
+}
+
+// The thing waited for happens on another clock than the frames: a thread that sets a flag after some real time. A fixed Wait is right or wrong by luck, WaitUntil is right.
+@(private = "file", thread_local)
+other_clock_done: bool
+
+@(test)
+test_wait_until_waits_for_something_that_happens_on_another_clock :: proc(t: ^testing.T) {
+    sync.mutex_guard(&toy_lock)
+    state: HeadlessState
+    backend: Backend
+    HeadlessInit(&backend, &state)
+    toy = {}
+    other_clock_done = false
+    start: time.Tick = time.tick_now()
+    script: []Step = {
+        // the "server": ready 150 ms of real time after the first frame (each frame of the toy is fast, so this is many frames or few depending on the computer)
+        WaitUntil(proc(ctx: ^Context) -> bool {
+            @(static) started: time.Tick
+            if started == {} { started = time.tick_now() }
+            time.sleep(time.Millisecond)                            // a frame that takes real time, as a demo that talks to a network does
+            return time.duration_milliseconds(time.tick_since(started)) >= 150
+        }, "the other clock ran out", 100000),
+        Check(proc(ctx: ^Context) -> bool { return true }, "and the script went on"),
+    }
+    report: Report = TestDemo({name = "clock", init = toy_init, update = toy_update, draw = toy_draw, script = script}, &backend)
+    testing.expect_value(t, report.failed, 0)
+    testing.expect(t, report.finished)
+    testing.expect(t, time.duration_milliseconds(time.tick_since(start)) >= 150, "it really waited for the real time")
 }

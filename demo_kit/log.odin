@@ -114,7 +114,7 @@ LogKindsParse :: proc(text: string) -> (kinds: LogKinds) {
 @(private)
 logStepName :: proc(step: ^Step) -> string {
     names: [StepKind]string = {
-        .WAIT = "WAIT", .KEY_DOWN = "KEY_DOWN", .KEY_UP = "KEY_UP", .KEY_TAP = "KEY_TAP", .KEY_HOLD = "KEY_HOLD", .PAD_TAP = "PAD_TAP", .MOUSE_MOVE = "MOUSE_MOVE",
+        .WAIT = "WAIT", .WAIT_UNTIL = "WAIT_UNTIL", .KEY_DOWN = "KEY_DOWN", .KEY_UP = "KEY_UP", .KEY_TAP = "KEY_TAP", .KEY_HOLD = "KEY_HOLD", .PAD_TAP = "PAD_TAP", .MOUSE_MOVE = "MOUSE_MOVE",
         .MOUSE_DOWN = "MOUSE_DOWN", .MOUSE_UP = "MOUSE_UP", .MOUSE_CLICK = "MOUSE_CLICK", .MOUSE_DRAG = "MOUSE_DRAG", .WHEEL = "WHEEL", .MOUSE_DELTA = "MOUSE_DELTA",
         .TEXT = "TEXT", .CHECK = "CHECK", .CAPTURE = "CAPTURE",
     }
@@ -129,6 +129,7 @@ logStep :: proc(log: ^Log, ctx: ^Context, step: ^Step, index: int) {
     place: Vec2 = step.target^ if step.target != nil else step.position
     #partial switch step.kind {
     case .WAIT: Logf(log, ctx, .INPUT, "step %d %s %d frames", index, name, step.frames)
+    case .WAIT_UNTIL: Logf(log, ctx, .INPUT, "step %d %s %q for at most %d frames", index, name, step.text, step.frames)
     case .KEY_DOWN, .KEY_UP, .KEY_TAP: Logf(log, ctx, .INPUT, "step %d %s %v", index, name, step.key)
     case .KEY_HOLD: Logf(log, ctx, .INPUT, "step %d %s %v for %d frames", index, name, step.key, step.frames)
     case .PAD_TAP: Logf(log, ctx, .INPUT, "step %d %s %v", index, name, step.pad)
