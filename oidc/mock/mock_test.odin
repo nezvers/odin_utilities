@@ -2,6 +2,7 @@
 package oidc_mock
 
 import "core:fmt"
+import "core:os"
 import "core:strings"
 import "core:sync"
 import "core:testing"
@@ -46,15 +47,16 @@ without :: proc(pair: ^Pair) {
 
 // What the browser does: open the login page, follow its redirect back to the program
 @(private = "file")
-browse :: proc(t: ^testing.T, login: ^oidc.Login) {
+browse :: proc(t: ^testing.T, login: ^oidc.Login) -> (status: int, page: string) {
     buffer: [4096]u8
     first, ok := oidc.Request(oidc.LoginUrl(login), "GET", nil, nil, buffer[:])
     testing.expect(t, ok && first.status == 302 && first.location != "", "the provider sends the browser back")
-    if !ok || first.location == "" { return }
+    if !ok || first.location == "" { return 0, "" }
     location: string = strings.clone(first.location, context.temp_allocator)
     callback: [4096]u8
     second, second_ok := oidc.Request(location, "GET", nil, nil, callback[:])
-    testing.expect(t, second_ok && second.status == 200, "the program answers the browser")
+    testing.expect(t, second_ok, "the program answers the browser")
+    return second.status, strings.clone(string(second.body), context.temp_allocator)
 }
 
 @(test)
@@ -67,9 +69,15 @@ test_a_login_with_es256 :: proc(t: ^testing.T) {
     login: ^oidc.Login = pair.login
     testing.expect(t, oidc.LoginBegin(login, {issuer = Issuer(pair.provider), client_id = "game"}), oidc.LoginError(login))
     testing.expect(t, strings.contains(oidc.LoginUrl(login), "code_challenge_method=S256") && strings.contains(oidc.LoginUrl(login), "scope=openid%20profile%20email"), "PKCE and the scopes are asked")
-    browse(t, login)
+    status, page := browse(t, login)
     testing.expect_value(t, login.state, oidc.LoginState.DONE)
     testing.expectf(t, login.state == .DONE, "the login: %s", oidc.LoginError(login))
+    // what the person sees in the browser says what the program found out, after it found out
+    testing.expect_value(t, status, 200)
+    for part in ([]string{"Login verified", "Issuer: " , Issuer(pair.provider), "Subject: user-1"}) {
+        testing.expectf(t, strings.contains(page, part), "the page has %q: %s", part, page)
+    }
+    testing.expect(t, !strings.contains(page, login.tokens.id_token), "the page never shows the token")
     testing.expect_value(t, login.claims.subject, "user-1")
     testing.expect_value(t, login.claims.issuer, Issuer(pair.provider))
     testing.expect(t, login.tokens.refresh_token != "" && login.tokens.access_token != "", "the other tokens came too")
@@ -116,8 +124,11 @@ test_a_provider_that_cheats_is_refused :: proc(t: ^testing.T) {
         if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-1"}, fault, &pair) { testing.fail_now(t, "the provider does not start") }
         login: ^oidc.Login = pair.login
         testing.expect(t, oidc.LoginBegin(login, {issuer = Issuer(pair.provider), client_id = "game"}), oidc.LoginError(login))
-        browse(t, login)
+        status, page := browse(t, login)
         testing.expectf(t, login.state == .FAILED && strings.contains(oidc.LoginError(login), "not accepted"), "%v is refused: %v %s", fault, login.state, oidc.LoginError(login))
+        // the browser is not told "signed in" for a login that the program refused
+        testing.expectf(t, status == 400 && strings.contains(page, "Login failed") && strings.contains(page, "not accepted"), "%v: the page says it failed: %d %s", fault, status, page)
+        testing.expectf(t, !strings.contains(page, "Login verified") && !strings.contains(page, "Signed in"), "%v: the page does not claim a login", fault)
         without(&pair)
     }
 }
@@ -136,6 +147,10 @@ test_the_redirect_is_checked :: proc(t: ^testing.T) {
     forged, ok := oidc.Request(fmt.tprintf("http://127.0.0.1:%d/callback?code=evil&state=wrong", login.port), "GET", nil, nil, buffer[:])
     testing.expect(t, ok && forged.status == 400)
     testing.expect_value(t, login.state, oidc.LoginState.WAITING)
+    // the page tells the person what is wrong, and the login remembers what the browser sent (the tool shows it)
+    testing.expect(t, strings.contains(string(forged.body), "older attempt"), "the page explains the stale tab")
+    testing.expect_value(t, login.rejected_count, 1)
+    testing.expect_value(t, string(login.rejected[:login.rejected_length]), "code=<4 characters>&state=wrong")      // the one-time code is never kept
     // a path that is not the callback
     other, other_ok := oidc.Request(fmt.tprintf("http://127.0.0.1:%d/favicon.ico", login.port), "GET", nil, nil, buffer[:])
     testing.expect(t, other_ok && other.status == 404)
@@ -377,6 +392,15 @@ test_the_login_address_is_given_to_the_opener :: proc(t: ^testing.T) {
     }
     defer oidc.BrowserLauncher = nil
     testing.expect(t, oidc.LoginOpenBrowser(pair.login))
-    testing.expect_value(t, last, oidc.LoginUrl(pair.login))
-    testing.expect(t, strings.contains(last, "code_challenge_method=S256"))
+    // the address of a login is long: on Windows it reaches the browser through a shortcut file (explorer cuts an address after 259 characters), elsewhere it is the argument itself
+    when ODIN_OS == .Windows {
+        testing.expect(t, strings.has_suffix(last, ".url"))
+        data, error := os.read_entire_file(last, context.temp_allocator)
+        testing.expect(t, error == nil)
+        testing.expect(t, strings.contains(string(data), oidc.LoginUrl(pair.login)), "the shortcut holds the whole address")
+        testing.expect(t, strings.contains(string(data), "code_challenge_method=S256"), "including its end")
+        oidc.BrowserShortcutRemove(last)
+    } else {
+        testing.expect_value(t, last, oidc.LoginUrl(pair.login))
+    }
 }

@@ -197,3 +197,13 @@ test_the_clock_of_the_library_is_the_clock :: proc(t: ^testing.T) {
     testing.expect(t, now >= expected - 2 && now <= expected + 2)
     testing.expect(t, now > 1_700_000_000, "after 2023")
 }
+
+// The page of the browser shows what the provider sent: it must not be able to put markup on it
+@(test)
+test_the_text_of_a_page_is_escaped :: proc(t: ^testing.T) {
+    testing.expect_value(t, htmlEscape("<script>alert('x')</script>"), "&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;")
+    testing.expect_value(t, htmlEscape(`a & "b"`), "a &amp; &quot;b&quot;")
+    testing.expect_value(t, htmlEscape("one\ntwo"), "one<br>two")
+    testing.expect_value(t, htmlEscape("plain text 123"), "plain text 123")
+    testing.expect_value(t, htmlEscape(""), "")
+}

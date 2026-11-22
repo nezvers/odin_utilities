@@ -50,6 +50,9 @@ Login :: struct {
     claims: JwtClaims,
     error: [256]u8,
     error_length: int,
+    rejected: [256]u8,          // what the last callback that was not this login's carried (an older tab, another site), the one-time `code` shown by its length only: to show why it was ignored
+    rejected_length: int,
+    rejected_count: int,        // how many callbacks were ignored for that reason
     busy: bool,                 // a poll is in progress (its own requests step the waiting code, which must not poll again)
 }
 
@@ -167,8 +170,11 @@ LoginPoll :: proc(login: ^Login) -> LoginState {
     query: string = parts[1][strings.index_byte(parts[1], '?') + 1:] if strings.contains(parts[1], "?") else ""
     scratch: [2048]u8
     state_scratch: [64]u8
-    if QueryValue(query, "state", state_scratch[:]) != string(login.state_value[:login.state_length]) {
-        reply(client, 400, "This page does not belong to the login of this program.")
+    if received := QueryValue(query, "state", state_scratch[:]); received != string(login.state_value[:login.state_length]) {
+        login.rejected_length = copy(login.rejected[:], redactCode(query, login.rejected[:]))
+        login.rejected_count += 1
+        _ = received
+        reply(client, 400, "This page does not belong to the login that is running now: it is probably a tab of an older attempt. Close it and open the address that the program printed last.")
         return .WAITING                                  // a request that was not asked for (CSRF): ignored, the real one may still come
     }
     if provider_error := QueryValue(query, "error", scratch[:]); provider_error != "" {
@@ -183,35 +189,82 @@ LoginPoll :: proc(login: ^Login) -> LoginState {
         fail(login, "the provider sent no code")
         return login.state
     }
-    reply(client, 200, "Signed in. You can close this window and go back to the program.")
+    // the browser is answered at the end, when the program knows: a page that says "signed in" before the code is exchanged and the ID token checked would claim a login that may still fail
     if !ExchangeCode(&login.metadata, login.config, code, string(login.verifier[:login.verifier_length]), string(login.redirect_uri[:login.redirect_length]), &login.tokens) {
-        fail(login, fmt.tprintf("the code could not be exchanged: %s %s", login.tokens.error, login.tokens.error_description))
+        failPage(client, login, fmt.tprintf("the code could not be exchanged: %s %s", login.tokens.error, login.tokens.error_description))
         return login.state
     }
     if login.tokens.id_token == "" {
-        fail(login, "the provider gave no ID token (is the scope openid asked?)")
+        failPage(client, login, "the provider gave no ID token (is the scope openid asked?)")
         return login.state
     }
     if !FetchKeys(&login.metadata, &login.keys) {
-        fail(login, "the keys of the provider could not be fetched")
+        failPage(client, login, "the keys of the provider could not be fetched")
         return login.state
     }
     claims, error := JwtVerify(login.tokens.id_token, &login.keys, {issuer = login.metadata.issuer, audience = login.config.client_id, nonce = string(login.nonce[:login.nonce_length])}, login.claims_storage[:])
     if error != .NONE {
-        fail(login, fmt.tprintf("the ID token is not accepted: %s", VerifyErrorText(error)))
+        failPage(client, login, fmt.tprintf("the ID token is not accepted: %s", VerifyErrorText(error)))
         return login.state
     }
     login.claims = claims
     net.close(login.listener)
     login.listener = {}
     login.state = .DONE
+    name, has_name := JsonString(claims.payload, "name")
+    if !has_name { name, has_name = JsonString(claims.payload, "global_name") }
+    if !has_name { name, _ = JsonString(claims.payload, "preferred_username") }
+    reply(client, 200, fmt.tprintf("Login verified. The program checked the ID token (signature, issuer, audience, expiry, nonce).\nIssuer: %s\nSubject: %s\nName: %s\nYou can close this window and go back to the program.", claims.issuer, claims.subject, name if has_name else "(none in the token)"))
     return .DONE
+}
+
+// The query with `code=` replaced by its length: a rejected callback is shown to the person, but the code is a one-time secret
+@(private)
+redactCode :: proc(query: string, out: []u8) -> string {
+    at: int
+    rest: string = query
+    for len(rest) > 0 && at < len(out) {
+        amp: int = strings.index_byte(rest, '&')
+        pair: string = rest if amp < 0 else rest[:amp]
+        rest = "" if amp < 0 else rest[amp + 1:]
+        text: string = pair
+        if strings.has_prefix(pair, "code=") { text = fmt.tprintf("code=<%d characters>", len(pair) - 5) }
+        if at > 0 && at < len(out) { out[at] = '&'; at += 1 }
+        at += copy(out[at:], text)
+    }
+    return string(out[:at])
+}
+
+// The login failed after the browser came back: the page says why, and the state of the login says it too
+@(private)
+failPage :: proc(client: net.TCP_Socket, login: ^Login, message: string) {
+    reply(client, 400, fmt.tprintf("Login failed.\n%s", message))
+    fail(login, message)
+}
+
+// The text of a page may hold what the provider sent (an error description): `<`, `>`, `&` and quotes are escaped, a line break becomes a paragraph break
+@(private)
+htmlEscape :: proc(text: string) -> string {
+    builder: strings.Builder
+    strings.builder_init(&builder, context.temp_allocator)
+    for c in transmute([]u8)text {
+        switch c {
+        case '<': strings.write_string(&builder, "&lt;")
+        case '>': strings.write_string(&builder, "&gt;")
+        case '&': strings.write_string(&builder, "&amp;")
+        case '"': strings.write_string(&builder, "&quot;")
+        case '\'': strings.write_string(&builder, "&#39;")
+        case '\n': strings.write_string(&builder, "<br>")
+        case: strings.write_byte(&builder, c)
+        }
+    }
+    return strings.to_string(builder)
 }
 
 @(private)
 reply :: proc(client: net.TCP_Socket, status: int, text: string) {
     reason: string = "OK" if status == 200 else "Error"
-    page: string = fmt.tprintf("<html><body style=\"font-family:sans-serif\"><p>%s</p></body></html>", text)
+    page: string = fmt.tprintf("<html><body style=\"font-family:sans-serif\"><p>%s</p></body></html>", htmlEscape(text))
     head: string = fmt.tprintf("HTTP/1.1 %d %s\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", status, reason, len(page))
     net.send_tcp(client, transmute([]u8)head)
     net.send_tcp(client, transmute([]u8)page)

@@ -126,8 +126,14 @@ browserLogin :: proc(config: oidc.ClientConfig, open_browser: bool, timeout: f64
     say(fmt.tprintf("open this address in a browser:\n%s", oidc.LoginUrl(login)))
     if open_browser && oidc.LoginOpenBrowser(login) { say("the browser was asked to open it") }
     started: time.Tick = time.tick_now()
+    reported: int
     for oidc.LoginPoll(login) == .WAITING {
         if time.duration_seconds(time.tick_since(started)) > timeout { return failed("no answer in time", 1) }
+        // a callback that is not ours is ignored (an older tab): say what it carried, so that a stale tab is not a mystery
+        if login.rejected_count != reported {
+            reported = login.rejected_count
+            say(fmt.tprintf("ignored a callback that is not of this login: it carried [%s], this login expects state %q", string(login.rejected[:login.rejected_length]), string(login.state_value[:login.state_length])))
+        }
         waitTurn(login)
     }
     if login.state != .DONE { return failed(fmt.tprintf("login failed: %s", oidc.LoginError(login)), 1) }
