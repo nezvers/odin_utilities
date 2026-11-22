@@ -39,4 +39,4 @@ arena_test_*/
 arena_schema_server/
 
 # oidc settings with a person's client ids
-oidc/providers.local.txt
+providers.local.txt

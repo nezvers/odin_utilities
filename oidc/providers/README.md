@@ -11,7 +11,7 @@ The redirect address is `http://127.0.0.1:48217/callback` (the port is `PRESET_P
 2. OAuth2 > Redirects > add `http://127.0.0.1:48217/callback`.
 3. Copy **Client ID** (General Information or OAuth2). Do not copy the Client Secret.
 4. Scopes the code asks for: `openid identify email`. The ID token carries `sub` (the Discord user id), and `identify` gives the name and avatar through `Userinfo`.
-5. `discord.client_id = <that number>`. Discord accepts a public client (no secret) with PKCE.
+5. `discord.client_id = <that number>`. Discord accepts a public client (no secret) with PKCE for the login (tried live: `odin run oidc/tool/login -- discord`, ID token verified). **Refreshing** the token is different: Discord answers `invalid_client` without the client secret, so a program with no secret asks the person to log in again when the token (7 days) ends, or goes through a broker.
 
 SpacetimeDB accepts the Discord ID token as it is (issuer `https://discord.com`, RS256); the module must still check the audience (`module.RequireClaims`): it is the client id.
 
@@ -33,4 +33,4 @@ GitHub has no discovery document and no ID token for logins (`token.actions.gith
 To play on a SpacetimeDB server with a GitHub identity use a broker: SpacetimeAuth (or Keycloak, Auth0) has "log in with GitHub / Google / Discord" and hands out one standard ID token. Then only the broker's client id is needed (`spacetimeauth.client_id`), and the three providers are settings in the broker's dashboard.
 
 ## Checks
-`OIDC_LIVE=1 odin test oidc` reads the discovery documents of Google and Discord and the device code endpoint of GitHub (with a made up id: the refusal is the proof that the address is right). A whole login needs your client id: `odin run oidc/tool/login -- discord` (TODO).
+`OIDC_LIVE=1 odin test oidc` reads the discovery documents of Google and Discord and the device code endpoint of GitHub (with a made up id: the refusal is the proof that the address is right). A whole login needs your client id: `odin run oidc/tool/login -- discord|google|github|spacetimeauth` (add `--no-browser` to print the address and paste it into a browser yourself).

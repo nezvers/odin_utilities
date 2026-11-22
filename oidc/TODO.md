@@ -12,5 +12,7 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (medium) The identity of a login without a connection: blake3 (`iss|sub`) is needed (Odin's core has none)
 - [ ] (low) ES384/PS256/EdDSA verification (Auth0 and Keycloak can be set to ES256/RS256: all that is needed now)
 - [ ] (low) Dynamic client registration (RFC 7591) and the OIDC session management
-- [ ] (high) `tool/login`: `odin run oidc/tool/login -- <discord|google|github|spacetimeauth>` reads providers.local.txt and runs a whole login (browser flow, device flow for GitHub), prints the claims
+- [x] `tool/login` (`odin run oidc/tool/login -- <discord|google|github|spacetimeauth>`): a whole login from providers.local.txt; Discord tried live (ID token verified; refresh needs the secret)
+- [ ] (high) Try Google, GitHub (device flow) and SpacetimeAuth with the tool
+- [ ] (medium) `BrowserOpen` gives no sign when Firefox starts slowly (about 10 s cold): print the address always
 - [ ] (medium) GitHub inside the browser flow (OAuth 2.0 without an ID token: `Login` expects one)
