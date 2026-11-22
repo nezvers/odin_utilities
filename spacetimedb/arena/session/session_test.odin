@@ -2,12 +2,14 @@
 package arena_session
 
 import "core:fmt"
+import "core:net"
 import "core:os"
 import "core:strings"
 import "core:testing"
 import "core:thread"
 import "core:time"
 import st "../.."
+import "../../../p2p"
 import game_lib "../game"
 import schema "../schema"
 
@@ -382,4 +384,62 @@ test_how_the_host_frame_rate_changes_the_time_to_the_field :: proc(t: ^testing.T
         testing.expect(t, guest_game.greeted_ms > 0 && guest_game.synced_ms >= guest_game.greeted_ms, "the game noted when the server answered and when the first rows came")
         testing.expect_value(t, game_lib.GameWaitingMs(guest_game), 0)
     }
+}
+
+// What a pasted text is: the window tells the person before anything starts
+@(test)
+test_a_pasted_text_is_told_apart :: proc(t: ^testing.T) {
+    out, out_plain, out_reply: [p2p.CODE_TEXT_MAX]u8                 // a text lives in its buffer: one for each
+    invite: p2p.Invite = {kind = .INVITE, session = 7, id = 9, derp_server = 4}
+    p2p.InviteSetName(&invite, "Ada")
+    invite_text, invite_ok := p2p.InviteEncode(invite, out[:])
+    testing.expect(t, invite_ok)
+    kind, from, relay := CodeInspect(invite_text)
+    testing.expect_value(t, kind, CodeKind.INVITE)
+    testing.expect_value(t, from, "Ada")
+    testing.expect(t, relay, "an invite with a relay needs no reply")
+
+    plain: p2p.Invite = {kind = .INVITE, session = 7, id = 9}
+    p2p.InviteSetName(&plain, "Bob")
+    testing.expect(t, p2p.InviteAddCandidate(&plain, {address = net.IP4_Loopback, port = 4000}))       // without a relay a code names the addresses to try
+    plain_text, _ := p2p.InviteEncode(plain, out_plain[:])
+    kind, from, relay = CodeInspect(plain_text)
+    testing.expect_value(t, kind, CodeKind.INVITE)
+    testing.expect_value(t, from, "Bob")
+    testing.expect(t, !relay, "no relay: the friend sends a reply back")
+
+    reply: p2p.Invite = {kind = .REPLY, session = 7, id = 11, derp_server = 4}
+    p2p.InviteSetName(&reply, "Eve")
+    reply_text, _ := p2p.InviteEncode(reply, out_reply[:])
+    kind, from, _ = CodeInspect(reply_text)
+    testing.expect_value(t, kind, CodeKind.REPLY)
+    testing.expect_value(t, from, "Eve")
+
+    // the way people paste: spaces and line breaks around it, any case, groups broken over lines
+    kind, _, _ = CodeInspect(strings.concatenate({"  ", invite_text, "\n\n"}, context.temp_allocator))
+    testing.expect_value(t, kind, CodeKind.INVITE)
+    kind, _, _ = CodeInspect(strings.to_lower(invite_text, context.temp_allocator))
+    testing.expect_value(t, kind, CodeKind.INVITE)
+
+    // room names, and things that are neither
+    kind, from, relay = CodeInspect("maple-otter-22")
+    testing.expect_value(t, kind, CodeKind.ROOM)
+    testing.expect_value(t, from, "maple-otter-22")
+    testing.expect(t, relay)
+    for text in ([]string{"", "   ", "\n"}) {
+        kind, _, _ = CodeInspect(text)
+        testing.expectf(t, kind == .EMPTY, "%q is empty", text)
+    }
+    for text in ([]string{"not a code", "hello", "maple-otter", "maple otter 22", "http://example.com/x?y=1", "0000", "XXXXX-XXXXX-XXXXX"}) {
+        kind, _, _ = CodeInspect(text)
+        testing.expectf(t, kind == .NOT_A_CODE, "%q is not a code", text)
+    }
+    // a code with a changed letter is not a code any more (it has a check), and one that was cut is not either
+    changed := make([]u8, len(invite_text), context.temp_allocator)
+    copy(changed, invite_text)
+    changed[len(changed) / 2] = 'Z' if changed[len(changed) / 2] != 'Z' else 'Y'
+    kind, _, _ = CodeInspect(string(changed))
+    testing.expect(t, kind == .NOT_A_CODE, "a code with a changed letter is refused")
+    kind, _, _ = CodeInspect(invite_text[:len(invite_text) / 2])
+    testing.expect_value(t, kind, CodeKind.NOT_A_CODE)
 }

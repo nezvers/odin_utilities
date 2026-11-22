@@ -3,6 +3,7 @@ package demo_common
 
 import "core:strings"
 import kit "../../../demo_kit"
+import "../../../p2p"
 import "../session"
 
 // The test of the screens made with the ui library: a widget is found by its name (`aim`, from the layout of the last frame) and clicked, so the script does not depend on where the layout
@@ -13,14 +14,12 @@ target: kit.Vec2
 aimPlaySolo :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "menu", "Play solo") }
 aimHost :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "menu", "Host a game") }
 aimJoin :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "menu", "Join a game") }
-aimCode :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "join", "Code") }
 aimPaste :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "join", "Paste") }
 aimConnect :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "join", "Connect") }
 aimBack :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "join", "Back") }
 aimCopyInvite :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Copy the invite code") }
 aimName :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "menu", "Name") }
-aimInvite :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Invite") }
-aimReply :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Reply") }
+aimCopyReply :: proc(ctx: ^kit.Context) -> bool { return aim(&target, "connecting", "Copy the reply code") }
 aimReplyPaste :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Paste") }
 aimReplyAccept :: proc(ctx: ^kit.Context) -> bool { return aim(&target, CONNECTION_WINDOW, "Accept the reply") }
 
@@ -30,7 +29,7 @@ panel_frames: []kit.Rect = {{880, 40, 380, 660}}
 menu_script: []kit.Step = {
     kit.Wait(4),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
-        config.mask_codes, config.loopback = true, true       // pictures cannot hold a code that is new every time; the codes of this machine and the loopback are enough to connect
+        config.loopback = true                                // the codes of this machine and the loopback are enough to connect
         state.name_length = copy(state.name[:], "player")
         return state.phase == .MENU && state.name_length > 0
     }, "the start screen is shown with a name"),
@@ -56,26 +55,39 @@ menu_script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .JOIN_FORM }, "Join a game opens the form"),
-    // a typed text that is not a code
-    kit.Check(aimCode, "the code field is on the screen"),
+    // nothing is pasted yet: Connect does nothing
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return session_kind(state.code[:state.code_length]) == .EMPTY && aimConnect(ctx) }, "nothing is pasted and the Connect button is on the screen"),
     kit.ClickAt(&target),
-    kit.Type("not a code"),
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .JOIN_FORM }, "Connect does nothing without a code"),
+    // a text that is not a code: Paste takes it and the label says what it is
+    kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, "not a code"); return aimPaste(ctx) }, "the clipboard takes text and the Paste button is on the screen"),
+    kit.ClickAt(&target),
     kit.Wait(3),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.code[:state.code_length]) == "not a code" }, "the code field takes typing"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.code[:state.code_length]) == "not a code" && session_kind(state.code[:state.code_length]) == .NOT_A_CODE }, "Paste takes the text and it is told apart: not a code"),
     kit.Wait(15),
     kit.Capture("join_form"),
     kit.Wait(1),
     kit.Check(aimConnect, "the Connect button is on the screen"),
     kit.ClickAt(&target),
     kit.Wait(10),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .MENU && strings.contains(string(state.status[:state.status_length]), "not an invite code") }, "a text that is not a code is refused on the start screen"),
-    kit.Wait(15),
-    kit.Capture("menu_refused"),
-    kit.Wait(1),
-    // Paste puts the clipboard into the field
-    kit.Check(aimJoin, "the Join a game button is back"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .JOIN_FORM }, "Connect does nothing for a text that is not a code"),
+    // the reply of a friend is not what the host's code is: told apart
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        reply: p2p.Invite = {kind = .REPLY, session = 3, id = 5, derp_server = 4}
+        p2p.InviteSetName(&reply, "Eve")
+        out: [p2p.CODE_TEXT_MAX]u8
+        text, _ := p2p.InviteEncode(reply, out[:])
+        kit.ClipboardSet(ctx, text)
+        return aimPaste(ctx)
+    }, "the clipboard has a reply code"),
     kit.ClickAt(&target),
     kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return session_kind(state.code[:state.code_length]) == .REPLY && aimConnect(ctx) }, "a reply code is told apart from an invite code"),
+    kit.ClickAt(&target),
+    kit.Wait(5),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .JOIN_FORM }, "and Connect does nothing for it"),
+    // Paste puts the clipboard into the field
     kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, "pasted-code\nsecond line"); return aimPaste(ctx) }, "the clipboard takes text and the Paste button is on the screen"),
     kit.ClickAt(&target),
     kit.Wait(3),
@@ -100,21 +112,19 @@ menu_script: []kit.Step = {
     kit.Wait(15),
     kit.CaptureIn("host_ready", panel_frames),
     kit.Wait(1),
-    // the invite code is a read only text area: it can be selected, and what is typed into it does not change it
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return aimInvite(ctx) && state.invite_view_length > 100 }, "the invite code is shown in a text area"),
-    kit.ClickAt(&target),
-    kit.Type("zzz"),
-    kit.Wait(3),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return !strings.contains(string(state.invite_view[:state.invite_view_length]), "zzz") && textFieldFocused() }, "typing into the invite changes nothing, and the keys stay out of the game"),
-    // the reply of a friend: pasted with a button into a text area (a reply is as long as an invite), accepted or refused
-    kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, "this is not a reply code\nsecond line"); return aimReplyPaste(ctx) }, "the connection window has a Paste button for the reply"),
+    // the reply of a friend: nothing is pasted, a text that is not a reply is told apart and cannot be accepted
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return session_kind(state.reply[:state.reply_length]) == .EMPTY && aimReplyAccept(ctx) }, "no reply is pasted and Accept the reply is on the screen"),
     kit.ClickAt(&target),
     kit.Wait(3),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.reply[:state.reply_length]) == "this is not a reply code" }, "Paste puts the first line of the clipboard into the reply"),
-    kit.Check(aimReplyAccept, "and Accept the reply is on the screen"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.paste_length == 0 && state.waiting_length == 0 }, "Accept does nothing without a reply"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, "this is not a reply code"); return aimReplyPaste(ctx) }, "the connection window has a Paste button for the reply"),
     kit.ClickAt(&target),
     kit.Wait(3),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.reply_length == 0 && strings.contains(string(state.paste_message[:state.paste_length]), "not a reply code") }, "a text that is not a reply code is refused and the field is cleared"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return string(state.reply[:state.reply_length]) == "this is not a reply code" && session_kind(state.reply[:state.reply_length]) == .NOT_A_CODE }, "Paste takes the text and it is told apart: not a code"),
+    kit.Check(aimReplyAccept, "Accept the reply is on the screen"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.paste_length == 0 && state.waiting_length == 0 && state.host != nil && session.HostGuests(state.host) == 0 }, "and it cannot be accepted: nobody is connecting"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, ""); return aimCopyInvite(ctx) }, "the clipboard is emptied"),
     kit.ClickAt(&target),
     kit.Wait(3),
@@ -129,11 +139,21 @@ menu_script: []kit.Step = {
             if test_guest != nil { session.GuestUpdate(test_guest) }
             if test_host != nil { session.HostUpdate(test_host) }
         }
-        if !session.GuestJoin(test_guest, session.HostInvite(state.host), {loopback = true, name = "Friend"}) { return false }
-        return session.HostAcceptReply(state.host, session.GuestReply(test_guest))
-    }, "a friend joins the hosted game and its reply is accepted"),
+        return session.GuestJoin(test_guest, session.HostInvite(state.host), {loopback = true, name = "Friend"})
+    }, "a friend joins the hosted game with the code and has a reply code"),
+    // the reply: copied on the friend's computer (the clipboard), pasted here, told apart, accepted; the window says that the friend is connecting
+    kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, session.GuestReply(test_guest)); return aimReplyPaste(ctx) }, "the reply of the friend is on the clipboard"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        kind, from, _ := session.CodeInspect(string(state.reply[:state.reply_length]))
+        return kind == .REPLY && from == "Friend" && aimReplyAccept(ctx)
+    }, "the pasted reply is a reply code of Friend and can be accepted"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.reply_good && strings.contains(string(state.paste_message[:state.paste_length]), "Friend") && (state.waiting_length > 0 || session.HostGuests(state.host) == 1) }, "the reply is accepted and the window says that Friend is connecting (or has connected already: on this computer it takes a few frames)"),
     kit.Wait(300),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return session.HostGuests(state.host) == 1 && session.GuestConnected(test_guest) }, "the friend is connected"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return session.HostGuests(state.host) == 1 && session.GuestConnected(test_guest) && state.waiting_length == 0 }, "the friend is connected and nothing is waited for any more"),
     kit.Wait(15),
     kit.CaptureIn("host_with_friend", panel_frames),
     kit.Wait(1),
@@ -153,18 +173,29 @@ menu_script: []kit.Step = {
         if !session.HostStart(test_host, {root = "arena_test_menu_host", port = 3147, loopback = true, name = "Friend"}) { return false }
         frame_hook = proc() { if test_host != nil { session.HostUpdate(test_host) } }
         config.idle_host = test_host
-        state.code_length = copy(state.code[:], session.HostInvite(test_host))
+        state.code_length = 0
+        kit.ClipboardSet(ctx, session.HostInvite(test_host))
         return true
-    }, "another host is running with an invite code"),
+    }, "another host is running with an invite code on the clipboard"),
     kit.Check(aimJoin, "the Join a game button is on the screen"),
     kit.ClickAt(&target),
     kit.Wait(3),
-    kit.Check(aimConnect, "the code is in the field and Connect is on the screen"),
+    kit.Check(aimPaste, "the join form has Paste"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return session_kind(state.code[:state.code_length]) == .INVITE && aimConnect(ctx) }, "the pasted code is an invite code and Connect is on the screen"),
     kit.ClickAt(&target),
     kit.Wait(40),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .CONNECTING && state.guest != nil && state.guest.stage >= .READY }, "the guest shows the connection being made and has its reply code"),
     kit.Capture("connecting"),
     kit.Wait(1),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { kit.ClipboardSet(ctx, ""); return aimCopyReply(ctx) }, "the connecting screen has Copy the reply code"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        buffer: [1024]u8
+        return state.guest != nil && kit.ClipboardGet(ctx, buffer[:]) == session.GuestReply(state.guest)
+    }, "Copy the reply code puts the reply on the clipboard"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return session.HostAcceptReply(test_host, session.GuestReply(state.guest)) }, "the host accepts the reply code"),
     kit.Wait(600),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .PLAYING && state.game.phase == .PLAYING && state.game.player_count == 1 }, "the guest plays on the database of the other host through the tunnel"),
@@ -187,3 +218,9 @@ menu_script: []kit.Step = {
 
 test_host: ^session.Host
 test_guest: ^session.Guest
+
+// What a text is, for the checks of the script
+session_kind :: proc(text: []u8) -> session.CodeKind {
+    kind, _, _ := session.CodeInspect(string(text))
+    return kind
+}

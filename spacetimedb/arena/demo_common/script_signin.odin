@@ -44,7 +44,7 @@ hooksOn :: proc(ctx: ^kit.Context) -> bool {
 
 @(private = "file")
 startProvider :: proc(ctx: ^kit.Context) -> bool {
-    config.mask_codes, config.loopback = true, true
+    config.loopback = true
     state.name_length = copy(state.name[:], "player")
     signin_mock = new(mock.Provider)
     if !mock.Start(signin_mock, {algorithm = .ES256, client_id = "arena", subject = "user-arena-1", userinfo_name = "Ada Lovelace", email = "ada@example.com", rotate_refresh = true}) { return false }

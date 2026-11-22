@@ -207,6 +207,40 @@ HostInvite :: proc(host: ^Host) -> string {
     return string(host.invite[:host.invite_length])
 }
 
+// What a text is, looked at and not used: a person pastes it and the window says whether it is the right kind of code before anything is started.
+CodeKind :: enum u8 {
+    EMPTY,              // nothing (or only spaces)
+    NOT_A_CODE,         // not an invite, not a reply, not a room name
+    INVITE,             // the code of a host: a friend pastes it to join
+    REPLY,              // the code of a guest that the host pastes (the host needs it when the invite names no relay)
+    ROOM,               // a room name (maple-otter-22): the relay says who hosts it
+}
+
+// The kind of `text`, who made it (the name in the code, or the room name; temp memory) and whether a relay carries the answer (an invite without a relay needs a reply code sent back).
+// Reading a code does not start or change anything.
+CodeInspect :: proc(text: string) -> (kind: CodeKind, from: string, relay: bool) {
+    trimmed: string = strings.trim_space(text)
+    if trimmed == "" { return .EMPTY, "", false }
+    if RoomLooksLike(trimmed) { return .ROOM, strings.clone(trimmed, context.temp_allocator), true }
+    invite, decoded := p2p.InviteDecode(trimmed)
+    if !decoded { return .NOT_A_CODE, "", false }
+    name: string = strings.clone(p2p.InviteName(&invite), context.temp_allocator)
+    switch invite.kind {
+    case .INVITE: return .INVITE, name, invite.derp_server != 0
+    case .REPLY: return .REPLY, name, false
+    }
+    return .NOT_A_CODE, "", false
+}
+
+// A room name is short (maple-otter-22: words and the number of the relay); an invite code is a few hundred letters in groups of five
+RoomLooksLike :: proc(text: string) -> bool {
+    if len(text) > 48 || strings.contains_rune(text, ' ') { return false }
+    dash: int = strings.last_index_byte(text, '-')
+    if dash <= 0 || dash + 1 >= len(text) { return false }
+    for c in text[dash + 1:] { if c < '0' || c > '9' { return false } }
+    return strings.count(text, "-") <= 3
+}
+
 // The reply code that a guest sent back: the guest is connected after a few updates
 HostAcceptReply :: proc(host: ^Host, reply_text: string) -> bool {
     reply, decoded := p2p.InviteDecode(reply_text)
@@ -256,6 +290,15 @@ GuestNotice :: proc(guest: ^Guest) -> string {
 
 HostGuests :: proc(host: ^Host) -> int {
     return p2p.LinkPeerCount(host.link)
+}
+
+// The friends whose connection is made (`HostGuests` also counts a reply that was accepted and has not connected yet)
+HostConnectedGuests :: proc(host: ^Host) -> int {
+    connected: int
+    for i in 0 ..< p2p.MAX_PEERS {
+        if p2p.LinkPeerPath(host.link, i) != .NONE { connected += 1 }
+    }
+    return connected
 }
 
 // Once a frame: the link, the tunnel, and the stage (GATHERING, RELAY, READY)

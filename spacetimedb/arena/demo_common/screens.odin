@@ -9,6 +9,7 @@ package demo_common
 
 import "core:fmt"
 import "core:strings"
+import "core:time"
 import ui "../../../ui"
 import ui_default "../../../ui/default_style"
 import ui_kit "../../../ui/kit"
@@ -80,8 +81,8 @@ uiFrame :: proc(kit_ctx: ^kit.Context) {
 textFieldFocused :: proc() -> bool {
     focused: ui.Id = ui.UiFocused(&ui_state.ctx)
     if focused == 0 { return false }
-    // a read only area (the invite) takes the focus too, to select and copy: the keys of the game are not for the player then
-    return focused == ui.UiIdPath(CONNECTION_WINDOW, "Reply") || focused == ui.UiIdPath(CONNECTION_WINDOW, "Invite") || focused == ui.UiIdPath("menu", "Name") || focused == ui.UiIdPath("join", "Code")
+    // the name is the only text that is typed: no code is shown or edited, they are copied and pasted
+    return focused == ui.UiIdPath("menu", "Name")
 }
 
 @(private = "file")
@@ -101,32 +102,34 @@ column :: proc() -> ui.Layout {
     return {direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(18), gap = 10}
 }
 
-// The first line of a text, without the spaces around it: what a code field takes from the clipboard
+// What the Paste buttons take from the clipboard: the text without the spaces and line breaks around it (a code that a chat broke over lines still reads: the decoder skips the breaks)
 @(private = "file")
-firstLine :: proc(text: string) -> string {
-    end: int = strings.index_any(text, "\r\n")
-    return strings.trim_space(text if end < 0 else text[:end])
+pastedText :: proc(buffer: []u8, length: ^int) {
+    clip: [1024]u8
+    length^ = copy(buffer, strings.trim_space(kit.ClipboardGet(frame_context, clip[:])))
 }
 
-// The code as shown: a picture of the screen (a golden) cannot hold a code that is new every time, so a run that takes pictures (`config.mask_codes`) shows a fixed text of `length` letters
+// Codes are not shown and not edited: a person copies one on one computer and pastes it on the other, and the window says what the pasted text is. A colored label: green is good, orange needs
+// something from the person, grey waits.
 @(private = "file")
-shownCode :: proc(code: string, length: int) -> string {
-    if !config.mask_codes { return code }
-    // groups like the ones of a real code, so that the lines are about as wide as real ones
-    pattern: string = strings.repeat("XXXXX-", length / 6 + 1, context.temp_allocator)
-    return pattern[:length]
-}
-
-// A code with no spaces cannot wrap by itself: it is cut into lines of `width` characters (temp memory)
-@(private = "file")
-cutCode :: proc(code: string, width: int) -> string {
-    builder: strings.Builder
-    strings.builder_init(&builder, context.temp_allocator)
-    for i := 0; i < len(code); i += width {
-        if i > 0 { strings.write_byte(&builder, '\n') }
-        strings.write_string(&builder, code[i:min(i + width, len(code))])
+pastedStatus :: proc(c: ^ui.Context, text: string, wanted: session.CodeKind) {
+    kind, from, relay := session.CodeInspect(text)
+    switch {
+    case kind == .EMPTY:
+        ui.UiLabelColored(c, "Nothing pasted yet.", DIM)
+    case kind == wanted && kind == .INVITE:
+        ui.UiLabelColored(c, fmt.tprintf("Invite code of %s.%s", from if from != "" else "a host", " The relay carries the answer: nothing to send back." if relay else " It needs a reply code from you: the next screen makes it."), GOOD, .WORDS)
+    case kind == wanted && kind == .ROOM:
+        ui.UiLabelColored(c, fmt.tprintf("Room %s: the relay will find the host.", from), GOOD, .WORDS)
+    case kind == wanted && kind == .REPLY:
+        ui.UiLabelColored(c, fmt.tprintf("Reply code of %s. Press Accept the reply.", from if from != "" else "a friend"), GOOD, .WORDS)
+    case kind == .REPLY:
+        ui.UiLabelColored(c, "That is a reply code, made by a guest. Paste the invite code of the host.", WARNING, .WORDS)
+    case kind == .INVITE || kind == .ROOM:
+        ui.UiLabelColored(c, "That is an invite code, made by a host. Paste the reply code of your friend.", WARNING, .WORDS)
+    case:
+        ui.UiLabelColored(c, "That is not a code of this game. Copy it again on the other computer and press Paste.", WARNING, .WORDS)
     }
-    return strings.to_string(builder)
 }
 
 // While the game has no rows yet the field is not empty-looking: it says what is awaited and for how long. (The first data of a guest comes through the host's window: a slow host window means a slow start.)
@@ -146,14 +149,6 @@ waitingNotice :: proc(c: ^ui.Context, game: ^game_lib.Game) {
             ui.UiLabelColored(c, fmt.tprintf("%.0f seconds. The data comes through the host's window: if it is minimized or busy, it is slow.", waiting / 1000), WARNING, .WORDS)
         }
     }
-}
-
-// A code that people read, select and copy: a read only text area that wraps it (a code has no spaces: the area breaks it where it must) and scrolls when it is longer than the box. The area keeps its
-// own copy of the text in `buffer` (the caret and the selection stay while the text is the same).
-@(private = "file")
-codeBox :: proc(c: ^ui.Context, name: string, text: string, buffer: []u8, length: ^int, height: f32) {
-    if string(buffer[:length^]) != text { length^ = copy(buffer, text) }
-    _ = ui.UiTextArea(c, name, buffer, length, {ui.Grow(), ui.Fixed(height)}, true, false, nil, nil, true)
 }
 
 @(private = "file")
@@ -246,8 +241,8 @@ signingInScreen :: proc(c: ^ui.Context) {
 signInWaitScreen :: proc(c: ^ui.Context) {
     if ui.UiWindow(c, "signin_wait", centered(c, 660, 120), {ui.Fixed(660), ui.Fit()}, column()) {
         ui.UiSeparatorText(c, fmt.tprintf("Sign in with %s", signin.providers[signin.chosen].label))
-        ui.UiLabelColored(c, "A page was opened in your browser: sign in there, then come back to this window. If no page appeared, copy this address into a browser.", DIM, .WORDS)
-        ui.UiLabelColored(c, cutCode(shownCode(signinAddress(), 300), 70), RAY, .NEWLINES)
+        ui.UiLabelColored(c, "A page was opened in your browser: sign in there, then come back to this window.", GOOD, .WORDS)
+        ui.UiLabelColored(c, "If no page appeared, press Copy the address and paste it into a browser.", DIM, .WORDS)
         if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 10}) {
             if ui.UiButton(c, "Copy the address", {ui.Grow(), ui.Fixed(36)}) { kit.ClipboardSet(frame_context, signinAddress()) }
             if ui.UiButton(c, "Open the browser", {ui.Grow(), ui.Fixed(36)}) { signinOpenBrowser() }
@@ -259,17 +254,15 @@ signInWaitScreen :: proc(c: ^ui.Context) {
 // ---- the code of a host -------------------------------------------------------------------------------------------------------------------------------------------
 
 joinScreen :: proc(c: ^ui.Context) {
-    if ui.UiWindow(c, "join", centered(c, 760, 120), {ui.Fixed(760), ui.Fit()}, column()) {
+    if ui.UiWindow(c, "join", centered(c, 560, 120), {ui.Fixed(560), ui.Fit()}, column()) {
         ui.UiSeparatorText(c, "Join a game")
-        ui.UiLabelColored(c, "Type the room name that the host gave you (like maple-otter-22), or paste an invite code (Ctrl+V in the field, or the button).", DIM, .WORDS)
-        _ = ui.UiTextArea(c, "Code", state.code[:], &state.code_length, {ui.Grow(), ui.Fixed(86)})          // a code is long: a text area wraps it and shows all of it
+        ui.UiLabelColored(c, "On the computer of the host press Copy the invite code (or Copy the room name), then come back here and press Paste.", DIM, .WORDS)
+        code: string = string(state.code[:state.code_length])
+        pastedStatus(c, code, .INVITE if kind_of(code) != .ROOM else .ROOM)
+        kind, _, _ := session.CodeInspect(code)
         if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 10}) {
-            if ui.UiButton(c, "Paste", {ui.Grow(), ui.Fixed(38)}) {
-                buffer: [1024]u8
-                pasted: string = firstLine(kit.ClipboardGet(frame_context, buffer[:]))
-                state.code_length = copy(state.code[:], pasted)
-            }
-            if ui.UiButton(c, "Connect", {ui.Grow(), ui.Fixed(38)}, state.code_length == 0) {
+            if ui.UiButton(c, "Paste", {ui.Grow(), ui.Fixed(38)}) { pastedText(state.code[:], &state.code_length) }
+            if ui.UiButton(c, "Connect", {ui.Grow(), ui.Fixed(38)}, kind != .INVITE && kind != .ROOM) {
                 state.pending, state.phase = .JOIN, .STARTING
                 setStatus("")
             }
@@ -280,6 +273,12 @@ joinScreen :: proc(c: ^ui.Context) {
         }
         statusLine(c)
     }
+}
+
+@(private = "file")
+kind_of :: proc(text: string) -> session.CodeKind {
+    kind, _, _ := session.CodeInspect(text)
+    return kind
 }
 
 // ---- a connection being made --------------------------------------------------------------------------------------------------------------------------------------
@@ -322,8 +321,9 @@ connectingScreen :: proc(c: ^ui.Context) {
         if stage == .READY && !relay {
             ui.UiLabelColored(c, "This code names no relay, so the host needs a reply code from you. Send it to the host:", WARNING, .WORDS)
             reply: string = session.GuestReply(guest)
-            codeBox(c, "ReplyCode", shownCode(reply, 190), state.reply_view[:], &state.reply_view_length, 96)       // a real reply is about 190
+            ui.UiLabelColored(c, "Your reply code is ready.", GOOD)
             if ui.UiButton(c, "Copy the reply code", {ui.Grow(), ui.Fixed(34)}) { kit.ClipboardSet(frame_context, reply) }
+            ui.UiLabelColored(c, "Send it to the host (a chat, anything). The host presses Paste and Accept in the Connection window.", DIM, .WORDS)
         } else if stage == .READY {
             ui.UiLabelColored(c, "Waiting for the host. Nothing needs to be sent back: the relay carries the answer.", DIM, .WORDS)
         }
@@ -405,30 +405,42 @@ hostPanel :: proc(c: ^ui.Context, host: ^session.Host) {
     case .READY, .CONNECTED:
         code: string = session.HostInvite(host)
         if room := session.HostRoom(host); room != "" && host.link.derp.state == .READY {
-            ui.UiLabelColored(c, "Room: friends type this name:", GOOD)
-            ui.UiLabelColored(c, room, RAY)
+            ui.UiLabelColored(c, fmt.tprintf("Room %s", room), GOOD)
             if ui.UiButton(c, "Copy the room name", {ui.Grow(), ui.Fixed(32)}) { kit.ClipboardSet(frame_context, room) }
-            ui.UiLabelColored(c, "or give them the invite code:", DIM)
+            ui.UiLabelColored(c, "A friend can paste the room name, or the invite code:", DIM, .WORDS)
         }
-        codeBox(c, "Invite", shownCode(code, 330), state.invite_view[:], &state.invite_view_length, 120)     // a real invite is about 330 characters
+        ui.UiLabelColored(c, "Invite code ready. Copy it and send it to your friend.", GOOD, .WORDS)
         if ui.UiButton(c, "Copy the invite code", {ui.Grow(), ui.Fixed(32)}) { kit.ClipboardSet(frame_context, code) }
         if host.relay_used && host.link.derp.state == .READY {
             ui.UiLabelColored(c, "A friend needs only this code: the relay carries the answer.", GOOD, .WORDS)
         } else {
-            ui.UiLabelColored(c, "No relay: a friend sends a reply code back. Paste it here:", WARNING, .WORDS)
-            _ = ui.UiTextArea(c, "Reply", state.reply[:], &state.reply_length, {ui.Grow(), ui.Fixed(92)})          // a reply code is as long as an invite: a text area, not a line
+            ui.UiLabelColored(c, "No relay: your friend sends back a reply code. Copy it on their computer, then press Paste here.", WARNING, .WORDS)
+            reply: string = string(state.reply[:state.reply_length])
+            pastedStatus(c, reply, .REPLY)
+            reply_kind, _, _ := session.CodeInspect(reply)
             if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 8}) {
                 if ui.UiButton(c, "Paste", {ui.Grow(), ui.Fixed(32)}) {
-                    buffer: [1024]u8
-                    pasted: string = firstLine(kit.ClipboardGet(frame_context, buffer[:]))
-                    state.reply_length = copy(state.reply[:], pasted)
+                    pastedText(state.reply[:], &state.reply_length)
+                    state.paste_length = 0
                 }
-                if ui.UiButton(c, "Accept the reply", {ui.Grow(), ui.Fixed(32)}, strings.trim_space(string(state.reply[:state.reply_length])) == "") {
-                    acceptReply(string(state.reply[:state.reply_length]))
-                    state.reply_length = 0
+                if ui.UiButton(c, "Accept the reply", {ui.Grow(), ui.Fixed(32)}, reply_kind != .REPLY) {
+                    acceptReply(reply)
                 }
             }
-            if state.paste_length > 0 { ui.UiLabelColored(c, string(state.paste_message[:state.paste_length]), WARNING, .WORDS) }
+            if state.paste_length > 0 { ui.UiLabelColored(c, string(state.paste_message[:state.paste_length]), GOOD if state.reply_good else WARNING, .WORDS) }
+            // a reply was accepted: the friend connects in a moment, and the window says so until it has
+            if state.waiting_length > 0 {
+                if session.HostConnectedGuests(host) > state.waiting_before {
+                    state.waiting_length = 0
+                } else {
+                    seconds: f64 = time.duration_seconds(time.tick_since(state.waiting_since))
+                    if seconds < 20 {
+                        ui.UiLabelColored(c, fmt.tprintf("Waiting for %s to connect... %.0f s", string(state.waiting_name[:state.waiting_length]), seconds), DIM, .WORDS)
+                    } else {
+                        ui.UiLabelColored(c, fmt.tprintf("%s has not connected yet. Both windows have to stay open: ask for a new reply code and paste it again.", string(state.waiting_name[:state.waiting_length])), WARNING, .WORDS)
+                    }
+                }
+            }
         }
     case .IDLE, .FAILED:
     }

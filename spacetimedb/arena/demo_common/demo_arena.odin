@@ -42,7 +42,6 @@ Config :: struct {
     port: int,
     sleep_ms: int,          // a test sleeps in each frame: the network needs real time while a headless run has none
     loopback: bool,         // a test: also offer 127.0.0.1 in the p2p codes
-    mask_codes: bool,       // pictures: the codes are shown as a fixed text (see screens.odin)
     idle_host: ^session.Host,   // a test that hosts in the same process: stepped while the guest waits in a blocking call
     signin_providers: []Provider,   // the accounts the start screen offers (a test or a script); empty: the ones of oidc/providers/providers.local.txt
     signin_store: string,           // the file that remembers the sign in between runs ("": it does not); the program sets the one of the user's configuration folder, a test its own
@@ -91,10 +90,11 @@ State :: struct {
     code_length: int,
     reply: [1024]u8,
     reply_length: int,
-    invite_view: [1024]u8,  // the invite code as the read only text area of the host shows it (a copy: the area keeps its caret and selection while the text is the same)
-    invite_view_length: int,
-    reply_view: [1024]u8,    // the same for the reply code of a guest
-    reply_view_length: int,
+    reply_good: bool,       // the message of the last reply (paste_message) is a success, not a refusal
+    waiting_name: [32]u8,   // a reply was accepted and this friend has not connected yet
+    waiting_length: int,
+    waiting_before: int,    // how many friends were connected when the reply was accepted
+    waiting_since: time.Tick,
     relay, stun: bool,
     console: bool,          // the console of the process is read for reply codes (started from the command line)
 }
@@ -272,11 +272,7 @@ launch :: proc(mode: Mode) {
 
 // A room name is short (maple-otter-22); an invite code is a hundred letters in groups of five
 looksLikeRoom :: proc(text: string) -> bool {
-    if len(text) > 48 || strings.contains_rune(text, ' ') { return false }
-    dash: int = strings.last_index_byte(text, '-')
-    if dash <= 0 || dash + 1 >= len(text) { return false }
-    for c in text[dash + 1:] { if c < '0' || c > '9' { return false } }
-    return strings.count(text, "-") <= 3
+    return session.RoomLooksLike(text)
 }
 
 update :: proc(ctx: ^kit.Context) {
@@ -355,10 +351,23 @@ update :: proc(ctx: ^kit.Context) {
 }
 
 acceptReply :: proc(text: string) {
+    kind, from, _ := session.CodeInspect(text)
+    if kind != .REPLY {
+        state.reply_good = false
+        state.paste_length = copy(state.paste_message[:], "That is not a reply code of a friend.")
+        return
+    }
+    before: int = session.HostConnectedGuests(state.host) if state.host != nil else 0      // the friends that are connected now
     if state.host != nil && session.HostAcceptReply(state.host, strings.trim_space(text)) {
-        state.paste_length = copy(state.paste_message[:], "reply accepted: the friend is connecting")
+        friend: string = from if from != "" else "the friend"
+        state.reply_good = true
+        state.paste_length = copy(state.paste_message[:], fmt.tprintf("Reply of %s accepted: the connection is being made.", friend))
+        state.waiting_length = copy(state.waiting_name[:], friend)
+        state.waiting_before, state.waiting_since = before, time.tick_now()
+        state.reply_length = 0
     } else {
-        state.paste_length = copy(state.paste_message[:], "that is not a reply code for this game")
+        state.reply_good = false
+        state.paste_length = copy(state.paste_message[:], "That reply answers another invite, not this game. Ask your friend to join again with the invite code above.")
     }
 }
 
