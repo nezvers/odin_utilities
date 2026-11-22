@@ -23,6 +23,7 @@ import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "core:time"
 
 STORE_MAGIC :: "oidc-store-2\n"                 // the only plain part of the file: it says whose it is
 STORE_LEGACY :: "oidc-store-1"                  // the first format, plain text: refused, overwritten and deleted
@@ -54,6 +55,40 @@ StorePath :: proc(app: string) -> (path: string, ok: bool) {
     folder, error := os.user_config_dir(context.temp_allocator)
     if error != nil || folder == "" { return "", false }
     return strings.concatenate({strings.trim_right(folder, "/\\"), "/", app, "/signin.txt"}, context.temp_allocator), true
+}
+
+// The file of one provider next to the base path: `.../signin.txt` becomes `.../signin_<key>.txt`, the key being the label in lower case letters and digits (any other run of characters is one `_`).
+// Two windows of the program that are signed in with different accounts then keep their own files: the one that signs in last does not replace the other's. Temp memory.
+StoreVariant :: proc(path: string, label: string) -> string {
+    key: strings.Builder
+    strings.builder_init(&key, context.temp_allocator)
+    pending_separator: bool
+    for c in transmute([]u8)label {
+        switch c {
+        case 'a' ..= 'z', '0' ..= '9':
+            if pending_separator && strings.builder_len(key) > 0 { strings.write_byte(&key, '_') }
+            pending_separator = false
+            strings.write_byte(&key, c)
+        case 'A' ..= 'Z':
+            if pending_separator && strings.builder_len(key) > 0 { strings.write_byte(&key, '_') }
+            pending_separator = false
+            strings.write_byte(&key, c + 32)
+        case:
+            pending_separator = true
+        }
+    }
+    name: string = strings.to_string(key) if strings.builder_len(key) > 0 else "default"
+    dot: int = strings.last_index_byte(path, '.')
+    slash: int = strings.last_index_byte(path, '/')
+    if dot > slash && dot >= 0 { return strings.concatenate({path[:dot], "_", name, path[dot:]}, context.temp_allocator) }
+    return strings.concatenate({path, "_", name}, context.temp_allocator)
+}
+
+// When the file was written last (the program restores the account that was used last)
+StoreModified :: proc(path: string) -> (modified: time.Time, ok: bool) {
+    info, error := os.stat(path, context.temp_allocator)
+    if error != nil { return {}, false }
+    return info.modification_time, true
 }
 
 @(private)
@@ -272,6 +307,34 @@ test_a_stored_login_that_is_not_ours_or_not_whole_is_refused :: proc(t: ^testing
     _ = os.write_entire_file(path, big)
     _, big_ok := StoreRead(path, buffer[:])
     testing.expect(t, !big_ok)
+}
+
+@(test)
+test_every_provider_has_its_own_file :: proc(t: ^testing.T) {
+    testing.expect_value(t, StoreVariant("a/b/signin.txt", "Google"), "a/b/signin_google.txt")
+    testing.expect_value(t, StoreVariant("a/b/signin.txt", "Mock account"), "a/b/signin_mock_account.txt")
+    testing.expect_value(t, StoreVariant("a/b/signin.txt", "  Space-Time Auth!! "), "a/b/signin_space_time_auth.txt")
+    testing.expect_value(t, StoreVariant("a/b/signin.txt", "../../x"), "a/b/signin_x.txt")                 // the label cannot climb out of the folder
+    testing.expect_value(t, StoreVariant("a/b/signin.txt", ""), "a/b/signin_default.txt")
+    testing.expect_value(t, StoreVariant("a/b/signin.txt", "***"), "a/b/signin_default.txt")
+    testing.expect_value(t, StoreVariant("a.b/signin", "Discord"), "a.b/signin_discord")                  // a dot in the folder is not an extension
+    testing.expect(t, StoreVariant("a/signin.txt", "Google") != StoreVariant("a/signin.txt", "Discord"), "two providers, two files")
+}
+
+@(test)
+test_the_time_of_the_last_write_is_known :: proc(t: ^testing.T) {
+    path: string = testPath("modified")
+    defer testClean(path)
+    _, missing := StoreModified(path)
+    testing.expect(t, !missing)
+    os.make_directory_all(path[:strings.last_index_byte(path, '/')])
+    _ = os.write_entire_file(path, "a")
+    first, first_ok := StoreModified(path)
+    testing.expect(t, first_ok)
+    time.sleep(30 * time.Millisecond)
+    _ = os.write_entire_file(path, "b")
+    second, second_ok := StoreModified(path)
+    testing.expect(t, second_ok && time.diff(first, second) > 0, "a later write is later")
 }
 
 @(test)

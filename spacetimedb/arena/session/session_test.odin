@@ -170,3 +170,129 @@ test_a_guest_joins_a_room_by_its_name :: proc(t: ^testing.T) {
     defer GuestStop(lonely)
     _ = lonely
 }
+
+// A player who comes back with the same identity (a signed in person: the identity is the one of the account). The window that was closed leaves its connection open on the server for a while, the
+// new connection joins, and when the server notices that the old one is gone the player must stay: the row belongs to the connection that joined last. (Found by a person who closed the second
+// window of the game and joined again: the new player was deleted by the disconnect of the old connection.)
+@(test)
+test_a_player_who_comes_back_is_not_removed_by_the_old_connection :: proc(t: ^testing.T) {
+    if st.FixturePath("arena-odin") == "" || !os.exists(st.ServerCliPath()) {
+        fmt.println("[arena] no server or no arena module: run `odin run spacetimedb/tool/setup` to test the game")
+        return
+    }
+    root: string = "arena_test_rejoin"
+    defer st.ServerRemove(root)
+    host := new(Host)
+    defer free(host)
+    if !HostStart(host, {root = root, port = 3150, name = "Host"}) { testing.fail_now(t, host.error) }
+    defer HostStop(host)
+
+    // one identity for both connections: a token that the server made
+    response := make([]u8, 4096)
+    defer delete(response)
+    _, token_view, made := st.IdentityCreate(host.server.endpoint, response)
+    testing.expect(t, made)
+    token: string = strings.clone(string(token_view), context.temp_allocator)
+
+    first := new(game_lib.Game)
+    second := new(game_lib.Game)
+    defer free(first)
+    defer free(second)
+    testing.expect(t, game_lib.GameOpen(first, host.server.endpoint, "Ada", token), first.error)
+    for _ in 0 ..< 3000 {
+        game_lib.GamePoll(first)
+        time.sleep(time.Millisecond)
+        if _, found := game_lib.GameMe(first); found { break }
+    }
+    _, first_found := game_lib.GameMe(first)
+    testing.expect(t, first_found, "the first connection joined")
+
+    // the person starts the game again while the old window is still connected: the same player, taken over by the new connection
+    testing.expect(t, game_lib.GameOpen(second, host.server.endpoint, "Ada", token), second.error)
+    defer game_lib.GameClose(second)
+    for _ in 0 ..< 3000 {
+        game_lib.GamePoll(first)
+        game_lib.GamePoll(second)
+        time.sleep(time.Millisecond)
+        if _, found := game_lib.GameMe(second); found && second.phase == .PLAYING { break }
+    }
+    _, second_found := game_lib.GameMe(second)
+    testing.expect(t, second_found, "the second connection has the player")
+    testing.expect_value(t, second.player_count, 1)                // one player, not two
+
+    // now the old connection goes away (the server runs the disconnect for it): the player stays
+    game_lib.GameClose(first)
+    for _ in 0 ..< 1500 {
+        game_lib.GamePoll(second)
+        time.sleep(time.Millisecond)
+    }
+    _, still_there := game_lib.GameMe(second)
+    testing.expect(t, still_there, "the player is still on the field after the old connection dropped")
+    testing.expect_value(t, second.player_count, 1)
+
+    // and when the connection that owns the player goes, the player leaves (nothing is left behind)
+    game_lib.GameClose(second)
+    third := new(game_lib.Game)
+    defer free(third)
+    other_response := make([]u8, 4096)
+    defer delete(other_response)
+    _, other_view, other_made := st.IdentityCreate(host.server.endpoint, other_response)
+    testing.expect(t, other_made)
+    testing.expect(t, game_lib.GameOpen(third, host.server.endpoint, "Watcher", strings.clone(string(other_view), context.temp_allocator)), third.error)
+    defer game_lib.GameClose(third)
+    for _ in 0 ..< 3000 {
+        game_lib.GamePoll(third)
+        time.sleep(time.Millisecond)
+        if _, found := game_lib.GameMe(third); found && third.phase == .PLAYING { break }
+    }
+    for _ in 0 ..< 1500 {
+        game_lib.GamePoll(third)
+        time.sleep(time.Millisecond)
+        if third.player_count == 1 { break }
+    }
+    testing.expect_value(t, third.player_count, 1)                 // only the watcher: the player of the closed connection is gone
+}
+
+// A friend whose game was closed (a crash, the window closed: nothing tells the host) joins the same host again with a new start of the game: new keys, a new reply code, the old peer is still on the host's
+// link. The host must take the new one, and both go on.
+@(test)
+test_a_guest_can_join_again_after_the_first_one_was_closed_without_goodbye :: proc(t: ^testing.T) {
+    if st.FixturePath("arena-odin") == "" || !os.exists(st.ServerCliPath()) {
+        fmt.println("[arena] no server or no arena module: run `odin run spacetimedb/tool/setup` to test the game")
+        return
+    }
+    root: string = "arena_test_again"
+    defer st.ServerRemove(root)
+    host := new(Host)
+    defer free(host)
+    if !HostStart(host, {root = root, port = 3151, loopback = true, name = "Host"}) { testing.fail_now(t, host.error) }
+    defer HostStop(host)
+
+    first := new(Guest)
+    defer free(first)
+    testing.expect(t, GuestJoin(first, HostInvite(host), {loopback = true, name = "Ada"}), first.error)
+    testing.expect(t, HostAcceptReply(host, GuestReply(first)))
+    for _ in 0 ..< 800 {
+        HostUpdate(host)
+        GuestUpdate(first)
+        time.sleep(time.Millisecond)
+        if GuestConnected(first) && HostGuests(host) == 1 { break }
+    }
+    testing.expect(t, GuestConnected(first) && HostGuests(host) == 1, "the first guest is connected")
+    // the first guest is not stopped and not updated any more: its process is gone
+
+    second := new(Guest)
+    defer free(second)
+    defer GuestStop(second)
+    testing.expect(t, GuestJoin(second, HostInvite(host), {loopback = true, name = "Ada"}), second.error)
+    testing.expect(t, HostAcceptReply(host, GuestReply(second)), "the host takes the reply of the new start")
+    for _ in 0 ..< 3000 {
+        HostUpdate(host)
+        GuestUpdate(second)
+        time.sleep(time.Millisecond)
+        if GuestConnected(second) { break }
+    }
+    testing.expectf(t, GuestConnected(second), "the second start connects to the host: %v %s", second.stage, second.error)
+    testing.expect(t, GuestStartTunnel(second), "and reaches the database")
+    GuestStop(first)
+}

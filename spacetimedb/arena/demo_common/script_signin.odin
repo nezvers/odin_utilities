@@ -48,11 +48,12 @@ startProvider :: proc(ctx: ^kit.Context) -> bool {
     state.name_length = copy(state.name[:], "player")
     signin_mock = new(mock.Provider)
     if !mock.Start(signin_mock, {algorithm = .ES256, client_id = "arena", subject = "user-arena-1", userinfo_name = "Ada Lovelace", email = "ada@example.com", rotate_refresh = true}) { return false }
-    providers := make([]Provider, 1)
+    providers := make([]Provider, 2)
     providers[0] = {label = "Mock account", config = {issuer = mock.Issuer(signin_mock), client_id = "arena"}}
+    providers[1] = {label = "Second account", config = {issuer = mock.Issuer(signin_mock), client_id = "arena"}}
     config.signin_providers = providers
     config.signin_store = "arena_test_signin_store/signin.txt"
-    oidc.StoreRemove(config.signin_store)
+    removeStores()
     oidc.HttpIdle, oidc.HttpIdleUser = stepProvider, nil
     st.StreamIdle, st.StreamIdleUser = stepProvider, nil
     // no real browser: the opener only remembers the address
@@ -90,7 +91,7 @@ stopProvider :: proc(ctx: ^kit.Context) -> bool {
         signin_mock = nil
     }
     config.signin_providers = nil
-    oidc.StoreRemove(config.signin_store)
+    removeStores()
     _ = os.remove("arena_test_signin_store")
     config.signin_store = ""
     return true
@@ -115,17 +116,35 @@ restart :: proc(ctx: ^kit.Context) -> bool {
     return true
 }
 
-// What the store file holds now
+// The store file of the first account, of the second, and the old single file of the first version
+@(private = "file")
+storeFile :: proc() -> string { return signinStoreFile("Mock account") }
+@(private = "file")
+storeFileTwo :: proc() -> string { return signinStoreFile("Second account") }
+
+@(private = "file")
+removeStores :: proc() {
+    oidc.StoreRemove(storeFile())
+    oidc.StoreRemove(storeFileTwo())
+    oidc.StoreRemove(config.signin_store)
+}
+
+// What the store file of the first account holds now
 @(private = "file")
 stored_token :: proc() -> (token: string, found: bool) {
     @(static) buffer: [oidc.STORE_MAX_SIZE]u8
-    stored, ok := oidc.StoreRead(config.signin_store, buffer[:])
+    stored, ok := oidc.StoreRead(storeFile(), buffer[:])
     return stored.refresh_token, ok
 }
 
 @(private = "file")
+writeStoreAt :: proc(path: string, label: string, issuer: string, client_id: string, token: string) -> bool {
+    return oidc.StoreWrite(path, {provider = label, issuer = issuer, client_id = client_id, name = "Ada Lovelace", refresh_token = token})
+}
+
+@(private = "file")
 writeStore :: proc(issuer: string, client_id: string) -> bool {
-    return oidc.StoreWrite(config.signin_store, {provider = "Mock account", issuer = issuer, client_id = client_id, name = "Ada Lovelace", refresh_token = "stored-token"})
+    return writeStoreAt(storeFile(), "Mock account", issuer, client_id, "stored-token")
 }
 
 @(private = "file")
@@ -139,7 +158,7 @@ signin_script: []kit.Step = {
     kit.Check(aimSignIn, "the start screen has Sign in"),
     kit.ClickAt(&target),
     kit.Wait(3),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .SIGN_IN && signin.provider_count == 1 }, "Sign in lists the accounts that are set up"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .SIGN_IN && signin.provider_count == 2 }, "Sign in lists the accounts that are set up"),
     kit.Wait(15),
     kit.Capture("signin_providers"),
     kit.Wait(1),
@@ -161,7 +180,7 @@ signin_script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         if !oidc.StoreAvailable() { return true }
         token, found := stored_token()
-        data, _ := os.read_entire_file(config.signin_store, context.temp_allocator)
+        data, _ := os.read_entire_file(storeFile(), context.temp_allocator)
         // what is on the disk is encrypted: no token, no name, no provider in it
         text: string = string(data)
         return found && signin.account != nil && token == signin.account.session.tokens.refresh_token && !strings.contains(text, "eyJ") && !strings.contains(text, "Ada Lovelace") && !strings.contains(text, token) && !strings.contains(text, "arena")
@@ -208,7 +227,7 @@ signin_script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return signin.account == nil && aimSignIn(ctx) }, "Sign out forgets the account"),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { if !oidc.StoreAvailable() { return true }; return !os.exists(config.signin_store) && restart(ctx) && state.phase == .MENU && signin.account == nil }, "Sign out deletes the store file: a restart restores nothing"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { if !oidc.StoreAvailable() { return true }; return !os.exists(storeFile()) && restart(ctx) && state.phase == .MENU && signin.account == nil }, "Sign out deletes the store file: a restart restores nothing"),
     // an anonymous game: not the identity of the account
     kit.Check(hooksOn, "the provider is stepped again"),
     kit.Check(aimPlaySolo, "the start screen has Play solo"),
@@ -259,15 +278,61 @@ signin_script: []kit.Step = {
         signinLoad()
         if !writeStore(signin.providers[0].config.issuer, "somebody-else") { return false }
         signinRestoreBegin()
-        return state.phase == .MENU && signin.account == nil && os.exists(config.signin_store)
+        return state.phase == .MENU && signin.account == nil && os.exists(storeFile())
     }, "a stored sign in of another client id is left alone"),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         if !oidc.StoreAvailable() { return true }
         restart(ctx)
-        _ = os.write_entire_file(config.signin_store, "junk that is not a store")
+        _ = os.write_entire_file(storeFile(), "junk that is not a store")
         signinRestoreBegin()
         return state.phase == .MENU && signin.account == nil
     }, "a file that is not a store restores nothing"),
+    // two windows with two accounts: every provider has its own file, the one used last is restored at the start, and what one does to its file does not touch the other's
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
+        removeStores()
+        restart(ctx)
+        issuer: string = signin.providers[0].config.issuer
+        return writeStoreAt(storeFile(), "Mock account", issuer, "arena", "token-one")
+    }, "the first account has its file"),
+    kit.Wait(10),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
+        return writeStoreAt(storeFileTwo(), "Second account", signin.providers[0].config.issuer, "arena", "token-two")
+    }, "the second account, signed in later, has another file"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
+        if !os.exists(storeFile()) || !os.exists(storeFileTwo()) { return false }
+        restart(ctx)
+        return state.phase == .SIGNING_IN && signin.chosen == 1
+    }, "both files are there and the account that was used last is the one that is restored"),
+    kit.Wait(40),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
+        // the stored token of the second account is not one of the provider (it was made up): refused, so ONLY its file is deleted
+        return state.phase == .MENU && signin.account == nil && !os.exists(storeFileTwo()) && os.exists(storeFile()) && strings.contains(string(state.status[:state.status_length]), "Second account")
+    }, "a refused sign in deletes the file of its own provider only"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
+        restart(ctx)
+        return state.phase == .SIGNING_IN && signin.chosen == 0
+    }, "the other account is what is restored next"),
+    kit.Wait(40),
+    // the single file of the first version becomes the file of its provider
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
+        removeStores()
+        return state.phase == .MENU && writeStoreAt(config.signin_store, "Mock account", signin.providers[0].config.issuer, "arena", "old-single-file-token")
+    }, "an old single file exists"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        if !oidc.StoreAvailable() { return true }
+        restart(ctx)
+        // it is moved to the file of its provider (same token) and the old file is gone
+        token, found := stored_token()
+        return state.phase == .SIGNING_IN && found && token == "old-single-file-token" && !os.exists(config.signin_store)
+    }, "the old file is moved to the file of its provider"),
+    kit.Wait(40),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { removeStores(); return true }, "the stores are emptied"),
     // a login that is cancelled
     kit.Check(aimSignIn, "the start screen has Sign in"),
     kit.ClickAt(&target),

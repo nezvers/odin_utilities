@@ -25,6 +25,8 @@ Player :: struct {
     dx, dy: i8,
     score: u32,
     hue: u8,
+    connection: bsatn.ConnectionId, // the connection that owns the player now: the last one that joined. A person who comes back (the same identity) takes the player over, and the disconnect of
+                                    // the OLD connection must not remove it (the identity of a signed in person is the same in every window)
 }
 
 Coin :: struct {
@@ -34,7 +36,7 @@ Coin :: struct {
 
 players, coins, world, ticks: sdb.Table
 
-PLAYER_COLUMNS :: []sdb.Column{{"id", .U64, nil}, {"owner", .IDENTITY, nil}, {"name", .STRING, nil}, {"x", .F32, nil}, {"y", .F32, nil}, {"dx", .I8, nil}, {"dy", .I8, nil}, {"score", .U32, nil}, {"hue", .U8, nil}}
+PLAYER_COLUMNS :: []sdb.Column{{"id", .U64, nil}, {"owner", .IDENTITY, nil}, {"name", .STRING, nil}, {"x", .F32, nil}, {"y", .F32, nil}, {"dx", .I8, nil}, {"dy", .I8, nil}, {"score", .U32, nil}, {"hue", .U8, nil}, {"connection", .CONNECTION_ID, nil}}
 COIN_COLUMNS :: []sdb.Column{{"id", .U64, nil}, {"x", .F32, nil}, {"y", .F32, nil}}
 WORLD_COLUMNS :: []sdb.Column{{"id", .U64, nil}, {"seed", .U64, nil}, {"ticks", .U64, nil}}
 TICK_COLUMNS :: []sdb.Column{{"scheduled_id", .U64, nil}, {"scheduled_at", .SCHEDULE_AT, nil}}
@@ -69,6 +71,7 @@ readPlayer :: proc(reader: ^bsatn.Reader) -> Player {
     player.dx, player.dy = bsatn.ReadI8(reader), bsatn.ReadI8(reader)
     player.score = bsatn.ReadU32(reader)
     player.hue = bsatn.ReadU8(reader)
+    player.connection = bsatn.ReadConnectionId(reader)
     return player
 }
 
@@ -82,6 +85,7 @@ writePlayer :: proc(writer: ^bsatn.Writer, player: ^Player) {
     bsatn.WriteI8(writer, player.dy)
     bsatn.WriteU32(writer, player.score)
     bsatn.WriteU8(writer, player.hue)
+    bsatn.WriteConnectionId(writer, player.connection)
 }
 
 // The player of an identity (the unique index on `owner`)
@@ -167,8 +171,11 @@ connected :: proc(ctx: ^sdb.ReducerContext, args: ^bsatn.Reader) -> string {
     return ""
 }
 
-// A player who leaves (or loses the connection) leaves the field
+// A player who leaves (or loses the connection) leaves the field. Only the connection that owns the player removes it: when the same identity joined again from another window, the old connection
+// that the server only now notices as gone is not the owner any more.
 disconnected :: proc(ctx: ^sdb.ReducerContext, args: ^bsatn.Reader) -> string {
+    player, exists := findPlayer(ctx.sender)
+    if !exists || player.connection != ctx.connection { return "" }
     key: [32]u8
     writer: bsatn.Writer = bsatn.WriterMake(key[:])
     bsatn.WriteIdentity(&writer, ctx.sender)
@@ -183,9 +190,10 @@ join :: proc(ctx: ^sdb.ReducerContext, args: ^bsatn.Reader) -> string {
     player, exists := findPlayer(ctx.sender)
     if exists {
         player.name_length = copy(player.name[:], name)
+        player.connection = ctx.connection          // the player is taken over by the connection that joins now
         return savePlayer(&player)
     }
-    player = {owner = ctx.sender, x = random(&state) * FIELD_WIDTH, y = random(&state) * FIELD_HEIGHT, hue = u8(random(&state) * 255)}
+    player = {owner = ctx.sender, connection = ctx.connection, x = random(&state) * FIELD_WIDTH, y = random(&state) * FIELD_HEIGHT, hue = u8(random(&state) * 255)}
     player.name_length = copy(player.name[:], name)
     row: [128]u8
     writer: bsatn.Writer = bsatn.WriterMake(row[:])

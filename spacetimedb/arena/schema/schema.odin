@@ -31,6 +31,7 @@ Player :: struct {
     dy: i8,
     score: u32,
     hue: u8,
+    connection: st.ConnectionId,
 }
 
 PlayerRead :: proc(reader: ^st.Reader) -> Player {
@@ -44,6 +45,7 @@ PlayerRead :: proc(reader: ^st.Reader) -> Player {
     value.dy = st.ReadI8(reader)
     value.score = st.ReadU32(reader)
     value.hue = st.ReadU8(reader)
+    value.connection = st.ReadConnectionId(reader)
     return value
 }
 
@@ -57,6 +59,7 @@ PlayerWrite :: proc(writer: ^st.Writer, value: Player) {
     st.WriteI8(writer, value.dy)
     st.WriteU32(writer, value.score)
     st.WriteU8(writer, value.hue)
+    st.WriteConnectionId(writer, value.connection)
 }
 
 Coin :: struct {
