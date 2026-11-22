@@ -45,6 +45,41 @@ AuthSessionFrom :: proc(session: ^AuthSession, login: ^oidc.Login) -> bool {
     return ok
 }
 
+// A session from a refresh token that was kept from an earlier sign in (`oidc.StoreRead`): the provider is discovered, the token is renewed, and the new ID token is verified like one of a login (signature,
+// issuer, audience, expiry; there is no nonce, nobody was redirected). The refresh token may be replaced by the provider: keep `session.tokens.refresh_token` (`oidc.StoreWrite`). False, and
+// `session.error`, when the provider cannot be reached, refuses the token (revoked, expired: the person has to sign in again) or sends no ID token (ask `offline_access` and `openid`).
+AUTH_UNREACHABLE :: "the provider cannot be reached"          // the only error that is no answer of the provider: the stored sign in may still be good
+
+AuthSessionFromRefresh :: proc(session: ^AuthSession, config: oidc.ClientConfig, refresh_token: string) -> bool {
+    session^ = {}
+    session.config = config
+    if !oidc.Discover(config.issuer, &session.metadata) {
+        session.error = AUTH_UNREACHABLE
+        return false
+    }
+    if !oidc.Refresh(&session.metadata, config, refresh_token, &session.tokens) {
+        session.error = "the provider refused the stored sign in"
+        return false
+    }
+    if session.tokens.id_token == "" {
+        session.error = "the provider sent no ID token"
+        return false
+    }
+    keys: ^oidc.KeySet = new(oidc.KeySet)
+    defer free(keys)
+    if !oidc.FetchKeys(&session.metadata, keys) {
+        session.error = "the keys of the provider could not be fetched"
+        return false
+    }
+    claims, error := oidc.JwtVerify(session.tokens.id_token, keys, {issuer = session.metadata.issuer, audience = config.client_id}, session.claims_scratch[:])
+    if error != .NONE {
+        session.error = oidc.VerifyErrorText(error)
+        return false
+    }
+    session.expires = claims.expires
+    return true
+}
+
 @(private)
 rebased :: proc(storage: []u8, old_start: uintptr, text: string) -> string {
     if len(text) == 0 { return "" }

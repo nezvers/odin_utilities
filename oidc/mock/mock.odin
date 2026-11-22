@@ -55,6 +55,7 @@ Options :: struct {
     port: int,              // 0: any
     refresh_secret: string, // not "": a refresh needs this client_secret, as at Discord (`invalid_client` without it)
     header_padding: int,    // the user info answer has a header of this many bytes (real providers send kilobytes of headers)
+    rotate_refresh: bool,   // a refresh token can be used once: the answer has a new one (providers that rotate), the old one is `invalid_grant`
     userinfo_name: string,  // not "": the user info carries this `name` (the ID token never does, as at Discord)
     service_secret: string, // not "": the client credentials grant works with this client_secret (a service token without `sub`, audience = the scope), otherwise it is `invalid_client`
 }
@@ -220,6 +221,13 @@ newCode :: proc(provider: ^Provider, kind: u8, challenge: string, nonce: string)
     return code
 }
 
+// The person ended the session at the provider (or the refresh tokens expired): every refresh token that was handed out is now refused
+RevokeRefreshTokens :: proc(provider: ^Provider) {
+    for i in 0 ..< MAX_CODES {
+        if provider.codes[i].kind == 2 { provider.codes[i].used = true }
+    }
+}
+
 @(private)
 findCode :: proc(provider: ^Provider, value: string, kind: u8) -> ^Code {
     for i in 0 ..< MAX_CODES {
@@ -306,6 +314,7 @@ token :: proc(provider: ^Provider, client: net.TCP_Socket, form: string, head: s
             respond(client, 400, "application/json", "{\"error\":\"invalid_grant\"}")
             return
         }
+        if provider.options.rotate_refresh { code.used = true }
         issue(provider, client, "")
     case "urn:ietf:params:oauth:grant-type:device_code":
         code := findCode(provider, oidc.QueryValue(form, "device_code", scratch[:]), 3)

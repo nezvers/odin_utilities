@@ -44,6 +44,9 @@ Signin :: struct {
     login: ^oidc.Login,
     account: ^Account,
     delay: int,                     // frames to wait before the provider is contacted, so that the screen that says so is drawn first
+    restoring: bool,                // SIGNING_IN is the return of a stored sign in (no browser), not a new login
+    saved: [512]u8,                 // the refresh token that is in the store file now: a new one (the provider rotates) is written when it differs
+    saved_length: int,
     message: [240]u8,               // why a sign in did not work
     message_length: int,
 }
@@ -113,10 +116,15 @@ signinChoose :: proc(index: int) {
 
 // Once an update: contacts the provider when its turn has come, and asks the login in progress whether the browser came back
 signinUpdate :: proc() {
+    signinKeepStored()
     switch state.phase {
     case .SIGNING_IN:
         if signin.delay > 0 {
             signin.delay -= 1
+            return
+        }
+        if signin.restoring {
+            signinRestore()
             return
         }
         provider: Provider = signin.providers[signin.chosen]
@@ -162,6 +170,7 @@ signinDone :: proc() {
     state.name_length = copy(state.name[:], string(account.name[:min(account.name_length, len(state.name))]))
     state.phase = .MENU
     setStatus("")
+    signinSave()
 }
 
 signinOut :: proc() {
@@ -169,6 +178,89 @@ signinOut :: proc() {
         free(signin.account)
         signin.account = nil
     }
+    if config.signin_store != "" { oidc.StoreRemove(config.signin_store) }          // signing out forgets the stored sign in too
+    signin.saved_length = 0
+}
+
+// ---- remembering the sign in between runs ------------------------------------------------------------------------------------------------------------------------
+//
+// The refresh token of the account goes into a file of the user (`config.signin_store`, see oidc/store.odin for what is kept and why), so that the next start signs in again without the browser.
+
+// Writes the store file for the account that is signed in (nothing when there is no store, or the provider gave no refresh token)
+signinSave :: proc() {
+    account: ^Account = signin.account
+    if account == nil || config.signin_store == "" { return }
+    token: string = account.session.tokens.refresh_token
+    if token == "" { return }
+    stored: oidc.Stored = {
+        provider = string(account.provider[:account.provider_length]),
+        issuer = account.session.config.issuer,
+        client_id = account.session.config.client_id,
+        name = string(account.name[:account.name_length]),
+        refresh_token = token,
+    }
+    if oidc.StoreWrite(config.signin_store, stored) { signin.saved_length = copy(signin.saved[:], token) }
+}
+
+// The provider may hand out a new refresh token when the ID token is renewed (during a game, at a reconnect): the file follows, or the next start would find the old one refused
+@(private = "file")
+signinKeepStored :: proc() {
+    account: ^Account = signin.account
+    if account == nil || config.signin_store == "" { return }
+    token: string = account.session.tokens.refresh_token
+    if token != "" && token != string(signin.saved[:signin.saved_length]) { signinSave() }
+}
+
+// At the start: a stored sign in of a provider that is set up begins to be restored (no browser). The file of another provider, or of another client id, is left alone.
+signinRestoreBegin :: proc() {
+    if config.signin_store == "" { return }
+    signinLoad()
+    buffer: [oidc.STORE_MAX_SIZE]u8
+    stored, found := oidc.StoreRead(config.signin_store, buffer[:])
+    if !found { return }
+    for i in 0 ..< signin.provider_count {
+        provider: Provider = signin.providers[i]
+        if provider.label == stored.provider && provider.config.issuer == stored.issuer && provider.config.client_id == stored.client_id {
+            signin.chosen, signin.restoring, signin.delay = i, true, 2
+            state.phase = .SIGNING_IN
+            return
+        }
+    }
+}
+
+// The restore: the provider renews the stored token. Refused (revoked, expired, ended at the provider): the file is deleted and the person is told to sign in. Not reachable: the file stays.
+@(private = "file")
+signinRestore :: proc() {
+    signin.restoring = false
+    provider: Provider = signin.providers[signin.chosen]
+    buffer: [oidc.STORE_MAX_SIZE]u8
+    stored, found := oidc.StoreRead(config.signin_store, buffer[:])
+    if !found {
+        state.phase = .MENU
+        return
+    }
+    account: ^Account = new(Account)
+    if !st.AuthSessionFromRefresh(&account.session, provider.config, stored.refresh_token) {
+        reason: string = account.session.error
+        free(account)
+        state.phase = .MENU
+        if reason == st.AUTH_UNREACHABLE {
+            setStatus(fmt.tprintf("%s cannot be reached: you are not signed in for now.", provider.label))
+        } else {
+            oidc.StoreRemove(config.signin_store)
+            setStatus(fmt.tprintf("Your sign in with %s has ended: sign in again.", provider.label))
+        }
+        return
+    }
+    claims, _ := oidc.JwtClaimsRead(account.session.tokens.id_token, account.session.claims_scratch[:])
+    account.provider_length = copy(account.provider[:], provider.label)
+    account.subject_length = copy(account.subject[:], claims.subject)
+    account.name_length = copy(account.name[:], stored.name if stored.name != "" else claims.subject)
+    signin.account = account
+    state.name_length = copy(state.name[:], string(account.name[:min(account.name_length, len(state.name))]))
+    state.phase = .MENU
+    setStatus("")
+    signinSave()                                          // the provider may have replaced the refresh token
 }
 
 // The cancel button of the waiting screen

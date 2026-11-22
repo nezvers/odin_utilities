@@ -20,6 +20,7 @@ import "core:strings"
 import "core:time"
 import kit "../../../demo_kit"
 import game_lib "../game"
+import "../../../oidc"
 import "../session"
 import schema "../schema"
 
@@ -44,6 +45,7 @@ Config :: struct {
     mask_codes: bool,       // pictures: the codes are shown as a fixed text (see screens.odin)
     idle_host: ^session.Host,   // a test that hosts in the same process: stepped while the guest waits in a blocking call
     signin_providers: []Provider,   // the accounts the start screen offers (a test or a script); empty: the ones of oidc/providers/providers.local.txt
+    signin_store: string,           // the file that remembers the sign in between runs ("": it does not); the program sets the one of the user's configuration folder, a test its own
 }
 
 // A test that has something to do every frame (another host to step)
@@ -118,6 +120,10 @@ parseArguments :: proc() {
         }
     }
     config.menu = true
+    // the sign in of the user is remembered, except in a run of the tests or the pictures: a stored login of the person who runs them must not change what they see
+    when !kit.DEMO_TEST {
+        if path, ok := oidc.StorePath("odin_utilities_arena"); ok { config.signin_store = strings.clone(path) }
+    }
     if len(positional) > 0 && positional[0] == "host" {
         config.mode, config.menu = .HOST, false
         if len(positional) > 1 { config.name = strings.clone(positional[1]) }
@@ -171,6 +177,7 @@ init :: proc(ctx: ^kit.Context) {
     signinReset()
     if config.menu {
         state.phase = .MENU
+        signinRestoreBegin()
     } else {
         state.pending = config.mode
         state.phase = .STARTING

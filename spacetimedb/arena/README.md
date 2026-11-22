@@ -34,3 +34,5 @@ What to try next: TODO.md.
 
 ## Signing in
 **Sign in** on the start screen opens a page of your account (Google, Discord or SpacetimeAuth, the ones with a client id in `oidc/providers/providers.local.txt`, see `oidc/README.md`, "Getting a client id"). The game never sees a password. When you are back, the name of the account is your name in the game and your identity in the database is the one of your account: the same player in every game, on every computer. Without signing in you get a new anonymous identity each time. The server that runs the game has to reach the provider to check your token (internet).
+
+**Remembered:** after you sign in, the game keeps the refresh token of your account in one small file in your user configuration folder (`%LOCALAPPDATA%\odin_utilities_arena\signin.txt` on Windows) so that you sign in once. Nothing else of the session is kept (no ID token, no secret), and the file is replaced when the provider rotates the token. **Sign out** deletes it. Treat the file like a browser cookie: anybody who copies it can sign in as you until you revoke the app at the provider.

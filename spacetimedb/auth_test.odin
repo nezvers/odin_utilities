@@ -166,3 +166,87 @@ test_the_spacetimeauth_settings :: proc(t: ^testing.T) {
     testing.expect_value(t, config.client_secret, "")          // a game on a player's computer has no secret
     testing.expect_value(t, AuthSpacetimeAuth("x").redirect_port, 0)
 }
+
+// A person who signed in before: the stored refresh token gives a verified session without a browser. The provider rotates (a token works once), says no when the session was ended, and the ID token it
+// sends is checked like one of a login (audience, expiry).
+@(test)
+test_a_session_is_restored_from_a_stored_refresh_token :: proc(t: ^testing.T) {
+    pair: AuthPair = {provider = new(mock.Provider), login = new(oidc.Login)}
+    defer { free(pair.provider); free(pair.login) }
+    testing.expect(t, mock.Start(pair.provider, {algorithm = .RS256, client_id = "game", subject = "user-restore", rotate_refresh = true}), "the provider starts")
+    defer mock.Stop(pair.provider)
+    oidc.HttpIdle, oidc.HttpIdleUser = authIdle, &pair
+    defer { oidc.HttpIdle, oidc.HttpIdleUser = nil, nil }
+    issuer: string = mock.Issuer(pair.provider)
+    config: oidc.ClientConfig = {issuer = issuer, client_id = "game"}
+
+    // the first sign in, with the browser (played here)
+    testing.expect(t, oidc.LoginBegin(pair.login, config), oidc.LoginError(pair.login))
+    buffer := make([]u8, 4096)
+    callback := make([]u8, 4096)
+    defer { delete(buffer); delete(callback) }
+    first, ok := oidc.Request(oidc.LoginUrl(pair.login), "GET", nil, nil, buffer)
+    testing.expect(t, ok && first.status == 302)
+    location: string = strings.clone(first.location, context.temp_allocator)
+    _, _ = oidc.Request(location, "GET", nil, nil, callback)
+    testing.expectf(t, pair.login.state == .DONE, "the login: %s", oidc.LoginError(pair.login))
+    stored: string = strings.clone(pair.login.tokens.refresh_token, context.temp_allocator)
+    testing.expect(t, stored != "")
+
+    // the next run: no browser
+    restored: ^AuthSession = new(AuthSession)
+    defer free(restored)
+    testing.expectf(t, AuthSessionFromRefresh(restored, config, stored), "restored: %s", restored.error)
+    testing.expect(t, AuthToken(restored) != "" && restored.expires > oidc.NowUnix())
+    scratch: [2048]u8
+    claims, claims_ok := oidc.JwtClaimsRead(AuthToken(restored), scratch[:])
+    testing.expect(t, claims_ok)
+    testing.expect_value(t, claims.subject, "user-restore")
+    testing.expect(t, restored.tokens.refresh_token != "" && restored.tokens.refresh_token != stored, "the provider rotated the refresh token: the new one is the one to keep")
+
+    // the old token is used up (a stolen copy of an old file is worth nothing), the new one works
+    again: ^AuthSession = new(AuthSession)
+    defer free(again)
+    testing.expect(t, !AuthSessionFromRefresh(again, config, stored), "an old refresh token is refused")
+    testing.expect(t, strings.contains(again.error, "refused"), again.error)
+    newest: string = strings.clone(restored.tokens.refresh_token, context.temp_allocator)
+    third: ^AuthSession = new(AuthSession)
+    defer free(third)
+    testing.expectf(t, AuthSessionFromRefresh(third, config, newest), "the new refresh token works: %s", third.error)
+
+    // a token for another application is not accepted (the audience is the client id)
+    other: ^AuthSession = new(AuthSession)
+    defer free(other)
+    testing.expect(t, !AuthSessionFromRefresh(other, {issuer = issuer, client_id = "another-game"}, strings.clone(third.tokens.refresh_token, context.temp_allocator)))
+    testing.expect(t, strings.contains(other.error, "another application"), other.error)
+
+    // a session that was ended at the provider
+    fourth: ^AuthSession = new(AuthSession)
+    defer free(fourth)
+    live: string = strings.clone(third.tokens.refresh_token, context.temp_allocator)
+    mock.RevokeRefreshTokens(pair.provider)
+    testing.expect(t, !AuthSessionFromRefresh(fourth, config, live), "a revoked session is refused")
+
+    // an ID token that has expired is not a session
+    pair.provider.fault = .EXPIRED
+    stale: ^AuthSession = new(AuthSession)
+    defer free(stale)
+    login2: ^oidc.Login = new(oidc.Login)
+    defer free(login2)
+    pair.provider.fault = .NONE
+    pair.login = login2
+    testing.expect(t, oidc.LoginBegin(login2, config), oidc.LoginError(login2))
+    first2, ok2 := oidc.Request(oidc.LoginUrl(login2), "GET", nil, nil, buffer)
+    testing.expect(t, ok2 && first2.status == 302)
+    _, _ = oidc.Request(strings.clone(first2.location, context.temp_allocator), "GET", nil, nil, callback)
+    fresh: string = strings.clone(login2.tokens.refresh_token, context.temp_allocator)
+    pair.provider.fault = .EXPIRED
+    testing.expect(t, !AuthSessionFromRefresh(stale, config, fresh), "an expired ID token is refused")
+    testing.expect(t, strings.contains(stale.error, "expired"), stale.error)
+
+    // a provider that cannot be reached
+    nowhere: ^AuthSession = new(AuthSession)
+    defer free(nowhere)
+    testing.expect(t, !AuthSessionFromRefresh(nowhere, {issuer = "http://127.0.0.1:9", client_id = "game"}, "token"))
+    testing.expect(t, strings.contains(nowhere.error, "cannot be reached"), nowhere.error)
+}

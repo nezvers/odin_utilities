@@ -21,6 +21,7 @@ This is the flow that RFC 8252 asks of native apps: the authorization code flow 
 | `login.odin`, `browser.odin` | `Login` (the state machine above), `BrowserOpen` (no shell: the address is an argument). A request to the callback with another `state` is ignored (nobody can end your login from another site). |
 | `http.odin` | the little HTTP(S) client (https through the TLS 1.3 client of p2p, the certificate is checked). `HttpIdle` steps another party in the same thread while a request waits (tests). |
 | `presets.odin`, `providers/` | settings for Google, Discord, GitHub (device flow, OAuth 2.0 only) and SpacetimeAuth (`PresetConfig`), a settings file reader (`ClientConfigRead`), and the setup steps per provider (`providers/README.md`, `providers.example.txt`). |
+| `store.odin` | remembering a sign in between runs: `StorePath(app)` (the configuration folder of the user), `StoreWrite` / `StoreRead` / `StoreRemove` keep the **refresh token** and what finds the account again (provider, issuer, client id, name) in one small file. See "What is stored" below. |
 | `mock/` | a provider that runs inside of a test (ES256 or RS256, the code flow with PKCE, refresh, device flow, `fault` to make it cheat). |
 
 ## Getting a client id (Discord, Google, GitHub)
@@ -32,6 +33,9 @@ A client id is what the provider gives an application you register with it. It i
 4. **Put them in a file that stays out of git:** copy `providers/providers.example.txt` to `providers/providers.local.txt` (git ignored at any depth) and fill in `discord.client_id = ...`, `google.client_id = ...`, `github.client_id = ...`. A secret, when a provider insists on one, goes only into that file (`google.client_secret`), never into a committed one.
 5. **Try it:** `odin run oidc/tool/login -- discord|google|github|spacetimeauth` (add `--no-browser` to print the address and paste it into a browser yourself). It prints the verified claims, or the provider's error.
 6. **Use it in code:** `PresetConfig(.DISCORD, client_id)` (or `ClientConfigRead(text, "discord", ...)` for the file) gives the `ClientConfig` for `LoginBegin`; GitHub uses `PresetMetadataGithub` and `DeviceStart`.
+
+## What is stored (`store.odin`)
+A program that wants the person to sign in once keeps the refresh token in `<configuration folder of the user>/<app>/signin.txt` (Windows: `%LOCALAPPDATA%`, not the roaming folder; Linux: `~/.config`; macOS: `~/Library/Application Support`). The file holds **only** the refresh token, the provider's name, the issuer, the client id and a display name: no ID token, no access token, no client secret. It is created readable by the user only (POSIX; on Windows the folder of the user is private to the user). A refresh token is a credential, like the cookie of a browser: whoever copies the file can sign in as that person until the provider ends the session, so it never goes into a project folder or a repository. It is replaced when the provider rotates the token, and deleted when the person signs out or the provider refuses it (an unreachable provider keeps it: being offline is not signing out). To forget it by hand delete the file; to end the session for good, revoke the app in the account settings of the provider.
 
 ## Used by
 - `odin_utilities/spacetimedb/arena`: the start screen has Sign in (the `ui` library, `signin.odin`): the name and the identity of the player are the ones of the account.

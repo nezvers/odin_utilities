@@ -1,6 +1,7 @@
 #+build !js
 package demo_common
 
+import "core:os"
 import "core:strings"
 import kit "../../../demo_kit"
 import st "../.."
@@ -46,10 +47,12 @@ startProvider :: proc(ctx: ^kit.Context) -> bool {
     config.mask_codes, config.loopback = true, true
     state.name_length = copy(state.name[:], "player")
     signin_mock = new(mock.Provider)
-    if !mock.Start(signin_mock, {algorithm = .ES256, client_id = "arena", subject = "user-arena-1", userinfo_name = "Ada Lovelace", email = "ada@example.com"}) { return false }
+    if !mock.Start(signin_mock, {algorithm = .ES256, client_id = "arena", subject = "user-arena-1", userinfo_name = "Ada Lovelace", email = "ada@example.com", rotate_refresh = true}) { return false }
     providers := make([]Provider, 1)
     providers[0] = {label = "Mock account", config = {issuer = mock.Issuer(signin_mock), client_id = "arena"}}
     config.signin_providers = providers
+    config.signin_store = "arena_test_signin_store/signin.txt"
+    oidc.StoreRemove(config.signin_store)
     oidc.HttpIdle, oidc.HttpIdleUser = stepProvider, nil
     st.StreamIdle, st.StreamIdleUser = stepProvider, nil
     // no real browser: the opener only remembers the address
@@ -87,6 +90,9 @@ stopProvider :: proc(ctx: ^kit.Context) -> bool {
         signin_mock = nil
     }
     config.signin_providers = nil
+    oidc.StoreRemove(config.signin_store)
+    _ = os.remove("arena_test_signin_store")
+    config.signin_store = ""
     return true
 }
 
@@ -96,6 +102,30 @@ game_lib_me :: proc() -> (name: string, found: bool) {
     me, ok := game_lib.GameMe(state.game)
     if !ok { return "", false }
     return me.name, true
+}
+
+// A new start of the program: everything of the demo is forgotten except the store file, and the start screen looks at it
+@(private = "file")
+restart :: proc(ctx: ^kit.Context) -> bool {
+    launched_address = ""
+    signinReset()
+    state.phase = .MENU
+    setStatus("")
+    signinRestoreBegin()
+    return true
+}
+
+// What the store file holds now
+@(private = "file")
+stored_token :: proc() -> (token: string, found: bool) {
+    @(static) buffer: [oidc.STORE_MAX_SIZE]u8
+    stored, ok := oidc.StoreRead(config.signin_store, buffer[:])
+    return stored.refresh_token, ok
+}
+
+@(private = "file")
+writeStore :: proc(issuer: string, client_id: string) -> bool {
+    return oidc.StoreWrite(config.signin_store, {provider = "Mock account", issuer = issuer, client_id = client_id, name = "Ada Lovelace", refresh_token = "stored-token"})
 }
 
 @(private = "file")
@@ -128,6 +158,11 @@ signin_script: []kit.Step = {
     kit.Wait(15),
     kit.Capture("signed_in"),
     kit.Wait(1),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        token, found := stored_token()
+        data, _ := os.read_entire_file(config.signin_store, context.temp_allocator)
+        return found && signin.account != nil && token == signin.account.session.tokens.refresh_token && !strings.contains(string(data), "eyJ") && strings.contains(string(data), "Ada Lovelace")
+    }, "the sign in is remembered: the refresh token is in the store file, no ID token"),
     // the first game: the identity of the account
     kit.Check(aimPlaySolo, "the start screen has Play solo"),
     kit.ClickAt(&target),
@@ -141,6 +176,18 @@ signin_script: []kit.Step = {
     kit.Tap(.ESCAPE),
     kit.Wait(10),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.phase == .MENU && signin.account != nil }, "Escape leaves the game and the account stays"),
+    // the program is started again: the account comes back without the browser, and the refresh token in the file is the new one
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        before, _ := stored_token()
+        @(static) previous: [512]u8
+        copy(previous[:], before)
+        return hooksOn(ctx) && restart(ctx) && state.phase == .SIGNING_IN && signin.account == nil
+    }, "after a restart the stored sign in begins to be restored"),
+    kit.Wait(40),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        token, found := stored_token()
+        return state.phase == .MENU && signin.account != nil && launched_address == "" && string(state.name[:state.name_length]) == "Ada Lovelace" && found && token == signin.account.session.tokens.refresh_token
+    }, "the account is back with its name, no browser was opened, the file has the rotated token"),
     // the second game, on a new server: the same identity (an anonymous player gets a new one every time)
     kit.Check(hooksOn, "the provider is stepped again"),
     kit.Check(aimPlaySolo, "the start screen has Play solo again"),
@@ -156,6 +203,7 @@ signin_script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return signin.account == nil && aimSignIn(ctx) }, "Sign out forgets the account"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !os.exists(config.signin_store) && restart(ctx) && state.phase == .MENU && signin.account == nil }, "Sign out deletes the store file: a restart restores nothing"),
     // an anonymous game: not the identity of the account
     kit.Check(hooksOn, "the provider is stepped again"),
     kit.Check(aimPlaySolo, "the start screen has Play solo"),
@@ -164,6 +212,52 @@ signin_script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return playsSolo(ctx) && state.game.connection.identity != first_identity }, "without an account the identity is another one"),
     kit.Tap(.ESCAPE),
     kit.Wait(10),
+    // the session was ended at the provider: the stored sign in is refused, the file is deleted and the person is told
+    kit.Check(hooksOn, "the provider is stepped again"),
+    kit.Check(aimSignIn, "the start screen has Sign in"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(aimMockAccount, "the account is on the screen"),
+    kit.ClickAt(&target),
+    kit.Wait(30),
+    kit.Check(playBrowser, "the browser signs in again"),
+    kit.Wait(40),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { _, found := stored_token(); return signin.account != nil && found }, "signed in again, and remembered"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { mock.RevokeRefreshTokens(signin_mock); return restart(ctx) && state.phase == .SIGNING_IN }, "the provider ended the session, the program is started again"),
+    kit.Wait(40),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        _, found := stored_token()
+        return state.phase == .MENU && signin.account == nil && !found && strings.contains(string(state.status[:state.status_length]), "has ended")
+    }, "the refused sign in is not restored, the file is deleted, the person is told to sign in"),
+    // a provider that cannot be reached (offline): the file stays, the person is told
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        signinLoad()
+        signin.providers[0].config.issuer = "http://127.0.0.1:9"
+        launched_address = ""
+        state.phase = .MENU
+        if !writeStore("http://127.0.0.1:9", "arena") { return false }
+        signinRestoreBegin()
+        return state.phase == .SIGNING_IN
+    }, "a stored sign in of a provider that cannot be reached begins to be restored"),
+    kit.Wait(40),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        _, found := stored_token()
+        return state.phase == .MENU && signin.account == nil && found && strings.contains(string(state.status[:state.status_length]), "cannot be reached")
+    }, "offline is not the end of the sign in: the file stays and the person is told"),
+    // a file of another client id, or one that is not a store: nothing is restored and the file is not touched by the restore
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        restart(ctx)
+        signinLoad()
+        if !writeStore(signin.providers[0].config.issuer, "somebody-else") { return false }
+        signinRestoreBegin()
+        return state.phase == .MENU && signin.account == nil && os.exists(config.signin_store)
+    }, "a stored sign in of another client id is left alone"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        restart(ctx)
+        _ = os.write_entire_file(config.signin_store, "junk that is not a store")
+        signinRestoreBegin()
+        return state.phase == .MENU && signin.account == nil
+    }, "a file that is not a store restores nothing"),
     // a login that is cancelled
     kit.Check(aimSignIn, "the start screen has Sign in"),
     kit.ClickAt(&target),
