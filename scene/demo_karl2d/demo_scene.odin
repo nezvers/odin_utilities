@@ -206,7 +206,8 @@ script: []kit.Step = {
     kit.MoveTo({100, 110}),
     kit.Wait(40),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return demo.hover_scene == FOREST && demo.hover_time > 0.3 }, "hovering hints the forest scene"),
-    kit.Wait(60),
+    // the assets are decoded on worker threads, on a clock of their own: waited for, not slept (a fixed number of frames is too few when the frames are fast and the computer is busy)
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool { return scene.SceneIsReady(&demo.system, FOREST) }, "the hinted forest assets were prefetched in the background", 3000),
     kit.Click({100, 110}),
     kit.Wait(10),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return demo.system.current == FOREST && demo.system.entered }, "the hinted scene starts at once when it is clicked"),
@@ -215,9 +216,12 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return demo.system.current == HOME }, "back to home"),
     // the cave was not hinted and needs two slow textures: the transition covers the wait
     kit.Click({100, 170}),
-    kit.Wait(5),
+    kit.Wait(1),                                // the transition is there from the click on; the slow textures take 250 ms of real time each, so this is looked at right away, not after a few frames
     kit.Check(proc(ctx: ^kit.Context) -> bool { return demo.system.transition.phase != .NONE }, "an unpredicted scene starts a transition while its assets load"),
-    kit.Wait(240),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return demo.system.current == CAVE && demo.system.entered && demo.system.transition.phase == .NONE }, "the cave starts when its assets are ready"),
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool { return demo.system.current == CAVE && demo.system.entered && demo.system.transition.phase == .NONE }, "the cave starts when its assets are ready", 3000),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return demo.log_count >= 4 }, "the listeners heard about the assets and the scenes"),
+    // the two textures of the cave are on the screen, no longer the checker of the placeholder (the rest of the picture has times and counters and is not looked at)
+    kit.Wait(15),
+    kit.CaptureIn("cave", {{40, 90, 840, 300}}),
+    kit.Wait(1),
 }
