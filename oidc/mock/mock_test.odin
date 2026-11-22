@@ -219,3 +219,44 @@ test_the_device_flow :: proc(t: ^testing.T) {
     testing.expect_value(t, state, oidc.DevicePollState.DONE)
     testing.expect(t, tokens.id_token != "")
 }
+
+// GitHub has no discovery document: the endpoints are written by hand (`PresetMetadataGithub`). The same has to work against a provider that is not discovered: the device flow and the user lookup
+// with a `Metadata` that was filled in by hand, and no keys at all (the access token is not checked here, the provider is asked who it belongs to).
+@(test)
+test_a_provider_without_discovery_works_through_the_device_flow :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    pair: Pair
+    if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-4"}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+    defer without(&pair)
+    base: string = Issuer(pair.provider)
+    metadata: ^oidc.Metadata = new(oidc.Metadata)
+    defer free(metadata)
+    metadata.issuer = base
+    metadata.device_authorization_endpoint = fmt.tprintf("%s/device", base)
+    metadata.token_endpoint = fmt.tprintf("%s/token", base)
+    metadata.userinfo_endpoint = fmt.tprintf("%s/userinfo", base)
+    config: oidc.ClientConfig = oidc.PresetConfig(.GITHUB, "game")
+    device: ^oidc.DeviceCode = new(oidc.DeviceCode)
+    tokens: ^oidc.Tokens = new(oidc.Tokens)
+    defer { free(device); free(tokens) }
+    testing.expect(t, oidc.DeviceStart(metadata, config, device))
+    testing.expect_value(t, device.user_code, "WDJB-MJHT")
+    state: oidc.DevicePollState
+    for _ in 0 ..< 400 {
+        state = oidc.DevicePoll(metadata, config, device, tokens)
+        if state != .PENDING { break }
+        time.sleep(20 * time.Millisecond)
+    }
+    testing.expect_value(t, state, oidc.DevicePollState.DONE)
+    testing.expect(t, tokens.access_token != "")
+    info: [2048]u8
+    text, ok := oidc.Userinfo(metadata, tokens.access_token, info[:])
+    testing.expect(t, ok)
+    subject, found := oidc.JsonString(text, "sub")
+    testing.expect(t, found)
+    testing.expect_value(t, subject, "user-4")
+    // a token that the provider did not make is not accepted by it
+    _, forged := oidc.Userinfo(metadata, "not-a-token", info[:])
+    testing.expect(t, !forged, "the lookup of an unknown token fails")
+}

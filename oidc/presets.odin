@@ -108,3 +108,29 @@ test_presets_and_the_settings_file :: proc(t: ^testing.T) {
     testing.expect_value(t, metadata.device_authorization_endpoint, "https://github.com/login/device/code")
     testing.expect_value(t, metadata.jwks_uri, "")
 }
+
+@(test)
+test_the_settings_file_edge_cases :: proc(t: ^testing.T) {
+    base: ClientConfig = PresetConfig(.DISCORD, "base-id")
+    // Windows line endings, spaces around the sign and inside the value, a comment after a blank line, unknown keys
+    text: string = "# settings\r\n\r\ndiscord.client_id =   42  \r\ndiscord.scopes = openid identify guilds\r\ndiscord.unknown = 1\r\ndiscord.redirect_port = 50001\r\n"
+    read: ClientConfig = ClientConfigRead(text, "discord", base)
+    testing.expect_value(t, read.client_id, "42")
+    testing.expect_value(t, read.scopes, "openid identify guilds")
+    testing.expect_value(t, read.redirect_port, 50001)
+    testing.expect_value(t, read.issuer, base.issuer)
+    // a port that is not a number is 0 (any free port), never half a number
+    bad: ClientConfig = ClientConfigRead("discord.redirect_port = 48x17\n", "discord", base)
+    testing.expect_value(t, bad.redirect_port, 0)
+    // a provider that is not in the file keeps its base; a line without `=` and a key that is only the provider name are skipped
+    none: ClientConfig = ClientConfigRead("discord\nnothing here\ndiscord. = x\n", "google", PresetConfig(.GOOGLE, "g"))
+    testing.expect_value(t, none.client_id, "g")
+    testing.expect_value(t, ClientConfigRead("", "discord", base).client_id, "base-id")
+    // the later line wins
+    twice: ClientConfig = ClientConfigRead("discord.client_id = a\ndiscord.client_id = b\n", "discord", base)
+    testing.expect_value(t, twice.client_id, "b")
+    // a secret read from the file is carried, and an empty value clears
+    secret: ClientConfig = ClientConfigRead("google.client_secret = s3\ngoogle.scopes =\n", "google", PresetConfig(.GOOGLE, "g"))
+    testing.expect_value(t, secret.client_secret, "s3")
+    testing.expect_value(t, secret.scopes, "")
+}
