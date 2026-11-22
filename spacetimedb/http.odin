@@ -40,10 +40,25 @@ HttpResult :: struct {
 
 HTTP_TIMEOUT :: 10 * time.Second
 
+// How many times slower than a quiet computer the device is: every timeout of this library that depends on the speed of the device (a request, the handshake of a websocket, the start of a server,
+// a wait for a message) is this many times longer. 1 unless the program sets it; the programs get it from the environment variable ODIN_SLOW (time_scale.odin), e.g. `ODIN_SLOW=3`.
+TimeScale: f64 = 1
+
+Scaled :: proc(duration: time.Duration) -> time.Duration {
+    return scaledBy(duration, TimeScale)
+}
+
+// A scale below 1 does not make a timeout shorter than the one that was chosen
+@(private)
+scaledBy :: proc(duration: time.Duration, scale: f64) -> time.Duration {
+    return time.Duration(f64(duration) * max(scale, 1))
+}
+
 // Sends the request and reads the whole answer into `response`. The headers `Host`, `Connection` and `Content-Length` are added. An answer that does not fit in `response` is an error.
-HttpRequest :: proc(endpoint: Endpoint, method: HttpMethod, path: string, headers: []HttpHeader, body: []u8, response: []u8, timeout: time.Duration = HTTP_TIMEOUT) -> HttpResult {
+HttpRequest :: proc(endpoint: Endpoint, method: HttpMethod, path: string, headers: []HttpHeader, body: []u8, response: []u8, timeout: time.Duration = 0) -> HttpResult {         // 0: HTTP_TIMEOUT, scaled
     stream: Stream
-    if opened, open_error := streamOpen(&stream, endpoint, timeout); !opened { return {error = open_error} }
+    limit: time.Duration = timeout if timeout > 0 else Scaled(HTTP_TIMEOUT)
+    if opened, open_error := streamOpen(&stream, endpoint, limit); !opened { return {error = open_error} }
     defer streamClose(&stream)
 
     names: [HttpMethod]string = {.GET = "GET", .POST = "POST", .PUT = "PUT", .DELETE = "DELETE"}

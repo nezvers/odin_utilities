@@ -86,7 +86,7 @@ ServerStart :: proc(server: ^Server, options: ServerOptions) -> bool {
     server.process, server.running, server.root, server.lan = process, true, options.root, options.lan
     server.log_length = copy(server.log_path[:], options.log_file)
     server.endpoint = {host = SERVER_HOST, port = port}
-    wait: time.Duration = options.wait if options.wait > 0 else 30 * time.Second
+    wait: time.Duration = options.wait if options.wait > 0 else Scaled(30 * time.Second)
     start: time.Tick = time.tick_now()
     for time.tick_since(start) < wait {
         if ServerPing(server.endpoint) { return true }

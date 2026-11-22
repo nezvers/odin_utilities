@@ -9,6 +9,7 @@ import "core:os"
 import "core:sync"
 import "core:thread"
 import "core:time"
+import "../wait_for"
 
 @(private="file", thread_local)
 fake_time: f64
@@ -300,7 +301,7 @@ threaded_init :: proc(assets_pointer: rawptr, workers: int, decode_memory: int =
 @(private="file")
 pump :: proc(assets: ^ThreadedAssets, ids: []AssetId, dt: f32 = 1.0 / 60) -> (settled: bool) {
     ready: [8]AssetId
-    for _ in 0 ..< 600 {
+    for deadline := wait_for.DeadlineStart(10); !wait_for.DeadlineExpired(&deadline); {
         LoaderUpdate(&assets.loader, &assets.store, dt, ready[:])
         all: bool = true
         for id in ids { all &&= AssetIsSettled(&assets.store, id) }

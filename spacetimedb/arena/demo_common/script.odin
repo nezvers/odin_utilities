@@ -21,8 +21,8 @@ script: []kit.Step = {
     kit.ClickAt(&target),                   // on the start screen it starts the game; when the game runs already it lands on the field and does nothing
     // everything that takes the time of a server (it starts, the game joins, the player moves) is waited for, never slept: the server is another program on its own clock, and a fixed wait
     // is right on a quiet computer and short on a busy one
-    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool { return state.phase == .PLAYING }, "the solo game started its server and opened the game", 6000),
-    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool { return state.game.phase == .PLAYING && state.game.player_count == 1 && state.game.coin_count > 0 }, "the player joined and the coins are on the field", 6000),
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool { return state.phase == .PLAYING }, "the solo game started its server and opened the game", 60),
+    kit.WaitUntil(proc(ctx: ^kit.Context) -> bool { return state.game.phase == .PLAYING && state.game.player_count == 1 && state.game.coin_count > 0 }, "the player joined and the coins are on the field", 60),
     // right: the key is held until the player has moved right (the 20 steps a second of the server decide how long that takes)
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         me, found := game_lib.GameMe(state.game)
@@ -33,7 +33,7 @@ script: []kit.Step = {
     kit.WaitUntil(proc(ctx: ^kit.Context) -> bool {
         me, found := game_lib.GameMe(state.game)
         return found && (me.x > start_x + 40 || me.x >= game_lib.FIELD_WIDTH - 15)       // far enough, or at the edge (the player starts anywhere on the field)
-    }, "the player moved right while D was held", 6000),
+    }, "the player moved right while D was held", 60),
     kit.KeyUpStep(.D),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         me, found := game_lib.GameMe(state.game)
@@ -45,7 +45,7 @@ script: []kit.Step = {
     kit.WaitUntil(proc(ctx: ^kit.Context) -> bool {
         me, found := game_lib.GameMe(state.game)
         return found && (me.x < turn_x - 40 || me.x <= 15)
-    }, "the player moved left while A was held", 6000),
+    }, "the player moved left while A was held", 60),
     kit.KeyUpStep(.A),
     kit.Wait(5),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.max_x - state.min_x > 30 }, "the window noted the movement"),

@@ -50,6 +50,17 @@ STAGE_GATHER_MS :: 5000
 STAGE_RELAY_MS :: 8000
 STAGE_FIND_MS :: 15000
 
+// The stage times are for a quiet computer: a slower device (ODIN_SLOW, see spacetimedb.TimeScale) gets more
+@(private)
+stageMs :: proc(milliseconds: int) -> int {
+    return stageMsFor(milliseconds, st.TimeScale)
+}
+
+@(private)
+stageMsFor :: proc(milliseconds: int, scale: f64) -> int {
+    return int(f64(milliseconds) * max(scale, 1))
+}
+
 Host :: struct {
     server: st.Server,
     link: ^p2p.Link,
@@ -97,7 +108,7 @@ HostBegin :: proc(host: ^Host, options: HostOptions) -> bool {
     port: int = options.port if options.port > 0 else SERVER_PORT
     log_file: string = fmt.tprintf("%s/server.log", options.root)
     os.make_directory_all(options.root)
-    if !st.ServerStart(&host.server, {root = options.root, port = port, log_file = log_file, wait = 60 * time.Second}) {
+    if !st.ServerStart(&host.server, {root = options.root, port = port, log_file = log_file, wait = st.Scaled(60 * time.Second)}) {
         host.error = "the server does not start"
         if log, log_error := os.read_entire_file(log_file, context.temp_allocator); log_error == nil && len(log) > 0 {
             host.error = fmt.tprintf("the server does not start: %s", string(log[max(0, len(log) - 2500):]))
@@ -309,7 +320,7 @@ HostUpdate :: proc(host: ^Host) {
     _, _ = linkEvents(host.link, host.notice[:], &host.notice_length, false)
     switch host.stage {
     case .GATHERING:
-        if p2p.LinkGathered(host.link) || HostElapsedMs(host) > STAGE_GATHER_MS {
+        if p2p.LinkGathered(host.link) || HostElapsedMs(host) > stageMs(STAGE_GATHER_MS) {
             if host.relay_used && host.link.derp.state == .CONNECTING {
                 host.stage, host.stage_started = .RELAY, time.tick_now()
             } else {
@@ -317,7 +328,7 @@ HostUpdate :: proc(host: ^Host) {
             }
         }
     case .RELAY:
-        if host.link.derp.state != .CONNECTING || HostElapsedMs(host) > STAGE_RELAY_MS { hostFinish(host) }
+        if host.link.derp.state != .CONNECTING || HostElapsedMs(host) > stageMs(STAGE_RELAY_MS) { hostFinish(host) }
     case .IDLE, .FINDING, .READY, .CONNECTED, .FAILED:
     }
 }
@@ -462,7 +473,7 @@ GuestUpdate :: proc(guest: ^Guest) {
     }
     switch guest.stage {
     case .GATHERING:
-        if p2p.LinkGathered(guest.link) || GuestElapsedMs(guest) > STAGE_GATHER_MS {
+        if p2p.LinkGathered(guest.link) || GuestElapsedMs(guest) > stageMs(STAGE_GATHER_MS) {
             if guest.room_mode {
                 guest.stage, guest.stage_started = .RELAY, time.tick_now()
             } else if relay_wanted && guest.link.derp.state == .CONNECTING {
@@ -476,17 +487,17 @@ GuestUpdate :: proc(guest: ^Guest) {
             if guest.link.derp.state == .READY {
                 p2p.LinkDerpFind(guest.link, guest.room_public, now)
                 guest.stage, guest.stage_started = .FINDING, time.tick_now()
-            } else if guest.link.derp.state != .CONNECTING || GuestElapsedMs(guest) > STAGE_RELAY_MS {
+            } else if guest.link.derp.state != .CONNECTING || GuestElapsedMs(guest) > stageMs(STAGE_RELAY_MS) {
                 guest.error, guest.stage = "the relay of the room cannot be reached (offline, or TCP 443 is blocked)", .FAILED
             }
-        } else if guest.link.derp.state != .CONNECTING || GuestElapsedMs(guest) > STAGE_RELAY_MS {
+        } else if guest.link.derp.state != .CONNECTING || GuestElapsedMs(guest) > stageMs(STAGE_RELAY_MS) {
             guestFinish(guest)
         }
     case .FINDING:
         if host_found {
             guest.invite = guest.link.derp.found
             guestFinish(guest)
-        } else if GuestElapsedMs(guest) > STAGE_FIND_MS {
+        } else if GuestElapsedMs(guest) > stageMs(STAGE_FIND_MS) {
             guest.error, guest.stage = "nobody hosts that room (is the name right? has the host started?)", .FAILED
         }
     case .READY:

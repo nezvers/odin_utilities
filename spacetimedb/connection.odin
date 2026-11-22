@@ -240,9 +240,10 @@ ConnectionPoll :: proc(connection: ^Connection, allocator: runtime.Allocator) ->
 }
 
 // Waits (polls) until a message that `wanted` accepts comes or the time runs out: for a test or a start up, not for a frame of a game. The messages that are not wanted are dropped.
-ConnectionWait :: proc(connection: ^Connection, wanted: proc(message: ServerMessage, user: rawptr) -> bool, user: rawptr, allocator: runtime.Allocator, timeout: time.Duration = 5 * time.Second) -> (message: ServerMessage, got: bool) {
+ConnectionWait :: proc(connection: ^Connection, wanted: proc(message: ServerMessage, user: rawptr) -> bool, user: rawptr, allocator: runtime.Allocator, timeout: time.Duration = 0) -> (message: ServerMessage, got: bool) {         // 0: five seconds, scaled
     start: time.Tick = time.tick_now()
-    for time.tick_since(start) < timeout {
+    limit: time.Duration = timeout if timeout > 0 else Scaled(5 * time.Second)
+    for time.tick_since(start) < limit {
         candidate, ok := ConnectionPoll(connection, allocator)
         if ok && wanted(candidate, user) { return candidate, true }
         if !ok {

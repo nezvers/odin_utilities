@@ -1,6 +1,7 @@
 package demo_kit
 
 import "core:fmt"
+import "core:time"
 
 // Runs the demos of a library on a backend: one demo at a time, a dropdown on the right to switch (mouse, or PAGE_UP / PAGE_DOWN), and a
 // test mode that plays the script of every demo with simulated input.
@@ -25,6 +26,10 @@ MENU_WIDTH :: 170
 MENU_BUTTON_HEIGHT :: 24
 MENU_MARGIN :: 8
 SMOKE_TEST_FRAMES :: 60         // a demo without a script is run this long, to see that it starts, updates and draws
+
+// How many times slower than a quiet development computer this device is: what a script waits for in real time (`WaitUntil`) is waited for this many times longer. 1 unless the program sets it;
+// the test programs get it from the environment variable ODIN_SLOW (time_scale.odin).
+TimeScale: f64 = 1
 
 Runner :: struct {
     demos: []Demo,
@@ -128,8 +133,15 @@ TestDemo :: proc(demo: Demo, backend: ^Backend, max_frames: int = 36000, log: ^L
     limit: int = max_frames if len(demo.script) > 0 else SMOKE_TEST_FRAMES
     for frames < limit {
         if len(demo.script) > 0 && PlayerFinished(&runner.player) && frames > 0 { break }
+        waiting: bool = PlayerWaitingUntil(&runner.player)
         if !RunnerStep(&runner) { break }
-        frames += 1
+        // a frame of a script that waits in real time (WaitUntil) does not count against `max_frames` (the wait has its own time limit) and gives the computer a moment: a busy loop would burn a core
+        // that the thing that is waited for (a server, a thread) needs
+        if waiting {
+            when ODIN_OS != .JS { time.sleep(500 * time.Microsecond) }
+        } else {
+            frames += 1
+        }
     }
     // the checks that were left for the last frame
     if len(demo.script) > 0 && PlayerFinished(&runner.player) {

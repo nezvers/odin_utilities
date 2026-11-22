@@ -7,6 +7,7 @@ import "core:strings"
 import "core:sync"
 import "core:testing"
 import "core:time"
+import "../../wait_for"
 import ".."
 
 // The client of oidc against the provider of this package, in one thread: the waits of a request step the provider and the login (that is what the person's browser would do).
@@ -226,7 +227,7 @@ test_the_device_flow :: proc(t: ^testing.T) {
     tokens: ^oidc.Tokens = new(oidc.Tokens)
     defer free(tokens)
     state: oidc.DevicePollState
-    for _ in 0 ..< 400 {
+    for deadline := wait_for.DeadlineStart(24); !wait_for.DeadlineExpired(&deadline); {
         state = oidc.DevicePoll(metadata, {client_id = "game"}, device, tokens)
         if state != .PENDING { break }
         time.sleep(20 * time.Millisecond)
@@ -258,7 +259,7 @@ test_a_provider_without_discovery_works_through_the_device_flow :: proc(t: ^test
     testing.expect(t, oidc.DeviceStart(metadata, config, device))
     testing.expect_value(t, device.user_code, "WDJB-MJHT")
     state: oidc.DevicePollState
-    for _ in 0 ..< 400 {
+    for deadline := wait_for.DeadlineStart(24); !wait_for.DeadlineExpired(&deadline); {
         state = oidc.DevicePoll(metadata, config, device, tokens)
         if state != .PENDING { break }
         time.sleep(20 * time.Millisecond)

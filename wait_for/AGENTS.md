@@ -1,0 +1,9 @@
+# wait_for: notes for agents
+
+What is not obvious from the code of this library. The rules that hold for every library, the commands and the map of the libraries are in [../AGENTS.md](../AGENTS.md); the use is in README.md.
+
+- Waiting for another clock (a process that is not ours, a thread, a network peer) is a deadline in REAL time, never `for _ in 0 ..< N` and never a fixed `Wait`/`Hold` of frames: a count of turns is a different time on every computer. Use `for deadline := wait_for.DeadlineStart(S); !wait_for.DeadlineExpired(&deadline); { ...; if done { break }; time.sleep(...) }`. Choose `S` generously for a quiet computer (the old count of turns times three, 10 s at least): a limit that is too long costs nothing when the thing happens, and the scale (`ODIN_SLOW`) multiplies it on a slower device.
+- A loop that runs a FIXED duration and then asserts that something did NOT happen (an old connection dropped, a refused download left no file) has no condition to wait for: give it a scaled time, and prefer a condition when there is one.
+- Virtual time is not real time: loops over a simulated clock (`p2p` `SimPump`, the sim tests) do not depend on the speed of the computer and keep their counts.
+- `#+build !js` (it reads the environment). Libraries that build for the web keep the variable `TimeScale` (default 1) in a file without the tag and set it from `Scale()` in a `time_scale.odin` with `#+build !js` and `@(init)` (a contextless proc: `context = runtime.default_context()`): see `demo_kit`, `spacetimedb`, `oidc`. A scale below 1 is never used (limits are never shorter than the ones that were chosen).
+- `demo_kit` waits and frame limits: `TestDemo` does not count the frames of a `WaitUntil` against `max_frames` and sleeps 0.5 ms in them (a busy loop burns the core that the server needs).

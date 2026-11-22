@@ -9,6 +9,7 @@ import "core:os"
 import "core:strings"
 import "core:testing"
 import "core:time"
+import "../wait_for"
 import p2p "../p2p"
 
 Node :: struct {
@@ -116,9 +117,10 @@ NodeUpdate :: proc(node: ^Node) {
     }
 }
 
-// Pumps every node until `condition` holds or about 8 seconds passed.
+// Pumps every node until `condition` holds or the time is over. `limit` is the allowance in milliseconds on a quiet computer (8 seconds by default); the real allowance is three times that and longer
+// on a slower device (ODIN_SLOW, see wait_for): a count of turns is a different time on every computer, and the other end of a test is not always ours to slow down.
 PumpUntil :: proc(nodes: []^Node, condition: proc(nodes: []^Node) -> bool, limit: int = 8000) -> bool {
-    for _ in 0 ..< limit {
+    for deadline := wait_for.DeadlineStart(f64(limit) / 1000 * 3); !wait_for.DeadlineExpired(&deadline); {
         for node in nodes {
             NodeUpdate(node)
         }
@@ -351,7 +353,7 @@ MessengerPasswordTest :: proc(t: ^testing.T) {
     }
     testing.expect(t, PumpUntil(nodes, connected))
     // give the two without the password plenty of time to find the host, then see that they did not
-    for _ in 0 ..< 1500 {
+    for deadline := wait_for.DeadlineStart(4.5); !wait_for.DeadlineExpired(&deadline); {
         for node in nodes {
             NodeUpdate(node)
         }
@@ -390,9 +392,9 @@ MessengerFolderTest :: proc(t: ^testing.T) {
     testing.expect(t, PumpUntil(nodes, everybody))
 
     excludes: []string = {".git", "node_modules", "*.tmp"}
-    _, bad := MessengerSendFolder(a.m, 2, fmt.tprintf("%s/does-not-exist", folder), excludes, p2p.LinkNow())
+    _, bad := MessengerSendFolder(a.m, MessengerFindMember(a.m, "b"), fmt.tprintf("%s/does-not-exist", folder), excludes, p2p.LinkNow())
     testing.expect(t, !bad)
-    _, started := MessengerSendFolder(a.m, 2, source, excludes, p2p.LinkNow())          // guest to guest through the host
+    _, started := MessengerSendFolder(a.m, MessengerFindMember(a.m, "b"), source, excludes, p2p.LinkNow())          // guest to guest through the host
     testing.expect(t, started)
     done := proc(nodes: []^Node) -> bool {
         return len(nodes[1].done) == 1 && len(nodes[2].done) == 1
@@ -410,7 +412,7 @@ MessengerFolderTest :: proc(t: ^testing.T) {
     testing.expect(t, !os.exists(fmt.tprintf("%s/project.part", fmt.tprintf("%s/b_in", folder))))   // no staging folder left behind
 
     // again: a second folder next to the first, the first is untouched
-    _, started = MessengerSendFolder(a.m, 2, source, excludes, p2p.LinkNow())
+    _, started = MessengerSendFolder(a.m, MessengerFindMember(a.m, "b"), source, excludes, p2p.LinkNow())
     testing.expect(t, started)
     done2 := proc(nodes: []^Node) -> bool {
         return len(nodes[1].done) == 2 && len(nodes[2].done) == 2
@@ -419,7 +421,7 @@ MessengerFolderTest :: proc(t: ^testing.T) {
     testing.expect(t, os.is_dir(fmt.tprintf("%s/b_in/project (1)", folder)))
 
     // the host asks nobody (auto accept), a has to answer: the offer comes with its size and file count
-    _, started = MessengerSendFolder(host.m, 1, source, excludes, p2p.LinkNow())
+    _, started = MessengerSendFolder(host.m, MessengerFindMember(host.m, "a"), source, excludes, p2p.LinkNow())
     testing.expect(t, started)
     offered := proc(nodes: []^Node) -> bool {
         return len(nodes[1].offered) == 1
@@ -643,7 +645,7 @@ MessengerResumeTest :: proc(t: ^testing.T) {
 
     // cut it when part of the file has arrived
     cut: bool
-    for _ in 0 ..< 8000 {
+    for deadline := wait_for.DeadlineStart(60); !wait_for.DeadlineExpired(&deadline); {
         NodeUpdate(host)
         NodeUpdate(sender)
         if size, size_ok := PathSize(part); size_ok && size > 200_000 && size < 5_000_000 {
@@ -703,7 +705,7 @@ MessengerResumeTest :: proc(t: ^testing.T) {
     }
     testing.expect(t, PumpUntil(nodes, refused, 20000))
     testing.expect(t, sender_done == 1 && len(sender.done) == 2 && !sender.done[1].ok)
-    for _ in 0 ..< 200 {                                           // the receiver learns of it a moment later
+    for deadline := wait_for.DeadlineStart(2); !wait_for.DeadlineExpired(&deadline); {  // the receiver learns of it a moment later
         NodeUpdate(host)
         NodeUpdate(sender)
         time.sleep(time.Millisecond)
@@ -755,7 +757,7 @@ MessengerFolderResumeTest :: proc(t: ^testing.T) {
     // cut it when part of the big file has arrived
     big: string = fmt.tprintf("%s/sub/big.bin", stage)
     cut: bool
-    for _ in 0 ..< 8000 {
+    for deadline := wait_for.DeadlineStart(60); !wait_for.DeadlineExpired(&deadline); {
         NodeUpdate(host)
         NodeUpdate(sender)
         if size, size_ok := PathSize(big); size_ok && size > 200_000 && size < 5_000_000 {
@@ -832,7 +834,7 @@ MessengerFolderResumeTest :: proc(t: ^testing.T) {
         return len(nodes[1].done) == 2
     }, 20000))
     testing.expect(t, sender_done == 1 && len(sender.done) == 2 && !sender.done[1].ok)
-    for _ in 0 ..< 200 {
+    for deadline := wait_for.DeadlineStart(2); !wait_for.DeadlineExpired(&deadline); {
         NodeUpdate(host)
         NodeUpdate(sender)
         time.sleep(time.Millisecond)

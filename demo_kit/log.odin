@@ -129,7 +129,7 @@ logStep :: proc(log: ^Log, ctx: ^Context, step: ^Step, index: int) {
     place: Vec2 = step.target^ if step.target != nil else step.position
     #partial switch step.kind {
     case .WAIT: Logf(log, ctx, .INPUT, "step %d %s %d frames", index, name, step.frames)
-    case .WAIT_UNTIL: Logf(log, ctx, .INPUT, "step %d %s %q for at most %d frames", index, name, step.text, step.frames)
+    case .WAIT_UNTIL: Logf(log, ctx, .INPUT, "step %d %s %q for at most %.0f s", index, name, step.text, step.seconds)
     case .KEY_DOWN, .KEY_UP, .KEY_TAP: Logf(log, ctx, .INPUT, "step %d %s %v", index, name, step.key)
     case .KEY_HOLD: Logf(log, ctx, .INPUT, "step %d %s %v for %d frames", index, name, step.key, step.frames)
     case .PAD_TAP: Logf(log, ctx, .INPUT, "step %d %s %v", index, name, step.pad)

@@ -57,9 +57,10 @@ WEBSOCKET_GUID :: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 // Connects, asks for the upgrade and waits for the answer. `protocols` are the sub protocols that are offered (the first the server accepts is used), `headers` are added to the request (an
 // `Authorization: Bearer <token>`). False with `socket.error` set when the server refuses or does not answer.
-WebSocketOpen :: proc(ws: ^WebSocket, endpoint: Endpoint, path: string, protocols: []string, headers: []HttpHeader, receive: []u8, message: []u8, timeout: time.Duration = HTTP_TIMEOUT) -> bool {
+WebSocketOpen :: proc(ws: ^WebSocket, endpoint: Endpoint, path: string, protocols: []string, headers: []HttpHeader, receive: []u8, message: []u8, timeout: time.Duration = 0) -> bool {         // 0: HTTP_TIMEOUT, scaled
     ws^ = {receive = receive, message = message}
-    if opened, open_error := streamOpen(&ws.stream, endpoint, timeout); !opened {
+    limit: time.Duration = timeout if timeout > 0 else Scaled(HTTP_TIMEOUT)
+    if opened, open_error := streamOpen(&ws.stream, endpoint, limit); !opened {
         ws.error = open_error
         return false
     }
@@ -165,7 +166,7 @@ WebSocketSend :: proc(ws: ^WebSocket, opcode: WebSocketOpcode, payload: []u8) ->
 // A non blocking socket: a send that cannot go at once is tried again until it does (a frame is small next to the buffers of the system; a stalled peer is a closed socket after the time limit)
 @(private)
 wsSend :: proc(ws: ^WebSocket, bytes: []u8) -> bool {
-    if !streamSend(&ws.stream, bytes, 5 * time.Second) {
+    if !streamSend(&ws.stream, bytes, Scaled(5 * time.Second)) {
         wsFail(ws, "the socket broke or a send did not go")
         return false
     }

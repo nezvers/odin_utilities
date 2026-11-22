@@ -1,5 +1,7 @@
 package demo_kit
 
+import "core:time"
+
 // Simulated user input and runtime checks, as data: a script is an array of Steps that a Player plays frame by frame into the
 // Input of the demo. The same script drives a demo in a window (watch it) and headless (a test).
 //
@@ -37,7 +39,8 @@ StepKind :: enum u8 {
 
 Step :: struct {
     kind: StepKind,
-    frames: u32,                // Wait, Hold, Drag, and the most that WaitUntil waits
+    frames: u32,                // Wait, Hold, Drag
+    seconds: f32,               // WaitUntil: the most it waits, in real time on a quiet computer (the wait is longer by `TimeScale`)
     key: Key,
     button: MouseButton,
     pad: PadButton,             // PadTap
@@ -78,8 +81,9 @@ Scroll :: proc "contextless" (amount: f32) -> Step { return {kind = .WHEEL, amou
 Type :: proc "contextless" (text: string) -> Step { return {kind = .TEXT, text = text} }
 // Waits until `check` is true, looking at it in every frame, and goes on in that very frame (a condition that is true already costs no frame). A thing that happens on another clock than the
 // frames of the script (a server that starts, a network that answers, a window of another program) is waited for with this, never with a fixed `Wait` that is right on a quiet computer and
-// short on a busy one. When it is still false after `frames` frames the report says `message` (like a failed Check) and the script goes on.
-WaitUntil :: proc "contextless" (check: proc(ctx: ^Context) -> bool, message: string, frames: u32 = 3000) -> Step { return {kind = .WAIT_UNTIL, check = check, text = message, frames = max(frames, 1)} }
+// short on a busy one. The limit is REAL time, `seconds` on a quiet computer and `seconds * TimeScale` on a slower device (the environment variable ODIN_SLOW, see wait_for): a number of frames
+// would be a different time on every computer. When the time is over the report says `message` (like a failed Check) and the script goes on.
+WaitUntil :: proc "contextless" (check: proc(ctx: ^Context) -> bool, message: string, seconds: f32 = 60) -> Step { return {kind = .WAIT_UNTIL, check = check, text = message, seconds = seconds} }
 
 // The check says if what the demo shows is right, `message` is what the report says when it is not
 Check :: proc "contextless" (check: proc(ctx: ^Context) -> bool, message: string) -> Step { return {kind = .CHECK, check = check, text = message} }
@@ -131,6 +135,8 @@ Player :: struct {
     script: []Step,
     index: int,
     wait_left: u32,             // frames left of the step that takes time
+    wait_started: time.Tick,    // WaitUntil: when it began
+    wait_limit: time.Duration,  // and how long it may take (seconds times the scale)
     active: bool,               // a step that takes time is running
     held_keys: KeySet,
     held_buttons: MouseButtons,
@@ -151,6 +157,11 @@ Player :: struct {
 
 PlayerStart :: proc(player: ^Player, script: []Step) {
     player^ = {script = script}
+}
+
+// The player is in a WaitUntil step that has not ended
+PlayerWaitingUntil :: proc(player: ^Player) -> bool {
+    return player.active && player.index > 0 && player.script[player.index - 1].kind == .WAIT_UNTIL
 }
 
 PlayerFinished :: proc(player: ^Player) -> bool {
@@ -186,8 +197,7 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
             logCheck(player.log, ctx, waiting.text, true)
         } else {
             player.report.checks -= 1                       // not decided yet: it counts when it is
-            if player.wait_left > 0 { player.wait_left -= 1 }
-            if player.wait_left == 0 {
+            if time.tick_since(player.wait_started) >= player.wait_limit {
                 player.report.checks += 1
                 if player.report.failed < MAX_FAILURES { player.report.failures[player.report.failed] = {message = waiting.text, frame = ctx.frame} }
                 player.report.failed += 1
@@ -233,7 +243,9 @@ PlayerFrame :: proc(player: ^Player, ctx: ^Context, input: ^Input) {
                 logCheck(player.log, ctx, step.text, true)
             } else {
                 player.active = true
-                player.wait_left = step.frames
+                player.wait_left = 1                    // (the frames of a WaitUntil are not counted: the time is)
+                player.wait_started = time.tick_now()
+                player.wait_limit = time.Duration(f64(step.seconds) * max(TimeScale, 1) * f64(time.Second))
             }
         case .KEY_DOWN:
             player.held_keys += {step.key}

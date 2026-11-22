@@ -4,6 +4,7 @@ package tunnel
 import "core:net"
 import "core:testing"
 import "core:time"
+import "../../wait_for"
 import "../../p2p"
 
 // Two Links on one computer (the loopback addresses), connected the way two programs are: invite, reply, accepted
@@ -67,7 +68,7 @@ readAll :: proc(t: ^testing.T, socket: net.TCP_Socket, want: int, host: ^p2p.Lin
     received: [dynamic]u8
     received.allocator = context.temp_allocator
     buffer: [4096]u8
-    for _ in 0 ..< 2000 {
+    for deadline := wait_for.DeadlineStart(20); !wait_for.DeadlineExpired(&deadline); {
         pump(host, guest, host_tunnel, guest_tunnel, now, 1)
         echoStep(echo)
         count, error := net.recv_tcp(socket, buffer[:])
@@ -115,7 +116,7 @@ test_a_tcp_connection_goes_through_a_p2p_link :: proc(t: ^testing.T) {
     received: [dynamic]u8
     received.allocator = context.temp_allocator
     buffer: [4096]u8
-    for _ in 0 ..< 4000 {
+    for deadline := wait_for.DeadlineStart(40); !wait_for.DeadlineExpired(&deadline); {
         pump(host, guest, host_tunnel, guest_tunnel, &now, 1)
         echoStep(&echo)
         if offset < len(sent) {

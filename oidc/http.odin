@@ -21,6 +21,21 @@ HttpIdleUser: rawptr
 
 HTTP_TIMEOUT :: 15 * time.Second
 
+// How many times slower than a quiet computer the device is: the timeouts of the requests are this many times longer. 1 unless the program sets it; the programs get it from the environment variable
+// ODIN_SLOW (time_scale.odin).
+TimeScale: f64 = 1
+
+@(private)
+requestTimeout :: proc() -> time.Duration {
+    return timeoutScaled(HTTP_TIMEOUT, TimeScale)
+}
+
+// A scale below 1 does not make a timeout shorter than the one that was chosen
+@(private)
+timeoutScaled :: proc(duration: time.Duration, scale: f64) -> time.Duration {
+    return time.Duration(f64(duration) * max(scale, 1))
+}
+
 Header :: struct {
     name: string,
     value: string,
@@ -82,7 +97,7 @@ connSend :: proc(connection: ^Connection, bytes: []u8) -> bool {
     for sent < len(bytes) {
         count, error := net.send_tcp(connection.socket, bytes[sent:])
         if error == .Would_Block {
-            if time.tick_since(start) > HTTP_TIMEOUT { return false }
+            if time.tick_since(start) > requestTimeout() { return false }
             if HttpIdle != nil { HttpIdle(HttpIdleUser) }
             time.sleep(time.Millisecond)
             continue
@@ -109,7 +124,7 @@ connRecv :: proc(connection: ^Connection, buffer: []u8) -> (count: int, closed: 
             if connection.polling && HttpIdle != nil { HttpIdle(HttpIdleUser) }
             if connection.polling { time.sleep(time.Millisecond) }
         }
-        if time.tick_since(start) > HTTP_TIMEOUT { return 0, true }
+        if time.tick_since(start) > requestTimeout() { return 0, true }
     }
 }
 
@@ -122,8 +137,8 @@ Request :: proc(url: string, method: string, headers: []Header, body: []u8, buff
     if dial_error != nil { return {}, false }
     defer net.close(socket)
     connection.socket, connection.secure = socket, parsed.secure
-    net.set_option(socket, .Receive_Timeout, HTTP_TIMEOUT)
-    net.set_option(socket, .Send_Timeout, HTTP_TIMEOUT)
+    net.set_option(socket, .Receive_Timeout, requestTimeout())
+    net.set_option(socket, .Send_Timeout, requestTimeout())
     defer if connection.secure { p2p.TlsClose(&connection.tls) }
     if parsed.secure {
         if !p2p.TlsConnect(&connection.tls, socket, parsed.host) {

@@ -8,6 +8,7 @@ import "core:strings"
 import "core:testing"
 import "core:thread"
 import "core:time"
+import "../../../wait_for"
 import st "../.."
 import "../../../p2p"
 import game_lib "../game"
@@ -47,7 +48,7 @@ test_two_players_play_through_a_p2p_tunnel :: proc(t: ^testing.T) {
     testing.expect(t, GuestJoin(guest, HostInvite(host), {loopback = true, name = "Bob"}), guest.error)
     defer GuestStop(guest)
     testing.expect(t, HostAcceptReply(host, GuestReply(guest)))
-    for _ in 0 ..< 600 {
+    for deadline := wait_for.DeadlineStart(10); !wait_for.DeadlineExpired(&deadline); {
         HostUpdate(host)
         GuestUpdate(guest)
         time.sleep(time.Millisecond)
@@ -69,7 +70,7 @@ test_two_players_play_through_a_p2p_tunnel :: proc(t: ^testing.T) {
     defer game_lib.GameClose(guest_game)
 
     ready: bool
-    for _ in 0 ..< 5000 {
+    for deadline := wait_for.DeadlineStart(50); !wait_for.DeadlineExpired(&deadline); {
         step(host, guest, host_game, guest_game)
         if host_game.phase == .PLAYING && guest_game.phase == .PLAYING && host_game.player_count == 2 && guest_game.player_count == 2 && host_game.coin_count > 0 && guest_game.coin_count > 0 {
             ready = true
@@ -86,7 +87,7 @@ test_two_players_play_through_a_p2p_tunnel :: proc(t: ^testing.T) {
     start_x: f32 = bob_before.x
     game_lib.GameInput(guest_game, 1, 0)
     moved: bool
-    for _ in 0 ..< 3000 {
+    for deadline := wait_for.DeadlineStart(30); !wait_for.DeadlineExpired(&deadline); {
         step(host, guest, host_game, guest_game)
         game_lib.GameInput(guest_game, 1, 0)
         seen: ^schema.Player
@@ -104,7 +105,7 @@ test_two_players_play_through_a_p2p_tunnel :: proc(t: ^testing.T) {
     // Bob leaves: his row goes (the database sees the disconnect)
     game_lib.GameClose(guest_game)
     gone: bool
-    for _ in 0 ..< 3000 {
+    for deadline := wait_for.DeadlineStart(30); !wait_for.DeadlineExpired(&deadline); {
         HostUpdate(host)
         GuestUpdate(guest)
         game_lib.GamePoll(host_game)
@@ -133,7 +134,7 @@ test_a_guest_joins_through_a_derp_relay_without_a_reply_code :: proc(t: ^testing
     testing.expect(t, GuestJoin(guest, HostInvite(host), {internet = true, name = "Bob"}), guest.error)
     defer GuestStop(guest)
     // no HostAcceptReply: the relay carries the answer
-    for _ in 0 ..< 1500 {
+    for deadline := wait_for.DeadlineStart(45); !wait_for.DeadlineExpired(&deadline); {
         HostUpdate(host)
         GuestUpdate(guest)
         time.sleep(10 * time.Millisecond)
@@ -159,7 +160,7 @@ test_a_guest_joins_a_room_by_its_name :: proc(t: ^testing.T) {
     defer free(guest)
     testing.expect(t, GuestBeginRoom(guest, room, {internet = true, name = "Bob"}), guest.error)
     defer GuestStop(guest)
-    for _ in 0 ..< 3000 {
+    for deadline := wait_for.DeadlineStart(60); !wait_for.DeadlineExpired(&deadline); {
         HostUpdate(host)
         GuestUpdate(guest)
         time.sleep(10 * time.Millisecond)
@@ -202,7 +203,7 @@ test_a_player_who_comes_back_is_not_removed_by_the_old_connection :: proc(t: ^te
     defer free(first)
     defer free(second)
     testing.expect(t, game_lib.GameOpen(first, host.server.endpoint, "Ada", token), first.error)
-    for _ in 0 ..< 3000 {
+    for deadline := wait_for.DeadlineStart(30); !wait_for.DeadlineExpired(&deadline); {
         game_lib.GamePoll(first)
         time.sleep(time.Millisecond)
         if _, found := game_lib.GameMe(first); found { break }
@@ -213,7 +214,7 @@ test_a_player_who_comes_back_is_not_removed_by_the_old_connection :: proc(t: ^te
     // the person starts the game again while the old window is still connected: the same player, taken over by the new connection
     testing.expect(t, game_lib.GameOpen(second, host.server.endpoint, "Ada", token), second.error)
     defer game_lib.GameClose(second)
-    for _ in 0 ..< 3000 {
+    for deadline := wait_for.DeadlineStart(30); !wait_for.DeadlineExpired(&deadline); {
         game_lib.GamePoll(first)
         game_lib.GamePoll(second)
         time.sleep(time.Millisecond)
@@ -225,7 +226,7 @@ test_a_player_who_comes_back_is_not_removed_by_the_old_connection :: proc(t: ^te
 
     // now the old connection goes away (the server runs the disconnect for it): the player stays
     game_lib.GameClose(first)
-    for _ in 0 ..< 1500 {
+    for deadline := wait_for.DeadlineStart(4.5); !wait_for.DeadlineExpired(&deadline); {
         game_lib.GamePoll(second)
         time.sleep(time.Millisecond)
     }
@@ -243,12 +244,12 @@ test_a_player_who_comes_back_is_not_removed_by_the_old_connection :: proc(t: ^te
     testing.expect(t, other_made)
     testing.expect(t, game_lib.GameOpen(third, host.server.endpoint, "Watcher", strings.clone(string(other_view), context.temp_allocator)), third.error)
     defer game_lib.GameClose(third)
-    for _ in 0 ..< 3000 {
+    for deadline := wait_for.DeadlineStart(30); !wait_for.DeadlineExpired(&deadline); {
         game_lib.GamePoll(third)
         time.sleep(time.Millisecond)
         if _, found := game_lib.GameMe(third); found && third.phase == .PLAYING { break }
     }
-    for _ in 0 ..< 1500 {
+    for deadline := wait_for.DeadlineStart(15); !wait_for.DeadlineExpired(&deadline); {
         game_lib.GamePoll(third)
         time.sleep(time.Millisecond)
         if third.player_count == 1 { break }
@@ -275,7 +276,7 @@ test_a_guest_can_join_again_after_the_first_one_was_closed_without_goodbye :: pr
     defer free(first)
     testing.expect(t, GuestJoin(first, HostInvite(host), {loopback = true, name = "Ada"}), first.error)
     testing.expect(t, HostAcceptReply(host, GuestReply(first)))
-    for _ in 0 ..< 800 {
+    for deadline := wait_for.DeadlineStart(10); !wait_for.DeadlineExpired(&deadline); {
         HostUpdate(host)
         GuestUpdate(first)
         time.sleep(time.Millisecond)
@@ -289,7 +290,7 @@ test_a_guest_can_join_again_after_the_first_one_was_closed_without_goodbye :: pr
     defer GuestStop(second)
     testing.expect(t, GuestJoin(second, HostInvite(host), {loopback = true, name = "Ada"}), second.error)
     testing.expect(t, HostAcceptReply(host, GuestReply(second)), "the host takes the reply of the new start")
-    for _ in 0 ..< 3000 {
+    for deadline := wait_for.DeadlineStart(30); !wait_for.DeadlineExpired(&deadline); {
         HostUpdate(host)
         GuestUpdate(second)
         time.sleep(time.Millisecond)
@@ -339,7 +340,7 @@ test_how_the_host_frame_rate_changes_the_time_to_the_field :: proc(t: ^testing.T
         testing.expect(t, GuestJoin(guest, HostInvite(host), {loopback = true, name = "Bob"}), guest.error)
         defer GuestStop(guest)
         testing.expect(t, HostAcceptReply(host, GuestReply(guest)))
-        for _ in 0 ..< 800 {
+        for deadline := wait_for.DeadlineStart(10); !wait_for.DeadlineExpired(&deadline); {
             HostUpdate(host)
             GuestUpdate(guest)
             time.sleep(time.Millisecond)
@@ -349,7 +350,7 @@ test_how_the_host_frame_rate_changes_the_time_to_the_field :: proc(t: ^testing.T
         defer free(host_game)
         testing.expect(t, game_lib.GameOpen(host_game, host.server.endpoint, "Ada"), host_game.error)
         defer game_lib.GameClose(host_game)
-        for _ in 0 ..< 3000 {
+        for deadline := wait_for.DeadlineStart(30); !wait_for.DeadlineExpired(&deadline); {
             HostUpdate(host)
             game_lib.GamePoll(host_game)
             time.sleep(time.Millisecond)
@@ -367,7 +368,7 @@ test_how_the_host_frame_rate_changes_the_time_to_the_field :: proc(t: ^testing.T
         defer game_lib.GameClose(guest_game)
         opened_ms: f64 = time.duration_milliseconds(time.tick_since(started))
         testing.expect(t, game_lib.GameWaitingMs(guest_game) > 0, "a game that has no rows yet is waiting")
-        for _ in 0 ..< 20000 {
+        for deadline := wait_for.DeadlineStart(60); !wait_for.DeadlineExpired(&deadline); {
             GuestUpdate(guest)
             game_lib.GamePoll(guest_game)
             time.sleep(2 * time.Millisecond)
@@ -442,4 +443,13 @@ test_a_pasted_text_is_told_apart :: proc(t: ^testing.T) {
     testing.expect(t, kind == .NOT_A_CODE, "a code with a changed letter is refused")
     kind, _, _ = CodeInspect(invite_text[:len(invite_text) / 2])
     testing.expect_value(t, kind, CodeKind.NOT_A_CODE)
+}
+
+// The stages of a connection give a slower device more time
+@(test)
+test_the_stage_times_follow_the_time_scale :: proc(t: ^testing.T) {
+    testing.expect_value(t, stageMsFor(STAGE_GATHER_MS, 1), 5000)
+    testing.expect_value(t, stageMsFor(STAGE_RELAY_MS, 3), 24000)
+    testing.expect_value(t, stageMsFor(STAGE_FIND_MS, 0.5), 15000)
+    testing.expect_value(t, stageMs(STAGE_GATHER_MS), stageMsFor(STAGE_GATHER_MS, st.TimeScale))
 }
