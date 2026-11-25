@@ -15,9 +15,10 @@ DrawOverview :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     if overview == nil { return }
     total: f64 = ui.OverviewTotal(overview)
     inner: ui.Rect = ui.RectShrink(rect, 2)
-    band: f32 = min(inner.w * 0.3, info.font_size + 2) if len(overview.sections) > 0 else 0
+    sections: []ui.OverviewSection = ui.OverviewSections(overview)
+    band: f32 = min(inner.w * 0.3, info.font_size + 2) if len(sections) > 0 else 0
     lanes: ui.Rect = {inner.x, inner.y + band, inner.z, inner.w - band}
-    for section in overview.sections {
+    for section in sections {
         x0: f32 = inner.x + f32(section.start / total) * inner.z
         x1: f32 = inner.x + f32(min((section.start + section.length) / total, 1)) * inner.z
         color: ui.Color = section.color if section.color.a > 0 else ui.ColorLerp(theme.track, theme.accent, 0.35)

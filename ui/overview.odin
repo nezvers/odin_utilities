@@ -8,8 +8,15 @@ package ui
 //
 // Only `view.origin` and `view.zoom` are changed; the width of the window is the width the timeline was drawn with (`view.rect.z`), so the timeline is drawn before the strip or one frame earlier.
 //
-// Limits: sections are shown, not edited (no drag to mark one, no rename); the frame does not scroll the tracks vertically; every clip is one block (no content); `total` is the program's
+// Sections can be marked by the person when the program gives room for them: `sections_buffer` (the storage, the program's) and `section_count`; then Shift + drag on the strip makes a section
+// from where the press began to where the pointer is (snapped to `snap` units when it is above 0), Ctrl + click on a section takes it away. `sections_serial` goes up with every such change and
+// `last_section` is the index of the section that was made (-1 after a removal), so the program can ask for a name (`sections_buffer[i].name`, alive until UiRender). Without a buffer the
+// strip shows `sections` and edits nothing.
+//
+// Limits: a section is made or removed, not moved or resized afterwards (remove and mark again), no rename in the strip, sections may overlap (the later one is drawn on top); the frame does not scroll the tracks vertically; every clip is one block (no content); `total` is the program's
 //     (TimelineEnd(timeline) plus some room when it is 0); a click on a section does not move the playhead.
+
+import "core:math"
 
 OVERVIEW_EDGE :: f32(6)            // the width of the frame edge that zooms
 OVERVIEW_MIN_FRACTION :: f64(0.01)   // the frame is at least this part of the whole
@@ -26,6 +33,61 @@ Overview :: struct {
     view: ^TimelineView,
     total: f64,                     // the length shown; 0: the end of the timeline
     sections: []OverviewSection,
+    sections_buffer: []OverviewSection,     // room for the sections the person marks; when it has a length it is what is shown, `section_count` of it
+    section_count: int,
+    snap: f64,                      // marked sections start and end on multiples of this (0: free)
+    sections_serial: u32,
+    last_section: int,
+}
+
+// The sections that are shown and edited
+OverviewSections :: proc(overview: ^Overview) -> []OverviewSection {
+    if len(overview.sections_buffer) > 0 { return overview.sections_buffer[:clamp(overview.section_count, 0, len(overview.sections_buffer))] }
+    return overview.sections
+}
+
+@(private)
+overviewSnap :: proc(overview: ^Overview, time: f64) -> f64 {
+    if overview.snap <= 0 { return time }
+    return math.round(time / overview.snap) * overview.snap
+}
+
+// Ctrl + click: the last section that holds the time goes. True when there was one.
+OverviewSectionRemoveAt :: proc(overview: ^Overview, time: f64) -> bool {
+    count: int = len(OverviewSections(overview))
+    for i := count - 1; i >= 0; i -= 1 {
+        section: OverviewSection = overview.sections_buffer[i]
+        if time >= section.start && time <= section.start + section.length {
+            for k in i ..< count - 1 { overview.sections_buffer[k] = overview.sections_buffer[k + 1] }
+            overview.section_count = count - 1
+            overview.sections_serial += 1
+            overview.last_section = -1
+            return true
+        }
+    }
+    return false
+}
+
+// Shift + drag: the section `index` (-1: a new one) from `anchor` to `time`. The index of the section, -1 when there is no room or the stretch is empty.
+OverviewSectionMark :: proc(overview: ^Overview, index: int, anchor: f64, time: f64) -> int {
+    total: f64 = OverviewTotal(overview)
+    a, b: f64 = overviewSnap(overview, clamp(anchor, 0, total)), overviewSnap(overview, clamp(time, 0, total))
+    start, end: f64 = min(a, b), max(a, b)
+    if end - start <= 0 { return index }
+    at: int = index
+    if at < 0 {
+        if overview.section_count >= len(overview.sections_buffer) { return -1 }
+        at = overview.section_count
+        overview.section_count += 1
+        overview.sections_buffer[at] = {name = "", color = {}}
+    }
+    section: ^OverviewSection = &overview.sections_buffer[at]
+    if section.start != start || section.length != end - start || index < 0 {
+        section.start, section.length = start, end - start
+        overview.sections_serial += 1
+        overview.last_section = at
+    }
+    return at
 }
 
 // The length the strip covers
@@ -67,7 +129,22 @@ UiOverview :: proc(ctx: ^Context, name: string, overview: ^Overview, size: Size 
     rect: Rect = state.rect
     if !disabled && interaction.pressed && rect.z > 0 && overview.view.rect.z > 0 {
         at: f64 = f64((ctx.input.mouse_position.x - rect.x) / rect.z) * total
-        if ctx.input.mouse_pressed {
+        editing: bool = len(overview.sections_buffer) > 0
+        if ctx.input.mouse_pressed { state.cursor = 0 }
+        if editing && ctx.input.mouse_pressed && .CTRL in ctx.input.modifiers {
+            state.cursor = 5                                    // a Ctrl click only removes
+            OverviewSectionRemoveAt(overview, at)
+        } else if editing && ctx.input.mouse_pressed && .SHIFT in ctx.input.modifiers {
+            state.cursor, state.drag.x, state.anim = 4, f32(at), -1           // marking: `drag.x` is where it began, `anim` the section that follows the pointer
+        }
+        if state.cursor >= 4 {
+            if ctx.input.mouse_down && state.cursor == 4 {
+                // a stretch of a few pixels is a click, not a section
+                if abs(at - f64(state.drag.x)) > f64(OVERVIEW_EDGE / rect.z) * total || state.anim >= 0 {
+                    state.anim = f32(OverviewSectionMark(overview, int(state.anim), f64(state.drag.x), at))
+                }
+            }
+        } else if ctx.input.mouse_pressed {
             edge: f64 = f64(OVERVIEW_EDGE / rect.z) * total
             switch {
             case abs(at - start) <= edge: state.cursor = 1
@@ -76,7 +153,7 @@ UiOverview :: proc(ctx: ^Context, name: string, overview: ^Overview, size: Size 
             case: state.cursor, state.drag.x = 0, f32(length * 0.5)       // outside: the frame comes to the pointer
             }
         }
-        if ctx.input.mouse_pressed || ctx.input.mouse_down {
+        if state.cursor < 4 && (ctx.input.mouse_pressed || ctx.input.mouse_down) {
             switch state.cursor {
             case 1: changed = overviewSetWindow(overview, at, start + length - at)
             case 2: changed = overviewSetWindow(overview, start, at - start)

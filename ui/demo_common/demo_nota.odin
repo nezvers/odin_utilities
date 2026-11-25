@@ -42,7 +42,7 @@ State :: struct {
     timeline: ui.Timeline,
     view: ui.TimelineView,
     overview: ui.Overview,
-    sections: [3]ui.OverviewSection,
+    sections: [8]ui.OverviewSection,
     search: [32]u8,
     search_length: int,
     filters: [5]bool,
@@ -113,8 +113,8 @@ init :: proc(ctx: ^kit.Context) {
     // the arrangement
     ui.TimelineInit(&state.timeline, &state)
     state.view = {zoom = 18, snap = 1, tempo = 124, beats_per_bar = 4}
-    state.sections = {{0, 32, "Intro", {}}, {32, 64, "Verse", {}}, {96, 48, "Chorus", {}}}
-    state.overview = {timeline = &state.timeline, view = &state.view, total = 160, sections = state.sections[:]}
+    state.sections[0], state.sections[1], state.sections[2] = {0, 32, "Intro", {}}, {32, 64, "Verse", {}}, {96, 48, "Chorus", {}}
+    state.overview = {timeline = &state.timeline, view = &state.view, total = 160, sections_buffer = state.sections[:], section_count = 3, snap = 4}
     state.snap_choice = int(ui.TimelineSnapChoice.AUTO)
     for name, i in TRACK_NAMES {
         track, _ := ui.TimelineTrackAdd(&state.timeline, name, 42, color = TRACK_COLORS[i])

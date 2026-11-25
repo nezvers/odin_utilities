@@ -7188,3 +7188,58 @@ test_a_left_trim_moves_the_body_offset_and_wraps_it :: proc(t: ^testing.T) {
     ClipBodyTrimLeft(&stretched, 2)
     testing.expect_value(t, stretched.body.offset, 0.5)
 }
+
+@(test)
+test_sections_are_marked_with_shift_drag_and_removed_with_ctrl_click :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    timeline: ^Timeline = new(Timeline)
+    defer free(timeline)
+    TimelineInit(timeline)
+    TimelineTrackAdd(timeline, "A")
+    view: TimelineView = {zoom = 10, origin = 0}
+    view.rect = {0, 0, 200, 100}
+    buffer: [2]OverviewSection
+    overview: Overview = {timeline = timeline, view = &view, total = 100, sections_buffer = buffer[:], snap = 5}
+    overviewFrame(harness, pointerAt({-100, -100}), &overview)
+    overviewFrame(harness, pointerAt({-100, -100}), &overview)
+    rect, _ := UiElementRect(&harness.ctx, UiId(&harness.ctx, "ov"))
+    x :: proc(rect: Rect, time: f32) -> Vec2 { return {rect.x + rect.z * time / 100, rect.y + 20} }
+    shift :: proc(harness: ^Harness, overview: ^Overview, from: Vec2, to: Vec2, modifiers: Modifiers) {
+        down: Input = pointerAt(from, down = true, pressed = true)
+        move: Input = pointerAt(to, down = true)
+        up: Input = pointerAt(to, released = true)
+        down.modifiers, move.modifiers, up.modifiers = modifiers, modifiers, modifiers
+        overviewFrame(harness, pointerAt(from), overview)
+        overviewFrame(harness, down, overview)
+        overviewFrame(harness, move, overview)
+        overviewFrame(harness, up, overview)
+        for _ in 0 ..< 30 { overviewFrame(harness, pointerAt({-100, -100}), overview) }
+    }
+    // Shift + drag from 21 to 58: a section from 20 to 60 (snapped to 5), and the window did not move
+    shift(harness, &overview, x(rect, 21), x(rect, 58), {.SHIFT})
+    testing.expect_value(t, overview.section_count, 1)
+    testing.expect(t, abs(buffer[0].start - 20) < 1e-6 && abs(buffer[0].length - 40) < 1e-6)
+    testing.expect_value(t, overview.last_section, 0)
+    testing.expect_value(t, overview.sections_serial, 1)
+    testing.expect(t, view.origin == 0, "marking does not scroll the view")
+    // a second one, from right to left; a third finds no room
+    shift(harness, &overview, x(rect, 90), x(rect, 70), {.SHIFT})
+    testing.expect_value(t, overview.section_count, 2)
+    testing.expect(t, abs(buffer[1].start - 70) < 1e-6 && abs(buffer[1].length - 20) < 1e-6)
+    shift(harness, &overview, x(rect, 5), x(rect, 15), {.SHIFT})
+    testing.expect_value(t, overview.section_count, 2)
+    // a Shift click without a drag makes nothing; Ctrl + click on a section takes it away
+    shift(harness, &overview, x(rect, 30), x(rect, 30), {.CTRL})
+    testing.expect_value(t, overview.section_count, 1)
+    testing.expect(t, abs(buffer[0].start - 70) < 1e-6, "the later one moved up")
+    testing.expect_value(t, overview.last_section, -1)
+    // an ordinary press after marking works as before (the frame centres there)
+    shift(harness, &overview, x(rect, 80), x(rect, 80), {})
+    testing.expect(t, view.origin > 0, "a plain press still moves the window")
+    // without a buffer nothing is edited
+    plain: Overview = {timeline = timeline, view = &view, total = 100}
+    shift(harness, &plain, x(rect, 21), x(rect, 58), {.SHIFT})
+    testing.expect_value(t, plain.section_count, 0)
+}
