@@ -1,5 +1,7 @@
 package ui
 
+import "core:math"
+
 // What a clip shows inside of itself: the notes of a MIDI clip as small dashes, the peaks of an audio clip as a mirrored wave, the cells of a pattern clip. The data is the program's (slices that live
 // as long as the clip shows them): the library copies nothing and the clip only keeps the slice headers.
 //
@@ -11,7 +13,7 @@ package ui
 // stretched over the clip. The times of notes are inside of the content (0 at its start).
 //
 // `offset` is where inside of the content the clip begins (a clip trimmed at its left edge keeps what it showed there); it counts only with a `content_length` (a stretched content has no
-// beginning to trim).
+// beginning to trim). The timeline sets it when a clip is trimmed at its left edge by the pointer (`ClipBodyTrimLeft`); a program that places clips itself sets it with `TimelineClipSetBody`.
 //
 // Limits: no velocity shading, no pitch names, the waveform is
 //     mono peaks, a drum row has no names; the style draws only what is inside of the clip and in view.
@@ -44,6 +46,15 @@ TimelineClipSetBody :: proc(timeline: ^Timeline, handle: ClipHandle, body: ClipB
     if clip == nil { return false }
     clip.body = body
     return true
+}
+
+// A clip trimmed at its left edge keeps what it showed there: the offset moves by what was cut (`drag_start` is where the clip began), wrapped into the content so a loop stays in range.
+// A stretched content (no `content_length`) has no beginning to trim and keeps its offset.
+ClipBodyTrimLeft :: proc(clip: ^TimelineClip, start: f64) {
+    if clip.body.kind == .NONE || clip.body.content_length <= 0 { return }
+    offset: f64 = clip.drag_offset + (start - clip.drag_start)
+    length: f64 = clip.body.content_length
+    clip.body.offset = offset - length * math.floor(offset / length)
 }
 
 // The room inside of a clip rect for its content: under the name, with a little margin

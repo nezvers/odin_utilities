@@ -73,6 +73,7 @@ TimelineClip :: struct {
     drag_selected: bool,        // was it selected when a box was started (Shift keeps those)
     drag_start: f64,            // where the clip was when a drag began (timeline_widgets.odin)
     drag_length: f64,
+    drag_offset: f64,           // `body.offset` when the drag began
     drag_track: int,
     body: ClipBody,             // what the clip shows inside of itself (clip_body.odin)
 }

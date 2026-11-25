@@ -7131,3 +7131,18 @@ test_unseen_releases_are_the_ones_before_the_seen_version :: proc(t: ^testing.T)
     testing.expect_value(t, WhatsNewUnseen(releases[:], ""), 3)
     testing.expect_value(t, WhatsNewUnseen(nil, "1"), 0)
 }
+
+@(test)
+test_a_left_trim_moves_the_body_offset_and_wraps_it :: proc(t: ^testing.T) {
+    clip: TimelineClip = {start = 4, length = 8, drag_start = 4, drag_length = 8, drag_offset = 1}
+    clip.body = {kind = .NOTES, content_length = 4, offset = 1}
+    ClipBodyTrimLeft(&clip, 5.5)                                        // 1.5 cut: 1 + 1.5
+    testing.expect_value(t, clip.body.offset, 2.5)
+    ClipBodyTrimLeft(&clip, 7)                                          // 3 cut: 1 + 3 = 4, wraps to 0
+    testing.expect_value(t, clip.body.offset, 0)
+    ClipBodyTrimLeft(&clip, 3)                                          // dragged back out to the left: 1 - 1 = 0
+    testing.expect_value(t, clip.body.offset, 0)
+    stretched: TimelineClip = {drag_start = 0, body = {kind = .WAVEFORM, offset = 0.5}}
+    ClipBodyTrimLeft(&stretched, 2)
+    testing.expect_value(t, stretched.body.offset, 0.5)
+}

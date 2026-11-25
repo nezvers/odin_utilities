@@ -513,7 +513,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 }
                 it := hm.iterator_make(&timeline.clips)
                 for other, _ in hm.iterate(&it) {
-                    other.drag_start, other.drag_length = other.start, other.length
+                    other.drag_start, other.drag_length, other.drag_offset = other.start, other.length, other.body.offset
                     other.drag_track = TimelineTrackIndex(timeline, other.track)
                 }
                 TimelineClipsSnapshot(timeline)
@@ -724,7 +724,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 if clip != nil {
                     end: f64 = clip.drag_start + clip.drag_length
                     start: f64 = clamp(timelineSnapTime(timeline, view, time, true), 0, end - min_length)
-                    TimelineClipPlace(timeline, view.gesture_clip, clip.track, start, end - start)
+                    if TimelineClipPlace(timeline, view.gesture_clip, clip.track, start, end - start) { ClipBodyTrimLeft(clip, start) }
                 }
             case .NONE:
             }
