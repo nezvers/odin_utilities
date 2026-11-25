@@ -2,7 +2,7 @@ package main
 
 // A whole login against a real provider, to try the settings of oidc/providers/providers.local.txt:
 //
-//     odin run oidc/tool/login -- discord|google|github|spacetimeauth [--no-browser] [--device] [--verbose] [--file path] [--timeout seconds] [--issuer url]
+//     odin run oidc/tool/login -- discord|google|github|spacetimeauth [--no-browser] [--device] [--revoke] [--verbose] [--file path] [--timeout seconds] [--issuer url]
 //
 // Discord, Google, SpacetimeAuth: the browser flow (a page opens, you log in, the browser comes back to 127.0.0.1) and the claims of the verified ID token are printed. GitHub: the device flow (a code is
 // printed, you type it at github.com/login/device) and the user from api.github.com. Tokens are never printed, and nothing is stored.
@@ -22,6 +22,7 @@ SETTINGS_PATHS :: [?]string{"oidc/providers/providers.local.txt", "providers/pro
 // Where the text goes: nil prints it as it happens (the address has to be seen before the tool waits), a test gives a builder
 capture: ^strings.Builder
 
+// --revoke: after the login, revoke the refresh token at the provider and try to use it again (it must be refused): the live check of oidc.Revoke
 // --verbose: what the provider answered at every poll of the device flow (the error word only, never a token)
 verbose: bool
 
@@ -30,6 +31,9 @@ Idle: proc(login: ^oidc.Login)
 
 // The login that is running, for the idle hook of a test
 current_login: ^oidc.Login
+
+// --revoke, read by the step that shows the refresh
+revoke_check: bool
 
 main :: proc() {
     os.exit(run(os.args[1:]))
@@ -68,6 +72,7 @@ run :: proc(arguments: []string) -> int {
         case "--no-browser": open_browser = false
         case "--verbose": verbose = true
         case "--device": device_flow = true
+        case "--revoke": revoke_check = true
         case "--file":
             i += 1
             if i < len(arguments) { settings_path = arguments[i] }
@@ -185,6 +190,16 @@ browserLogin :: proc(config: oidc.ClientConfig, open_browser: bool, timeout: f64
         if refreshed.error != "" { say(fmt.tprintf("  refresh answer: %s %s", refreshed.error, refreshed.error_description)) }
         if refreshed.error == "invalid_client" && config.client_secret == "" {
             say("  this provider wants the client secret to refresh a token (the login itself needs none): put it as `<provider>.client_secret = ...` in providers.local.txt (git ignored, never a committed file), or let the person log in again when the token ends")
+        }
+        if revoke_check {
+            // a provider that rotates gives a new refresh token at the refresh: that is the one that is alive now
+            alive: string = refreshed.refresh_token if refreshed.refresh_token != "" else login.tokens.refresh_token
+            say(fmt.tprintf("  revocation endpoint: %s", login.metadata.revocation_endpoint if login.metadata.revocation_endpoint != "" else "(none in the discovery document)"))
+            say(fmt.tprintf("  revoke answered success: %v", oidc.Revoke(&login.metadata, config, alive, "refresh_token")))
+            again: ^oidc.Tokens = new(oidc.Tokens)
+            defer free(again)
+            still: bool = oidc.Refresh(&login.metadata, config, alive, again)
+            say(fmt.tprintf("  refresh after the revocation works: %v (%s)", still, again.error))
         }
     }
     info: [16384]u8
