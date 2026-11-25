@@ -6383,3 +6383,210 @@ test_preset_selector_without_wrap_stops_at_the_ends :: proc(t: ^testing.T) {
     }
     testing.expect_value(t, selected, 0)
 }
+
+@(private = "file")
+PadState :: struct {
+    low: f32,
+    high: f32,
+    x: f32,
+    y: f32,
+    bend: f32,
+    modwheel: f32,
+    offset: f32,
+    cells: [16]f32,
+    lit: [128]bool,
+    pressed: int,
+    released: int,
+}
+
+@(private = "file")
+padFrame :: proc(harness: ^Harness, input: Input, s: ^PadState) {
+    frame(harness, input)
+    UiRangeSlider(&harness.ctx, "range", &s.low, &s.high, 0, 100, {Fixed(200), {}}, "%.0f")
+    UiXYPad(&harness.ctx, "xy", &s.x, &s.y, size = {Fixed(100), Fixed(100)})
+    UiWheel(&harness.ctx, "bend", &s.bend, size = {Fixed(30), Fixed(100)})
+    UiWheel(&harness.ctx, "mod", &s.modwheel, 0, 1, 0, false, {Fixed(30), Fixed(100)})
+    UiScrollBar(&harness.ctx, "bar", &s.offset, 1000, 250, true, {Fixed(200), {}})
+    pressed, released := UiKeyboard(&harness.ctx, "keys", 60, 71, &s.lit, 0, {Fixed(240), Fixed(80)})
+    if pressed >= 0 { s.pressed = pressed }
+    if released >= 0 { s.released = released }
+    UiStepGrid(&harness.ctx, "steps", s.cells[:], 2, 8, 3, 4, 1, {Fixed(160), Fixed(40)})
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(private = "file")
+padRect :: proc(harness: ^Harness, name: string) -> Rect {
+    rect, _ := UiElementRect(&harness.ctx, UiId(&harness.ctx, name))
+    return rect
+}
+
+@(private = "file")
+padIdle :: proc(harness: ^Harness, s: ^PadState) {
+    for _ in 0 ..< 30 { padFrame(harness, pointerAt({-100, -100}), s) }
+}
+
+@(private = "file")
+padDrag :: proc(harness: ^Harness, from: Vec2, to: Vec2, s: ^PadState, modifiers: Modifiers = {}) {
+    down: Input = pointerAt(from, down = true, pressed = true)
+    move: Input = pointerAt(to, down = true)
+    up: Input = pointerAt(to, released = true)
+    down.modifiers, move.modifiers, up.modifiers = modifiers, modifiers, modifiers
+    padFrame(harness, pointerAt(from), s)
+    padFrame(harness, down, s)
+    padFrame(harness, move, s)
+    padFrame(harness, up, s)
+    padIdle(harness, s)
+}
+
+@(test)
+test_range_slider_keeps_its_handles_in_order :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: PadState = {low = 20, high = 80}
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    rect: Rect = padRect(harness, "range")
+    x0: f32 = rect.x + RANGE_HANDLE
+    run: f32 = rect.z - RANGE_HANDLE * 2
+    at :: proc(rect: Rect, x0: f32, run: f32, value: f32) -> Vec2 { return {x0 + run * value / 100, rect.y + rect.w * 0.5} }
+    // a press near the high handle takes the high one
+    padDrag(harness, at(rect, x0, run, 78), at(rect, x0, run, 60), &s)
+    testing.expect(t, abs(s.high - 60) < 1 && near(s.low, 20), "the near handle moved")
+    // the low one cannot pass the high one
+    padDrag(harness, at(rect, x0, run, 21), at(rect, x0, run, 95), &s)
+    testing.expect(t, near(s.low, s.high) && s.high >= 59, "the low handle stops at the high one")
+}
+
+@(test)
+test_xy_pad_follows_the_pointer_and_resets :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: PadState = {x = 0.5, y = 0.5}
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    rect: Rect = padRect(harness, "xy")
+    padDrag(harness, {rect.x + rect.z * 0.25, rect.y + rect.w * 0.25}, {rect.x + rect.z * 0.8, rect.y + rect.w * 0.9}, &s)
+    testing.expect(t, abs(s.x - 0.8) < 0.01 && abs(s.y - 0.1) < 0.01, "x across, y up")
+    // Shift: a tenth of the way
+    padDrag(harness, {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}, {rect.x + rect.z * 0.5 + 50, rect.y + rect.w * 0.5}, &s, {.SHIFT})
+    testing.expect(t, abs(s.x - 0.85) < 0.02, "fine drag")
+    // a double click sets the default
+    at: Vec2 = {rect.x + 20, rect.y + 20}
+    padFrame(harness, pointerAt(at), &s)
+    padFrame(harness, pointerAt(at, down = true, pressed = true), &s)
+    padFrame(harness, pointerAt(at, released = true), &s)
+    padFrame(harness, pointerAt(at, down = true, pressed = true), &s)
+    testing.expect(t, near(s.x, 0.5) && near(s.y, 0.5))
+}
+
+@(test)
+test_wheel_springs_back_and_a_modulation_wheel_stays :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: PadState
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    bend: Rect = padRect(harness, "bend")
+    from: Vec2 = {bend.x + bend.z * 0.5, bend.y + bend.w * 0.5}
+    padFrame(harness, pointerAt(from), &s)
+    padFrame(harness, pointerAt(from, down = true, pressed = true), &s)
+    padFrame(harness, pointerAt(from - {0, 25}, down = true), &s)
+    testing.expect(t, abs(s.bend - 0.5) < 0.01, "a quarter of the height of a -1 .. 1 wheel is half the range up")
+    padFrame(harness, pointerAt(from - {0, 25}, released = true), &s)
+    padIdle(harness, &s)
+    testing.expect_value(t, s.bend, 0)
+    mod: Rect = padRect(harness, "mod")
+    from = {mod.x + mod.z * 0.5, mod.y + mod.w * 0.5}
+    padDrag(harness, from, from - {0, 40}, &s)
+    testing.expect(t, abs(s.modwheel - 0.4) < 0.01, "a modulation wheel stays")
+}
+
+@(test)
+test_scroll_bar_thumb_and_dragging :: proc(t: ^testing.T) {
+    start, size := ScrollBarThumb(200, 0, 1000, 250)
+    testing.expect(t, near(start, 0) && near(size, 50))
+    start, size = ScrollBarThumb(200, 750, 1000, 250)
+    testing.expect(t, near(start + size, 200), "scrolled to the end the thumb is at the end")
+    _, size = ScrollBarThumb(200, 0, 100000, 10)
+    testing.expect(t, near(size, SCROLL_BAR_MIN_THUMB), "a long content keeps a thumb that can be grabbed")
+    _, size = ScrollBarThumb(200, 0, 100, 100)
+    testing.expect(t, near(size, 200), "everything visible: the thumb is the track")
+
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: PadState
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    bar: Rect = padRect(harness, "bar")
+    // the thumb is 50 wide at the start: drag it 75 pixels = half of the run (150)
+    padDrag(harness, {bar.x + 10, bar.y + 5}, {bar.x + 85, bar.y + 5}, &s)
+    testing.expect(t, abs(s.offset - 375) < 5, "half the run is half of the scroll")
+    // a press on the track beside the thumb pages
+    s.offset = 0
+    padFrame(harness, pointerAt({bar.x + 150, bar.y + 5}), &s)
+    padFrame(harness, pointerAt({bar.x + 150, bar.y + 5}, down = true, pressed = true), &s)
+    testing.expect(t, near(s.offset, 250), "a page")
+}
+
+@(test)
+test_keyboard_geometry_and_presses :: proc(t: ^testing.T) {
+    rect: Rect = {0, 0, 140, 100}
+    testing.expect_value(t, KeyboardWhiteCount(60, 71), 7)
+    c: Rect = KeyboardKeyRect(rect, 60, 71, 60)
+    d: Rect = KeyboardKeyRect(rect, 60, 71, 62)
+    testing.expect(t, near(c.z, 20) && near(d.x, 20))
+    black: Rect = KeyboardKeyRect(rect, 60, 71, 61)
+    testing.expect(t, near(black.x + black.z * 0.5, 20) && near(black.w, 62), "C# is across the edge of C and D")
+    testing.expect_value(t, KeyboardKeyAt(rect, 60, 71, {20, 10}), 61)
+    testing.expect_value(t, KeyboardKeyAt(rect, 60, 71, {20, 90}), 62)
+    testing.expect_value(t, KeyboardKeyAt(rect, 60, 71, {10, 90}), 60)
+    testing.expect_value(t, KeyboardKeyAt(rect, 60, 71, {139, 90}), 71)
+    testing.expect_value(t, KeyboardKeyAt(rect, 60, 71, {200, 90}), -1)
+
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: PadState = {pressed = -1, released = -1}
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    keys: Rect = padRect(harness, "keys")
+    from: Vec2 = {keys.x + keys.z * (10.0 / 140), keys.y + keys.w * 0.9}
+    padFrame(harness, pointerAt(from), &s)
+    padFrame(harness, pointerAt(from, down = true, pressed = true), &s)
+    testing.expect_value(t, s.pressed, 60)
+    // a glide to the next white key releases the first and plays the next
+    padFrame(harness, pointerAt(from + {keys.z * (20.0 / 140), 0}, down = true), &s)
+    testing.expect_value(t, s.released, 60)
+    testing.expect_value(t, s.pressed, 62)
+    padFrame(harness, pointerAt(from + {keys.z * (20.0 / 140), 0}, released = true), &s)
+    testing.expect_value(t, s.released, 62)
+}
+
+@(test)
+test_step_grid_paints_with_a_drag :: proc(t: ^testing.T) {
+    row, step, ok := StepGridCellAt({10, 10, 160, 40}, 2, 8, {10 + 45, 10 + 30})
+    testing.expect(t, ok && row == 1 && step == 2)
+    _, _, ok = StepGridCellAt({10, 10, 160, 40}, 2, 8, {5, 20})
+    testing.expect(t, !ok)
+
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: PadState
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    grid: Rect = padRect(harness, "steps")
+    cell :: proc(grid: Rect, row: int, step: int) -> Vec2 { return {grid.x + grid.z * (f32(step) + 0.5) / 8, grid.y + grid.w * (f32(row) + 0.5) / 2} }
+    // a drag over three empty cells turns them on
+    padDrag(harness, cell(grid, 0, 1), cell(grid, 0, 3), &s)
+    testing.expect(t, s.cells[1] == 1 && s.cells[3] == 1 && s.cells[0] == 0)
+    testing.expect(t, s.cells[2] == 1, "the cells between are painted too, the pointer passes them in one move")
+    // a drag that starts on an on cell turns the cells it passes off
+    padDrag(harness, cell(grid, 0, 3), cell(grid, 0, 1), &s)
+    testing.expect(t, s.cells[1] == 0 && s.cells[3] == 0)
+}

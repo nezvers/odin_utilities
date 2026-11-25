@@ -844,3 +844,37 @@ test_the_style_draws_a_mixer_fader_with_and_without_levels :: proc(t: ^testing.T
         testing.expect_value(t, ui.UiProblems(&e.ctx), ui.Problems{})
     }
 }
+
+@(test)
+test_the_style_draws_the_small_controls :: proc(t: ^testing.T) {
+    for theme in ([2]Theme{THEME_DARK, THEME_LIGHT}) {
+        e: ^Everything = new(Everything)
+        defer free(e)
+        everythingInit(e, theme, true)
+        low, high: f32 = 20, 60
+        x, y: f32 = 0.3, 0.6
+        ghost: [2]f32 = {0.4, 0.7}
+        bend, offset: f32
+        lit: [128]bool
+        lit[60] = true
+        cells: [16]f32
+        cells[3] = 1
+        for _ in 0 ..< 3 {
+            c: ^ui.Context = &e.ctx
+            e.recorder = {}
+            ui.UiBegin(c, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 700}, &e.style)
+            ui.UiRangeSlider(c, "range", &low, &high, 0, 100)
+            ui.UiXYPad(c, "xy", &x, &y, ghost = &ghost)
+            ui.UiWheel(c, "wheel", &bend)
+            ui.UiScrollBar(c, "bar", &offset, 1000, 200, true, {ui.Fixed(200), {}})
+            ui.UiScrollBar(c, "full", &offset, 100, 200, false, {{}, ui.Fixed(60)})
+            ui.UiKeyboard(c, "keys", 48, 72, &lit, 0, {ui.Fixed(400), ui.Fixed(80)})
+            ui.UiStepGrid(c, "steps", cells[:], 2, 8, 2, 4, 1, {ui.Fixed(200), ui.Fixed(40)})
+            ui.UiEnd(c)
+            ui.UiRender(c)
+        }
+        testing.expectf(t, e.recorder.rects > 20, "keys, cells, tracks and ticks are drawn: %d rects", e.recorder.rects)
+        testing.expect(t, !e.recorder.bad_rect)
+        testing.expect_value(t, ui.UiProblems(&e.ctx), ui.Problems{})
+    }
+}

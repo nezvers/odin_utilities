@@ -9,12 +9,12 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 | ~~Value bar, pan bar~~ done: `UiValueBar` (drag, Shift fine, typed entry, reset, snap, bipolar, hatch), `ValueBarPan` | `DragNumber`, `ValueBar`, `MiniFader`, `SliderTrack`, `PanBar` | | done |
 | Typed entry for the knob and the fader (the bar has it) with unit parsing ("-6 dB") | `ValueEntry`, `ValueText` | `UiValueBar` only | medium |
 | Pan knob with the centre mark | `PanKnob` | `UiKnob` (unipolar arc) | low |
-| **Range slider**: two handles (low, high) or one selector on a track | `RangeSliderTrack`, `RackBars` | none | medium |
+| ~~Range slider~~ done: `UiRangeSlider` (two handles that never cross) | `RangeSliderTrack`, `RackBars` | | done |
 | ~~Mixer fader~~ done: `UiMixerFader` (dB scale, mixer taper, stereo meter on the same scale with peak and clip, written value, sticks at 0 dB). Left: typed value, pre / post, loudness scales | `MeterFader`, `VFader`, `MixBar` | | done |
 | Gain reduction meter (grows down); the stereo meter is in `UiMixerFader` only | `GrMeter` | `UiMeter` | medium |
-| Wheel with a spring (pitch bend returns to the centre on release) | `PerformWheel` | none | low |
-| XY pad / vector pad with a ghost of the effective position | `FluxVectorPad` | none | medium |
-| Standalone thin scroll bar (a pill) for views that scroll by their own data | `ThinScrollBar` | scroll bar of `UiScroll` only | medium |
+| ~~Wheel with a spring~~ done: `UiWheel` (pitch bend springs to rest, modulation wheel stays) | `PerformWheel` | | done |
+| ~~XY pad~~ done: `UiXYPad` (fine drag, default on double click, ghost point) | `FluxVectorPad` | | done |
+| ~~Thin scroll bar~~ done: `UiScrollBar` (pill, thumb drag, paging, either direction) | `ThinScrollBar` | | done |
 | Toggle with a LED / on-off switch in a header, small `M`, `S`, record, headphone buttons with their own colours (a toggle button style by tag) | `ToggleSwitch`, `SwitchTrack`, track headers | `UiSwitch`, `UiToggle`, tags | medium |
 
 ## Pickers and headers
@@ -44,8 +44,8 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 | ~~Frequency response graph~~ done: `UiFreqGraph` (log axis, dB axis, RBJ biquad curve, draggable nodes, Q by wheel, spectrum fill, readout). Left: stereo / mid-side bands, steeper cut cascades | `Eq8Views`, `FilterGraphBase`, `SpectrumFill` | | done |
 | Envelope editors: ADSR with draggable points, LFO strip, plots with titled corner axes | `ClipAdsrKit`, `VoltEnv`, `AuroraLfoStrip`, `NotaGraph` | timeline automation lanes | medium |
 | ~~Waveform view~~ done: `UiWaveform` (min / max columns with a peak table, zoom, ruler in seconds, selection, markers, playhead). Left: stereo, fades and gain handles, editing | `WaveformPainter`, `AudioClipEditorView` | | done |
-| Step / pattern grid (drum pattern, arpeggiator steps) | `DrumPatternView`, `ArpGrid`, `RhythmViews` | none | medium |
-| Piano keyboard display (lit notes, root outline) | `ChordKeysViz`, `KeysViews` | none | medium |
+| ~~Step / pattern grid~~ done: `UiStepGrid` (paint by drag, playhead column, beat shading). Left: per step lengths, ratchets | `DrumPatternView`, `ArpGrid`, `RhythmViews` | | done |
+| ~~Piano keyboard~~ done: `UiKeyboard` (lit notes, root marked, press and glide send note on / off). Left: velocity by press height | `ChordKeysViz`, `KeysViews` | | done |
 | Modulation matrix (sources x targets, amount per cell) | `VoltMatrix` | `UiTable` | low |
 | Arrangement **overview** strip and sections ruler (bar numbers, drag to mark a section) | `ArrangementView.Overview`, `.Sections` | `UiTimeline` ruler (seconds, not bars), minimap of the graph | medium |
 | ~~Bars and beats on the ruler, grid snap choices~~ done: `TimelineView.tempo` turns the ruler into bars and beats, `TimelineSnapChoice` (off, bar, 1/4 .. 1/32, auto). Left: tempo map, triplets | `ArrangementView.TimeAxis`, `SnapChip` | | done |

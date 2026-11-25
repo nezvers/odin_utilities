@@ -30,6 +30,12 @@ StyleKind :: enum u8 {
     FREQ_GRAPH,         // a frequency response graph: draw the grid, the spectrum, the curve, the nodes and the readout; user: the ^FreqGraphView (its `graph` has the bands)
     WAVEFORM,           // a waveform view: draw the ruler, the columns, the selection, the markers and the playhead; user: the ^WaveformView (its `wave` has the samples)
     MIXER_FADER,        // a mixer channel fader: draw the dB scale, the groove and handle, the stereo meter (`values`: left, right, peak left, peak right in dB; empty: no meter) and the written value (text); value 0..1 on the travel, actual dB
+    RANGE_SLIDER,       // two handles: value 0..1 the low one, ratio the high one, text "low - high", cursor the handle that is dragged (0 low, 1 high)
+    XY_PAD,             // value x 0..1, ratio y 0..1 (up), values: the ghost [x, y] (empty: none), text "x, y"
+    WHEEL,              // a standing wheel: value 0..1, ratio the rest position 0..1
+    SCROLL_BAR_THIN,    // a thin scroll bar: value 0..1 the place of the thumb, ratio the visible part 0..1, cursor 1 across / 0 down
+    KEYBOARD,           // a piano keyboard: minimum and maximum the first and last pitch, anchor the root pitch class (-1 none), cursor the key that is down (-1 none), user ^[128]bool of lit keys (nil: none)
+    STEP_GRID,          // a grid of steps: values the cells (row after row), anchor rows, cursor steps, actual the playing step (-1 none), minimum the steps per beat
     PROGRESS,           // value 0..1, actual: the number it shows
     TEXT_FIELD,         // text: the content, cursor: byte offset, FOCUSED flag
     SEPARATOR,
