@@ -108,6 +108,7 @@ Everything :: struct {
     on: bool,
     off: bool,
     value: f32,
+    pan: f32,
     number: int,
     choice: int,
     text: [32]u8,
@@ -175,6 +176,9 @@ everythingFrame :: proc(e: ^Everything, input: ui.Input = {mouse_position = {-10
         ui.UiSwitch(c, "switch on", &e.on)
         ui.UiSwitch(c, "switch off", &e.off, disabled = true)
         ui.UiSlider(c, "slider", &e.value)
+        ui.UiValueBar(c, "value bar", &e.value)
+        ui.UiValueBar(c, "pan bar", &e.pan, ui.ValueBarPan())
+        if ui.UiTagged(c, "modulation") { ui.UiValueBar(c, "modulation bar", &e.value) }
         ui.UiProgress(c, "progress", e.value)
         if ui.UiTagged(c, "thin") {
             ui.UiSlider(c, "thin slider", &e.value)

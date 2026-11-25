@@ -25,6 +25,7 @@ StyleKind :: enum u8 {
     BUTTON,
     TOGGLE,             // check box / switch: ON flag, value 0 or 1
     SLIDER,             // value 0..1, actual: the number the user edits, text: that number formatted
+    VALUE_BAR,          // value 0..1 inside of minimum .. maximum, actual: the number, ratio: where the fill starts (0, or the middle of a bipolar bar), text: the formatted number; tag "modulation": a hatched fill
     PROGRESS,           // value 0..1, actual: the number it shows
     TEXT_FIELD,         // text: the content, cursor: byte offset, FOCUSED flag
     SEPARATOR,

@@ -5571,3 +5571,125 @@ test_exact_layout_keeps_zero_padding_and_gap :: proc(t: ^testing.T) {
     testing.expect(t, near(second.y, first.y + 20), "no gap between the children")
     testing.expect(t, near(flush.z, 100) && near(flush.w, 40), "no padding: the panel is as high as its two children")
 }
+
+// A bar 160 wide at x 0 (the test style: control width 160, height 24)
+@(private = "file")
+barFrame :: proc(harness: ^Harness, input: Input, value: ^f32, spec: ValueBarSpec) -> (changed: bool) {
+    frame(harness, input)
+    changed = UiValueBar(&harness.ctx, "Level", value, spec)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return
+}
+
+@(private = "file")
+barPress :: proc(harness: ^Harness, at: Vec2, value: ^f32, spec: ValueBarSpec, modifiers: Modifiers = {}) {
+    input: Input = pointerAt(at, down = true, pressed = true)
+    input.modifiers = modifiers
+    barFrame(harness, pointerAt(at), value, spec)
+    barFrame(harness, input, value, spec)
+}
+
+@(test)
+test_value_bar_drags_relative_to_the_press :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    value: f32 = 0.5
+    spec: ValueBarSpec = {}
+    barFrame(harness, pointerAt({-100, -100}), &value, spec)
+    barPress(harness, {20, 12}, &value, spec)
+    testing.expect(t, near(value, 0.5), "a press alone does not move the value (the bar does not jump to the pointer)")
+    barFrame(harness, pointerAt({52, 12}, down = true), &value, spec)
+    testing.expect(t, near(value, 0.7), "32 of 160 pixels is 0.2 of the range")
+    fine: Input = pointerAt({92, 12}, down = true)
+    fine.modifiers = {.SHIFT}
+    barFrame(harness, fine, &value, spec)
+    testing.expect(t, near(value, 0.72), "Shift: the 40 pixels count a tenth")
+    barFrame(harness, pointerAt({500, 12}, down = true), &value, spec)
+    testing.expect_value(t, value, 1)
+    info: DrawInfo = seen.last[.VALUE_BAR]
+    testing.expect_value(t, info.value, 1)
+    testing.expect_value(t, info.text, "1.00")
+}
+
+@(test)
+test_value_bar_snaps_resets_and_fills_from_the_middle :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    value: f32 = 0
+    spec: ValueBarSpec = {minimum = -12, maximum = 12, default_value = 0, snap = 1, bipolar = true, format = "%.0f dB"}
+    barFrame(harness, pointerAt({-100, -100}), &value, spec)
+    info: DrawInfo = seen.last[.VALUE_BAR]
+    testing.expect(t, near(info.value, 0.5) && near(info.ratio, 0.5), "a bipolar bar at zero: the fill starts and ends in the middle")
+    barPress(harness, {80, 12}, &value, spec)
+    barFrame(harness, pointerAt({80 + 17, 12}, down = true), &value, spec)
+    testing.expect_value(t, value, 3)            // 17 of 160 pixels is 2.55 of the range 24, on the grid of 1: 3
+    barFrame(harness, pointerAt({80 + 17, 12}, released = true), &value, spec)
+    for _ in 0 ..< 30 { barFrame(harness, pointerAt({-100, -100}), &value, spec) }        // longer than a double click
+    // Ctrl + click puts the default back
+    barPress(harness, {80, 12}, &value, spec, {.CTRL})
+    testing.expect_value(t, value, 0)
+    // the arrows of the navigation step by the snap
+    value = 3
+    harness.ctx.focus = UiId(&harness.ctx, "Level")
+    frame(harness)
+    UiValueBar(&harness.ctx, "Level", &value, spec)
+    UiEnd(&harness.ctx)
+    UiNavigate(&harness.ctx, .RIGHT)
+    barFrame(harness, pointerAt({-100, -100}), &value, spec)
+    testing.expect_value(t, value, 4)
+}
+
+@(test)
+test_value_bar_types_a_number :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    value: f32 = 0.25
+    spec: ValueBarSpec = {minimum = 0, maximum = 100, format = "%.1f"}
+    barFrame(harness, pointerAt({-100, -100}), &value, spec)
+    // a double click opens the entry with the number selected
+    barFrame(harness, pointerAt({40, 12}), &value, spec)
+    barFrame(harness, pointerAt({40, 12}, down = true, pressed = true), &value, spec)
+    barFrame(harness, pointerAt({40, 12}, released = true), &value, spec)
+    barFrame(harness, pointerAt({40, 12}, down = true, pressed = true), &value, spec)
+    testing.expect(t, harness.ctx.entry_id != 0, "the second press of a double click starts the typing")
+    barFrame(harness, pointerAt({40, 12}, released = true), &value, spec)
+    typed: Input = pointerAt({40, 12})
+    copy(typed.text[:], "37.5")
+    typed.text_count = 4
+    barFrame(harness, typed, &value, spec)
+    changed: bool = barFrame(harness, (Input){mouse_position = {40, 12}, keys = {.ENTER}}, &value, spec)
+    testing.expect(t, changed && near(value, 37.5), "Enter keeps the typed number")
+    testing.expect_value(t, harness.ctx.entry_id, Id(0))
+    // Escape leaves the value alone
+    barFrame(harness, pointerAt({40, 12}, down = true, pressed = true), &value, spec)
+    barFrame(harness, pointerAt({40, 12}, released = true), &value, spec)
+    barFrame(harness, pointerAt({40, 12}, down = true, pressed = true), &value, spec)
+    barFrame(harness, pointerAt({40, 12}, released = true), &value, spec)
+    testing.expect(t, harness.ctx.entry_id != 0)
+    typed = pointerAt({40, 12})
+    copy(typed.text[:], "99")
+    typed.text_count = 2
+    barFrame(harness, typed, &value, spec)
+    barFrame(harness, (Input){mouse_position = {40, 12}, keys = {.ESCAPE}, actions = {.CANCEL}}, &value, spec)
+    testing.expect(t, near(value, 37.5) && harness.ctx.entry_id == 0, "Escape cancels")
+}
+
+@(test)
+test_value_bar_pan_text :: proc(t: ^testing.T) {
+    buffer: [16]u8
+    testing.expect_value(t, valueBarPanText(-0.3, buffer[:]), "30L")
+    testing.expect_value(t, valueBarPanText(0, buffer[:]), "C")
+    testing.expect_value(t, valueBarPanText(0.12, buffer[:]), "12R")
+    value, ok := valueBarPanParse("25L")
+    testing.expect(t, ok && near(value, -0.25))
+    value, ok = valueBarPanParse("c")
+    testing.expect(t, ok && value == 0)
+    value, ok = valueBarPanParse("40")
+    testing.expect(t, ok && near(value, 0.4), "a number without a side is the right")
+    _, ok = valueBarPanParse("left")
+    testing.expect(t, !ok)
+}

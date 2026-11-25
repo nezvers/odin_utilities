@@ -6,9 +6,9 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 ## Value controls
 | Missing | Nota source | Have | Priority |
 |---|---|---|---|
-| **Value bar**: a drag number as a bar that fills, the value written inside it, drag = change, Shift = fine, double click = type, reset to default; unipolar and bipolar fill (pan: grows from the centre); a hatched "modulation" fill | `DragNumber`, `ValueBar`, `MiniFader`, `SliderTrack`, `ValueEntry` | `UiSlider` (thin track), `UiDragInt` (no bar, no typing) | high |
-| Typed entry on double click for every value control (knob, fader, bar), with unit parsing ("30L", "-6 dB") | `ValueEntry`, `ValueText` | none | high |
-| **Pan** bar and knob with the centre mark and text `30L / C / 12R` | `PanBar`, `PanKnob` | `UiKnob` (unipolar arc) | high |
+| ~~Value bar, pan bar~~ done: `UiValueBar` (drag, Shift fine, typed entry, reset, snap, bipolar, hatch), `ValueBarPan` | `DragNumber`, `ValueBar`, `MiniFader`, `SliderTrack`, `PanBar` | | done |
+| Typed entry for the knob and the fader (the bar has it) with unit parsing ("-6 dB") | `ValueEntry`, `ValueText` | `UiValueBar` only | medium |
+| Pan knob with the centre mark | `PanKnob` | `UiKnob` (unipolar arc) | low |
 | **Range slider**: two handles (low, high) or one selector on a track | `RangeSliderTrack`, `RackBars` | none | medium |
 | **Mixer fader with a scale** (dB ticks) and a stereo meter beside it, handle with a coloured mark | `MeterFader`, `VFader`, `MixBar` | `UiFader`, `UiMeter` (one channel, no scale) | high |
 | Stereo meter, gain reduction meter (grows down) | `StereoMeter`, `GrMeter` | `UiMeter` | medium |
@@ -57,7 +57,7 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 - Hatched fills (modulation), dashed rings (channel marks), inner clipping of rounded borders (`BorderInnerClip`): a pattern fill and a clip to a rounded rectangle are missing in the painter.
 
 ## Order that gives the most
-1. Value bar with typed entry (every screen), then the pan bar as its bipolar form.
+1. ~~Value bar with typed entry, pan bar~~ (done).
 2. Preset selector and device card (the bottom half of the arrangement screen).
 3. Track header row and bars-and-beats ruler (the arrangement screen).
 4. Mixer fader with a scale and a stereo meter (the mixer).

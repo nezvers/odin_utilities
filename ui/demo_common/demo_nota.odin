@@ -58,6 +58,8 @@ State :: struct {
     resonance: f32,
     drift: f32,
     detune: f32,
+    pad_pan: f32,
+    mod_amount: f32,
     on: [2]bool,
     bands: [8]f32,
     // mixer
@@ -84,13 +86,13 @@ State :: struct {
 state: State
 
 init :: proc(ctx: ^kit.Context) {
-    state = {bpm = 124, cutoff = 0.62, resonance = 0.25, drift = 0.25, detune = 0.04, on = {true, true}, quantize = 0.8, show_sends = true, show_io = true, snap = 1}
+    state = {bpm = 124, cutoff = 0.62, resonance = 0.25, drift = 0.25, detune = 0.04, on = {true, true}, quantize = 80, pad_pan = -0.3, mod_amount = 45, show_sends = true, show_io = true, snap = 1}
     ui_demo_init(&state.app)
     ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
     for i in 0 ..< CHANNELS {
         state.volume[i] = 0.5 if i % 3 != 0 else 0.7
         state.pan[i] = 0
-        state.send[i] = 0.2 * f32(i % 4)
+        state.send[i] = 20 * f32(i % 4)
     }
     state.pan[4] = 0.3
     state.mute[0] = false
@@ -243,6 +245,12 @@ devices :: proc(c: ^ui.Context) {
                 knob(c, "Drift", &state.drift, "%.2f")
                 knob(c, "Detune", &state.detune, "%.2f")
                 ui.UiFader(c, "Glide", &state.drift, 0, 1, 0, {ui.Fixed(26), ui.Fixed(96)})
+                if ui.UiColumn(c, {size = {ui.Fixed(190), ui.Fit()}, gap = 8}) {
+                    ui.UiValueBar(c, "Pan", &state.pad_pan, ui.ValueBarPan(), {ui.Grow(), {}})
+                    if ui.UiTagged(c, "modulation") {
+                        ui.UiValueBar(c, "Cutoff mod", &state.mod_amount, {minimum = -100, maximum = 100, bipolar = true, format = "%.0f %%"}, {ui.Grow(), {}})
+                    }
+                }
             }
         }
         if ui.UiPanel(c, "Nota EQ-8", {size = {ui.Grow(), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(8), gap = 8}) {
@@ -325,7 +333,7 @@ strip :: proc(c: ^ui.Context, i: int) {
             if i > 0 && i < 5 { ui.UiDropdown(c, ui.UiFormat(c, "##in%d", i), INPUTS[:], &state.input[i], {ui.Grow(), {}}) }
         }
         if state.show_sends {
-            ui.UiSlider(c, ui.UiFormat(c, "A##s%d", i), &state.send[i], 0, 1, {ui.Grow(), {}}, "%.2f")       // GAP: value bar with the value inside and a typed entry
+            ui.UiValueBar(c, ui.UiFormat(c, "A##s%d", i), &state.send[i], {format = "%.0f %%", maximum = 100, snap = 1}, {ui.Grow(), {}})
         }
         ui.UiKnob(c, ui.UiFormat(c, "Pan##p%d", i), &state.pan[i], -1, 1, 0, {ui.Fixed(44), ui.Fixed(44)}, "%.1f")   // GAP: pan with the centre mark and 30L / C / 12R
         if ui.UiRow(c, {size = {ui.Grow(), ui.Grow()}, gap = 8, align = {x = .CENTER}}) {
@@ -373,7 +381,7 @@ pianoRoll :: proc(c: ^ui.Context, screen: ui.Vec2) {
             snaps: [4]string = {"1/4", "1/8", "1/16", "1/32"}
             ui.UiDropdown(c, "##snap", snaps[:], &state.snap, {ui.Fixed(80), {}})
             ui.UiLabelDim(c, "Quantize")
-            ui.UiSlider(c, "Strength", &state.quantize, 0, 1, {ui.Fixed(140), {}}, "%.2f")
+            ui.UiValueBar(c, "Strength", &state.quantize, {maximum = 100, default_value = 100, format = "%.0f %%", snap = 1}, {ui.Fixed(140), {}})
             ui.UiToggle(c, "Scale", &state.scale_on)
             ui.UiSpacer(c)
             ui.UiLabelDim(c, "32 beats")

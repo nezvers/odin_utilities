@@ -108,6 +108,8 @@ text, measure, clip) that the glue fills in. `demo_common/demo_styles.odin` swap
 Rounded rectangles: `RoundedRadius(rect, rounding, max_radius)` takes the rounding as a part of the shortest side (1 = full round, a pill or a circle),
 clamped to half of it and to `max_radius` pixels; `RoundedPoints` writes the polygon into a buffer of yours (`RoundedBuffer`) for a triangle fan.
 
+Value bar: `UiValueBar(&ctx, "Send", &value, {maximum = 100, format = "%.0f %%", snap = 1})` is a number as a bar that fills with the value written in it: drag sideways (relative, Shift for fine), double click or Enter to type it, Ctrl + click or Delete to reset, the arrows step it. `ValueBarPan()` is a bipolar bar written 30L / C / 12R; the tag "modulation" hatches the fill. Limits: horizontal drag only, one bar is typed into at a time, no begin / end events of a drag.
+
 Soft edges: `aa.odin` makes anti-aliased rounded rectangles, rings, discs, lines of any width with round/square/butt ends and mitered joins, and Bezier curves as triangle lists whose edge vertices fade over one pixel (the fringe of NanoVG), written to a storage of yours (`AaMesh`). No shader and no texture: the glue draws the triangles with a color per vertex, in the batch that is open, so a window of soft shapes stays one draw call with its rectangles and text. `ui_default.FillRounded`, `RingRounded`, `Line`, graph cables and ports use it by themselves when the painter has a mesh (`glue_karl2d`, `glue_raylib`, `kit` do); for your own drawing: `ui_default.Polyline`, `Bezier`, `RouteLine`, `Disc`, `PolygonSmooth`. Notes and limits: `docs/ANTI_ALIASING.md`; the `smooth` demo shows them next to the plain shapes.
 
 ## The look: themes, fonts, icons

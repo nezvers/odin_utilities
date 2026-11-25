@@ -370,6 +370,7 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.BUTTON] = DrawButton
     style.procs[.TOGGLE] = DrawToggle
     style.procs[.SLIDER] = DrawSlider
+    style.procs[.VALUE_BAR] = DrawValueBar
     style.procs[.PROGRESS] = DrawProgress
     style.procs[.TEXT_FIELD] = DrawTextField
     style.procs[.SEPARATOR] = DrawSeparator
