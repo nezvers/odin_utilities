@@ -88,6 +88,7 @@ Provider :: struct {
     failed_authentications: int,        // token requests refused for their client authentication (a test sees the retry)
     requests: int,                      // how many requests were answered (a test can see that the provider was asked)
     authorize_requests: int,
+    revocations: int,                   // tokens the client asked to revoke (and that were known)
     nonce_of_last_code: [64]u8,
 }
 
@@ -159,8 +160,8 @@ Step :: proc(provider: ^Provider) {
     switch path {
     case "/.well-known/openid-configuration":
         issuer: string = Issuer(provider)
-        document: string = fmt.tprintf("{{\"issuer\":\"%s\",\"authorization_endpoint\":\"%s/authorize\",\"token_endpoint\":\"%s/token\",\"jwks_uri\":\"%s/jwks\",\"userinfo_endpoint\":\"%s/userinfo\",\"device_authorization_endpoint\":\"%s/device\",\"response_types_supported\":[\"code\"],\"id_token_signing_alg_values_supported\":[\"%s\"]}}",
-            issuer, issuer, issuer, issuer, issuer, issuer, "ES256" if provider.options.algorithm == .ES256 else "RS256")
+        document: string = fmt.tprintf("{{\"issuer\":\"%s\",\"authorization_endpoint\":\"%s/authorize\",\"token_endpoint\":\"%s/token\",\"jwks_uri\":\"%s/jwks\",\"revocation_endpoint\":\"%s/revoke\",\"end_session_endpoint\":\"%s/logout\",\"userinfo_endpoint\":\"%s/userinfo\",\"device_authorization_endpoint\":\"%s/device\",\"response_types_supported\":[\"code\"],\"id_token_signing_alg_values_supported\":[\"%s\"]}}",
+            issuer, issuer, issuer, issuer, issuer, issuer, issuer, issuer, "ES256" if provider.options.algorithm == .ES256 else "RS256")
         respond(client, 200, "application/json", document)
     case "/jwks":
         jwk: [1024]u8
@@ -184,6 +185,19 @@ Step :: proc(provider: ^Provider) {
         redirectTo(client, location)
     case "/token":
         token(provider, client, body, head)
+    case "/revoke":
+        // RFC 7009: the client is authenticated like at the token endpoint; an unknown token is answered 200 too
+        if !clientAuthenticated(provider, body, head) {
+            provider.failed_authentications += 1
+            respond(client, 401, "application/json", `{"error":"invalid_client"}`)
+            return
+        }
+        revoke_scratch: [512]u8
+        if code := findCode(provider, oidc.QueryValue(body, "token", revoke_scratch[:]), 2); code != nil {
+            code.used = true
+            provider.revocations += 1
+        }
+        respond(client, 200, "application/json", "")
     case "/device":
         code := newCode(provider, 3, "", "")
         respond(client, 200, "application/json", fmt.tprintf("{{\"device_code\":\"%s\",\"user_code\":\"WDJB-MJHT\",\"verification_uri\":\"%s/activate\",\"expires_in\":300,\"interval\":1}}", string(code.value[:code.value_length]), Issuer(provider)))

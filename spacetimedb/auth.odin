@@ -96,6 +96,7 @@ rebaseMetadata :: proc(metadata: ^oidc.Metadata, old_start: uintptr) {
     metadata.userinfo_endpoint = rebased(metadata.storage[:], old_start, metadata.userinfo_endpoint)
     metadata.device_authorization_endpoint = rebased(metadata.storage[:], old_start, metadata.device_authorization_endpoint)
     metadata.end_session_endpoint = rebased(metadata.storage[:], old_start, metadata.end_session_endpoint)
+    metadata.revocation_endpoint = rebased(metadata.storage[:], old_start, metadata.revocation_endpoint)
 }
 
 @(private)

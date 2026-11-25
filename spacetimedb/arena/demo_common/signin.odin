@@ -48,6 +48,7 @@ Signin :: struct {
     restoring: bool,                // SIGNING_IN is the return of a stored sign in (no browser), not a new login
     saved: [512]u8,                 // the refresh token that is in the store file now: a new one (the provider rotates) is written when it differs
     saved_length: int,
+    revoked: bool,                  // the provider took the refresh token back at the last Sign out (false: offline, or no endpoint)
     message: [240]u8,               // why a sign in did not work
     message_length: int,
 }
@@ -180,6 +181,10 @@ signinOut :: proc() {
     if signin.account != nil {
         // signing out forgets the stored sign in of THIS account (another window may be signed in with another one: its file stays)
         if path := signinStoreFile(string(signin.account.provider[:signin.account.provider_length])); path != "" { oidc.StoreRemove(path) }
+        // the provider is told too (best effort: offline it still works), so a copy of the stored token elsewhere is dead as well
+        if token := signin.account.session.tokens.refresh_token; token != "" {
+            signin.revoked = oidc.Revoke(&signin.account.session.metadata, signin.account.session.config, token, "refresh_token")
+        }
         free(signin.account)
         signin.account = nil
     }

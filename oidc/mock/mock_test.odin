@@ -519,3 +519,44 @@ test_the_login_address_is_given_to_the_opener :: proc(t: ^testing.T) {
         testing.expect_value(t, last, oidc.LoginUrl(pair.login))
     }
 }
+
+// Revocation (RFC 7009) and the end session address: after `Revoke` the refresh token is refused, the user info is read into a struct, a provider without the endpoint says no
+@(test)
+test_revoking_a_refresh_token_and_the_end_session_address :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    pair: Pair
+    if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-9", email = "a@b.c", userinfo_name = "Ada"}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+    defer without(&pair)
+    config: oidc.ClientConfig = {issuer = Issuer(pair.provider), client_id = "game"}
+    testing.expect(t, oidc.LoginBegin(pair.login, config), oidc.LoginError(pair.login))
+    browse(t, pair.login)
+    testing.expect_value(t, pair.login.state, oidc.LoginState.DONE)
+    metadata: ^oidc.Metadata = &pair.login.metadata
+    testing.expect(t, metadata.revocation_endpoint != "")
+    refresh: string = strings.clone(pair.login.tokens.refresh_token, context.temp_allocator)
+    renewed: ^oidc.Tokens = new(oidc.Tokens)
+    defer free(renewed)
+    testing.expect(t, oidc.Refresh(metadata, config, refresh, renewed), renewed.error)
+    testing.expect(t, oidc.Revoke(metadata, config, refresh, "refresh_token"))
+    testing.expect_value(t, pair.provider.revocations, 1)
+    testing.expect(t, !oidc.Refresh(metadata, config, refresh, renewed), "a revoked token is refused")
+    testing.expect(t, oidc.Revoke(metadata, config, refresh, "refresh_token"), "revoking twice is no error")
+    // the person is named from the user info into a struct
+    info: [4096]u8
+    text, got := oidc.Userinfo(metadata, pair.login.tokens.access_token, info[:])
+    testing.expect(t, got)
+    fields, parsed := oidc.UserinfoParse(text)
+    testing.expect(t, parsed)
+    testing.expect_value(t, fields.subject, "user-9")
+    testing.expect_value(t, fields.name, "Ada")
+    testing.expect_value(t, fields.email, "a@b.c")
+    // the end session address carries the hint and the way back, encoded
+    out: [1024]u8
+    address: string = oidc.EndSessionUrl(metadata, "a.b.c", "http://127.0.0.1:1/back", out[:])
+    testing.expect(t, strings.has_suffix(address, "/logout?id_token_hint=a.b.c&post_logout_redirect_uri=http%3A%2F%2F127.0.0.1%3A1%2Fback"), address)
+    // no endpoint: nothing
+    none: oidc.Metadata
+    testing.expect(t, !oidc.Revoke(&none, config, refresh))
+    testing.expect_value(t, oidc.EndSessionUrl(&none, "x", "", out[:]), "")
+}

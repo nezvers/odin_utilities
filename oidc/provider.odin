@@ -24,6 +24,7 @@ Metadata :: struct {
     userinfo_endpoint: string,
     device_authorization_endpoint: string,
     end_session_endpoint: string,
+    revocation_endpoint: string,
     storage: [PROVIDER_STORAGE]u8,
     used: int,
 }
@@ -71,6 +72,7 @@ Discover :: proc(issuer: string, metadata: ^Metadata) -> bool {
     metadata.userinfo_endpoint = keep(metadata.storage[:], &metadata.used, jsonText(object, "userinfo_endpoint"))
     metadata.device_authorization_endpoint = keep(metadata.storage[:], &metadata.used, jsonText(object, "device_authorization_endpoint"))
     metadata.end_session_endpoint = keep(metadata.storage[:], &metadata.used, jsonText(object, "end_session_endpoint"))
+    metadata.revocation_endpoint = keep(metadata.storage[:], &metadata.used, jsonText(object, "revocation_endpoint"))
     // the issuer of the document has to be the one that was asked: a provider cannot speak for another one
     if strings.trim_right(metadata.issuer, "/") != strings.trim_right(issuer, "/") { return false }
     return metadata.token_endpoint != "" && metadata.jwks_uri != ""
@@ -156,9 +158,10 @@ clientAuthorization :: proc(config: ClientConfig, form: ^strings.Builder) -> str
 // `invalid_client` (or 401), the secret is sent in the form. A PUBLIC client (SpacetimeAuth's `none`) is refused when it sends a secret at all: the last try is the request without one. `form` has no secret in
 // it; the answer is in `buffer`; `used` says which way worked (or the last one that was tried).
 @(private)
-tokenRequest :: proc(metadata: ^Metadata, config: ClientConfig, form: string, buffer: []u8) -> (response: Response, ok: bool, used: ClientAuthUsed) {
+tokenRequest :: proc(metadata: ^Metadata, config: ClientConfig, form: string, buffer: []u8, endpoint: string = "") -> (response: Response, ok: bool, used: ClientAuthUsed) {
+    url: string = endpoint if endpoint != "" else metadata.token_endpoint
     if config.client_secret == "" {
-        response, ok = PostForm(metadata.token_endpoint, form, buffer)
+        response, ok = PostForm(url, form, buffer)
         return response, ok, .NONE
     }
     credentials: strings.Builder
@@ -167,15 +170,15 @@ tokenRequest :: proc(metadata: ^Metadata, config: ClientConfig, form: string, bu
     strings.write_byte(&credentials, ':')
     UrlEncode(config.client_secret, &credentials)
     encoded, _ := base64.encode(transmute([]u8)strings.to_string(credentials), allocator = context.temp_allocator)
-    response, ok = PostForm(metadata.token_endpoint, form, buffer, strings.concatenate({"Basic ", encoded}, context.temp_allocator))
+    response, ok = PostForm(url, form, buffer, strings.concatenate({"Basic ", encoded}, context.temp_allocator))
     if !ok || !clientRefused(response) { return response, ok, .BASIC }
     in_form: strings.Builder
     strings.builder_init(&in_form, context.temp_allocator)
     strings.write_string(&in_form, form)
     FormField(&in_form, "client_secret", config.client_secret)
-    response, ok = PostForm(metadata.token_endpoint, strings.to_string(in_form), buffer)
+    response, ok = PostForm(url, strings.to_string(in_form), buffer)
     if !ok || !clientRefused(response) { return response, ok, .FORM }
-    response, ok = PostForm(metadata.token_endpoint, form, buffer)
+    response, ok = PostForm(url, form, buffer)
     return response, ok, .WITHOUT_SECRET
 }
 
@@ -252,6 +255,67 @@ Userinfo :: proc(metadata: ^Metadata, access_token: string, out: []u8) -> (json_
     response, requested := Request(metadata.userinfo_endpoint, "GET", headers[:], nil, out)
     if !requested || response.status != 200 { return "", false }
     return string(response.body), true
+}
+
+// Fields of the user info that programs use, read without a copy: the strings point into the JSON text that was given. A field that is not there is "".
+UserinfoFields :: struct {
+    subject: string,
+    name: string,
+    preferred_username: string,       // Discord names the person here
+    email: string,
+    picture: string,
+    email_verified: bool,
+}
+
+UserinfoParse :: proc(json_text: string) -> (fields: UserinfoFields, ok: bool) {
+    fields.subject, ok = JsonString(json_text, "sub")
+    if !ok {
+        // GitHub has no `sub`: `id` is the number that names the person
+        if id, has_id := JsonInt(json_text, "id"); has_id {
+            fields.subject, ok = fmt.tprintf("%d", id), true
+        }
+    }
+    fields.name, _ = JsonString(json_text, "name")
+    fields.preferred_username, _ = JsonString(json_text, "preferred_username")
+    if fields.preferred_username == "" { fields.preferred_username, _ = JsonString(json_text, "login") }
+    fields.email, _ = JsonString(json_text, "email")
+    fields.picture, _ = JsonString(json_text, "picture")
+    if raw, has := JsonValue(json_text, "email_verified"); has { fields.email_verified = raw == "true" }
+    return fields, ok
+}
+
+// ---- ending a login: token revocation (RFC 7009) and the end session address (OpenID RP-Initiated Logout) ------------------------------------------------------------------
+
+// Tells the provider that a token is not wanted any more (a refresh token: the sign in cannot be renewed from any copy of it; an access token). `hint` is "refresh_token" or "access_token" or "".
+// True when the provider answered 2xx (it does for a token it does not know too, by the RFC). False when the provider has no revocation endpoint (the metadata holds none: Google and Discord have one,
+// GitHub's is a different API) or could not be reached: forgetting the token locally is still right, but a copy of it elsewhere stays good until it expires.
+Revoke :: proc(metadata: ^Metadata, config: ClientConfig, token: string, hint: string = "") -> bool {
+    if metadata.revocation_endpoint == "" || token == "" { return false }
+    form: strings.Builder
+    strings.builder_init(&form, context.temp_allocator)
+    FormField(&form, "token", token)
+    if hint != "" { FormField(&form, "token_type_hint", hint) }
+    FormField(&form, "client_id", config.client_id)
+    buffer: [8192]u8
+    response, ok, _ := tokenRequest(metadata, config, strings.to_string(form), buffer[:], metadata.revocation_endpoint)
+    return ok && response.status >= 200 && response.status < 300
+}
+
+// The address where the person ends the session at the provider (the browser has to open it): `end_session_endpoint` with the ID token as a hint, and where to go back to (it has to be registered
+// at the provider; "" sends none). The result is in `out`; "" when the provider has no such endpoint or `out` is too small.
+EndSessionUrl :: proc(metadata: ^Metadata, id_token_hint: string, return_to: string, out: []u8) -> string {
+    if metadata.end_session_endpoint == "" { return "" }
+    builder: strings.Builder
+    strings.builder_init(&builder, context.temp_allocator)
+    strings.write_string(&builder, metadata.end_session_endpoint)
+    strings.write_byte(&builder, '&' if strings.contains(metadata.end_session_endpoint, "?") else '?')
+    query: strings.Builder
+    strings.builder_init(&query, context.temp_allocator)
+    if id_token_hint != "" { FormField(&query, "id_token_hint", id_token_hint) }
+    if return_to != "" { FormField(&query, "post_logout_redirect_uri", return_to) }
+    text: string = strings.concatenate({strings.to_string(builder), strings.to_string(query)}, context.temp_allocator)
+    if len(text) > len(out) { return "" }
+    return string(out[:copy(out, text)])
 }
 
 // ---- the device flow (RFC 8628) -------------------------------------------------------------------------------------------------------------------------------------------
