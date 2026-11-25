@@ -206,7 +206,11 @@ githubDevice :: proc(config: oidc.ClientConfig, issuer: string, timeout: f64) ->
         state: oidc.DevicePollState = oidc.DevicePoll(metadata, config, device, tokens)
         if state == .DONE { break }
         if state != .PENDING { return failed(fmt.tprintf("device flow ended: %v (%s)", state, tokens.error), 1) }
-        if time.duration_seconds(time.tick_since(started)) > limit { return failed("the code expired", 1) }
+        if time.duration_seconds(time.tick_since(started)) > limit {
+            // the wait is `--timeout` (300 s by default), the code of GitHub lives longer: say which of the two ended it
+            if device.expires_in > 0 && limit >= f64(device.expires_in) { return failed("the code expired", 1) }
+            return failed(fmt.tprintf("no approval in %.0f seconds (the code is still valid for a while: --timeout seconds waits longer)", timeout), 1)
+        }
         waitTurn(nil)
     }
     info: [16384]u8

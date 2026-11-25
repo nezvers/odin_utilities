@@ -17,7 +17,9 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] GitHub tried live with the tool (device flow, user from api.github.com)
 - [x] A SpacetimeDB login with a real Google ID token (`spacetimedb/tool/auth_live -- google`): the server verified it, the module's policy let the person in and refused anonymous
 - [x] SpacetimeAuth tried live with tool/login (login, refresh with offline_access) and with `spacetimedb/tool/auth_live -- spacetimeauth` (a real local SpacetimeDB server accepted the token, the module let the person in)
-- [ ] (medium) Discord with auth_live; Google and GitHub again through the new browser launcher
+- [ ] (medium) Discord with auth_live
+- [x] Google again through the browser launcher (2026-11-25: ID token verified, refresh works, user info); GitHub again (device flow approved, user info read from api.github.com; checked with a small harness over `DeviceStart`/`DevicePoll`/`Userinfo`, the tool itself did not report an approval in two runs: see the open item below)
+- [ ] (medium) `tool/login github` did not see an approval that GitHub accepted (the harness did): run it again with `--timeout 840` and find out why
 - [ ] (medium) The arena: a sign-in window with the `ui` library (name from the claims) and the choice of provider
 - [ ] (low) `JsonString` returns escapes as written (`\\"` in a name): add a decoding variant that writes into a buffer
 - [ ] (medium) `BrowserOpen` gives no sign when Firefox starts slowly (about 10 s cold): print the address always
