@@ -849,6 +849,19 @@ FieldBox :: proc(painter: ^Painter, rect: ui.Rect, focused: bool, disabled: bool
     }
 }
 
+// A strip of `width` at one side of `rect` that goes from the color of the box (opaque at the edge) to nothing, in steps of a pixel pair
+FadeEdge :: proc(painter: ^Painter, rect: ui.Rect, width: f32, box: ui.Color, right: bool) {
+    steps: int = max(int(width * 0.5), 2)
+    step_width: f32 = width / f32(steps)
+    for i in 0 ..< steps {
+        strength: f32 = 1 - f32(i) / f32(steps)
+        color: ui.Color = box
+        color.a = u8(f32(box.a) * strength)
+        x: f32 = rect.x + step_width * f32(i) if !right else rect.x + rect.z - step_width * f32(i + 1)
+        painter.fill_rect(painter, {x, rect.y, step_width, rect.w}, color)
+    }
+}
+
 DrawTextField :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     painter: ^Painter = painterOf(ctx)
     theme: ^Theme = &painter.theme
@@ -876,6 +889,10 @@ DrawTextField :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
     if focused && low != high {
         TextLeft(painter, info.text[low:high], info.rect, info.font_size, shift + start, theme.accent_text)
     }
+    // the cut edges fade into the box: a text that goes on is not a text that ends there
+    total: f32 = painter.measure_text(painter, info.text, info.font_size).x
+    if info.scroll > 1 { FadeEdge(painter, inside, padding, theme.track, false) }
+    if total - info.scroll > inside.z - padding + 1 { FadeEdge(painter, inside, padding, theme.track, true) }
     // the caret blinks twice a second
     if focused && math.mod(ctx.time, 1.0) < 0.5 {
         x: f32 = info.rect.x + shift + painter.measure_text(painter, info.text[:info.cursor], info.font_size).x

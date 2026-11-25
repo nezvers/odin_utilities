@@ -509,8 +509,30 @@ UiTextField :: proc(ctx: ^Context, name: string, buffer: []u8, length: ^int, siz
             state.anchor, state.cursor = textWordAt(string(buffer[:length^]), state.cursor)
         }
     } else if interaction.pressed && ctx.input.mouse_down && !ctx.input.mouse_pressed && ctx.focus == id {
-        // dragging with the button held selects from where it went down (and a pointer past the edge of a long text moves the view: the clamp below follows the cursor)
-        state.cursor = textFieldCursorAt(ctx, string(buffer[:length^]), ctx.input.mouse_position.x - state.rect.x - metrics.padding.x + state.scroll.x)
+        // dragging with the button held selects from where it went down. A pointer past the edge of a text that is longer than the field walks the cursor along the text, faster the
+        // farther it is (the view follows through the clamp below); inside of the field the cursor is where the pointer is
+        mouse_x: f32 = ctx.input.mouse_position.x
+        left: f32 = state.rect.x + metrics.padding.x
+        right: f32 = state.rect.x + state.rect.z - metrics.padding.x
+        text: string = string(buffer[:length^])
+        overflows: bool = measureText(ctx, text, metrics.font_size).x > right - left
+        beyond: f32 = left - mouse_x if mouse_x < left else mouse_x - right if mouse_x > right else 0
+        if overflows && beyond > 0 {
+            state.drag.x += (6 + beyond * 0.5) * ctx.delta_time
+            steps: int = int(state.drag.x)
+            state.drag.x -= f32(steps)
+            for _ in 0 ..< steps {
+                if mouse_x < left {
+                    if state.cursor > 0 { _, width := utf8.decode_last_rune_in_string(text[:state.cursor]); state.cursor -= width }
+                } else if state.cursor < len(text) {
+                    _, width := utf8.decode_rune_in_string(text[state.cursor:])
+                    state.cursor += width
+                }
+            }
+        } else {
+            state.drag.x = 0
+            state.cursor = textFieldCursorAt(ctx, text, mouse_x - state.rect.x - metrics.padding.x + state.scroll.x)
+        }
     }
     state.editing = ctx.focus == id
     if state.editing {

@@ -6807,3 +6807,26 @@ test_clip_body_places_notes_peaks_and_cells :: proc(t: ^testing.T) {
     testing.expect(t, TimelineClipSetBody(timeline, clip, body))
     testing.expect_value(t, TimelineClipGet(timeline, clip).body.kind, ClipBodyKind.NOTES)
 }
+
+@(test)
+test_a_drag_past_the_edge_of_a_long_text_walks_the_cursor_along_it :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    buffer: [128]u8
+    text: string = "the quick brown fox jumps over the lazy dog and keeps running far away"
+    copy(buffer[:], text)
+    length: int = len(text)
+    for _ in 0 ..< 2 { fieldFrame(harness, pointerAt({20, 10}), buffer[:], &length) }
+    fieldFrame(harness, pointerAt({20, 10}, true, true), buffer[:], &length)
+    state: ^WidgetState = stateFind(&harness.ctx, UiIdPath("Field"))
+    start: int = state.cursor
+    for _ in 0 ..< 30 { fieldFrame(harness, pointerAt({260, 10}, true), buffer[:], &length) }
+    testing.expect(t, state.cursor > start + 2 && state.cursor < length - 10, "half a second past the edge: some letters, not the whole text")
+    for _ in 0 ..< 600 { fieldFrame(harness, pointerAt({260, 10}, true), buffer[:], &length) }
+    testing.expect_value(t, state.cursor, length)
+    // back inside of the field: the cursor is where the pointer is, no longer walking
+    fieldFrame(harness, pointerAt({100, 10}, true), buffer[:], &length)
+    testing.expect(t, state.cursor > 0 && state.cursor < length, "the pointer inside of the field puts the cursor under it")
+    fieldFrame(harness, pointerAt({100, 10}, false, false, true), buffer[:], &length)
+}

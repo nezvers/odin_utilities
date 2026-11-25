@@ -151,7 +151,7 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Node graph: nodes outside of the view are not declared (`GraphNodesByDepth` with a view)
 - [x] Text field: a text longer than the field scrolls with the caret and is clipped (default), a click is mapped through the scroll; `read_only` for the field and the area (select and copy, no edits)
 - [x] Held keys repeat in the kit (`Input.keys_repeat`, `InputRepeat`): Backspace, Delete, the arrows, Home and End in text, the directions and pages as actions
-- [ ] (low) An ellipsis or a fade at the cut edge of a clipped field; the pointer past the edge of a long text scrolls it while it is dragged (the cursor moves, the view follows on the next frame)
+- [x] (low) An ellipsis or a fade at the cut edge of a clipped field; the pointer past the edge of a long text scrolls it while it is dragged (the cursor moves, the view follows on the next frame)
 
 ## Nota gaps (docs/NOTA_GAP.md, demo `nota`)
 - [x] Value bar (`UiValueBar`, `widgets_valuebar.odin`): a filling bar with the value inside, relative drag, Shift for fine, double click or Enter to type, Ctrl + click or Delete to reset, snap, bipolar fill (`ValueBarPan`: 30L / C / 12R), modulation hatch by the tag "modulation"; used by the `nota` demo

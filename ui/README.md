@@ -512,7 +512,7 @@ button). The first example tab, Rebind, is a controls page of a game with two in
 that gives the face buttons pictures. The kit has gamepad input now: `kit.PadButton`, `Input.pad_down` / `pad_pressed` (the first pad, raylib and Karl2D), `kit.PadTap` in scripts.
 
 ## Known limits
-a text field edits one line of UTF-8 and scrolls it sideways (a text area has several lines, wrapped by words); a field does not show an ellipsis for what is cut, it clips;
+a text field edits one line of UTF-8 and scrolls it sideways (a text area has several lines, wrapped by words); a field fades the edges where its text is cut (the default style; no ellipsis), and a drag past an edge walks the cursor along the text;
 an element that is declared after the floating element that names it as parent is not found (declare the parent first).
 
 - **Settings and hotkeys** (`settings.odin`, `keymap.odin`): plain numbers and a table read every frame, nothing is saved and nothing tells the program that they changed; a double click is by time and place, not by the button; a binding is one input with modifiers (no sequences, no two inputs at once, no hold); two actions on one input both fire unless the program checks `KeyMapConflict`; a key that is not in the table does nothing (Backspace, Delete and the text keys of a field are `Input.keys`, not actions).
