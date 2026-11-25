@@ -18,6 +18,7 @@ package ui_raylib
 
 import "core:math"
 import rl "vendor:raylib"
+import rlgl "vendor:raylib/rlgl"
 import ui ".."
 import ui_default "../default_style"
 import font "../../font"
@@ -140,6 +141,8 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^rl.Font = nil) {
             rl.DrawRectangleRec(transmute(rl.Rectangle)ui_default.PaintRect(painter, rect), rl.Color(color))
         },
         fill_polygon = fillPolygon,
+        fill_mesh = fillMesh,
+        mesh = {vertices = meshStorage[:]},
         fill_rounded = proc(painter: ^ui_default.Painter, rect: ui.Rect, radius: f32, color: ui.Color) {
             ui_default.PainterFlush(painter)
             // raylib's roundness is the radius as a part of half of the shortest side: the same as the rounding of the ui
@@ -299,6 +302,35 @@ fillPolygon :: proc(painter: ^ui_default.Painter, points: []ui.Vec2, color: ui.C
         buffer[i] = ui_default.PaintPoint(painter, points[count - 1 - i])
     }
     rl.DrawTriangleFan(raw_data(buffer[:]), i32(count), rl.Color(color))
+}
+
+// Where the soft edged shapes are built (a shape is drawn as soon as it is built, so one storage serves all painters)
+MESH_VERTICES :: 24576
+@(private)
+meshStorage: [MESH_VERTICES]ui.AaVertex
+
+// The triangles of a smooth shape: alpha of the color times the coverage of each corner, in the batch of raylib that is open. Raylib culls clockwise triangles, so each one is turned the right way.
+@(private)
+fillMesh :: proc(painter: ^ui_default.Painter, triangles: []ui.AaVertex, color: ui.Color) {
+    ui_default.PainterFlush(painter)
+    rlgl.Begin(rlgl.TRIANGLES)
+    defer rlgl.End()
+    for i := 0; i + 2 < len(triangles); i += 3 {
+        a: ui.Vec2 = ui_default.PaintPoint(painter, triangles[i].position)
+        b: ui.Vec2 = ui_default.PaintPoint(painter, triangles[i + 1].position)
+        c: ui.Vec2 = ui_default.PaintPoint(painter, triangles[i + 2].position)
+        first, second: int = i + 1, i + 2
+        if (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y) > 0 {
+            first, second = second, first
+        }
+        corners: [3]int = {i, first, second}
+        for corner in corners {
+            vertex: ui.AaVertex = triangles[corner]
+            point: ui.Vec2 = ui_default.PaintPoint(painter, vertex.position)
+            rlgl.Color4ub(color.r, color.g, color.b, u8(f32(color.a) * vertex.coverage + 0.5))
+            rlgl.Vertex2f(point.x, point.y)
+        }
+    }
 }
 
 // The size of the window in logical units: pass the UI scale of the painter (`ui_default.PainterScale(&painter)`)

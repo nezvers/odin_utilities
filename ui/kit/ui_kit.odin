@@ -62,6 +62,30 @@ fontOf :: proc(painter: ^ui_default.Painter) -> kit.Font {
     return font if font != kit.FONT_DEFAULT else kit.Font(painter.glue_fonts[.REGULAR])
 }
 
+// Where the soft edged shapes are built (a shape is drawn as soon as it is built, so one storage serves all painters)
+MESH_VERTICES :: 24576
+@(private)
+meshStorage: [MESH_VERTICES]ui.AaVertex
+
+// The triangles of a smooth shape through the kit, in chunks: alpha of the color times the coverage of each corner
+@(private)
+fillMesh :: proc(painter: ^ui_default.Painter, triangles: []ui.AaVertex, color: ui.Color) {
+    ctx: ^kit.Context = contextOf(painter)
+    if !kit.CanDrawTriangles(ctx) { return }
+    CHUNK :: 768
+    converted: [CHUNK]kit.Vertex
+    offset: int = 0
+    for offset < len(triangles) {
+        count: int = min(CHUNK, len(triangles) - offset)
+        for i in 0 ..< count {
+            vertex: ui.AaVertex = triangles[offset + i]
+            converted[i] = {ui_default.PaintPoint(painter, vertex.position), {color.r, color.g, color.b, u8(f32(color.a) * vertex.coverage + 0.5)}}
+        }
+        kit.DrawTriangles(ctx, converted[:count])
+        offset += count
+    }
+}
+
 // Fills a painter with the procs that draw through the kit. Call Begin every frame: it tells the painter which kit.Context it draws into.
 PainterInit :: proc(painter: ^ui_default.Painter) {
     painter^ = {
@@ -76,6 +100,8 @@ PainterInit :: proc(painter: ^ui_default.Painter) {
                 kit.DrawTriangle(contextOf(painter), first, ui_default.PaintPoint(painter, points[i]), ui_default.PaintPoint(painter, points[i + 1]), kit.Color(color))
             }
         },
+        fill_mesh = fillMesh,
+        mesh = {vertices = meshStorage[:]},
         fill_rounded = proc(painter: ^ui_default.Painter, rect: ui.Rect, radius: f32, color: ui.Color) {
             scale: f32 = ui_default.PainterScale(painter)
             fillRounded(painter, ui_default.PaintRect(painter, rect), radius * scale, color)

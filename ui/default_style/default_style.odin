@@ -226,6 +226,8 @@ Painter :: struct {
     fill_rect: proc(painter: ^Painter, rect: ui.Rect, color: ui.Color),
     fill_polygon: proc(painter: ^Painter, points: []ui.Vec2, color: ui.Color),                  // convex, nil: no polygons (arrows and rounded corners fall back)
     fill_rounded: proc(painter: ^Painter, rect: ui.Rect, radius: f32, color: ui.Color),         // nil: made from fill_polygon
+    fill_mesh: proc(painter: ^Painter, triangles: []ui.AaVertex, color: ui.Color),              // a triangle list whose vertices carry a coverage (alpha = color.a * coverage), in logical units: soft edged shapes (aa.odin); nil: no smooth shapes
+    mesh: ui.AaMesh,                // where the smooth shapes are built before fill_mesh draws them: the glue gives it a storage (ui.AaMeshInit), without one everything is drawn the plain way
     draw_text: proc(painter: ^Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color),
     measure_text: proc(painter: ^Painter, text: string, size: f32) -> ui.Vec2,
     draw_icon: proc(painter: ^Painter, icon: icons.Icon, rect: ui.Rect, color: ui.Color),      // a Lucide icon in a square; nil: the style draws what it can with rectangles and triangles
@@ -419,6 +421,11 @@ FillRounded :: proc(painter: ^Painter, rect: ui.Rect, rounding: f32, color: ui.C
         painter.fill_rect(painter, rect, color)
         return
     }
+    if SmoothReady(painter) {
+        ui.AaRounded(smoothBegin(painter), rect, {radius, radius, radius, radius}, SmoothPixel(painter))
+        smoothEnd(painter, color)
+        return
+    }
     if painter.fill_rounded != nil {
         painter.fill_rounded(painter, rect, radius, color)
         return
@@ -465,6 +472,11 @@ Shadow :: proc(painter: ^Painter, rect: ui.Rect, radius: f32, strength: f32 = 1)
 // through its middle (a painter without polygons gets four bars)
 RingRounded :: proc(painter: ^Painter, rect: ui.Rect, radius: f32, width: f32, color: ui.Color) {
     if color.a == 0 || width <= 0 || rect.z <= 0 || rect.w <= 0 { return }
+    if SmoothReady(painter) && radius > 0.5 {
+        ui.AaRoundedRing(smoothBegin(painter), rect, min(radius, min(rect.z, rect.w) * 0.5), width, SmoothPixel(painter))
+        smoothEnd(painter, color)
+        return
+    }
     if painter.fill_polygon == nil || radius <= 0.5 {
         painter.fill_rect(painter, {rect.x, rect.y, rect.z, width}, color)
         painter.fill_rect(painter, {rect.x, rect.y + rect.w - width, rect.z, width}, color)
@@ -499,6 +511,15 @@ Line :: proc(painter: ^Painter, from: ui.Vec2, to: ui.Vec2, thickness: f32, colo
     delta: ui.Vec2 = to - from
     length: f32 = math.sqrt(delta.x * delta.x + delta.y * delta.y)
     if length < 0.001 { return }
+    if SmoothReady(painter) {
+        // a line that runs along the pixel grid stays as sharp as a rectangle; any other gets soft edges
+        if delta.x != 0 && delta.y != 0 {
+            points: [2]ui.Vec2 = {from, to}
+            ui.AaStroke(smoothBegin(painter), points[:], false, thickness, SmoothPixel(painter))
+            smoothEnd(painter, color)
+            return
+        }
+    }
     side: ui.Vec2 = {-delta.y, delta.x} * (thickness * 0.5 / length)
     if painter.fill_polygon == nil {
         painter.fill_rect(painter, {min(from.x, to.x), min(from.y, to.y), max(abs(delta.x), thickness), max(abs(delta.y), thickness)}, color)
@@ -519,7 +540,7 @@ ArrowShape :: proc(painter: ^Painter, center: ui.Vec2, size: f32, direction: int
     case 2: points = {{center.x + h * 0.6, center.y - h}, {center.x - h * 0.8, center.y}, {center.x + h * 0.6, center.y + h}}
     case: points = {{center.x - h * 0.6, center.y - h}, {center.x + h * 0.8, center.y}, {center.x - h * 0.6, center.y + h}}
     }
-    painter.fill_polygon(painter, points[:], color)
+    PolygonSmooth(painter, points[:], color)
 }
 
 // A Lucide icon in a square of `size` around `center`. A painter without icons gets nothing (IconOrArrow has a fallback for the arrows).

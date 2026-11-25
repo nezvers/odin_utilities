@@ -33,6 +33,7 @@ HeadlessInit :: proc(backend: ^Backend, state: ^HeadlessState, screen: Vec2 = HE
         draw_circle = proc(backend: ^Backend, center: Vec2, radius: f32, color: Color) {},
         draw_circle_outline = proc(backend: ^Backend, center: Vec2, radius: f32, thickness: f32, color: Color) {},
         draw_triangle = proc(backend: ^Backend, a: Vec2, b: Vec2, c: Vec2, color: Color) {},
+        draw_triangles = proc(backend: ^Backend, vertices: []Vertex) {},
         draw_text = proc(backend: ^Backend, text: string, position: Vec2, size: f32, color: Color) {},
         measure_text = proc(backend: ^Backend, text: string, size: f32) -> Vec2 { return {f32(len(text)) * size * 0.5, size} },
         font_load = proc(backend: ^Backend, bytes: []u8, size: f32, glyph_count: int, first_glyph: int) -> Font {

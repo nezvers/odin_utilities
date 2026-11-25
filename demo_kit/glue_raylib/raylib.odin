@@ -112,6 +112,7 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             rl.DrawRing(center, max(radius - thickness, 0), radius, 0, 360, 36, rl.Color(color))
         },
         draw_triangle = drawTriangle,
+        draw_triangles = drawTriangles,
         draw_text = proc(backend: ^kit.Backend, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
             state: ^State = cast(^State)backend.state
             when kit.DEMO_VECTOR_TEXT != "" {
@@ -298,6 +299,23 @@ drawTriangle :: proc(backend: ^kit.Backend, a: kit.Vec2, b: kit.Vec2, c: kit.Vec
         rl.DrawTriangle(a, c, b, rl.Color(color))
     } else {
         rl.DrawTriangle(a, b, c, rl.Color(color))
+    }
+}
+
+// A triangle list with a color per vertex. Raylib culls clockwise triangles, so each one is turned the right way.
+@(private)
+drawTriangles :: proc(backend: ^kit.Backend, vertices: []kit.Vertex) {
+    rlgl.Begin(rlgl.TRIANGLES)
+    defer rlgl.End()
+    for i := 0; i + 2 < len(vertices); i += 3 {
+        a, b, c: kit.Vertex = vertices[i], vertices[i + 1], vertices[i + 2]
+        if (b.position.x - a.position.x) * (c.position.y - a.position.y) - (b.position.y - a.position.y) * (c.position.x - a.position.x) > 0 {
+            b, c = c, b
+        }
+        for corner in ([3]kit.Vertex{a, b, c}) {
+            rlgl.Color4ub(corner.color.r, corner.color.g, corner.color.b, corner.color.a)
+            rlgl.Vertex2f(corner.position.x, corner.position.y)
+        }
     }
 }
 

@@ -51,6 +51,7 @@ Backend :: struct {
     draw_circle: proc(backend: ^Backend, center: Vec2, radius: f32, color: Color),
     draw_circle_outline: proc(backend: ^Backend, center: Vec2, radius: f32, thickness: f32, color: Color),
     draw_triangle: proc(backend: ^Backend, a: Vec2, b: Vec2, c: Vec2, color: Color),
+    draw_triangles: proc(backend: ^Backend, vertices: []Vertex),         // optional (nil: not supported): a triangle list, a color per vertex that blends across the triangle (soft edges), in one call
     draw_text: proc(backend: ^Backend, text: string, position: Vec2, size: f32, color: Color),
     measure_text: proc(backend: ^Backend, text: string, size: f32) -> Vec2,
 
@@ -136,6 +137,24 @@ DrawCircleOutline :: proc(ctx: ^Context, center: Vec2, radius: f32, thickness: f
 DrawTriangle :: proc(ctx: ^Context, a: Vec2, b: Vec2, c: Vec2, color: Color) {
     ctx.backend.stats.draw_calls += 1
     ctx.backend.draw_triangle(ctx.backend, a, b, c, color)
+}
+
+// A color per corner
+Vertex :: struct {
+    position: Vec2,
+    color: Color,
+}
+
+// Does the backend draw triangles with a color per vertex (DrawTriangles)
+CanDrawTriangles :: proc(ctx: ^Context) -> bool {
+    return ctx.backend.draw_triangles != nil
+}
+
+// A triangle list (three vertices each, either winding), the colors blended across each triangle: the way to a soft edge (a vertex with alpha 0). One call for any number of triangles.
+DrawTriangles :: proc(ctx: ^Context, vertices: []Vertex) {
+    if ctx.backend.draw_triangles == nil || len(vertices) < 3 { return }
+    ctx.backend.stats.draw_calls += 1
+    ctx.backend.draw_triangles(ctx.backend, vertices)
 }
 
 DrawText :: proc(ctx: ^Context, text: string, position: Vec2, size: f32, color: Color) {

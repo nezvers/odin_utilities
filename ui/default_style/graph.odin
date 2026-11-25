@@ -137,8 +137,12 @@ DrawCable :: proc(ctx: ^ui.Context, cable: ^ui.CableDraw) {
     if .DISABLED in cable.flags { color.a = 70 }
     points: [ui.CABLE_MAX_SEGMENTS * ui.CABLE_PIECES + 1]ui.Vec2
     flat: []ui.Vec2 = ui.CableFlatten(cable.route, points[:])
-    for i in 1 ..< len(flat) {
-        Line(painter, flat[i - 1], flat[i], width, color)
+    if SmoothReady(painter) {
+        RouteLine(painter, cable.route, width, color)     // one soft edged stroke, round ends, as many pieces as the curve needs
+    } else {
+        for i in 1 ..< len(flat) {
+            Line(painter, flat[i - 1], flat[i], width, color)
+        }
     }
     // the text on the cable, on a small plate at the middle of its length
     if cable.label != "" && len(flat) >= 2 {
@@ -177,5 +181,5 @@ DrawTie :: proc(ctx: ^ui.Context, tie: ^ui.TieDraw) {
     }
     head: ui.Vec2 = tie.center + tie.normal * tie.half_length
     radius: f32 = tie.width * 0.8
-    FillRounded(painter, {head.x - radius, head.y - radius, radius * 2, radius * 2}, 1, color)
+    Disc(painter, head, radius, color)
 }

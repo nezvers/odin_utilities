@@ -144,6 +144,8 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^karl2d.Font = nil) {
                 karl2d.draw_triangle({first, ui_default.PaintPoint(painter, points[i]), ui_default.PaintPoint(painter, points[i + 1])}, color)
             }
         },
+        fill_mesh = fillMesh,
+        mesh = {vertices = meshStorage[:]},
         draw_text = proc(painter: ^ui_default.Painter, text: string, position: ui.Vec2, size: f32, color: ui.Color) {
             scale: f32 = ui_default.PainterScale(painter)
             karl2d.draw_text(text, ui_default.PaintPoint(painter, position), size * scale, color, fontOf(painter))
@@ -171,6 +173,29 @@ PainterInit :: proc(painter: ^ui_default.Painter, font: ^karl2d.Font = nil) {
                 karl2d.set_scissor_rect(nil)
             }
         },
+    }
+}
+
+// Where the soft edged shapes of every painter are built (one frame at a time: a shape is drawn as soon as it is built, so one storage serves all painters)
+MESH_VERTICES :: 24576
+@(private)
+meshStorage: [MESH_VERTICES]ui.AaVertex
+
+// The triangles of a smooth shape, each corner with the alpha of the color times its coverage: Karl2D puts them in the batch that is open, with the rectangles and the text
+@(private)
+fillMesh :: proc(painter: ^ui_default.Painter, triangles: []ui.AaVertex, color: ui.Color) {
+    ui_default.PainterFlush(painter)
+    CHUNK :: 768
+    converted: [CHUNK]karl2d.Colored_Vertex
+    offset: int = 0
+    for offset < len(triangles) {
+        count: int = min(CHUNK, len(triangles) - offset)
+        for i in 0 ..< count {
+            vertex: ui.AaVertex = triangles[offset + i]
+            converted[i] = {ui_default.PaintPoint(painter, vertex.position), {color.r, color.g, color.b, u8(f32(color.a) * vertex.coverage + 0.5)}}
+        }
+        karl2d.draw_colored_triangles(converted[:count])
+        offset += count
     }
 }
 

@@ -101,6 +101,9 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         draw_triangle = proc(backend: ^kit.Backend, a: kit.Vec2, b: kit.Vec2, c: kit.Vec2, color: kit.Color) {
             karl2d.draw_triangle({a, b, c}, color)
         },
+        draw_triangles = proc(backend: ^kit.Backend, vertices: []kit.Vertex) {
+            karl2d.draw_colored_triangles(transmute([]karl2d.Colored_Vertex)vertices)
+        },
         draw_text = proc(backend: ^kit.Backend, text: string, position: kit.Vec2, size: f32, color: kit.Color) {
             state: ^State = cast(^State)backend.state
             when kit.DEMO_VECTOR_TEXT != "" {
