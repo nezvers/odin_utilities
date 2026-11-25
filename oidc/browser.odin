@@ -57,12 +57,59 @@ BrowserShortcutRemove :: proc(path: string) {
     if strings.has_suffix(path, ".url") && strings.contains(path, "oidc_open_browser_") { _ = os.remove(path) }
 }
 
+// The program of the default browser on Windows, from the two registry entries that name it (the choice of the person for https links, then the open command of that kind of file); "" when it cannot be
+// found (the caller then uses the system opener). Only these two keys are read: nothing of the browser's own data.
+browserDefaultExecutable :: proc() -> string {
+    when ODIN_OS == .Windows {
+        _, choice, _, error := os.process_exec({command = {"reg", "query", `HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice`, "/v", "ProgId"}}, context.temp_allocator)
+        if error != nil { return "" }
+        id: string = registryValue(string(choice))
+        if id == "" || strings.contains_any(id, " \\\"\r\n&|<>^%") { return "" }
+        _, command, _, command_error := os.process_exec({command = {"reg", "query", strings.concatenate({`HKCR\`, id, `\shell\open\command`}, context.temp_allocator), "/ve"}}, context.temp_allocator)
+        if command_error != nil { return "" }
+        return BrowserExecutableFrom(registryValue(string(command)))
+    } else {
+        return ""
+    }
+}
+
+// The value of a `reg query` answer: the text after `REG_SZ` on the line that has it
+@(private)
+registryValue :: proc(output: string) -> string {
+    rest: string = output
+    for line in strings.split_lines_iterator(&rest) {
+        if at := strings.index(line, "REG_SZ"); at >= 0 { return strings.trim_space(line[at + len("REG_SZ"):]) }
+    }
+    return ""
+}
+
+// The program of an open command (`"C:\Program Files\X\x.exe" --single-argument %1`): the quoted path, or the first word; "" unless it is an existing .exe
+BrowserExecutableFrom :: proc(command_line: string) -> string {
+    line: string = strings.trim_space(command_line)
+    path: string
+    if strings.has_prefix(line, `"`) {
+        end: int = strings.index_byte(line[1:], '"')
+        if end < 0 { return "" }
+        path = line[1:1 + end]
+    } else {
+        space: int = strings.index_byte(line, ' ')
+        path = line if space < 0 else line[:space]
+    }
+    if !strings.has_suffix(strings.to_lower(path, context.temp_allocator), ".exe") || !os.exists(path) { return "" }
+    return path
+}
+
 // Opens an address in the default browser. True means that the opener was started, not that a window is there yet (a browser that starts cold takes seconds): print the address as well.
 BrowserOpen :: proc(url: string) -> bool {
     // only web addresses: the opener of the system would also open a file or run a program for a path or another scheme
     if !strings.has_prefix(url, "https://") && !strings.has_prefix(url, "http://") { return false }
     arguments: [5]string
     when ODIN_OS == .Windows {
+        // The default browser's program is started itself: a web address handed to the system can be taken by an app that registered for it (the Discord desktop app takes discord.com links, so the
+        // login ran there and not in the browser). A test that replaces the start keeps the old commands (what is installed on the machine must not change a test).
+        if BrowserLauncher == nil {
+            if exe := browserDefaultExecutable(); exe != "" { return BrowserStart({exe, url}) }
+        }
         if len(url) > WINDOWS_ADDRESS_LIMIT {
             shortcut, written := BrowserShortcut(url)
             if !written { return false }
@@ -177,4 +224,16 @@ test_a_command_that_cannot_start_is_reported :: proc(t: ^testing.T) {
     } else {
         testing.expect(t, BrowserStart({"true"}), "a program that exists is started")
     }
+}
+
+@(test)
+test_the_program_of_an_open_command_is_the_quoted_path :: proc(t: ^testing.T) {
+    when ODIN_OS == .Windows {
+        exe: string = strings.concatenate({os.get_env("SystemRoot", context.temp_allocator), `\System32\cmd.exe`}, context.temp_allocator)
+        testing.expect_value(t, BrowserExecutableFrom(strings.concatenate({`"`, exe, `" --single-argument %1`}, context.temp_allocator)), exe)
+        testing.expect_value(t, BrowserExecutableFrom(exe), exe)
+    }
+    testing.expect_value(t, BrowserExecutableFrom(`"C:\nowhere\browser.exe" %1`), "")
+    testing.expect_value(t, BrowserExecutableFrom(`"unterminated`), "")
+    testing.expect_value(t, BrowserExecutableFrom(`notepad.txt`), "")
 }
