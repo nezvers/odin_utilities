@@ -152,3 +152,12 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Text field: a text longer than the field scrolls with the caret and is clipped (default), a click is mapped through the scroll; `read_only` for the field and the area (select and copy, no edits)
 - [x] Held keys repeat in the kit (`Input.keys_repeat`, `InputRepeat`): Backspace, Delete, the arrows, Home and End in text, the directions and pages as actions
 - [ ] (low) An ellipsis or a fade at the cut edge of a clipped field; the pointer past the edge of a long text scrolls it while it is dragged (the cursor moves, the view follows on the next frame)
+
+## Nota gaps (docs/NOTA_GAP.md, demo `nota`)
+- [ ] (high) Value bar: a drag number as a filling bar with the value inside, Shift for fine, double click to type, reset to default, bipolar fill (pan), modulation hatch
+- [ ] (high) Piano roll widget: key column, notes (add, move, resize, velocity), bars and beats ruler, velocity and controller lanes
+- [ ] (high) Frequency response graph with draggable band nodes (log frequency axis, dB axis) and a spectrum fill; waveform view with zoom and markers
+- [ ] (high) Mixer fader with a dB scale and a stereo meter; bars and beats on the timeline ruler with grid snap choices
+- [ ] (high) Device card (header with switch and preset selector with arrows, tabs, sections divided by rules) and track header row (colour strip, M / S / R, value bar, pan, input)
+- [ ] (medium) Range slider, XY pad, pitch wheel with spring, standalone thin scroll bar, step / pattern grid, piano keyboard display, parameter picker, command palette, arrangement overview strip
+- [ ] (low) Key and scale picker, modulation matrix, history view, welcome / about / preferences windows, skins with fonts
