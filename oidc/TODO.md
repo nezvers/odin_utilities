@@ -22,6 +22,6 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (medium) The arena: a sign-in window with the `ui` library (name from the claims) and the choice of provider
 - [ ] (low) `JsonString` returns escapes as written (`\\"` in a name): add a decoding variant that writes into a buffer
 - [ ] (medium) `BrowserOpen` gives no sign when Firefox starts slowly (about 10 s cold): print the address always
-- [ ] (medium) GitHub inside the browser flow (OAuth 2.0 without an ID token: `Login` expects one)
+- [x] GitHub inside the browser flow (2026-11-25, live): `ClientConfig.oauth_only` (set by the GitHub preset) skips the nonce and the ID token, takes the access token and names the person from the user info; needs `github.client_secret` and the callback `http://127.0.0.1:48217/callback` at the OAuth App; `tool/login github` uses it when a secret is set (`--device` keeps the code flow)
 - [ ] (high) Protect the stored sign in on macOS (Keychain, `SecItemAdd` / `security`) and Linux (Secret Service: libsecret or `secret-tool` through stdin); until then nothing is stored there. Needs the systems to test on.
 - [ ] (medium) Hardening on Windows against a program of the same user: an optional prompt or Windows Hello before the token is released (`CRYPTPROTECT_PROMPT_ON_UNPROTECT` is UI, the TPM backed `NCrypt` is the stronger way)

@@ -65,7 +65,7 @@ LoginUserinfo :: proc(login: ^Login) -> string {
 
 // What to call the person: `name`, `global_name`, `preferred_username` or `username`, from the ID token first and from the user info second
 LoginDisplayName :: proc(login: ^Login) -> (name: string, found: bool) {
-    fields: [4]string = {"name", "global_name", "preferred_username", "username"}
+    fields: [5]string = {"name", "global_name", "preferred_username", "username", "login"}
     for source in ([]string{login.claims.payload, LoginUserinfo(login)}) {
         for field in fields {
             if value, has := JsonString(source, field); has && value != "" { return value, true }
@@ -96,7 +96,9 @@ fail :: proc(login: ^Login, message: string) {
 LoginBegin :: proc(login: ^Login, config: ClientConfig) -> bool {
     login^ = {}
     login.config = config
-    if !Discover(config.issuer, &login.metadata) {
+    if config.oauth_only && config.issuer == "https://github.com" {
+        PresetMetadataGithub(&login.metadata)                // GitHub has no discovery document (a test provider that is not GitHub is discovered as usual)
+    } else if !Discover(config.issuer, &login.metadata) {
         fail(login, "the provider does not answer, or its discovery document is not usable")
         return false
     }
@@ -133,7 +135,7 @@ LoginBegin :: proc(login: ^Login, config: ClientConfig) -> bool {
     FormField(&url, "redirect_uri", string(login.redirect_uri[:login.redirect_length]))
     FormField(&url, "scope", config.scopes if config.scopes != "" else SCOPES_DEFAULT)
     FormField(&url, "state", string(login.state_value[:login.state_length]))
-    FormField(&url, "nonce", string(login.nonce[:login.nonce_length]))
+    if !config.oauth_only { FormField(&url, "nonce", string(login.nonce[:login.nonce_length])) }
     FormField(&url, "code_challenge", challenge)
     FormField(&url, "code_challenge_method", "S256")
     if config.extra != "" {
@@ -211,6 +213,26 @@ LoginPoll :: proc(login: ^Login) -> LoginState {
     if !ExchangeCode(&login.metadata, login.config, code, string(login.verifier[:login.verifier_length]), string(login.redirect_uri[:login.redirect_length]), &login.tokens) {
         failPage(client, login, fmt.tprintf("the code could not be exchanged: %s %s", login.tokens.error, login.tokens.error_description))
         return login.state
+    }
+    if login.config.oauth_only {
+        // no ID token to check: the access token is the proof, and the provider is asked who it belongs to (the only way to name the person)
+        if login.tokens.access_token == "" {
+            failPage(client, login, "the provider gave no access token")
+            return login.state
+        }
+        answer: [16384]u8
+        text, fetched := Userinfo(&login.metadata, login.tokens.access_token, answer[:])
+        if !fetched {
+            failPage(client, login, "the access token was given but the user could not be read")
+            return login.state
+        }
+        login.userinfo_length = copy(login.userinfo[:], text)
+        net.close(login.listener)
+        login.listener = {}
+        login.state = .DONE
+        name, has_name := LoginDisplayName(login)
+        reply(client, 200, fmt.tprintf("Login done. The provider gave an access token and named you: %s.\nYou can close this window and go back to the program.", name if has_name else "(no name)"))
+        return .DONE
     }
     if login.tokens.id_token == "" {
         failPage(client, login, "the provider gave no ID token (is the scope openid asked?)")

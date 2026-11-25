@@ -200,6 +200,28 @@ test_the_github_device_flow :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_github_in_the_browser_has_no_code_and_names_the_person_from_the_user_info :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    output: strings.Builder
+    defer strings.builder_destroy(&output)
+    // with a secret in the settings the browser flow runs: the address of the login, the callback, an access token and no ID token check
+    code: int = runTool({algorithm = .ES256, client_id = "game", client_secret = "s3cret", subject = "user-9", userinfo_name = "Ada Lovelace"}, .NONE, "github", nil, true, &output, "github.client_secret = s3cret\n")
+    text: string = strings.to_string(output)
+    testing.expect_value(t, code, 0)
+    testing.expectf(t, strings.contains(text, "open this address") && !strings.contains(text, "type the code"), "the browser flow, no code: %s", text)
+    testing.expectf(t, strings.contains(text, "OAuth 2.0 login") && strings.contains(text, "name     Ada Lovelace"), "the person comes from the user info: %s", text)
+    testing.expect(t, !strings.contains(text, "eyJ") && !strings.contains(text, "access-") && !strings.contains(text, "s3cret"), "no token or secret in the output")
+    // --device keeps the device flow, and so does a settings file without a secret
+    strings.builder_reset(&output)
+    code = runTool({algorithm = .ES256, client_id = "game", subject = "user-9"}, .NONE, "github", {"--device"}, false, &output)
+    testing.expect(t, code == 0 && strings.contains(strings.to_string(output), "type the code"), "--device")
+    strings.builder_reset(&output)
+    code = runTool({algorithm = .ES256, client_id = "game", subject = "user-9"}, .NONE, "github", nil, false, &output)
+    testing.expect(t, code == 0 && strings.contains(strings.to_string(output), "no github.client_secret"), "no secret: the device flow, and it says why")
+}
+
+@(test)
 test_the_github_device_flow_opens_the_browser_at_the_code_page :: proc(t: ^testing.T) {
     sync.mutex_lock(&tests_lock)
     defer sync.mutex_unlock(&tests_lock)

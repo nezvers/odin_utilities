@@ -2,7 +2,7 @@ package main
 
 // A whole login against a real provider, to try the settings of oidc/providers/providers.local.txt:
 //
-//     odin run oidc/tool/login -- discord|google|github|spacetimeauth [--no-browser] [--verbose] [--file path] [--timeout seconds] [--issuer url]
+//     odin run oidc/tool/login -- discord|google|github|spacetimeauth [--no-browser] [--device] [--verbose] [--file path] [--timeout seconds] [--issuer url]
 //
 // Discord, Google, SpacetimeAuth: the browser flow (a page opens, you log in, the browser comes back to 127.0.0.1) and the claims of the verified ID token are printed. GitHub: the device flow (a code is
 // printed, you type it at github.com/login/device) and the user from api.github.com. Tokens are never printed, and nothing is stored.
@@ -62,10 +62,12 @@ run :: proc(arguments: []string) -> int {
     open_browser: bool = true
     timeout: f64 = 300
     verbose = false
+    device_flow: bool
     for i := 0; i < len(arguments); i += 1 {
         switch arguments[i] {
         case "--no-browser": open_browser = false
         case "--verbose": verbose = true
+        case "--device": device_flow = true
         case "--file":
             i += 1
             if i < len(arguments) { settings_path = arguments[i] }
@@ -101,7 +103,13 @@ run :: proc(arguments: []string) -> int {
         return failed(fmt.tprintf("%s.client_id is not set in the settings file (see oidc/providers/README.md)", name), 2)
     }
     say(fmt.tprintf("%s: client id %s...", name, config.client_id[:min(6, len(config.client_id))]))
-    if preset == .GITHUB { return githubDevice(config, issuer, timeout, open_browser) }
+    if preset == .GITHUB {
+        // the browser flow needs the secret of the OAuth App (GitHub asks for it at the token exchange); without one, or with --device, the device flow (a code to type)
+        if device_flow || config.client_secret == "" {
+            if !device_flow { say("no github.client_secret in the settings: the device flow (a code to type) is used; with the secret the browser flow has no code") }
+            return githubDevice(config, issuer, timeout, open_browser)
+        }
+    }
     return browserLogin(config, open_browser, timeout)
 }
 
@@ -144,6 +152,15 @@ browserLogin :: proc(config: oidc.ClientConfig, open_browser: bool, timeout: f64
         waitTurn(login)
     }
     if login.state != .DONE { return failed(fmt.tprintf("login failed: %s", oidc.LoginError(login)), 1) }
+    if config.oauth_only {
+        say("login ok (an OAuth 2.0 login: an access token, not an ID token; the provider named the person)")
+        user: string = oidc.LoginUserinfo(login)
+        for field in ([]string{"login", "name", "html_url"}) {
+            if value, has := oidc.JsonString(user, field); has { say(fmt.tprintf("  %-8s %s", field, value)) }
+        }
+        if id, has := oidc.JsonInt(user, "id"); has { say(fmt.tprintf("  id       %d", id)) }
+        return 0
+    }
     claims: oidc.JwtClaims = login.claims
     say("login ok, the ID token is verified (signature, issuer, audience, expiry, nonce)")
     say(fmt.tprintf("  issuer   %s", claims.issuer))

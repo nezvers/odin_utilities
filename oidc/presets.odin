@@ -37,6 +37,7 @@ PresetConfig :: proc(preset: Preset, client_id: string, client_secret: string = 
     case .GITHUB:
         config.issuer = "https://github.com"          // a name only: GitHub has no discovery document
         config.scopes = "read:user"
+        config.oauth_only = true
     case .SPACETIMEAUTH:
         config.issuer = "https://auth.spacetimedb.com/oidc"
         config.scopes = "openid profile email offline_access"      // its ID tokens last 15 minutes: only `offline_access` gives a refresh token
