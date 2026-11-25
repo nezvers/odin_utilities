@@ -6753,3 +6753,45 @@ test_overview_frame_scrolls_zooms_and_centres :: proc(t: ^testing.T) {
     testing.expect(t, ok && near(block.x, 150) && near(block.y, 20) && near(block.z, 30), "a clip of 10 s at 50 s: 30 px at 150, in the second row")
     testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
 }
+
+@(test)
+test_clip_body_places_notes_peaks_and_cells :: proc(t: ^testing.T) {
+    notes: [2]ClipBodyNote = {{0, 1, 60}, {2, 1, 64}}
+    body: ClipBody = {kind = .NOTES, notes = notes[:], content_length = 4}
+    low, high := ClipBodyPitchRange(&body)
+    testing.expect(t, low == 60 && high == 64)
+    testing.expect_value(t, ClipBodyRepeats(&body, 10), 3)
+    area: Rect = {0, 0, 100, 50}
+    // a clip of 10: the content of 4 repeats; the note at 2 of the second repeat starts at 6
+    rect, ok := ClipBodyNoteRect(&body, area, 10, notes[1], 1, low, high)
+    testing.expect(t, ok && near(rect.x, 60) && near(rect.z, 10) && near(rect.y + rect.w * 0.5, 5), "the high note is on the top row")
+    _, ok = ClipBodyNoteRect(&body, area, 10, notes[1], 2, low, high)
+    testing.expect(t, !ok, "a note after the end of the clip is not shown (8 + 2 = 10)")
+    rect, ok = ClipBodyNoteRect(&body, area, 9, notes[1], 2, low, high)
+    testing.expect(t, !ok)
+    rect, ok = ClipBodyNoteRect(&body, area, 10.5, notes[1], 2, low, high)
+    testing.expect(t, ok && rect.x + rect.z <= 100.001, "the note is cut at the end of the clip")
+    testing.expect_value(t, ClipBodyArea({0, 0, 100, 40}, 18), Rect{2, 18, 96, 20})
+
+    peaks: [4]f32 = {0.1, 0.9, 0.2, 0.3}
+    wave: ClipBody = {kind = .WAVEFORM, peaks = peaks[:]}
+    testing.expect(t, near(ClipBodyPeak(&wave, 8, 0, 2), 0.9), "the first half has the high peak")
+    testing.expect(t, near(ClipBodyPeak(&wave, 8, 1, 2), 0.3))
+    loop: ClipBody = {kind = .WAVEFORM, peaks = peaks[:], content_length = 4}
+    testing.expect(t, near(ClipBodyPeak(&loop, 8, 4, 8), 0.1), "the second repeat starts the content again")
+
+    cells: [8]f32 = {1, 0, 0, 1, 0, 1, 0, 0}
+    steps: ClipBody = {kind = .STEPS, steps = cells[:], rows = 2, content_length = 4}
+    cell, found := ClipBodyStepRect(&steps, {0, 0, 80, 20}, 8, 1, 1, 1)
+    testing.expect(t, found && near(cell.x, 50 + 0.5) && near(cell.y, 10.5), "row 1, step 1 of the second repeat: 5 s of 8")
+    _, found = ClipBodyStepRect(&steps, {0, 0, 80, 20}, 8, 2, 0, 0)
+    testing.expect(t, !found)
+
+    timeline: ^Timeline = new(Timeline)
+    defer free(timeline)
+    TimelineInit(timeline)
+    track, _ := TimelineTrackAdd(timeline, "A")
+    clip, _ := TimelineClipAdd(timeline, track, 0, 8, "c")
+    testing.expect(t, TimelineClipSetBody(timeline, clip, body))
+    testing.expect_value(t, TimelineClipGet(timeline, clip).body.kind, ClipBodyKind.NOTES)
+}

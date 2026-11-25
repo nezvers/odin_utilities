@@ -128,6 +128,8 @@ Picker (`picker.odin`): `UiPicker` is a searchable list popup, the parameter pic
 
 Overview strip (`overview.odin`): `UiOverview` shows the whole arrangement in a thin bar (a block for every clip in the row of its track, sections as a named band, the playhead) with the window of the `TimelineView` as a frame: drag it to scroll, drag its edges to zoom, press outside to centre it. Limits: sections are shown, not edited (no drag to mark one), no vertical scroll of the tracks, clips are plain blocks.
 
+Clip content (`clip_body.odin`): `TimelineClipSetBody(timeline, clip, body)` makes a clip show notes as dashes, mirrored waveform peaks or the cells of a pattern inside of itself; the data is the program's slices, `content_length` repeats it along the clip. Limits: no offset into the content (a clip cut at its left edge shows the content from its start), no velocity shading, no pitch names, mono peaks.
+
 Soft edges: `aa.odin` makes anti-aliased rounded rectangles, rings, discs, lines of any width with round/square/butt ends and mitered joins, and Bezier curves as triangle lists whose edge vertices fade over one pixel (the fringe of NanoVG), written to a storage of yours (`AaMesh`). No shader and no texture: the glue draws the triangles with a color per vertex, in the batch that is open, so a window of soft shapes stays one draw call with its rectangles and text. `ui_default.FillRounded`, `RingRounded`, `Line`, graph cables and ports use it by themselves when the painter has a mesh (`glue_karl2d`, `glue_raylib`, `kit` do); for your own drawing: `ui_default.Polyline`, `Bezier`, `RouteLine`, `Disc`, `PolygonSmooth`. Notes and limits: `docs/ANTI_ALIASING.md`; the `smooth` demo shows them next to the plain shapes.
 
 ## The look: themes, fonts, icons

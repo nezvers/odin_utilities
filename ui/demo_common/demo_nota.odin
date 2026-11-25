@@ -119,15 +119,15 @@ init :: proc(ctx: ^kit.Context) {
     for name, i in TRACK_NAMES {
         track, _ := ui.TimelineTrackAdd(&state.timeline, name, 42, color = TRACK_COLORS[i])
         switch i {
-        case 0: for bar in 0 ..< 7 { ui.TimelineClipAdd(&state.timeline, track, f64(8 + bar * 8), 7.5, "Beat") }
-        case 1: for bar in 1 ..< 7 { ui.TimelineClipAdd(&state.timeline, track, f64(8 + bar * 8), 7.5, "Bass") }
-        case 2: for bar in 0 ..< 8 { ui.TimelineClipAdd(&state.timeline, track, f64(bar * 8), 7.5, "Chords") }
+        case 0: for bar in 0 ..< 7 { addClip(track, f64(8 + bar * 8), 7.5, "Beat", {kind = .STEPS, steps = CLIP_DRUMS[:], rows = 2, content_length = 4}) }
+        case 1: for bar in 1 ..< 7 { addClip(track, f64(8 + bar * 8), 7.5, "Bass", {kind = .NOTES, notes = CLIP_BASS[:], content_length = 4}) }
+        case 2: for bar in 0 ..< 8 { addClip(track, f64(bar * 8), 7.5, "Chords", {kind = .NOTES, notes = CLIP_CHORDS[:], content_length = 8}) }
         case 3:
-            ui.TimelineClipAdd(&state.timeline, track, 16, 16, "Hook")
-            ui.TimelineClipAdd(&state.timeline, track, 48, 16, "Hook")
+            addClip(track, 16, 16, "Hook", {kind = .NOTES, notes = CLIP_HOOK[:], content_length = 8})
+            addClip(track, 48, 16, "Hook", {kind = .NOTES, notes = CLIP_HOOK[:], content_length = 8})
         case 4:
-            ui.TimelineClipAdd(&state.timeline, track, 0, 5, "Pad")
-            ui.TimelineClipAdd(&state.timeline, track, 32, 5, "Pad")
+            addClip(track, 0, 5, "Pad", {kind = .WAVEFORM, peaks = CLIP_PEAKS[:]})
+            addClip(track, 32, 5, "Pad", {kind = .WAVEFORM, peaks = CLIP_PEAKS[:]})
         }
     }
     for {
@@ -219,6 +219,18 @@ statusBar :: proc(c: ^ui.Context) {
         ui.UiLabelDim(c, "44.1 kHz . 512")
         ui.UiLabelDim(c, "v0.60.1")
     }
+}
+
+// What the clips show inside of themselves (ui/clip_body.odin): data of the program that lives as long as the demo
+CLIP_DRUMS: [16]f32 = {1, 0, 0, 0.5, 0, 0, 1, 0,  0, 0, 0.6, 0, 0, 0, 0.6, 0.6}
+CLIP_BASS: [4]ui.ClipBodyNote = {{0, 1, 36}, {1.5, 0.5, 36}, {2, 1, 39}, {3, 0.75, 34}}
+CLIP_CHORDS: [6]ui.ClipBodyNote = {{0, 3.5, 60}, {0, 3.5, 64}, {0, 3.5, 67}, {4, 3.5, 58}, {4, 3.5, 62}, {4, 3.5, 65}}
+CLIP_HOOK: [6]ui.ClipBodyNote = {{0, 1, 72}, {1, 0.5, 74}, {1.5, 0.5, 76}, {2, 2, 79}, {5, 1, 76}, {6, 1.5, 72}}
+CLIP_PEAKS: [24]f32 = {0.2, 0.5, 0.8, 0.6, 0.9, 0.7, 0.4, 0.6, 0.85, 0.5, 0.3, 0.7, 0.9, 0.6, 0.45, 0.8, 0.55, 0.3, 0.65, 0.4, 0.25, 0.35, 0.2, 0.1}
+
+addClip :: proc(track: ui.TrackHandle, start: f64, length: f64, name: string, body: ui.ClipBody) {
+    clip, _ := ui.TimelineClipAdd(&state.timeline, track, start, length, name)
+    ui.TimelineClipSetBody(&state.timeline, clip, body)
 }
 
 // ------------------------------------------------------------------------------------------------------------------------

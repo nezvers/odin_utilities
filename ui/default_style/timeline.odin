@@ -56,6 +56,7 @@ DrawClip :: proc(ctx: ^ui.Context, clip: ^ui.ClipDraw) {
     if len(shown) > 0 {
         painter.draw_text(painter, shown, {text_x, clip.rect.y + 3}, size, theme.text)
     }
+    clipBody(ctx, painter, clip, base)
     if .HOVERED in clip.flags || .PRESSED in clip.flags {
         grip: ui.Color = {255, 255, 255, 90}
         if clip.rect.z > 24 {

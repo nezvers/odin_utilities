@@ -904,7 +904,7 @@ TimelineDraw :: proc(ctx: ^Context, info: ^DrawInfo) {
                 track: ^TimelineTrack = TimelineTrackGet(timeline, clip.track)
                 draw: ClipDraw = {
                     rect = rect, visible = {area.x, lanes_top, area.z, area.w - style.ruler_height}, name = TimelineClipName(clip), color = clip.color if clip.color.a > 0 else track.color,
-                    clip = handle, track = clip.track, track_index = TimelineTrackIndex(timeline, clip.track), start = clip.start, length = clip.length, user = style.user,
+                    clip = handle, track = clip.track, track_index = TimelineTrackIndex(timeline, clip.track), start = clip.start, length = clip.length, body = &clip.body, user = style.user,
                 }
                 if clip.selected { draw.flags += {.SELECTED} }
                 if view.hover_clip == handle { draw.flags += {.HOVERED} }

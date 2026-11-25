@@ -66,6 +66,7 @@ ClipDraw :: struct {
     start: f64,
     length: f64,
     flags: Flags,               // SELECTED, HOVERED, PRESSED: it is being dragged or resized, DISABLED: its track is muted
+    body: ^ClipBody,            // the content to draw inside (kind NONE: nothing); alive for the frame
     user: rawptr,
 }
 

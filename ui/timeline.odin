@@ -74,6 +74,7 @@ TimelineClip :: struct {
     drag_start: f64,            // where the clip was when a drag began (timeline_widgets.odin)
     drag_length: f64,
     drag_track: int,
+    body: ClipBody,             // what the clip shows inside of itself (clip_body.odin)
 }
 
 // A named point of time: a flag on the ruler with a line down through the tracks.

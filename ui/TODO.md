@@ -159,5 +159,5 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Frequency response graph with draggable band nodes (log frequency axis, dB axis) and a spectrum fill; waveform view with zoom and markers
 - [x] Mixer fader with a dB scale and a stereo meter; bars and beats on the timeline ruler with grid snap choices
 - [x] Device card (header with switch and preset selector with arrows, tabs, sections divided by rules) and track header row (colour strip, M / S / R, value bar, pan, input)
-- [x] (medium) Arrangement overview strip, `overview.odin` (sections are shown, not edited; parameter picker and command palette are done: `picker.odin`; range slider, XY pad, wheel, thin scroll bar, step grid and keyboard are done: `widgets_pads.odin`)
+- [x] (medium) Clip bodies (`clip_body.odin`: notes, peaks, cells inside a clip), arrangement overview strip, `overview.odin` (sections are shown, not edited; parameter picker and command palette are done: `picker.odin`; range slider, XY pad, wheel, thin scroll bar, step grid and keyboard are done: `widgets_pads.odin`)
 - [ ] (low) Key and scale picker, modulation matrix, history view, welcome / about / preferences windows, skins with fonts
