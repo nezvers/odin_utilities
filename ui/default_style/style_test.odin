@@ -821,3 +821,26 @@ test_the_style_draws_a_frequency_graph_and_a_waveform :: proc(t: ^testing.T) {
         testing.expect_value(t, ui.UiProblems(&e.ctx), ui.Problems{})
     }
 }
+
+@(test)
+test_the_style_draws_a_mixer_fader_with_and_without_levels :: proc(t: ^testing.T) {
+    for theme in ([2]Theme{THEME_DARK, THEME_LIGHT}) {
+        e: ^Everything = new(Everything)
+        defer free(e)
+        everythingInit(e, theme, true)
+        gain: f32 = -6
+        levels: ui.MixerLevels = {-20, -3, -10, 2}
+        for _ in 0 ..< 3 {
+            c: ^ui.Context = &e.ctx
+            e.recorder = {}
+            ui.UiBegin(c, {mouse_position = {-100, -100}}, 1.0 / 60, {400, 400}, &e.style)
+            ui.UiMixerFader(c, "with", &gain, &levels)
+            ui.UiMixerFader(c, "without", &gain)
+            ui.UiEnd(c)
+            ui.UiRender(c)
+        }
+        testing.expectf(t, e.recorder.rects > 20, "scale, groove, meter, handle and readout are drawn: %d rects", e.recorder.rects)
+        testing.expect(t, !e.recorder.bad_rect)
+        testing.expect_value(t, ui.UiProblems(&e.ctx), ui.Problems{})
+    }
+}

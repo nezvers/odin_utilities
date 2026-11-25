@@ -10,8 +10,8 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 | Typed entry for the knob and the fader (the bar has it) with unit parsing ("-6 dB") | `ValueEntry`, `ValueText` | `UiValueBar` only | medium |
 | Pan knob with the centre mark | `PanKnob` | `UiKnob` (unipolar arc) | low |
 | **Range slider**: two handles (low, high) or one selector on a track | `RangeSliderTrack`, `RackBars` | none | medium |
-| **Mixer fader with a scale** (dB ticks) and a stereo meter beside it, handle with a coloured mark | `MeterFader`, `VFader`, `MixBar` | `UiFader`, `UiMeter` (one channel, no scale) | high |
-| Stereo meter, gain reduction meter (grows down) | `StereoMeter`, `GrMeter` | `UiMeter` | medium |
+| ~~Mixer fader~~ done: `UiMixerFader` (dB scale, mixer taper, stereo meter on the same scale with peak and clip, written value, sticks at 0 dB). Left: typed value, pre / post, loudness scales | `MeterFader`, `VFader`, `MixBar` | | done |
+| Gain reduction meter (grows down); the stereo meter is in `UiMixerFader` only | `GrMeter` | `UiMeter` | medium |
 | Wheel with a spring (pitch bend returns to the centre on release) | `PerformWheel` | none | low |
 | XY pad / vector pad with a ghost of the effective position | `FluxVectorPad` | none | medium |
 | Standalone thin scroll bar (a pill) for views that scroll by their own data | `ThinScrollBar` | scroll bar of `UiScroll` only | medium |
@@ -48,7 +48,7 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 | Piano keyboard display (lit notes, root outline) | `ChordKeysViz`, `KeysViews` | none | medium |
 | Modulation matrix (sources x targets, amount per cell) | `VoltMatrix` | `UiTable` | low |
 | Arrangement **overview** strip and sections ruler (bar numbers, drag to mark a section) | `ArrangementView.Overview`, `.Sections` | `UiTimeline` ruler (seconds, not bars), minimap of the graph | medium |
-| Time in bars and beats on the ruler, grid snap choices (1/4, 1/16, bar, auto) | `ArrangementView.TimeAxis`, `SnapChip` | `UiTimeline` (plain numbers) | high |
+| ~~Bars and beats on the ruler, grid snap choices~~ done: `TimelineView.tempo` turns the ruler into bars and beats, `TimelineSnapChoice` (off, bar, 1/4 .. 1/32, auto). Left: tempo map, triplets | `ArrangementView.TimeAxis`, `SnapChip` | | done |
 | Clip body drawing: notes as dashes, waveform, drum steps inside a clip | `ArrangementView` clips | clip with a title | medium |
 | Node graph nodes with an on/off switch in the header, CV ports (diamond), edge colours by signal kind, a minimap | `ModularView` | `UiGraph` (round pins, no header widgets) | medium |
 
@@ -60,6 +60,6 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 1. ~~Value bar with typed entry, pan bar~~ (done).
 2. Preset selector and device card (the bottom half of the arrangement screen).
 3. Track header row and bars-and-beats ruler (the arrangement screen).
-4. Mixer fader with a scale and a stereo meter (the mixer).
+4. ~~Mixer fader with a scale and a stereo meter~~ (done).
 5. ~~Frequency graph with draggable bands and the waveform view~~ (done).
 6. ~~Piano roll~~ (done).

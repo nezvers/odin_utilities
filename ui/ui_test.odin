@@ -6163,3 +6163,118 @@ test_waveform_zooms_selects_and_keeps_markers :: proc(t: ^testing.T) {
     testing.expect(t, view.show_playhead && abs(view.playhead / fit - 220) < 2)
     testing.expect(t, waveCount(&log, .SEEK) >= 2)
 }
+
+@(test)
+test_mixer_fader_taper_is_monotonic_and_invertible :: proc(t: ^testing.T) {
+    testing.expect(t, MixerFaderPosition(MIXER_FADER_MIN) == 0 && MixerFaderPosition(MIXER_FADER_MAX) == 1)
+    testing.expect(t, near(MixerFaderPosition(0), 0.78), "0 dB is three quarters up")
+    previous: f32 = -1
+    for db: f32 = MIXER_FADER_MIN; db <= MIXER_FADER_MAX; db += 0.5 {
+        position: f32 = MixerFaderPosition(db)
+        testing.expect(t, position >= previous)
+        previous = position
+        testing.expect(t, abs(MixerFaderDb(position) - db) < 0.01, "the curve and its inverse agree")
+    }
+    buffer: [16]u8
+    testing.expect_value(t, MixerFaderText(buffer[:], -6), "-6.0 dB")
+    testing.expect_value(t, MixerFaderText(buffer[:], 3), "+3.0 dB")
+    testing.expect_value(t, MixerFaderText(buffer[:], -60), "-inf dB")
+}
+
+@(private = "file")
+mixFrame :: proc(harness: ^Harness, input: Input, value: ^f32, levels: ^MixerLevels) -> (changed: bool) {
+    frame(harness, input)
+    changed = UiMixerFader(&harness.ctx, "Drums", value, levels)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return
+}
+
+@(test)
+test_mixer_fader_drags_sticks_and_resets :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    value: f32 = -10
+    levels: MixerLevels = {-20, -18, -10, -9}
+    mixFrame(harness, pointerAt({-100, -100}), &value, &levels)
+    mixFrame(harness, pointerAt({-100, -100}), &value, &levels)
+    rect, _ := UiElementRect(&harness.ctx, UiId(&harness.ctx, "Drums"))
+    areas: MixerFaderAreas = MixerFaderLayout(rect, true)
+    handle: Vec2 = {areas.track.x + areas.track.z * 0.5, MixerFaderY(areas, MixerFaderPosition(value))}
+    // a press on the handle does not move it, the drag moves it by the distance on the travel
+    mixFrame(harness, pointerAt(handle), &value, &levels)
+    mixFrame(harness, pointerAt(handle, down = true, pressed = true), &value, &levels)
+    testing.expect(t, near(value, -10), "a press on the handle keeps the value")
+    run: f32 = areas.track.w - MixerFaderHandleHeight(areas.track)
+    mixFrame(harness, pointerAt(handle - {0, run * 0.1}, down = true), &value, &levels)
+    testing.expect(t, abs(value - MixerFaderDb(MixerFaderPosition(-10) + 0.1)) < 0.05, "a tenth of the travel up")
+    // near 0 dB it sticks: 0.22 of the travel above -10 dB is 0 dB, a little short of it still reads exactly 0
+    mixFrame(harness, pointerAt(handle - {0, run * 0.218}, down = true), &value, &levels)
+    testing.expect_value(t, value, 0)
+    mixFrame(harness, pointerAt(handle - {0, run * 0.22}, released = true), &value, &levels)
+    for _ in 0 ..< 30 { mixFrame(harness, pointerAt({-100, -100}), &value, &levels) }
+    // Ctrl + click: 0 dB
+    value = -20
+    point: Vec2 = {areas.track.x + areas.track.z * 0.5, areas.track.y + 30}
+    ctrl: Input = pointerAt(point, down = true, pressed = true)
+    ctrl.modifiers = {.CTRL}
+    mixFrame(harness, pointerAt(point), &value, &levels)
+    mixFrame(harness, ctrl, &value, &levels)
+    testing.expect_value(t, value, 0)
+    mixFrame(harness, pointerAt(point, released = true), &value, &levels)
+    for _ in 0 ..< 30 { mixFrame(harness, pointerAt({-100, -100}), &value, &levels) }
+    // a press beside the handle takes it there
+    value = -40
+    far: Vec2 = {point.x, MixerFaderY(areas, 0.8)}
+    mixFrame(harness, pointerAt(far), &value, &levels)
+    mixFrame(harness, pointerAt(far, down = true, pressed = true), &value, &levels)
+    testing.expect(t, abs(value - MixerFaderDb(0.8)) < 0.3)
+    mixFrame(harness, pointerAt(far, released = true), &value, &levels)
+    // the wheel steps a dB, with Shift a tenth
+    for _ in 0 ..< 30 { mixFrame(harness, pointerAt({-100, -100}), &value, &levels) }
+    value = -6
+    wheel: Input = pointerAt(point)
+    wheel.wheel = {0, 1}
+    mixFrame(harness, wheel, &value, &levels)
+    testing.expect(t, near(value, -5))
+    wheel.modifiers = {.SHIFT}
+    mixFrame(harness, wheel, &value, &levels)
+    testing.expect(t, near(value, -4.9))
+}
+
+@(test)
+test_timeline_counts_bars_and_beats_and_snaps_to_music :: proc(t: ^testing.T) {
+    view: TimelineView = {tempo = 120, zoom = 100}
+    testing.expect(t, near(f32(TimelineBeatSeconds(&view)), 0.5))
+    bar, beat, sixteenth := TimelineBarsBeats(&view, 0)
+    testing.expect(t, bar == 1 && beat == 1 && sixteenth == 1)
+    bar, beat, sixteenth = TimelineBarsBeats(&view, 2.0)
+    testing.expect(t, bar == 2 && beat == 1 && sixteenth == 1, "four beats of 0.5 s are a bar")
+    bar, beat, sixteenth = TimelineBarsBeats(&view, 3.375)
+    testing.expect(t, bar == 2 && beat == 3 && sixteenth == 4, "bar 2 beat 3 and three sixteenths")
+    view.beats_per_bar = 3
+    bar, beat, _ = TimelineBarsBeats(&view, 1.5)
+    testing.expect(t, bar == 2 && beat == 1, "a bar of three beats")
+    buffer: [24]u8
+    testing.expect_value(t, TimelineBarsBeatsText(buffer[:], &view, 1.75), "2.1.3")
+    view.tempo = 0
+    testing.expect_value(t, TimelineBarsBeatsText(buffer[:], &view, 1.5), "1.50 s")
+    testing.expect_value(t, TimelineSnapSeconds(&view, .BEAT), 0.0)
+
+    view = {tempo = 120, zoom = 100}
+    testing.expect(t, near(f32(TimelineSnapSeconds(&view, .BAR)), 2) && near(f32(TimelineSnapSeconds(&view, .QUARTER_BEAT)), 0.125))
+    TimelineApplySnap(&view, .HALF_BEAT)
+    testing.expect(t, near(f32(view.snap), 0.25))
+    TimelineApplySnap(&view, .OFF)
+    testing.expect_value(t, view.snap, 0.0)
+    // AUTO: the finest step that is 14 pixels wide: at 100 px per second a 1/32 (0.0625 s) is 6, a 1/16 (0.125 s) is 12.5, a 1/8 is 25
+    TimelineApplySnap(&view, .AUTO)
+    testing.expect(t, near(f32(view.snap), 0.25))
+    view.zoom = 1000
+    TimelineApplySnap(&view, .AUTO)
+    testing.expect(t, near(f32(view.snap), 0.0625), "zoomed in it gets finer")
+    view.zoom = 5
+    TimelineApplySnap(&view, .AUTO)
+    testing.expect(t, near(f32(view.snap), 2), "zoomed out it is a bar")
+}

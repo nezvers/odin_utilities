@@ -78,6 +78,8 @@ RulerDraw :: struct {
     loop_enabled: bool,         // a loop range: from `loop_x` to `loop_end_x` on the screen
     loop_x: f32,
     loop_end_x: f32,
+    beat_seconds: f64,          // above 0: count bars and beats (a beat is this long, `beats_per_bar` of them make a bar); 0: plain numbers, a tick every `step`
+    beats_per_bar: int,
     user: rawptr,
 }
 

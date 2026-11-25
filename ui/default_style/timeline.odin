@@ -81,6 +81,10 @@ DrawRuler :: proc(ctx: ^ui.Context, ruler: ^ui.RulerDraw) {
         }
     }
     size: f32 = ctx.style.metrics.font_size * 0.8
+    if ruler.beat_seconds > 0 {
+        barsRuler(ctx, painter, ruler, size)
+        return
+    }
     first: f64 = math.ceil(ruler.origin / ruler.step) * ruler.step
     last: f64 = ruler.origin + f64(ruler.rect.z / ruler.zoom)
     for time := first; time <= last; time += ruler.step {
@@ -179,5 +183,38 @@ DrawCurve :: proc(ctx: ^ui.Context, curve: ^ui.CurveDraw) {
         fill: ui.Color = theme.accent if .SELECTED in point.flags else ui.ColorLerp(color, ui.Color{255, 255, 255, 255}, 0.5 if .HOVERED in point.flags else 0)
         painter.fill_rect(painter, {point.x - size, point.y - size, size * 2, size * 2}, ui.ColorLerp(fill, ui.Color{0, 0, 0, 255}, 0.55))
         painter.fill_rect(painter, {point.x - size + 1.5, point.y - size + 1.5, size * 2 - 3, size * 2 - 3}, fill)
+    }
+}
+
+// The ruler in bars and beats: a tall line and the number at every bar (every 2, 4, 8 .. bars when they are close), a line and "bar.beat" at the beats when there is room, and sixteenths
+// when there is more. All lines are at multiples of the beat, so they sit where the grid snap puts a clip.
+@(private)
+barsRuler :: proc(ctx: ^ui.Context, painter: ^Painter, ruler: ^ui.RulerDraw, size: f32) {
+    theme: ^Theme = &painter.theme
+    area: ui.Rect = ruler.rect
+    per_bar: int = max(ruler.beats_per_bar, 1)
+    beat_pixels: f32 = f32(ruler.beat_seconds) * ruler.zoom
+    bar_pixels: f32 = beat_pixels * f32(per_bar)
+    label_every: int = 1
+    for bar_pixels * f32(label_every) < 44 { label_every *= 2 }
+    first: int = int(math.floor(ruler.origin / ruler.beat_seconds))
+    last: int = int(math.ceil((ruler.origin + f64(area.z / ruler.zoom)) / ruler.beat_seconds))
+    for beat in max(first, 0) ..= last {
+        x: f32 = area.x + f32((f64(beat) * ruler.beat_seconds - ruler.origin) * f64(ruler.zoom))
+        if x < area.x - 1 || x > area.x + area.z { continue }
+        bar: int = beat / per_bar
+        if beat % per_bar == 0 {
+            painter.fill_rect(painter, {x, area.y + area.w * 0.3, 1, area.w * 0.7}, theme.text_dim)
+            if bar % label_every == 0 { painter.draw_text(painter, ui.UiFormat(ctx, "%d", bar + 1), {x + 3, area.y + 2}, size, theme.text) }
+        } else if beat_pixels >= 6 {
+            painter.fill_rect(painter, {x, area.y + area.w * 0.55, 1, area.w * 0.45}, theme.text_dim)
+            if beat_pixels >= 40 { painter.draw_text(painter, ui.UiFormat(ctx, "%d.%d", bar + 1, beat % per_bar + 1), {x + 3, area.y + 2}, size, theme.text_dim) }
+        }
+        if beat_pixels >= 64 {
+            for part in 1 ..< 4 {
+                minor: f32 = x + beat_pixels * f32(part) / 4
+                if minor < area.x + area.z { painter.fill_rect(painter, {minor, area.y + area.w * 0.78, 1, area.w * 0.22}, theme.border) }
+            }
+        }
     }
 }

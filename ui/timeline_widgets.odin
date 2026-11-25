@@ -65,6 +65,8 @@ TimelineView :: struct {
     track_zoom: f32,            // the heights of the tracks are multiplied by this (0 is 1): Ctrl + the wheel changes it, around the pointer
     snap_to_edges: bool,        // starts and ends also snap to the edges of other clips, the markers and the playhead when they are within `snap_pixels`
     snap_pixels: f32,           // 0: 8
+    tempo: f64,                 // beats per minute: above 0 the ruler counts bars and beats (the times stay seconds), see timeline_grid.odin
+    beats_per_bar: int,         // 0: 4
     rect: Rect,                 // where the widget is on the screen (as drawn in the last frame)
     hover_clip: ClipHandle,
     hover_marker: MarkerHandle,
@@ -921,6 +923,7 @@ TimelineDraw :: proc(ctx: ^Context, info: ^DrawInfo) {
         ruler: RulerDraw = {
             rect = {area.x, area.y, area.z, style.ruler_height}, origin = view.origin, zoom = zoom, step = TimelineRulerStep(zoom),
             loop_enabled = view.loop_enabled, loop_x = TimelineX(view, view.loop_start), loop_end_x = TimelineX(view, view.loop_end), user = style.user,
+            beat_seconds = TimelineBeatSeconds(view), beats_per_bar = TimelineBeatsPerBar(view),
         }
         style.draw_ruler(ctx, &ruler)
     }

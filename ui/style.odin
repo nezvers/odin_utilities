@@ -29,6 +29,7 @@ StyleKind :: enum u8 {
     PIANO_ROLL,         // a piano roll: draw the keys, the grid, the notes, the velocities and the playhead; user: the ^PianoRollView (its `roll` has the notes)
     FREQ_GRAPH,         // a frequency response graph: draw the grid, the spectrum, the curve, the nodes and the readout; user: the ^FreqGraphView (its `graph` has the bands)
     WAVEFORM,           // a waveform view: draw the ruler, the columns, the selection, the markers and the playhead; user: the ^WaveformView (its `wave` has the samples)
+    MIXER_FADER,        // a mixer channel fader: draw the dB scale, the groove and handle, the stereo meter (`values`: left, right, peak left, peak right in dB; empty: no meter) and the written value (text); value 0..1 on the travel, actual dB
     PROGRESS,           // value 0..1, actual: the number it shows
     TEXT_FIELD,         // text: the content, cursor: byte offset, FOCUSED flag
     SEPARATOR,

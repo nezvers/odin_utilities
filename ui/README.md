@@ -116,6 +116,10 @@ Frequency graph: `UiFreqGraph(&ctx, "EQ", &graph, &view)` shows bands (bell, she
 
 Waveform: `UiWaveform(&ctx, "Clip", &wave, &view)` draws one channel of samples as min / max columns (`WaveformBuildPeaks` makes a table of peaks for long samples), a ruler in seconds, wheel zoom around the pointer, drag to select, markers to add, drag and remove, a playhead from the ruler. Limits: one channel, one peak level, no editing, fades or gain handles, markers do not snap.
 
+Mixer fader: `UiMixerFader(&ctx, "Drums", &gain_db, &levels)` is a channel fader in dB (-60 .. +6, mixer taper) with the scale written beside it, a stereo meter on the same scale (`MixerLevels` {left, right, peak left, peak right} in dB, the held peak is yours) and the value under it; drag (Shift fine, sticks at 0 dB), Ctrl + click or double click for 0 dB, wheel, arrows. Limits: fixed range, one stereo meter (no gain reduction or loudness scales), the value cannot be typed.
+
+Bars and beats: set `TimelineView.tempo` (and `beats_per_bar`) and the timeline ruler counts bars and beats; `TimelineApplySnap(&view, .BAR / .BEAT / .HALF_BEAT .. / .AUTO)` sets the grid from a musical step, `TimelineBarsBeatsText` writes a position ("12.3.2"). Limits: one tempo and one time signature, no triplets or swing.
+
 Soft edges: `aa.odin` makes anti-aliased rounded rectangles, rings, discs, lines of any width with round/square/butt ends and mitered joins, and Bezier curves as triangle lists whose edge vertices fade over one pixel (the fringe of NanoVG), written to a storage of yours (`AaMesh`). No shader and no texture: the glue draws the triangles with a color per vertex, in the batch that is open, so a window of soft shapes stays one draw call with its rectangles and text. `ui_default.FillRounded`, `RingRounded`, `Line`, graph cables and ports use it by themselves when the painter has a mesh (`glue_karl2d`, `glue_raylib`, `kit` do); for your own drawing: `ui_default.Polyline`, `Bezier`, `RouteLine`, `Disc`, `PolygonSmooth`. Notes and limits: `docs/ANTI_ALIASING.md`; the `smooth` demo shows them next to the plain shapes.
 
 ## The look: themes, fonts, icons

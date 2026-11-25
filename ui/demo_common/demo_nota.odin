@@ -58,6 +58,9 @@ State :: struct {
     eq_spectrum: [256]f32,
     // mixer
     volume: [CHANNELS]f32,
+    levels: [CHANNELS]ui.MixerLevels,
+    snap_choice: int,
+    position: [24]u8,
     pan: [CHANNELS]f32,
     send: [CHANNELS]f32,
     input: [CHANNELS]int,
@@ -86,7 +89,7 @@ init :: proc(ctx: ^kit.Context) {
     ui_demo_init(&state.app)
     ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
     for i in 0 ..< CHANNELS {
-        state.volume[i] = 0.5 if i % 3 != 0 else 0.7
+        state.volume[i] = -9 if i % 3 != 0 else -2
         state.pan[i] = 0
         state.send[i] = 20 * f32(i % 4)
     }
@@ -106,7 +109,8 @@ init :: proc(ctx: ^kit.Context) {
     }
     // the arrangement
     ui.TimelineInit(&state.timeline, &state)
-    state.view = {zoom = 18, snap = 1}
+    state.view = {zoom = 18, snap = 1, tempo = 124, beats_per_bar = 4}
+    state.snap_choice = int(ui.TimelineSnapChoice.AUTO)
     for name, i in TRACK_NAMES {
         track, _ := ui.TimelineTrackAdd(&state.timeline, name, 42, color = TRACK_COLORS[i])
         switch i {
@@ -189,12 +193,13 @@ transport :: proc(c: ^ui.Context) {
         if ui.UiButton(c, "Stop##t") { state.playing = false }
         ui.UiToggle(c, "Play", &state.playing)
         ui.UiToggle(c, "Rec", &state.recording)
-        bars: f32 = state.time * f32(state.bpm) / 60 / 4 if state.playing else 0
-        ui.UiLabelf(c, "%d.%d.%02d bars", int(bars) + 1, int(bars * 4) % 4 + 1, int(bars * 400) % 100)
+        state.view.tempo = f64(state.bpm)
+        ui.UiLabelf(c, "%s bars", ui.TimelineBarsBeatsText(state.position[:], &state.view, f64(state.time) if state.playing else 0))
         ui.UiLabelDim(c, "BPM")
         ui.UiDragInt(c, "##bpm", &state.bpm, 0.3, 40, 240, "%.0f", {ui.Fixed(64), {}})
         ui.UiLabel(c, "4 / 4")
-        ui.UiLabelDim(c, "1 bar  Auto grid")
+        ui.UiDropdown(c, "##grid", ui.TIMELINE_SNAP_NAMES[:], &state.snap_choice, {ui.Fixed(80), {}})
+        ui.TimelineApplySnap(&state.view, ui.TimelineSnapChoice(state.snap_choice))
         ui.UiSpacer(c)
         ui.UiLabelDim(c, "DSP 2%")
         ui.UiLabelDim(c, "Master")
@@ -318,9 +323,11 @@ strip :: proc(c: ^ui.Context, i: int) {
         }
         ui.UiKnob(c, ui.UiFormat(c, "Pan##p%d", i), &state.pan[i], -1, 1, 0, {ui.Fixed(44), ui.Fixed(44)}, "%.1f")   // GAP: pan with the centre mark and 30L / C / 12R
         if ui.UiRow(c, {size = {ui.Grow(), ui.Grow()}, gap = 8, align = {x = .CENTER}}) {
-            ui.UiFader(c, ui.UiFormat(c, "Vol##v%d", i), &state.volume[i], 0, 1, 0.7, {ui.Fixed(26), ui.Grow()}, "%.2f")    // GAP: dB scale next to the fader
-            level: f32 = state.volume[i] * (0.55 + 0.4 * math.sin(state.time * (2 + f32(i)) + f32(i)))
-            ui.UiMeter(c, ui.UiFormat(c, "meter %d", i), max(level, 0), max(level, 0) * 1.1, 0, 1, {ui.Fixed(10), ui.Grow()})
+            swing: f32 = 0.55 + 0.4 * math.sin(state.time * (2 + f32(i)) + f32(i))
+            left: f32 = state.volume[i] + 20 * math.log10(max(swing, 0.001)) - 6
+            right: f32 = state.volume[i] + 20 * math.log10(max(0.55 + 0.4 * math.sin(state.time * (2.3 + f32(i)) + f32(i)), 0.001)) - 6
+            state.levels[i] = {left, right, left + 3.5, right + 3}
+            ui.UiMixerFader(c, ui.UiFormat(c, "Vol##v%d", i), &state.volume[i], &state.levels[i], 0, {ui.Fixed(104), ui.Grow()})
         }
         if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 4, align = {x = .CENTER}}) {
             ui.UiToggle(c, ui.UiFormat(c, "M##m%d", i), &state.mute[i])
