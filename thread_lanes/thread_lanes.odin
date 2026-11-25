@@ -1,19 +1,19 @@
 #+build !js
-package lanes
+package thread_lanes
 
 // Lanes: SPMD fan out for non realtime work, after the RAD Debugger (references/raddebugger/src/base/base_thread_context.c). Every thread of a
 // group runs the SAME procedure; the lane index and a barrier are all they need to divide the work and to wait for each other, there is no task queue
 // and no allocation while it runs:
 //
-//     Work :: proc(lane: ^lanes.Lane, user: rawptr) {
-//         range := lanes.LaneRange(lane, len(items))               // this lane's part of the items
+//     Work :: proc(lane: ^thread_lanes.Lane, user: rawptr) {
+//         range := thread_lanes.LaneRange(lane, len(items))               // this lane's part of the items
 //         for i in range.start ..< range.end { Process(&items[i]) }
-//         lanes.LaneSync(lane)                                      // everybody is done with the first stage
+//         thread_lanes.LaneSync(lane)                                      // everybody is done with the first stage
 //         total: int = 0
-//         if lanes.LaneIndex(lane) == 0 { total = Summarize(items) }
-//         lanes.LaneBroadcast(lane, &total, 0)                      // now every lane has what lane 0 computed
+//         if thread_lanes.LaneIndex(lane) == 0 { total = Summarize(items) }
+//         thread_lanes.LaneBroadcast(lane, &total, 0)                      // now every lane has what lane 0 computed
 //     }
-//     lanes.Run(8, Work, nil)                                       // the caller is lane 0, seven threads more
+//     thread_lanes.Run(8, Work, nil)                                       // the caller is lane 0, seven threads more
 //
 // Not for the audio thread (it creates threads and waits on a barrier): the realtime pool of odin_plug (graph/pool.odin) is made for that.
 // Offline bounce of tracks, batch checks, asset conversion, tests that need many threads at once.
