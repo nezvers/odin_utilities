@@ -47,7 +47,7 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 | ~~Step / pattern grid~~ done: `UiStepGrid` (paint by drag, playhead column, beat shading). Left: per step lengths, ratchets | `DrumPatternView`, `ArpGrid`, `RhythmViews` | | done |
 | ~~Piano keyboard~~ done: `UiKeyboard` (lit notes, root marked, press and glide send note on / off). Left: velocity by press height | `ChordKeysViz`, `KeysViews` | | done |
 | Modulation matrix (sources x targets, amount per cell) | `VoltMatrix` | `UiTable` | low |
-| Arrangement **overview** strip and sections ruler (bar numbers, drag to mark a section) | `ArrangementView.Overview`, `.Sections` | `UiTimeline` ruler (seconds, not bars), minimap of the graph | medium |
+| ~~Arrangement overview strip~~ done: `UiOverview` (clip blocks, sections band, draggable and zoomable window; used in the nota arrangement). Left: marking sections by drag | `ArrangementView.Overview`, `.Sections` | | done |
 | ~~Bars and beats on the ruler, grid snap choices~~ done: `TimelineView.tempo` turns the ruler into bars and beats, `TimelineSnapChoice` (off, bar, 1/4 .. 1/32, auto). Left: tempo map, triplets | `ArrangementView.TimeAxis`, `SnapChip` | | done |
 | Clip body drawing: notes as dashes, waveform, drum steps inside a clip | `ArrangementView` clips | clip with a title | medium |
 | Node graph nodes with an on/off switch in the header, CV ports (diamond), edge colours by signal kind, a minimap | `ModularView` | `UiGraph` (round pins, no header widgets) | medium |

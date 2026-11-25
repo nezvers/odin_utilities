@@ -69,6 +69,7 @@ EDIT_FIELDS :: [?]struct {
     {.WAVEFORM, "", "panel,track,border,text,text_dim,accent,accent_soft,warning"},
     {.MIXER_FADER, "", "track,accent,accent_soft,border,text,text_dim,success,warning,danger,rounding,max_radius"},
     {.RANGE_SLIDER, "", "track,accent,accent_soft,border,text,text_dim,focus"},
+    {.OVERVIEW, "", "track,accent,accent_soft,border,text,text_dim,rounding,max_radius,border_width,focus"},
     {.XY_PAD, "", "track,accent,border,text,text_dim,rounding,max_radius,border_width,focus"},
     {.WHEEL, "", "track,accent,border,text_dim,rounding,max_radius,border_width,focus"},
     {.SCROLL_BAR_THIN, "", "track,text,text_dim"},

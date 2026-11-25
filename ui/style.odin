@@ -36,6 +36,7 @@ StyleKind :: enum u8 {
     SCROLL_BAR_THIN,    // a thin scroll bar: value 0..1 the place of the thumb, ratio the visible part 0..1, cursor 1 across / 0 down
     KEYBOARD,           // a piano keyboard: minimum and maximum the first and last pitch, anchor the root pitch class (-1 none), cursor the key that is down (-1 none), user ^[128]bool of lit keys (nil: none)
     STEP_GRID,          // a grid of steps: values the cells (row after row), anchor rows, cursor steps, actual the playing step (-1 none), minimum the steps per beat
+    OVERVIEW,           // the overview strip of an arrangement: value and ratio the window (left, right) as fractions of the whole, actual the playhead fraction, user the ^Overview (clips, sections)
     PROGRESS,           // value 0..1, actual: the number it shows
     TEXT_FIELD,         // text: the content, cursor: byte offset, FOCUSED flag
     SEPARATOR,

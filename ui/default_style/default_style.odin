@@ -373,6 +373,7 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.VALUE_BAR] = DrawValueBar
     style.procs[.PIANO_ROLL] = DrawPianoRoll
     style.procs[.RANGE_SLIDER] = DrawRangeSlider
+    style.procs[.OVERVIEW] = DrawOverview
     style.procs[.XY_PAD] = DrawXYPad
     style.procs[.WHEEL] = DrawWheel
     style.procs[.SCROLL_BAR_THIN] = DrawScrollBarThin

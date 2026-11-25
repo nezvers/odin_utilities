@@ -6692,3 +6692,64 @@ test_picker_closes_on_a_click_outside_and_picks_by_click :: proc(t: ^testing.T) 
     pickerFrame(harness, pointerAt(far, released = true), &s, {100, 50, 120, 24})
     testing.expect(t, !s.open && s.chosen == -1)
 }
+
+@(private = "file")
+overviewFrame :: proc(harness: ^Harness, input: Input, overview: ^Overview) -> bool {
+    frame(harness, input)
+    changed: bool = UiOverview(&harness.ctx, "ov", overview, {Fixed(300), Fixed(40)})
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return changed
+}
+
+@(test)
+test_overview_frame_scrolls_zooms_and_centres :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    timeline: ^Timeline = new(Timeline)
+    defer free(timeline)
+    TimelineInit(timeline)
+    a, _ := TimelineTrackAdd(timeline, "A")
+    b, _ := TimelineTrackAdd(timeline, "B")
+    TimelineClipAdd(timeline, a, 10, 20, "one")
+    two, _ := TimelineClipAdd(timeline, b, 50, 10, "two")
+    view: TimelineView = {zoom = 10, origin = 0}
+    view.rect = {0, 0, 200, 100}                 // 200 pixels at 10 per second: a window of 20 seconds
+    sections: [1]OverviewSection = {{0, 40, "Verse", {}}}
+    overview: Overview = {timeline = timeline, view = &view, total = 100, sections = sections[:]}
+    start, length := OverviewWindow(&overview)
+    testing.expect(t, near(f32(start), 0) && near(f32(length), 20))
+    overviewFrame(harness, pointerAt({-100, -100}), &overview)
+    overviewFrame(harness, pointerAt({-100, -100}), &overview)
+    rect, found := UiElementRect(&harness.ctx, UiId(&harness.ctx, "ov"))
+    testing.expect(t, found)
+    // the window is the first fifth of the strip: a drag from inside of it moves it by the distance (300 px = 100 s)
+    from: Vec2 = {rect.x + 30, rect.y + 20}
+    overviewFrame(harness, pointerAt(from), &overview)
+    overviewFrame(harness, pointerAt(from, down = true, pressed = true), &overview)
+    overviewFrame(harness, pointerAt(from + {90, 0}, down = true), &overview)
+    overviewFrame(harness, pointerAt(from + {90, 0}, released = true), &overview)
+    testing.expect(t, abs(view.origin - 30) < 0.5 && near(view.zoom, 10), "moved 90 px = 30 s, same zoom")
+    for _ in 0 ..< 30 { overviewFrame(harness, pointerAt({-100, -100}), &overview) }
+    // the right edge zooms out: the origin stays
+    right: f32 = rect.x + f32((view.origin + 20) / 100) * rect.z
+    overviewFrame(harness, pointerAt({right - 2, rect.y + 20}), &overview)
+    overviewFrame(harness, pointerAt({right - 2, rect.y + 20}, down = true, pressed = true), &overview)
+    overviewFrame(harness, pointerAt({right + 28, rect.y + 20}, down = true), &overview)
+    overviewFrame(harness, pointerAt({right + 28, rect.y + 20}, released = true), &overview)
+    _, length = OverviewWindow(&overview)
+    testing.expect(t, abs(view.origin - 30) < 0.5 && abs(f32(length) - 30) < 1, "the right edge made the window longer")
+    for _ in 0 ..< 30 { overviewFrame(harness, pointerAt({-100, -100}), &overview) }
+    // a press outside centres the window there
+    far: Vec2 = {rect.x + rect.z * 0.8, rect.y + 20}
+    overviewFrame(harness, pointerAt(far), &overview)
+    overviewFrame(harness, pointerAt(far, down = true, pressed = true), &overview)
+    overviewFrame(harness, pointerAt(far, released = true), &overview)
+    start, length = OverviewWindow(&overview)
+    testing.expect(t, abs(f32(start + length * 0.5) - 80) < 1, "centred on 80 s")
+    // the clips are blocks in their rows
+    block, ok := OverviewClipRect(&overview, {0, 0, 300, 40}, TimelineClipGet(timeline, two))
+    testing.expect(t, ok && near(block.x, 150) && near(block.y, 20) && near(block.z, 30), "a clip of 10 s at 50 s: 30 px at 150, in the second row")
+    testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
+}

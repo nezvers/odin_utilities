@@ -41,6 +41,8 @@ State :: struct {
     // arrangement
     timeline: ui.Timeline,
     view: ui.TimelineView,
+    overview: ui.Overview,
+    sections: [3]ui.OverviewSection,
     search: [32]u8,
     search_length: int,
     filters: [5]bool,
@@ -111,6 +113,8 @@ init :: proc(ctx: ^kit.Context) {
     // the arrangement
     ui.TimelineInit(&state.timeline, &state)
     state.view = {zoom = 18, snap = 1, tempo = 124, beats_per_bar = 4}
+    state.sections = {{0, 32, "Intro", {}}, {32, 64, "Verse", {}}, {96, 48, "Chorus", {}}}
+    state.overview = {timeline = &state.timeline, view = &state.view, total = 160, sections = state.sections[:]}
     state.snap_choice = int(ui.TimelineSnapChoice.AUTO)
     for name, i in TRACK_NAMES {
         track, _ := ui.TimelineTrackAdd(&state.timeline, name, 42, color = TRACK_COLORS[i])
@@ -224,7 +228,10 @@ arrangement :: proc(c: ^ui.Context, screen: ui.Vec2) {
     if ui.UiColumn(c, {size = {ui.Grow(), ui.Grow()}, exact = true}) {
         if ui.UiRow(c, {size = {ui.Grow(), ui.Percent(0.58)}, exact = true}) {
             browser(c)
-            ui.UiTimeline(c, "Arrangement", &state.timeline, &state.view, {ui.Grow(), ui.Grow()})
+            if ui.UiColumn(c, {size = {ui.Grow(), ui.Grow()}, exact = true}) {
+                ui.UiOverview(c, "Overview", &state.overview, {ui.Grow(), ui.Fixed(34)})
+                ui.UiTimeline(c, "Arrangement", &state.timeline, &state.view, {ui.Grow(), ui.Grow()})
+            }
         }
         devices(c)
     }
