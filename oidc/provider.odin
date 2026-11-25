@@ -304,10 +304,16 @@ DeviceStart :: proc(metadata: ^Metadata, config: ClientConfig, device: ^DeviceCo
     return device.device_code != "" && device.user_code != ""
 }
 
+// The next poll is `interval` seconds away and a second more: a provider counts from when the request arrives, and a poll that is a hair early is slow_down
+@(private)
+deviceSchedule :: proc(device: ^DeviceCode) {
+    device.next_poll = time.tick_add(time.tick_now(), time.Duration(device.interval + 1) * time.Second)
+}
+
 // Asks whether the person has finished (no more often than `interval`: a call before that returns PENDING without a request)
 DevicePoll :: proc(metadata: ^Metadata, config: ClientConfig, device: ^DeviceCode, tokens: ^Tokens) -> DevicePollState {
     if time.tick_since(device.next_poll) < 0 { return .PENDING }
-    device.next_poll = time.tick_add(time.tick_now(), time.Duration(device.interval) * time.Second)
+    deviceSchedule(device)
     form: strings.Builder
     strings.builder_init(&form, context.temp_allocator)
     FormField(&form, "grant_type", "urn:ietf:params:oauth:grant-type:device_code")
@@ -320,7 +326,9 @@ DevicePoll :: proc(metadata: ^Metadata, config: ClientConfig, device: ^DeviceCod
     switch tokens.error {
     case "authorization_pending": return .PENDING
     case "slow_down":
+        // the provider wants a longer wait: five more seconds, counted from now (GitHub found live: keeping the old schedule polled too early again, every answer was slow_down and the approval was never seen)
         device.interval += 5
+        deviceSchedule(device)
         return .PENDING
     case "access_denied": return .DENIED
     case "expired_token": return .EXPIRED

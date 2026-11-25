@@ -207,3 +207,16 @@ test_the_text_of_a_page_is_escaped :: proc(t: ^testing.T) {
     testing.expect_value(t, htmlEscape("plain text 123"), "plain text 123")
     testing.expect_value(t, htmlEscape(""), "")
 }
+
+@(test)
+test_a_slow_down_answer_waits_a_whole_longer_interval_from_now :: proc(t: ^testing.T) {
+    device: DeviceCode = {interval = 5}
+    deviceSchedule(&device)
+    wait: f64 = time.duration_seconds(time.tick_diff(time.tick_now(), device.next_poll))
+    testing.expect(t, wait > 5.5 && wait <= 6.01, "an interval and a second of margin")
+    // the answer slow_down: the interval grows by five and the next poll is counted again from now (it used to keep the old time, so every poll came too early)
+    device.interval += 5
+    deviceSchedule(&device)
+    wait = time.duration_seconds(time.tick_diff(time.tick_now(), device.next_poll))
+    testing.expect(t, wait > 10.5 && wait <= 11.01, "the new interval from now")
+}

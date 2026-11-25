@@ -2,7 +2,7 @@ package main
 
 // A whole login against a real provider, to try the settings of oidc/providers/providers.local.txt:
 //
-//     odin run oidc/tool/login -- discord|google|github|spacetimeauth [--no-browser] [--file path] [--timeout seconds] [--issuer url]
+//     odin run oidc/tool/login -- discord|google|github|spacetimeauth [--no-browser] [--verbose] [--file path] [--timeout seconds] [--issuer url]
 //
 // Discord, Google, SpacetimeAuth: the browser flow (a page opens, you log in, the browser comes back to 127.0.0.1) and the claims of the verified ID token are printed. GitHub: the device flow (a code is
 // printed, you type it at github.com/login/device) and the user from api.github.com. Tokens are never printed, and nothing is stored.
@@ -21,6 +21,9 @@ SETTINGS_PATHS :: [?]string{"oidc/providers/providers.local.txt", "providers/pro
 
 // Where the text goes: nil prints it as it happens (the address has to be seen before the tool waits), a test gives a builder
 capture: ^strings.Builder
+
+// --verbose: what the provider answered at every poll of the device flow (the error word only, never a token)
+verbose: bool
 
 // Called every turn while a login waits (instead of a short sleep): a test plays the browser and steps the provider here. `login` is nil in the device flow.
 Idle: proc(login: ^oidc.Login)
@@ -58,9 +61,11 @@ run :: proc(arguments: []string) -> int {
     issuer: string
     open_browser: bool = true
     timeout: f64 = 300
+    verbose = false
     for i := 0; i < len(arguments); i += 1 {
         switch arguments[i] {
         case "--no-browser": open_browser = false
+        case "--verbose": verbose = true
         case "--file":
             i += 1
             if i < len(arguments) { settings_path = arguments[i] }
@@ -202,8 +207,14 @@ githubDevice :: proc(config: oidc.ClientConfig, issuer: string, timeout: f64) ->
     defer free(tokens)
     started: time.Tick = time.tick_now()
     limit: f64 = min(timeout, f64(device.expires_in)) if device.expires_in > 0 else timeout
+    last_state: oidc.DevicePollState = .FAILED
+    last_error: string
     for {
         state: oidc.DevicePollState = oidc.DevicePoll(metadata, config, device, tokens)
+        if verbose && (state != last_state || tokens.error != last_error) {
+            say(fmt.tprintf("  poll after %.0f s: %v %s", time.duration_seconds(time.tick_since(started)), state, tokens.error))
+            last_state, last_error = state, strings.clone(tokens.error, context.temp_allocator)
+        }
         if state == .DONE { break }
         if state != .PENDING { return failed(fmt.tprintf("device flow ended: %v (%s)", state, tokens.error), 1) }
         if time.duration_seconds(time.tick_since(started)) > limit {
