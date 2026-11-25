@@ -17,7 +17,7 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] GitHub tried live with the tool (device flow, user from api.github.com)
 - [x] A SpacetimeDB login with a real Google ID token (`spacetimedb/tool/auth_live -- google`): the server verified it, the module's policy let the person in and refused anonymous
 - [x] SpacetimeAuth tried live with tool/login (login, refresh with offline_access) and with `spacetimedb/tool/auth_live -- spacetimeauth` (a real local SpacetimeDB server accepted the token, the module let the person in)
-- [ ] (medium) Discord with auth_live
+- [x] Discord with auth_live (2026-11-25, live): the real local server fetched Discord's keys, accepted the ID token of the person, the module trusted only that issuer and audience, an anonymous player was refused
 - [x] Google and GitHub again live (2026-11-25): Google through the new browser launcher (ID token verified, refresh, user info); GitHub through `tool/login github` (device flow approved, user read from api.github.com). Found: after `slow_down` the old poll schedule was kept, so every poll was early and the approval was never seen (`deviceSchedule`, `--verbose` shows the answers)
 - [ ] (medium) The arena: a sign-in window with the `ui` library (name from the claims) and the choice of provider
 - [ ] (low) `JsonString` returns escapes as written (`\\"` in a name): add a decoding variant that writes into a buffer
