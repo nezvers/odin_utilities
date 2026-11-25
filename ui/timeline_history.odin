@@ -20,6 +20,8 @@ TimelineState :: struct {
     points: type_of(Timeline{}.points),
     order: [TIMELINE_TRACKS]TrackHandle,
     track_count: int,
+    label: [HISTORY_LABEL_MAX]u8,       // what the step was (history_view.odin)
+    label_length: int,
 }
 
 TimelineHistory :: struct {
@@ -54,19 +56,22 @@ TimelineHistoryInit :: proc(history: ^TimelineHistory, storage: []TimelineState,
     assert(len(storage) >= 2)
     history^ = {states = storage}
     timelineStateSave(timeline, &history.states[0])
+    historyLabelSet(&history.states[0].label, &history.states[0].label_length, "Start")
     history.count, history.serial = 1, timeline.serial
 }
 
 // Makes the state now a step of the history, when something changed since the last one: the steps after the current one (what a redo would bring) are dropped, and when the storage is
 // full the oldest step goes. True when a step was made.
-TimelineHistoryCommit :: proc(history: ^TimelineHistory, timeline: ^Timeline) -> bool {
+TimelineHistoryCommit :: proc(history: ^TimelineHistory, timeline: ^Timeline, label: string = "") -> bool {
     if len(history.states) == 0 || timeline.serial == history.serial { return false }
     history.count = history.current + 1
     if history.count == len(history.states) {
         history.first = (history.first + 1) % len(history.states)
         history.count -= 1
     }
-    timelineStateSave(timeline, &history.states[(history.first + history.count) % len(history.states)])
+    made: ^TimelineState = &history.states[(history.first + history.count) % len(history.states)]
+    timelineStateSave(timeline, made)
+    historyLabelSet(&made.label, &made.label_length, label if label != "" else TimelineEventLabel(timeline.last_event))
     history.count += 1
     history.current = history.count - 1
     history.serial = timeline.serial

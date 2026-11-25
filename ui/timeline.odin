@@ -217,6 +217,7 @@ Timeline :: struct {
     event_count: int,
     events_lost: int,
     serial: u64,                            // counts the events ever made: a widget sees that something changed by comparing it
+    last_event: TimelineEventKind,          // the kind of the last event (it names a step of the history)
 }
 
 TimelineInit :: proc(timeline: ^Timeline, user: rawptr = nil) {
@@ -261,6 +262,7 @@ timelineName :: proc(buffer: []u8, length: ^int, text: string) {
 timelineEmit :: proc(timeline: ^Timeline, event: TimelineEvent) {
     stored: TimelineEvent = event
     timeline.serial += 1
+    if event.kind != .RESTORED { timeline.last_event = event.kind }
     stored.timeline_user = timeline.user
     if clip := TimelineClipGet(timeline, event.clip); clip != nil { stored.clip_user = clip.user }
     if track := TimelineTrackGet(timeline, event.track); track != nil { stored.track_user = track.user }

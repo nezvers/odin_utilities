@@ -6958,3 +6958,59 @@ test_mod_matrix_cells_click_drag_wheel_and_clear :: proc(t: ^testing.T) {
     testing.expect_value(t, s.amounts[1], 0)
     testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
 }
+
+@(private = "file")
+HistoryTest :: struct {
+    timeline: Timeline,
+    history: TimelineHistory,
+    states: [6]TimelineState,
+}
+
+@(private = "file")
+historyFrame :: proc(harness: ^Harness, input: Input, h: ^HistoryTest) -> bool {
+    frame(harness, input, {400, 400})
+    jumped: bool = UiTimelineHistory(&harness.ctx, "History", &h.history, &h.timeline, 4)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return jumped
+}
+
+@(test)
+test_history_view_names_the_steps_and_jumps_on_a_click :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    h: ^HistoryTest = new(HistoryTest)
+    defer { free(harness); free(h) }
+    harnessInit(harness)
+    TimelineInit(&h.timeline)
+    track, _ := TimelineTrackAdd(&h.timeline, "a")
+    TimelineHistoryInit(&h.history, h.states[:], &h.timeline)
+    clip, _ := TimelineClipAdd(&h.timeline, track, 0, 1, "x")
+    TimelineHistoryCommit(&h.history, &h.timeline)
+    TimelineClipPlace(&h.timeline, clip, track, 3, 1)
+    TimelineHistoryCommit(&h.history, &h.timeline)
+    TimelineClipPlace(&h.timeline, clip, track, 4, 2)
+    TimelineHistoryCommit(&h.history, &h.timeline, "Nudge")
+    testing.expect_value(t, TimelineHistoryLabel(&h.history, 0), "Start")
+    testing.expect_value(t, TimelineHistoryLabel(&h.history, 1), "Add clip")
+    testing.expect_value(t, TimelineHistoryLabel(&h.history, 2), "Move clip")
+    testing.expect_value(t, TimelineHistoryLabel(&h.history, 3), "Nudge")
+    testing.expect_value(t, TimelineHistoryLabel(&h.history, 4), "")
+    for _ in 0 ..< 3 { historyFrame(harness, pointerAt({-100, -100}), h) }
+    testing.expect_value(t, h.history.current, 3)
+    // a click on the second step goes back there: the clip is at its first place, the later steps stay for a redo
+    row, found := UiElementRect(&harness.ctx, IdFromIndex(1, UiId(&harness.ctx, "History")))
+    testing.expect(t, found)
+    at: Vec2 = {row.x + row.z * 0.5, row.y + row.w * 0.5}
+    historyFrame(harness, pointerAt(at), h)
+    historyFrame(harness, pointerAt(at, down = true, pressed = true), h)
+    testing.expect(t, historyFrame(harness, pointerAt(at, released = true), h))
+    testing.expect_value(t, h.history.current, 1)
+    testing.expect_value(t, TimelineClipGet(&h.timeline, clip).start, 0)
+    testing.expect_value(t, h.history.count, 4)
+    // and forward again by the last row
+    for _ in 0 ..< 30 { historyFrame(harness, pointerAt({-100, -100}), h) }
+    testing.expect(t, TimelineHistoryJump(&h.history, &h.timeline, 3))
+    testing.expect_value(t, TimelineClipGet(&h.timeline, clip).start, 4)
+    testing.expect(t, !TimelineHistoryJump(&h.history, &h.timeline, 9))
+    testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
+}

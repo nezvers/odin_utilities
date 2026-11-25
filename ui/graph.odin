@@ -217,6 +217,7 @@ Graph :: struct {
     events_lost: int,                       // the oldest events that were thrown away because nobody polled
     z_counter: i16,
     serial: u64,                            // counts the changes (every event), so a history knows when a step is due
+    last_event: GraphEventKind,             // the kind of the last event (it names a step of the history)
     stamp: u32,                             // numbers the visits of the searches
     frame: u32,                             // numbers the frames of the widgets
 }
@@ -290,6 +291,7 @@ graphEmit :: proc(graph: ^Graph, event: GraphEvent) {
     stored: GraphEvent = event
     stored.graph_user = graph.user
     graph.serial += 1
+    if event.kind != .RESTORED { graph.last_event = event.kind }
     if graph.event_count == len(graph.events) {
         graph.event_head = (graph.event_head + 1) % len(graph.events)          // nobody polls: the oldest goes
         graph.event_count -= 1

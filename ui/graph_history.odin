@@ -20,6 +20,8 @@ GraphState :: struct {
     links: type_of(Graph{}.links),
     ties: type_of(Graph{}.ties),
     z_counter: i16,
+    label: [HISTORY_LABEL_MAX]u8,       // what the step was (history_view.odin)
+    label_length: int,
 }
 
 GraphHistory :: struct {
@@ -54,19 +56,22 @@ GraphHistoryInit :: proc(history: ^GraphHistory, storage: []GraphState, graph: ^
     assert(len(storage) >= 2)
     history^ = {states = storage}
     graphStateSave(graph, &history.states[0])
+    historyLabelSet(&history.states[0].label, &history.states[0].label_length, "Start")
     history.count, history.serial = 1, graph.serial
 }
 
 // Makes the state now a step of the history, when something changed since the last one: the steps after the current one (what a redo would bring) are dropped, and when the storage is
 // full the oldest step goes. True when a step was made.
-GraphHistoryCommit :: proc(history: ^GraphHistory, graph: ^Graph) -> bool {
+GraphHistoryCommit :: proc(history: ^GraphHistory, graph: ^Graph, label: string = "") -> bool {
     if len(history.states) == 0 || graph.serial == history.serial { return false }
     history.count = history.current + 1
     if history.count == len(history.states) {
         history.first = (history.first + 1) % len(history.states)
         history.count -= 1
     }
-    graphStateSave(graph, &history.states[(history.first + history.count) % len(history.states)])
+    made: ^GraphState = &history.states[(history.first + history.count) % len(history.states)]
+    graphStateSave(graph, made)
+    historyLabelSet(&made.label, &made.label_length, label if label != "" else GraphEventLabel(graph.last_event))
     history.count += 1
     history.current = history.count - 1
     history.serial = graph.serial
