@@ -6590,3 +6590,105 @@ test_step_grid_paints_with_a_drag :: proc(t: ^testing.T) {
     padDrag(harness, cell(grid, 0, 3), cell(grid, 0, 1), &s)
     testing.expect(t, s.cells[1] == 0 && s.cells[3] == 0)
 }
+
+@(test)
+test_picker_filter_ranks_and_needs_every_word :: proc(t: ^testing.T) {
+    items: []PickerItem = {{"Filter Cutoff", "Synth"}, {"Cutoff", "Filter"}, {"Resonance", "Filter"}, {"Gain", "Output"}, {"Low Cut", "EQ"}}
+    matches: [8]int
+    count: int = PickerFilter(items, "cut", matches[:])
+    testing.expect_value(t, count, 3)
+    testing.expect_value(t, matches[0], 1)             // "Cutoff" starts with it
+    testing.expect_value(t, matches[1], 0)             // a part of "Filter Cutoff" starts with it (the order of the items inside a score)
+    testing.expect_value(t, matches[2], 4)             // "Low Cut": a part of the name too, after the one that came first
+    testing.expect_value(t, PickerFilter(items, "filter cut", matches[:]), 2)         // both words: the name or the detail
+    testing.expect_value(t, PickerFilter(items, "out", matches[:]), 1)                // Gain, by its detail ("Output")
+    testing.expect_value(t, PickerFilter(items, "zzz", matches[:]), 0)
+    testing.expect_value(t, PickerFilter(items, "", matches[:]), 5)
+    small: [2]int
+    testing.expect_value(t, PickerFilter(items, "", small[:]), 2)
+    best: int = PickerFilter(items, "cutoff", small[:])
+    testing.expect(t, best == 2 && small[0] == 1, "a short list keeps the best")
+}
+
+@(private = "file")
+PickerState :: struct {
+    open: bool,
+    query: [32]u8,
+    length: int,
+    matches: [16]int,
+    chosen: int,
+}
+
+@(private = "file")
+pickerFrame :: proc(harness: ^Harness, input: Input, s: ^PickerState, anchor: Rect = {}) {
+    items: []PickerItem = {{"Cutoff", "Filter"}, {"Resonance", "Filter"}, {"Gain", "Output"}, {"Pan", "Output"}}
+    frame(harness, input)
+    chosen: int = UiPicker(&harness.ctx, "Parameters", &s.open, items, s.query[:], &s.length, s.matches[:], anchor)
+    if chosen >= 0 { s.chosen = chosen }
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(test)
+test_picker_opens_filters_walks_and_picks :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: PickerState = {chosen = -1}
+    pickerFrame(harness, pointerAt({-100, -100}), &s)
+    s.open = true
+    pickerFrame(harness, pointerAt({-100, -100}), &s)
+    pickerFrame(harness, pointerAt({-100, -100}), &s)
+    testing.expect_value(t, harness.ctx.focus, UiIdPath("Parameters", "##query"))
+    // the arrows walk the list, Enter picks: the second item of the whole list is Resonance
+    pickerFrame(harness, (Input){mouse_position = {-100, -100}, actions = {.DOWN}}, &s)
+    pickerFrame(harness, (Input){mouse_position = {-100, -100}, keys = {.ENTER}}, &s)
+    testing.expect_value(t, s.chosen, 1)
+    testing.expect(t, !s.open, "a pick closes it")
+
+    // typing narrows the list: "out" matches the two Output parameters, Enter takes the first of them
+    s.open, s.chosen = true, -1
+    pickerFrame(harness, pointerAt({-100, -100}), &s)
+    pickerFrame(harness, pointerAt({-100, -100}), &s)
+    typed: Input = pointerAt({-100, -100})
+    copy(typed.text[:], "out")
+    typed.text_count = 3
+    pickerFrame(harness, typed, &s)
+    testing.expect_value(t, s.length, 3)
+    pickerFrame(harness, (Input){mouse_position = {-100, -100}, keys = {.ENTER}}, &s)
+    testing.expect_value(t, s.chosen, 2)
+
+    // Escape closes without a pick; the next opening starts with an empty query
+    s.open, s.chosen = true, -1
+    pickerFrame(harness, pointerAt({-100, -100}), &s)
+    testing.expect_value(t, s.length, 0)
+    pickerFrame(harness, (Input){mouse_position = {-100, -100}, keys = {.ESCAPE}}, &s)
+    testing.expect(t, !s.open && s.chosen == -1)
+    testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
+}
+
+@(test)
+test_picker_closes_on_a_click_outside_and_picks_by_click :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: PickerState = {chosen = -1}
+    s.open = true
+    for _ in 0 ..< 3 { pickerFrame(harness, pointerAt({-100, -100}), &s, {100, 50, 120, 24}) }
+    // a click on the third row
+    row, found := UiElementRect(&harness.ctx, IdFromIndex(2, UiId(&harness.ctx, "Parameters")))
+    testing.expect(t, found)
+    at: Vec2 = {row.x + row.z * 0.5, row.y + row.w * 0.5}
+    pickerFrame(harness, pointerAt(at), &s, {100, 50, 120, 24})
+    pickerFrame(harness, pointerAt(at, down = true, pressed = true), &s, {100, 50, 120, 24})
+    pickerFrame(harness, pointerAt(at, released = true), &s, {100, 50, 120, 24})
+    testing.expect_value(t, s.chosen, 2)
+    // a click far from the panel closes it
+    s.open, s.chosen = true, -1
+    for _ in 0 ..< 3 { pickerFrame(harness, pointerAt({-100, -100}), &s, {100, 50, 120, 24}) }
+    far: Vec2 = {5, 5}
+    pickerFrame(harness, pointerAt(far), &s, {100, 50, 120, 24})
+    pickerFrame(harness, pointerAt(far, down = true, pressed = true), &s, {100, 50, 120, 24})
+    pickerFrame(harness, pointerAt(far, released = true), &s, {100, 50, 120, 24})
+    testing.expect(t, !s.open && s.chosen == -1)
+}

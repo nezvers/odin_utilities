@@ -22,8 +22,8 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 |---|---|---|---|
 | ~~Preset selector~~ done: `UiPresetSelector` | device card headers (`DeviceCardKit`) | | done |
 | Key and scale pickers (root note + scale, "Project key" shortcuts) | `KeyPicker`, `ScaleNoteMap` | none | low |
-| Parameter picker: searchable list popup at the pointer or under an anchor | `ParamPickerPanel` | `UiCombo`, `UiComplete` | medium |
-| Command palette | `CommandPaletteView` | `UiComplete` + `UiModal` (not assembled) | medium |
+| ~~Parameter picker~~ done: `UiPicker` with an anchor rectangle (words match name or detail, best first) | `ParamPickerPanel` | | done |
+| ~~Command palette~~ done: `UiPicker` without an anchor (dimmed window, top centre) | `CommandPaletteView` | | done |
 
 ## Containers and compound views
 | Missing | Nota source | Have | Priority |

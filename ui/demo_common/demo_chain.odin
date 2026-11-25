@@ -37,12 +37,20 @@ State :: struct {
     cutoff: f32,
     resonance: f32,
     drive: f32,
+    picker_open: bool,
+    query: [32]u8,
+    query_length: int,
+    matches: [32]int,
+    picked: int,
+    anchor: ui.Rect,
 }
+
+PARAMETERS: [8]ui.PickerItem = {{"Cutoff", "Filter"}, {"Resonance", "Filter"}, {"Drive", "Filter"}, {"Attack", "Envelope"}, {"Release", "Envelope"}, {"Rate", "LFO"}, {"Depth", "LFO"}, {"Gain", "Output"}}
 
 state: State
 
 init :: proc(ctx: ^kit.Context) {
-    state = {on = true, cutoff = 0.6, resonance = 0.3, drive = 0.2}
+    state = {on = true, cutoff = 0.6, resonance = 0.3, drive = 0.2, picked = -1}
     state.volume = {-3, -8.5, -6, 0}
     state.pan = {0, -0.3, 0.25, 0}
     ui_demo_init(&state.app)
@@ -70,8 +78,15 @@ draw :: proc(ctx: ^kit.Context) {
             }
             if ui.UiDeviceSection(c, "drive", "Drive") { ui.UiKnob(c, "Drive", &state.drive, 0, 1, 0, {ui.Fixed(52), ui.Fixed(52)}, "%.2f") }
         }
+        if ui.UiRow(c, {gap = 10, align = {y = .CENTER}}) {
+            if ui.UiButton(c, "Modulate...", {ui.Fixed(130), {}}) { state.picker_open = true }
+            ui.UiLabelDim(c, ui.UiFormat(c, "target: %s", PARAMETERS[state.picked].name if state.picked >= 0 else "none"))
+        }
     }
+    if picked := ui.UiPicker(c, "Parameters", &state.picker_open, PARAMETERS[:], state.query[:], &state.query_length, state.matches[:], state.anchor); picked >= 0 { state.picked = picked }
     ui_demo_end(&state.app)
+    // the rectangles are those of the frame that was just laid out: the picker of the next frame opens under the button
+    if rect, found := ui.UiElementRect(c, ui.UiIdPath("chain", "Modulate...")); found { state.anchor = rect }
 }
 
 target: ui.Vec2
@@ -92,8 +107,19 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.preset == 1 }, "the arrow chooses the next preset"),
-    kit.MoveTo({700, 20}),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return find("chain", "Modulate...") }, "the button that opens the picker"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.picker_open }, "the picker is open"),
+    kit.Tap(.R),
     kit.Wait(3),
+    kit.MoveTo({900, 20}),
+    kit.Wait(3),
+    kit.Capture("chain_picker"),
+    kit.Wait(2),
+    kit.Tap(.ENTER),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !state.picker_open && state.picked >= 0 }, "Enter picks the first match"),
     kit.Capture("chain"),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return find("chain", "card", "##fold") }, "the fold button of the card"),
