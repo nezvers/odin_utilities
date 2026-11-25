@@ -7058,3 +7058,67 @@ test_dialogs_are_balanced_open_and_closed_and_answer_by_click :: proc(t: ^testin
     testing.expect_value(t, answer, 1)
     testing.expect(t, !open[1])
 }
+
+@(private = "file")
+ShortcutTest :: struct {
+    commands: [3]ShortcutCommand,
+    filter: [16]u8,
+    filter_length: int,
+    changed: int,
+    listening: bool,
+}
+
+@(private = "file")
+shortcutFrame :: proc(harness: ^Harness, input: Input, s: ^ShortcutTest, pressed: Chord = {}) {
+    frame(harness, input, {700, 500})
+    changed: int
+    changed, s.listening = UiShortcutEditor(&harness.ctx, "Keys", s.commands[:], pressed, proc(key: u16) -> string { return "K" }, s.filter[:], &s.filter_length, {Fixed(420), Fixed(200)})
+    if changed >= 0 { s.changed = changed }
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(test)
+test_shortcut_editor_sets_resets_filters_and_flags_conflicts :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    s: ^ShortcutTest = new(ShortcutTest)
+    defer { free(harness); free(s) }
+    harnessInit(harness)
+    s.commands = {{"Save", {{.CTRL}, 19}, {{.CTRL}, 19}}, {"Open", {{.CTRL}, 15}, {{.CTRL}, 15}}, {"Close", {}, {{.CTRL}, 23}}}
+    s.changed = -1
+    testing.expect_value(t, ShortcutConflict(s.commands[:], 0), -1)
+    for _ in 0 ..< 3 { shortcutFrame(harness, pointerAt({-100, -100}), s) }
+    // a click on the field of Open makes it listen, the next key is the new chord (the same as Save: a conflict)
+    field, found := UiElementRect(&harness.ctx, UiIdPath("Keys", "##list", "##chord1"))
+    testing.expect(t, found)
+    at: Vec2 = {field.x + field.z * 0.5, field.y + field.w * 0.5}
+    shortcutFrame(harness, pointerAt(at), s)
+    shortcutFrame(harness, pointerAt(at, down = true, pressed = true), s)
+    shortcutFrame(harness, pointerAt(at, released = true), s)
+    shortcutFrame(harness, pointerAt(at), s)
+    testing.expect(t, s.listening)
+    shortcutFrame(harness, pointerAt(at), s, {{.CTRL}, 19})
+    testing.expect_value(t, s.changed, 1)
+    testing.expect_value(t, s.commands[1].chord, Chord{{.CTRL}, 19})
+    testing.expect_value(t, ShortcutConflict(s.commands[:], 0), 1)
+    testing.expect_value(t, ShortcutConflict(s.commands[:], 1), 0)
+    testing.expect_value(t, ShortcutConflict(s.commands[:], 2), -1)
+    // Reset puts the default back
+    s.changed = -1
+    for _ in 0 ..< 30 { shortcutFrame(harness, pointerAt({-100, -100}), s) }
+    reset, found_reset := UiElementRect(&harness.ctx, UiIdPath("Keys", "##list", "Reset##reset1"))
+    testing.expect(t, found_reset)
+    at = {reset.x + reset.z * 0.5, reset.y + reset.w * 0.5}
+    shortcutFrame(harness, pointerAt(at), s)
+    shortcutFrame(harness, pointerAt(at, down = true, pressed = true), s)
+    shortcutFrame(harness, pointerAt(at, released = true), s)
+    testing.expect_value(t, s.changed, 1)
+    testing.expect_value(t, s.commands[1].chord, Chord{{.CTRL}, 15})
+    // the filter narrows the list: "clo" shows only Close
+    s.filter_length = copy(s.filter[:], "clo")
+    for _ in 0 ..< 3 { shortcutFrame(harness, pointerAt({-100, -100}), s) }
+    _, save_found := UiElementRect(&harness.ctx, UiIdPath("Keys", "##list", "##chord0"))
+    _, close_found := UiElementRect(&harness.ctx, UiIdPath("Keys", "##list", "##chord2"))
+    testing.expect(t, !save_found && close_found)
+    testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
+}

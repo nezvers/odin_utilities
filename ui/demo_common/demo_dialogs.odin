@@ -4,6 +4,7 @@ package demo_common
 // The ready made windows of ui/dialogs.odin: a question with three buttons, the about window, the welcome screen, a progress window and the preferences window with a page per category.
 // The script opens the preferences, switches the page and changes a setting, then answers the question.
 
+import "core:reflect"
 import ui ".."
 import kit "../../demo_kit"
 
@@ -33,12 +34,16 @@ State :: struct {
     action: int,
     recent: int,
     fraction: f32,
+    commands: [4]ui.ShortcutCommand,
+    filter: [24]u8,
+    filter_length: int,
 }
 
 state: State
 
 init :: proc(ctx: ^kit.Context) {
     state = {autosave = true, buffer = 0.4, answer = -1, action = -1, recent = -1, fraction = 0.35}
+    state.commands = {{"Save", {{.CTRL}, u16(kit.Key.S)}, {{.CTRL}, u16(kit.Key.S)}}, {"Open", {{.CTRL}, u16(kit.Key.O)}, {{.CTRL}, u16(kit.Key.O)}}, {"Find", {{.CTRL}, u16(kit.Key.F)}, {{.CTRL}, u16(kit.Key.F)}}, {"Close", {}, {{.CTRL}, u16(kit.Key.W)}}}
     ui_demo_init(&state.app)
     ctx.background = {17, 19, 21, 255}
 }
@@ -64,7 +69,13 @@ draw :: proc(ctx: ^kit.Context) {
             ui.UiLabelDim(c, "Buffer size")
             ui.UiSlider(c, "Buffer", &state.buffer, 0, 1, {ui.Grow(), {}})
         case 2:
-            ui.UiLabelDim(c, "Click a field and press the keys")
+            pressed: ui.Chord = {modifiers = c.input.modifiers}
+            for key in kit.Key {
+                if key == .None || (key >= .LEFT_SHIFT && key <= .RIGHT_ALT) || key not_in ctx.input.keys_pressed { continue }
+                pressed.key = u16(key)
+                break
+            }
+            ui.UiShortcutEditor(c, "Keys", state.commands[:], pressed, proc(key: u16) -> string { return reflect.enum_string(kit.Key(key)) }, state.filter[:], &state.filter_length, {ui.Grow(), ui.Grow()})
         }
     }
     if answer := ui.UiConfirm(c, "Save changes?", &state.confirm, "The project has changes that are not saved.", {"Save", "Don't save", "Cancel"}); answer >= 0 { state.answer = answer }
@@ -108,6 +119,13 @@ script: []kit.Step = {
     kit.MoveTo({900, 20}),
     kit.Wait(3),
     kit.Capture("dialogs_preferences"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return inside3("Preferences", "##categories", "Shortcuts##cat2") }, "the category Shortcuts"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.MoveTo({900, 20}),
+    kit.Wait(3),
+    kit.Capture("dialogs_shortcuts"),
     kit.Wait(2),
     kit.Tap(.ESCAPE),
     kit.Wait(3),
