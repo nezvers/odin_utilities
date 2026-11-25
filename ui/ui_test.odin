@@ -6830,3 +6830,61 @@ test_a_drag_past_the_edge_of_a_long_text_walks_the_cursor_along_it :: proc(t: ^t
     testing.expect(t, state.cursor > 0 && state.cursor < length, "the pointer inside of the field puts the cursor under it")
     fieldFrame(harness, pointerAt({100, 10}, false, false, true), buffer[:], &length)
 }
+
+@(test)
+test_scale_table_names_and_contains :: proc(t: ^testing.T) {
+    table := SCALES
+    for scale, i in table {
+        testing.expect_value(t, ScaleIndex(scale.mask), i)
+        if scale.mask != 0 { testing.expect(t, scale.mask & 1 == 1, "every scale has its root") }
+    }
+    testing.expect_value(t, ScaleName(0b101010110101), "Major")
+    testing.expect_value(t, ScaleName(0b101010110111), "Custom")
+    testing.expect_value(t, ScaleNoteName(61), "C#")
+    testing.expect_value(t, ScaleNoteName(-1), "B")
+    // D major: D E F# G A B C#, no C
+    testing.expect(t, ScaleContains(2, 0b101010110101, 66) && !ScaleContains(2, 0b101010110101, 72) && ScaleContains(2, 0b101010110101, 73))
+    testing.expect(t, ScaleContains(5, 0, 61), "no scale: everything belongs")
+}
+
+@(private = "file")
+scaleFrame :: proc(harness: ^Harness, input: Input, root: ^int, mask: ^u16) -> bool {
+    frame(harness, input, {700, 300})
+    changed: bool = UiScalePicker(&harness.ctx, "Key", root, mask)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return changed
+}
+
+@(private = "file")
+scaleClick :: proc(harness: ^Harness, name: string, root: ^int, mask: ^u16) -> bool {
+    rect, found := UiElementRect(&harness.ctx, UiIdPath("Key", name))
+    if !found { return false }
+    at: Vec2 = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    scaleFrame(harness, pointerAt(at), root, mask)
+    scaleFrame(harness, pointerAt(at, down = true, pressed = true), root, mask)
+    changed: bool = scaleFrame(harness, pointerAt(at, released = true), root, mask)
+    for _ in 0 ..< 30 { scaleFrame(harness, pointerAt({-100, -100}), root, mask) }
+    return changed
+}
+
+@(test)
+test_scale_picker_toggles_notes_and_picks_a_scale :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    root: int = 0
+    mask: u16 = 0b101010110101
+    for _ in 0 ..< 2 { scaleFrame(harness, pointerAt({-100, -100}), &root, &mask) }
+    // C#: not in C major, a click adds it and the scale is custom
+    testing.expect(t, scaleClick(harness, "C# ##n1", &root, &mask))
+    testing.expect_value(t, mask, u16(0b101010110111))
+    testing.expect_value(t, ScaleName(mask), "Custom")
+    // the same click takes it out again
+    testing.expect(t, scaleClick(harness, "C# ##n1", &root, &mask))
+    testing.expect_value(t, mask, u16(0b101010110101))
+    // the root cannot be taken out
+    scaleClick(harness, "C ##n0", &root, &mask)
+    testing.expect_value(t, mask, u16(0b101010110101))
+    testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
+}

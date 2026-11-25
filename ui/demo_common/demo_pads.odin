@@ -28,13 +28,14 @@ State :: struct {
     lit: [128]bool,
     cells: [32]f32,
     played: int,
+    root: int,
+    mask: u16,
 }
 
 state: State
 
 init :: proc(ctx: ^kit.Context) {
-    state = {low = 25, high = 70, x = 0.3, y = 0.65, ghost = {0.45, 0.8}, modwheel = 0.35, offset = 120, played = -1}
-    for pitch in ([]int{60, 64, 67}) { state.lit[pitch] = true }
+    state = {low = 25, high = 70, x = 0.3, y = 0.65, ghost = {0.45, 0.8}, modwheel = 0.35, offset = 120, played = -1, root = 2, mask = 0b101010110101}
     for step in ([]int{0, 3, 6, 8, 11, 14}) { state.cells[step] = 1 }          // kick
     for step in ([]int{4, 12}) { state.cells[16 + step] = 1 }                  // snare
     ui_demo_init(&state.app)
@@ -44,7 +45,7 @@ init :: proc(ctx: ^kit.Context) {
 draw :: proc(ctx: ^kit.Context) {
     ui_demo_begin(&state.app, ctx)
     c: ^ui.Context = &state.app.ctx
-    if ui.UiPanel(c, "pads", {size = {ui.Fixed(560), ui.Fixed(470)}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(10), gap = 10}) {
+    if ui.UiPanel(c, "pads", {size = {ui.Fixed(620), ui.Fixed(560)}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(10), gap = 10}) {
         if ui.UiRow(c, {gap = 14}) {
             if ui.UiColumn(c, {gap = 10}) {
                 ui.UiLabelDim(c, "Range")
@@ -58,8 +59,11 @@ draw :: proc(ctx: ^kit.Context) {
             ui.UiWheel(c, "bend", &state.bend, -1, 1, 0, true, {ui.Fixed(34), ui.Fixed(130)})
             ui.UiWheel(c, "mod", &state.modwheel, 0, 1, 0, false, {ui.Fixed(34), ui.Fixed(130)})
         }
-        ui.UiLabelDim(c, "Keyboard (C major triad lit, C marked)")
-        pressed, _ := ui.UiKeyboard(c, "keys", 48, 72, &state.lit, 0, {ui.Fixed(520), ui.Fixed(110)})
+        ui.UiLabelDim(c, "Key and scale")
+        ui.UiScalePicker(c, "scale", &state.root, &state.mask, {ui.Fixed(590), {}})
+        ui.UiLabelDim(c, "Keyboard (the notes of the scale lit, the root marked)")
+        for pitch in 48 ..= 72 { state.lit[pitch] = ui.ScaleContains(state.root, state.mask, pitch) }
+        pressed, _ := ui.UiKeyboard(c, "keys", 48, 72, &state.lit, 48 + (state.root + 12 - 48 % 12) % 12, {ui.Fixed(520), ui.Fixed(110)})
         if pressed >= 0 { state.played = pressed }
     }
     ui_demo_end(&state.app)
@@ -83,6 +87,16 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.cells[16 + 1] == 1 }, "a click turns a step on"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.mask == 0b101010110101 && state.root == 2 }, "D major to start"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool {
+        id: ui.Id = ui.UiIdPath("pads", "scale", "D# ##n1")
+        r, f := ui.UiElementRect(&state.app.ctx, id)
+        if f { target = {r.x + r.z * 0.5, r.y + r.w * 0.5} }
+        return f
+    }, "the second note chip"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.mask == 0b101010110111 && ui.ScaleName(state.mask) == "Custom" }, "a click adds a note and the scale is custom"),
     kit.MoveTo({900, 20}),
     kit.Wait(3),
     kit.Capture("pads"),

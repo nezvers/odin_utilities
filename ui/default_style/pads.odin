@@ -107,7 +107,9 @@ DrawKeyboard :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
             body: ui.Rect = {key.x + 0.5, key.y, max(key.z - 1, 1), max(key.w - 1, 1)}
             color: ui.Color = ui.ColorLerp(theme.panel, theme.border, 0.2) if black else ui.ColorLerp(theme.text, theme.panel, 0.08)
             if pitch == info.cursor { color = ui.ColorLerp(color, theme.accent, 0.7) }
-            else if lit != nil && lit[pitch] { color = theme.accent }
+            else if lit != nil && lit[pitch] { color = ui.ColorLerp(theme.accent, ui.Color{0, 0, 0, 255}, 0.35) if black else theme.accent }
+            // a black key is outlined, so that a lit one does not run into the lit white keys behind it
+            if black { FillRounded(painter, {body.x - 1, body.y, body.z + 2, body.w + 1}, 2, theme.border) }
             FillRounded(painter, body, 2 if black else 1.5, color)
             // the root: an outline under the key (a bar across its foot)
             if info.anchor >= 0 && pitch % 12 == info.anchor % 12 {
