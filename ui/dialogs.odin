@@ -12,19 +12,27 @@ package ui
 //
 //     UiWhatsNew(&ctx, "What is new", &open, releases[:], unseen = WhatsNewUnseen(releases[:], last_seen_version))
 //
-// Limits: one row of buttons (they do not wrap), texts wrap by words in a fixed width, no icons or pictures in a dialog (a program adds them around the call by using `UiModal` itself), the
+// Limits: one row of buttons (they do not wrap), texts wrap by words in a fixed width, one icon in a confirm and in the about window (no pictures, no icons on the buttons; a program that wants more uses `UiModal` itself), the
 //     welcome screen shows at most WELCOME_RECENT (8) recent entries, preferences has no search and no "apply" (the program applies what the controls change at once), the progress dialog
 //     has one bar and one message, the what is new window shows releases newest first as markdown (no images, no "do not show again": the program keeps what version was seen).
 
 WELCOME_RECENT :: 8
 
 // The window with a question: a title (the name of the window, the text before "##"), a message and a row of buttons on the right. The index of the button that was clicked, -1 for none; the
-// window closes with a click. `danger`: the index of a button that is drawn as the destructive one (-1 for none).
-UiConfirm :: proc(ctx: ^Context, name: string, open: ^bool, message: string, buttons: []string, width: f32 = 380, danger: int = -1) -> (clicked: int) {
+// window closes with a click. `danger`: the index of a button that is drawn as the destructive one (-1 for none). `icon`: a picture beside the message (a warning, a question).
+UiConfirm :: proc(ctx: ^Context, name: string, open: ^bool, message: string, buttons: []string, width: f32 = 380, danger: int = -1, icon: Icon = .NONE) -> (clicked: int) {
     clicked = -1
     if UiModal(ctx, name, open, {Fixed(width), {}}) {
         UiTitle(ctx, IdSplitName(name))
-        UiLabel(ctx, message, .WORDS)
+        if icon != .NONE {
+            // the icon beside the message; the message gets the width that is left
+            if UiRow(ctx, {gap = 12, size = {Grow(), Fit()}}) {
+                UiIcon(ctx, icon, 28)
+                UiLabel(ctx, message, .WORDS)
+            }
+        } else {
+            UiLabel(ctx, message, .WORDS)
+        }
         if UiRow(ctx, {gap = 8, size = {Grow(), {}}}) {
             UiSpacer(ctx)
             for label, i in buttons {
@@ -50,11 +58,19 @@ AboutInfo :: struct {
     description: string,
     credits: string,                // the people and libraries, wrapped
     copyright: string,
+    icon: Icon,                     // the picture of the program, left of its name
 }
 
 UiAboutDialog :: proc(ctx: ^Context, name: string, open: ^bool, info: AboutInfo, width: f32 = 380) {
     if UiModal(ctx, name, open, {Fixed(width), {}}) {
-        UiTitle(ctx, info.name, 1.6)
+        if info.icon != .NONE {
+            if UiRow(ctx, {gap = 10, size = {Grow(), Fit()}, align = {y = .CENTER}}) {
+                UiIcon(ctx, info.icon, 36)
+                UiTitle(ctx, info.name, 1.6)
+            }
+        } else {
+            UiTitle(ctx, info.name, 1.6)
+        }
         if info.version != "" { UiLabelDim(ctx, UiFormat(ctx, "Version %s", info.version)) }
         if info.description != "" { UiLabel(ctx, info.description, .WORDS) }
         if info.credits != "" {

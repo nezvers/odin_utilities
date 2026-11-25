@@ -6,6 +6,7 @@ package demo_common
 
 import "core:reflect"
 import ui ".."
+import ui_default "../default_style"
 import kit "../../demo_kit"
 
 @(private="package")
@@ -85,8 +86,8 @@ draw :: proc(ctx: ^kit.Context) {
             ui.UiShortcutEditor(c, "Keys", state.commands[:], pressed, proc(key: u16) -> string { return reflect.enum_string(kit.Key(key)) }, state.filter[:], &state.filter_length, {ui.Grow(), ui.Grow()})
         }
     }
-    if answer := ui.UiConfirm(c, "Save changes?", &state.confirm, "The project has changes that are not saved.", {"Save", "Don't save", "Cancel"}); answer >= 0 { state.answer = answer }
-    ui.UiAboutDialog(c, "About", &state.about, {name = "Nota", version = "0.60.1", description = "A small DAW made with the ui library.", credits = "Layout from Clay, the look follows Baldr.", copyright = "2026"})
+    if answer := ui.UiConfirm(c, "Save changes?", &state.confirm, "The project has changes that are not saved.", {"Save", "Don't save", "Cancel"}, icon = ui_default.LucideIcon(.TRIANGLE_ALERT)); answer >= 0 { state.answer = answer }
+    ui.UiAboutDialog(c, "About", &state.about, {name = "Nota", version = "0.60.1", description = "A small DAW made with the ui library.", credits = "Layout from Clay, the look follows Baldr.", copyright = "2026", icon = ui_default.LucideIcon(.INFO)})
     if action, recent := ui.UiWelcome(c, "Welcome", &state.welcome, {headline = "Nota", tagline = "Pick up where you left off.", actions = ACTIONS[:], recent = RECENT[:]}); action >= 0 || recent >= 0 {
         state.action, state.recent = action, recent
     }
@@ -141,6 +142,10 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return button("Save?") }, "the Save? button"),
     kit.ClickAt(&target),
     kit.Wait(4),
+    kit.MoveTo({900, 20}),
+    kit.Wait(3),
+    kit.Capture("dialogs_confirm"),
+    kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.confirm && inside("Save changes?", "Don't save") }, "the middle button"),
     kit.ClickAt(&target),
     kit.Wait(3),

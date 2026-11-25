@@ -161,4 +161,4 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Device card (header with switch and preset selector with arrows, tabs, sections divided by rules) and track header row (colour strip, M / S / R, value bar, pan, input)
 - [x] (medium) Clip bodies (`clip_body.odin`: notes, peaks, cells inside a clip), arrangement overview strip, `overview.odin` (sections are shown, and marked with Shift + drag when the program gives a buffer; parameter picker and command palette are done: `picker.odin`; range slider, XY pad, wheel, thin scroll bar, step grid and keyboard are done: `widgets_pads.odin`)
 - [x] Skins with fonts: a style names a font file for each face (`default_style/skin.odin`, the editor's Fonts section, the stores, `kit.UseSkinFonts`, `FontsLoad(..., skin)` of both glue packages)
-- [ ] (low) What is left of the windows (`dialogs.odin`): icons in a dialog; skins: a font per size or script, fonts embedded in the style file, a size scale
+- [ ] (low) What is left of the windows (`dialogs.odin`): icons on the buttons, pictures; skins: a font per size or script, fonts embedded in the style file, a size scale
