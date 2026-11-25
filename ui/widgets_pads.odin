@@ -13,8 +13,7 @@ package ui
 // given and returns true in the frame the person changed something.
 //
 // Limits: the range slider, wheel and scroll bar lie or stand as their name says (the range slider is horizontal, the wheel vertical, the scroll bar either); no keyboard control of the
-// handles of a range slider (use two `UiSlider`s for that); the XY pad is 0..1 on both axes (the program maps it); the keyboard has no velocity from the press position and no
-// multitouch; the step grid keeps one value per step (0 off, above 0 on: the program may use the number as a velocity), no per step lengths or ratchets.
+// handles of a range slider (use two `UiSlider`s for that); the XY pad is 0..1 on both axes (the program maps it); the keyboard has no multitouch and its velocity is the height of the press on the key (a gliding drag takes it from where it crosses into the key), not a measured speed; the step grid keeps one value per step (0 off, above 0 on: the program may use the number as a velocity), no per step lengths or ratchets.
 
 import "core:math"
 
@@ -280,10 +279,20 @@ KeyboardKeyAt :: proc(rect: Rect, first: int, last: int, point: Vec2) -> int {
     return -1
 }
 
+KEYBOARD_VELOCITY_MIN :: f32(0.1)
+
+// How hard a key is played from where the press is on it, like the keys of the on screen pianos: the top of the key is soft (KEYBOARD_VELOCITY_MIN), the bottom is 1.
+KeyboardVelocity :: proc(rect: Rect, first: int, last: int, pitch: int, point: Vec2) -> f32 {
+    key: Rect = KeyboardKeyRect(rect, first, last, pitch)
+    if key.w <= 0 { return 1 }
+    return KEYBOARD_VELOCITY_MIN + (1 - KEYBOARD_VELOCITY_MIN) * clamp((point.y - key.y) / key.w, 0, 1)
+}
+
 // A piano keyboard from the pitch `first` to `last` (MIDI numbers). `lit` (optional, 128 flags, alive until UiRender) lights keys, `root` (a pitch class 0..11, -1: none) outlines its keys.
 // A press plays a key and a drag glides over the next ones: `pressed` is the pitch that went down in this frame and `released` the one that went up (-1 for none), so a program can send
 // note on and off. Pressing is off for a disabled keyboard.
-UiKeyboard :: proc(ctx: ^Context, name: string, first: int, last: int, lit: ^[128]bool = nil, root: int = -1, size: Size = {}, disabled: bool = false) -> (pressed: int, released: int) {
+// `velocity` (optional) gets the velocity of `pressed` (`KeyboardVelocity`: the height of the press on the key) in the frame a key goes down, else it is left as it was.
+UiKeyboard :: proc(ctx: ^Context, name: string, first: int, last: int, lit: ^[128]bool = nil, root: int = -1, size: Size = {}, disabled: bool = false, velocity: ^f32 = nil) -> (pressed: int, released: int) {
     id: Id = UiId(ctx, name)
     state: ^WidgetState = stateGet(ctx, id)
     interaction: Interaction = widgetBehavior(ctx, id, disabled)
@@ -295,7 +304,10 @@ UiKeyboard :: proc(ctx: ^Context, name: string, first: int, last: int, lit: ^[12
             key: int = KeyboardKeyAt(state.rect, first, last, ctx.input.mouse_position)
             if key != held && (key >= 0 || ctx.input.mouse_pressed) {
                 if held >= 0 { released = held }
-                if key >= 0 { pressed = key }
+                if key >= 0 {
+                    pressed = key
+                    if velocity != nil { velocity^ = KeyboardVelocity(state.rect, first, last, key, ctx.input.mouse_position) }
+                }
                 held = key
             }
         }

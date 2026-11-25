@@ -6547,6 +6547,11 @@ test_keyboard_geometry_and_presses :: proc(t: ^testing.T) {
     testing.expect_value(t, KeyboardKeyAt(rect, 60, 71, {10, 90}), 60)
     testing.expect_value(t, KeyboardKeyAt(rect, 60, 71, {139, 90}), 71)
     testing.expect_value(t, KeyboardKeyAt(rect, 60, 71, {200, 90}), -1)
+    testing.expect(t, near(KeyboardVelocity(rect, 60, 71, 62, {20, 0}), KEYBOARD_VELOCITY_MIN), "the top of a key is soft")
+    testing.expect(t, near(KeyboardVelocity(rect, 60, 71, 62, {20, 100}), 1), "the bottom is hard")
+    testing.expect(t, near(KeyboardVelocity(rect, 60, 71, 62, {20, 50}), 0.55), "the middle")
+    testing.expect(t, near(KeyboardVelocity(rect, 60, 71, 61, {20, 62}), 1), "a black key is as tall as it is drawn")
+    testing.expect(t, near(KeyboardVelocity(rect, 60, 71, 62, {20, 500}), 1), "a point below is clamped")
 
     harness: ^Harness = new(Harness)
     defer free(harness)

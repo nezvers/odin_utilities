@@ -45,7 +45,7 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 | Envelope editors: ADSR with draggable points, LFO strip, plots with titled corner axes | `ClipAdsrKit`, `VoltEnv`, `AuroraLfoStrip`, `NotaGraph` | timeline automation lanes | medium |
 | ~~Waveform view~~ done: `UiWaveform` (min / max columns with a peak table, zoom, ruler in seconds, selection, markers, playhead). Left: stereo, fades and gain handles, editing | `WaveformPainter`, `AudioClipEditorView` | | done |
 | ~~Step / pattern grid~~ done: `UiStepGrid` (paint by drag, playhead column, beat shading). Left: per step lengths, ratchets | `DrumPatternView`, `ArpGrid`, `RhythmViews` | | done |
-| ~~Piano keyboard~~ done: `UiKeyboard` (lit notes, root marked, press and glide send note on / off). Left: velocity by press height | `ChordKeysViz`, `KeysViews` | | done |
+| ~~Piano keyboard~~ done: `UiKeyboard` (lit notes, root marked, press and glide send note on / off). Velocity by press height (`velocity` pointer). | `ChordKeysViz`, `KeysViews` | | done |
 | ~~Modulation matrix~~ done: `UiModMatrix` (click connects, drag sets, wheel nudges, double click clears; bars from the middle) | `VoltMatrix` | | done |
 | ~~Arrangement overview strip~~ done: `UiOverview` (clip blocks, sections band, draggable and zoomable window; used in the nota arrangement). Left: marking sections by drag | `ArrangementView.Overview`, `.Sections` | | done |
 | ~~Bars and beats on the ruler, grid snap choices~~ done: `TimelineView.tempo` turns the ruler into bars and beats, `TimelineSnapChoice` (off, bar, 1/4 .. 1/32, auto). Left: tempo map, triplets | `ArrangementView.TimeAxis`, `SnapChip` | | done |

@@ -28,6 +28,7 @@ State :: struct {
     lit: [128]bool,
     cells: [32]f32,
     played: int,
+    velocity: f32,
     root: int,
     mask: u16,
 }
@@ -63,7 +64,7 @@ draw :: proc(ctx: ^kit.Context) {
         ui.UiScalePicker(c, "scale", &state.root, &state.mask, {ui.Fixed(590), {}})
         ui.UiLabelDim(c, "Keyboard (the notes of the scale lit, the root marked)")
         for pitch in 48 ..= 72 { state.lit[pitch] = ui.ScaleContains(state.root, state.mask, pitch) }
-        pressed, _ := ui.UiKeyboard(c, "keys", 48, 72, &state.lit, 48 + (state.root + 12 - 48 % 12) % 12, {ui.Fixed(520), ui.Fixed(110)})
+        pressed, _ := ui.UiKeyboard(c, "keys", 48, 72, &state.lit, 48 + (state.root + 12 - 48 % 12) % 12, {ui.Fixed(520), ui.Fixed(110)}, velocity = &state.velocity)
         if pressed >= 0 { state.played = pressed }
     }
     ui_demo_end(&state.app)
@@ -83,6 +84,7 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.played >= 48 && state.played <= 72 }, "a press on a key plays it"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.velocity > 0.75 }, "a press low on the key is hard"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return find("steps", 0.5 / 16 + 1.0 / 16, 0.75) }, "a step of the second row"),
     kit.ClickAt(&target),
     kit.Wait(3),
