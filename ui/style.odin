@@ -27,6 +27,8 @@ StyleKind :: enum u8 {
     SLIDER,             // value 0..1, actual: the number the user edits, text: that number formatted
     VALUE_BAR,          // value 0..1 inside of minimum .. maximum, actual: the number, ratio: where the fill starts (0, or the middle of a bipolar bar), text: the formatted number; tag "modulation": a hatched fill
     PIANO_ROLL,         // a piano roll: draw the keys, the grid, the notes, the velocities and the playhead; user: the ^PianoRollView (its `roll` has the notes)
+    FREQ_GRAPH,         // a frequency response graph: draw the grid, the spectrum, the curve, the nodes and the readout; user: the ^FreqGraphView (its `graph` has the bands)
+    WAVEFORM,           // a waveform view: draw the ruler, the columns, the selection, the markers and the playhead; user: the ^WaveformView (its `wave` has the samples)
     PROGRESS,           // value 0..1, actual: the number it shows
     TEXT_FIELD,         // text: the content, cursor: byte offset, FOCUSED flag
     SEPARATOR,

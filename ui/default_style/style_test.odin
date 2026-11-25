@@ -784,3 +784,40 @@ test_the_style_draws_a_piano_roll :: proc(t: ^testing.T) {
         testing.expect_value(t, ui.UiProblems(&e.ctx), ui.Problems{})
     }
 }
+
+@(test)
+test_the_style_draws_a_frequency_graph_and_a_waveform :: proc(t: ^testing.T) {
+    for theme in ([2]Theme{THEME_DARK, THEME_LIGHT}) {
+        e: ^Everything = new(Everything)
+        defer free(e)
+        everythingInit(e, theme, true)
+        bands: [3]ui.FreqBand
+        graph: ui.FreqGraph
+        ui.FreqGraphInit(&graph, bands[:])
+        ui.FreqGraphAdd(&graph, .BELL, 1000, 4, 1)
+        ui.FreqGraphAdd(&graph, .LOW_CUT, 60)
+        spectrum: [64]f32
+        for &bin, i in spectrum { bin = -30 - f32(i) }
+        graph.spectrum = spectrum[:]
+        graph_view: ui.FreqGraphView
+        samples: [4000]f32
+        for &sample, i in samples { sample = f32(i % 100) / 100 - 0.5 }
+        wave: ui.Waveform
+        markers: [2]ui.WaveMarker
+        ui.WaveformInit(&wave, samples[:], 48000, markers[:])
+        ui.WaveformAddMarker(&wave, 1000, "Hit")
+        wave_view: ui.WaveformView = {has_selection = true, selection_start = 500, selection_end = 2000, show_playhead = true, playhead = 800}
+        for _ in 0 ..< 3 {
+            c: ^ui.Context = &e.ctx
+            e.recorder = {}
+            ui.UiBegin(c, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 700}, &e.style)
+            ui.UiFreqGraph(c, "eq", &graph, &graph_view, {ui.Fixed(600), ui.Fixed(300)})
+            ui.UiWaveform(c, "wave", &wave, &wave_view, {ui.Fixed(600), ui.Fixed(200)})
+            ui.UiEnd(c)
+            ui.UiRender(c)
+        }
+        testing.expect(t, e.recorder.rects > 150, "grid, spectrum, tint, columns and markers are drawn")
+        testing.expect(t, !e.recorder.bad_rect)
+        testing.expect_value(t, ui.UiProblems(&e.ctx), ui.Problems{})
+    }
+}

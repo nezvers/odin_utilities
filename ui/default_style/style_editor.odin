@@ -65,6 +65,8 @@ EDIT_FIELDS :: [?]struct {
     {.SWITCH, "", "track_strong,accent,accent_text,panel,focus"},
     {.RADIO, "", "track,accent,border,text,focus"},
     {.SLIDER, "", "track,accent_soft,accent,accent_text,border,text,rounding,max_radius,border_width,focus"},
+    {.FREQ_GRAPH, "", "panel,track,border,text,text_dim,accent,accent_soft,success"},
+    {.WAVEFORM, "", "panel,track,border,text,text_dim,accent,accent_soft,warning"},
     {.PIANO_ROLL, "", "panel,track,border,text,text_dim,accent,accent_soft,rounding"},
     {.VALUE_BAR, "", "track,accent_soft,accent,border,text,text_dim,rounding,max_radius,border_width,focus"},
     {.PROGRESS, "", "track,accent,accent_text,text,max_radius"},

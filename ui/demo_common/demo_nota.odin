@@ -8,7 +8,6 @@ package demo_common
 
 import "core:math"
 import ui ".."
-import ui_default "../default_style"
 import kit "../../demo_kit"
 
 @(private="package")
@@ -53,7 +52,10 @@ State :: struct {
     pad_pan: f32,
     mod_amount: f32,
     on: [2]bool,
-    bands: [8]f32,
+    eq: ui.FreqGraph,
+    eq_view: ui.FreqGraphView,
+    eq_bands: [8]ui.FreqBand,
+    eq_spectrum: [256]f32,
     // mixer
     volume: [CHANNELS]f32,
     pan: [CHANNELS]f32,
@@ -90,7 +92,18 @@ init :: proc(ctx: ^kit.Context) {
     }
     state.pan[4] = 0.3
     state.mute[0] = false
-    state.bands = {0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}
+    ui.FreqGraphInit(&state.eq, state.eq_bands[:], 48000)
+    ui.FreqGraphAdd(&state.eq, .LOW_CUT, 30, 0, 0.707)
+    ui.FreqGraphAdd(&state.eq, .LOW_SHELF, 120, 3, 0.7)
+    ui.FreqGraphAdd(&state.eq, .BELL, 400, -4, 1.4)
+    ui.FreqGraphAdd(&state.eq, .BELL, 2500, 5, 0.9)
+    ui.FreqGraphAdd(&state.eq, .HIGH_SHELF, 9000, -3, 0.7)
+    state.eq_bands[3].selected = true
+    state.eq.spectrum = state.eq_spectrum[:]
+    for i in 0 ..< len(state.eq_spectrum) {
+        f: f32 = f32(i) / f32(len(state.eq_spectrum) - 1) * 24000
+        state.eq_spectrum[i] = -28 - 22 * math.log10(1 + f / 300) + 7 * math.sin(f32(i) * 0.9) * math.exp(-f / 9000)
+    }
     // the arrangement
     ui.TimelineInit(&state.timeline, &state)
     state.view = {zoom = 18, snap = 1}
@@ -251,7 +264,7 @@ devices :: proc(c: ^ui.Context) {
         }
         if ui.UiPanel(c, "Nota EQ-8", {size = {ui.Grow(), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(8), gap = 8}) {
             deviceHeader(c, "Nota EQ-8", &state.on[1])
-            ui.UiCustom(c, "##eq graph", eqGraph, {ui.Grow(), ui.Grow()}, nil, 0, true)        // GAP: frequency graph with draggable bands
+            ui.UiFreqGraph(c, "eq graph", &state.eq, &state.eq_view)
         }
     }
 }
@@ -272,34 +285,6 @@ knob :: proc(c: ^ui.Context, name: string, value: ^f32, format: string) {
     if ui.UiPanel(c, name, {size = {ui.Fit(), ui.Fit()}, direction = .TOP_TO_BOTTOM, gap = 2, align = {x = .CENTER}}, blocks_pointer = false) {
         ui.UiKnob(c, name, value, 0, 1, 0.5, {ui.Fixed(52), ui.Fixed(52)}, format)
         ui.UiLabelDim(c, name)
-    }
-}
-
-// The EQ plot: a log frequency axis, a dB axis, the curve of the eight bands and a node on each (drawn by hand; the nodes are not draggable here)
-eqGraph :: proc(c: ^ui.Context, info: ^ui.DrawInfo) {
-    painter: ^ui_default.Painter = ui_default.PainterOf(c)
-    theme: ^ui_default.Theme = &painter.theme
-    area: ui.Rect = info.rect
-    ui_default.FillRounded(painter, area, 0.05, theme.track)
-    for db in 0 ..< 5 {
-        y: f32 = area.y + area.w * f32(db) / 4
-        painter.fill_rect(painter, {area.x, y, area.z, 1}, theme.border)
-    }
-    freqs: [8]f32 = {0.05, 0.17, 0.32, 0.47, 0.6, 0.72, 0.84, 0.95}
-    points: [64]ui.Vec2
-    for i in 0 ..< len(points) {
-        t: f32 = f32(i) / f32(len(points) - 1)
-        gain: f32 = 0
-        for band in 0 ..< 8 {
-            gain += (0.5 - state.bands[band] + (0.07 if band % 2 == 0 else -0.03)) * math.exp(-math.pow((t - freqs[band]) * 7, 2))
-        }
-        points[i] = {area.x + t * area.z, area.y + area.w * (0.5 - gain * 0.8)}
-    }
-    ui_default.Polyline(painter, points[:], false, 2, theme.accent, .ROUND)
-    for band in 0 ..< 8 {
-        x: f32 = area.x + freqs[band] * area.z
-        ui_default.Disc(painter, {x, area.y + area.w * 0.5}, 7, theme.accent if band == 1 else theme.text_dim)
-        ui_default.Disc(painter, {x, area.y + area.w * 0.5}, 5, theme.track)
     }
 }
 

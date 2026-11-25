@@ -372,6 +372,8 @@ StyleMake :: proc() -> ui.Style {
     style.procs[.SLIDER] = DrawSlider
     style.procs[.VALUE_BAR] = DrawValueBar
     style.procs[.PIANO_ROLL] = DrawPianoRoll
+    style.procs[.FREQ_GRAPH] = DrawFreqGraph
+    style.procs[.WAVEFORM] = DrawWaveform
     style.procs[.PROGRESS] = DrawProgress
     style.procs[.TEXT_FIELD] = DrawTextField
     style.procs[.SEPARATOR] = DrawSeparator

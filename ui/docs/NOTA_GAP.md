@@ -41,9 +41,9 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 | Missing | Nota source | Have | Priority |
 |---|---|---|---|
 | ~~Piano roll~~ done: `UiPianoRoll` (keys, notes add / move / resize / delete, ruler in bars and beats, velocity lane, scale highlight, preview events). Left: controller lanes, box select, copy / paste, triplet grids | `PianoRollView*` | | done |
-| **Frequency response graph with draggable band nodes** (log frequency axis, dB axis, a curve from the filters, hover read-out) and a spectrum fill under it | `Eq8Views`, `FilterGraphBase`, `SpectrumFill`, `Fft` | `UiChart` (no log axis, no draggable points) | high |
+| ~~Frequency response graph~~ done: `UiFreqGraph` (log axis, dB axis, RBJ biquad curve, draggable nodes, Q by wheel, spectrum fill, readout). Left: stereo / mid-side bands, steeper cut cascades | `Eq8Views`, `FilterGraphBase`, `SpectrumFill` | | done |
 | Envelope editors: ADSR with draggable points, LFO strip, plots with titled corner axes | `ClipAdsrKit`, `VoltEnv`, `AuroraLfoStrip`, `NotaGraph` | timeline automation lanes | medium |
-| Waveform view (audio clip, sample, grain) with zoom and markers | `WaveformPainter`, `AudioClipEditorView`, `GrainWaveViz` | none | high |
+| ~~Waveform view~~ done: `UiWaveform` (min / max columns with a peak table, zoom, ruler in seconds, selection, markers, playhead). Left: stereo, fades and gain handles, editing | `WaveformPainter`, `AudioClipEditorView` | | done |
 | Step / pattern grid (drum pattern, arpeggiator steps) | `DrumPatternView`, `ArpGrid`, `RhythmViews` | none | medium |
 | Piano keyboard display (lit notes, root outline) | `ChordKeysViz`, `KeysViews` | none | medium |
 | Modulation matrix (sources x targets, amount per cell) | `VoltMatrix` | `UiTable` | low |
@@ -61,5 +61,5 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 2. Preset selector and device card (the bottom half of the arrangement screen).
 3. Track header row and bars-and-beats ruler (the arrangement screen).
 4. Mixer fader with a scale and a stereo meter (the mixer).
-5. Frequency graph with draggable bands (EQ, filters) and the waveform view.
+5. ~~Frequency graph with draggable bands and the waveform view~~ (done).
 6. ~~Piano roll~~ (done).

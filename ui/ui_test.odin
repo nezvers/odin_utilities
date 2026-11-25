@@ -2,6 +2,7 @@
 package ui
 
 import hm "core:container/handle_map"
+import "core:math"
 import "core:strings"
 import "core:testing"
 
@@ -5881,4 +5882,284 @@ test_piano_roll_refuses_a_note_when_the_storage_is_full :: proc(t: ^testing.T) {
     testing.expect(t, a && b && !c)
     PianoRollRemove(&roll, 0)
     testing.expect(t, roll.count == 1 && roll.notes[0].pitch == 62, "the notes after the removed one move up")
+}
+
+@(private = "file")
+FreqLog :: struct {
+    events: [32]FreqEvent,
+    count: int,
+}
+
+@(private = "file")
+freqLogger :: proc(graph: ^FreqGraph, event: ^FreqEvent) {
+    log: ^FreqLog = cast(^FreqLog)graph.user
+    if log.count < len(log.events) {
+        log.events[log.count] = event^
+        log.count += 1
+    }
+}
+
+@(private = "file")
+freqCount :: proc(log: ^FreqLog, kind: FreqEventKind) -> (count: int) {
+    for i in 0 ..< log.count {
+        if log.events[i].kind == kind { count += 1 }
+    }
+    return
+}
+
+@(private = "file")
+freqFrame :: proc(harness: ^Harness, input: Input, graph: ^FreqGraph, view: ^FreqGraphView) {
+    frame(harness, input)
+    UiFreqGraph(&harness.ctx, "eq", graph, view)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(private = "file")
+freqIdle :: proc(harness: ^Harness, graph: ^FreqGraph, view: ^FreqGraphView) {
+    for _ in 0 ..< 30 { freqFrame(harness, pointerAt({-100, -100}), graph, view) }
+}
+
+@(private = "file")
+freqDrag :: proc(harness: ^Harness, from: Vec2, to: Vec2, graph: ^FreqGraph, view: ^FreqGraphView, modifiers: Modifiers = {}) {
+    down: Input = pointerAt(from, down = true, pressed = true)
+    move: Input = pointerAt(to, down = true)
+    up: Input = pointerAt(to, released = true)
+    down.modifiers, move.modifiers, up.modifiers = modifiers, modifiers, modifiers
+    freqFrame(harness, pointerAt(from), graph, view)
+    freqFrame(harness, down, graph, view)
+    freqFrame(harness, move, graph, view)
+    freqFrame(harness, up, graph, view)
+    freqIdle(harness, graph, view)
+}
+
+@(test)
+test_freq_band_responses_match_the_filters :: proc(t: ^testing.T) {
+    bell: FreqBand = {kind = .BELL, frequency = 1000, gain = 6, q = 1, enabled = true}
+    testing.expect(t, abs(FreqBandResponse(bell, 48000, 1000) - 6) < 0.05, "the bell has its gain at its frequency")
+    testing.expect(t, abs(FreqBandResponse(bell, 48000, 20)) < 0.2 && abs(FreqBandResponse(bell, 48000, 20000)) < 0.5, "and nothing far away")
+    narrow: FreqBand = bell
+    narrow.q = 8
+    testing.expect(t, FreqBandResponse(narrow, 48000, 1300) < FreqBandResponse(bell, 48000, 1300), "a higher Q is narrower")
+    low_cut: FreqBand = {kind = .LOW_CUT, frequency = 100, q = 0.7071, enabled = true}
+    testing.expect(t, FreqBandResponse(low_cut, 48000, 20) < -20 && abs(FreqBandResponse(low_cut, 48000, 5000)) < 0.1)
+    testing.expect(t, abs(FreqBandResponse(low_cut, 48000, 100) + 3.01) < 0.1, "a Butterworth cut is -3 dB at its corner")
+    high_cut: FreqBand = {kind = .HIGH_CUT, frequency = 5000, q = 0.7071, enabled = true}
+    testing.expect(t, FreqBandResponse(high_cut, 48000, 20000) < -15 && abs(FreqBandResponse(high_cut, 48000, 100)) < 0.1)
+    low_shelf: FreqBand = {kind = .LOW_SHELF, frequency = 200, gain = 6, enabled = true}
+    testing.expect(t, abs(FreqBandResponse(low_shelf, 48000, 20) - 6) < 0.3 && abs(FreqBandResponse(low_shelf, 48000, 10000)) < 0.3)
+    high_shelf: FreqBand = {kind = .HIGH_SHELF, frequency = 4000, gain = -6, enabled = true}
+    testing.expect(t, abs(FreqBandResponse(high_shelf, 48000, 20000) + 6) < 0.5 && abs(FreqBandResponse(high_shelf, 48000, 100)) < 0.3)
+    notch: FreqBand = {kind = .NOTCH, frequency = 1000, q = 4, enabled = true}
+    testing.expect(t, FreqBandResponse(notch, 48000, 1000) < -30 && abs(FreqBandResponse(notch, 48000, 100)) < 0.5)
+    storage: [3]FreqBand
+    graph: FreqGraph
+    FreqGraphInit(&graph, storage[:])
+    FreqGraphAdd(&graph, .BELL, 1000, 6, 1)
+    FreqGraphAdd(&graph, .BELL, 1000, -6, 1)
+    testing.expect(t, abs(FreqGraphResponse(&graph, 1000)) < 0.1, "two opposite bells cancel")
+    graph.bands[1].enabled = false
+    testing.expect(t, abs(FreqGraphResponse(&graph, 1000) - 6) < 0.05, "a disabled band does not count")
+}
+
+@(test)
+test_freq_graph_geometry_agrees_with_itself :: proc(t: ^testing.T) {
+    view: FreqGraphView = {range_db = 12}
+    areas: FreqAreas = FreqGraphAreas({10, 20, 640, 360})
+    for frequency in ([]f32{20, 100, 1000, 12345, 20000}) {
+        back: f32 = FreqGraphFrequencyAt(&view, areas, FreqGraphX(&view, areas, frequency))
+        testing.expect(t, abs(back - frequency) / frequency < 0.001)
+    }
+    testing.expect(t, near(FreqGraphX(&view, areas, 20), areas.grid.x) && near(FreqGraphX(&view, areas, 20000), areas.grid.x + areas.grid.z))
+    testing.expect(t, near(FreqGraphX(&view, areas, 632.4), areas.grid.x + areas.grid.z * 0.5), "the middle is the geometric mean")
+    testing.expect(t, near(FreqGraphY(&view, areas, 0), areas.grid.y + areas.grid.w * 0.5))
+    testing.expect(t, near(FreqGraphY(&view, areas, 12), areas.grid.y) && near(FreqGraphGainAt(&view, areas, FreqGraphY(&view, areas, -7)), -7))
+    cut: FreqBand = {kind = .LOW_CUT, frequency = 80, gain = 9}
+    testing.expect(t, near(FreqGraphNode(&view, areas, cut).y, FreqGraphY(&view, areas, 0)), "a cut sits on the zero line")
+}
+
+@(test)
+test_freq_graph_adds_drags_and_removes_bands :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    storage: [8]FreqBand
+    log: FreqLog
+    graph: FreqGraph
+    FreqGraphInit(&graph, storage[:], 48000, &log)
+    graph.on_event = freqLogger
+    view: FreqGraphView
+    freqFrame(harness, pointerAt({-100, -100}), &graph, &view)
+    freqFrame(harness, pointerAt({-100, -100}), &graph, &view)
+    areas: FreqAreas = FreqGraphAreas(view.rect)
+
+    // a double click on empty graph adds a bell there
+    at: Vec2 = {FreqGraphX(&view, areas, 1000), FreqGraphY(&view, areas, 6)}
+    freqFrame(harness, pointerAt(at), &graph, &view)
+    freqFrame(harness, pointerAt(at, down = true, pressed = true), &graph, &view)
+    freqFrame(harness, pointerAt(at, released = true), &graph, &view)
+    freqFrame(harness, pointerAt(at, down = true, pressed = true), &graph, &view)
+    freqFrame(harness, pointerAt(at, released = true), &graph, &view)
+    freqIdle(harness, &graph, &view)
+    testing.expect_value(t, graph.count, 1)
+    testing.expect(t, abs(graph.bands[0].frequency - 1000) / 1000 < 0.02 && abs(graph.bands[0].gain - 6) < 0.3 && graph.bands[0].kind == .BELL)
+    testing.expect_value(t, freqCount(&log, .ADDED), 1)
+
+    // a drag moves it: right raises the frequency, up the gain
+    node: Vec2 = FreqGraphNode(&view, areas, graph.bands[0])
+    freqDrag(harness, node, node + {60, -20}, &graph, &view)
+    testing.expect(t, graph.bands[0].frequency > 1500 && graph.bands[0].gain > 6.5, "moved right and up")
+    testing.expect_value(t, freqCount(&log, .CHANGED), 1)
+
+    // Shift: a tenth of the way
+    moved: FreqBand = graph.bands[0]
+    node = FreqGraphNode(&view, areas, moved)
+    freqDrag(harness, node, node + {50, 0}, &graph, &view, {.SHIFT})
+    now: Vec2 = FreqGraphNode(&view, areas, graph.bands[0])
+    testing.expect(t, abs((now.x - node.x) - 5) < 1, "fine drag")
+
+    // the wheel over the node changes the Q
+    node = FreqGraphNode(&view, areas, graph.bands[0])
+    q_before: f32 = graph.bands[0].q
+    wheel: Input = pointerAt(node)
+    wheel.wheel = {0, 2}
+    freqFrame(harness, wheel, &graph, &view)
+    testing.expect(t, graph.bands[0].q > max(q_before, 0.7) * 1.2, "the wheel widens or narrows by Q")
+
+    // Delete removes the selected band
+    harness.ctx.focus = UiId(&harness.ctx, "eq")
+    freqFrame(harness, (Input){mouse_position = {-100, -100}, keys = {.DELETE}}, &graph, &view)
+    testing.expect_value(t, graph.count, 0)
+    testing.expect_value(t, freqCount(&log, .REMOVED), 1)
+}
+
+@(test)
+test_freq_graph_refuses_a_band_when_the_storage_is_full :: proc(t: ^testing.T) {
+    storage: [1]FreqBand
+    graph: FreqGraph
+    FreqGraphInit(&graph, storage[:])
+    _, a := FreqGraphAdd(&graph, .BELL, 100)
+    _, b := FreqGraphAdd(&graph, .BELL, 200)
+    testing.expect(t, a && !b)
+}
+
+@(private = "file")
+WaveLog :: struct {
+    events: [32]WaveEvent,
+    count: int,
+}
+
+@(private = "file")
+waveLogger :: proc(wave: ^Waveform, event: ^WaveEvent) {
+    log: ^WaveLog = cast(^WaveLog)wave.user
+    if log.count < len(log.events) {
+        log.events[log.count] = event^
+        log.count += 1
+    }
+}
+
+@(private = "file")
+waveCount :: proc(log: ^WaveLog, kind: WaveEventKind) -> (count: int) {
+    for i in 0 ..< log.count {
+        if log.events[i].kind == kind { count += 1 }
+    }
+    return
+}
+
+@(private = "file")
+waveFrame :: proc(harness: ^Harness, input: Input, wave: ^Waveform, view: ^WaveformView) {
+    frame(harness, input)
+    UiWaveform(&harness.ctx, "clip", wave, view)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(private = "file")
+waveIdle :: proc(harness: ^Harness, wave: ^Waveform, view: ^WaveformView) {
+    for _ in 0 ..< 30 { waveFrame(harness, pointerAt({-100, -100}), wave, view) }
+}
+
+@(private = "file")
+waveDrag :: proc(harness: ^Harness, from: Vec2, to: Vec2, wave: ^Waveform, view: ^WaveformView) {
+    waveFrame(harness, pointerAt(from), wave, view)
+    waveFrame(harness, pointerAt(from, down = true, pressed = true), wave, view)
+    waveFrame(harness, pointerAt(to, down = true), wave, view)
+    waveFrame(harness, pointerAt(to, released = true), wave, view)
+    waveIdle(harness, wave, view)
+}
+
+@(test)
+test_waveform_peaks_agree_with_the_samples :: proc(t: ^testing.T) {
+    samples: [5000]f32
+    for i in 0 ..< len(samples) { samples[i] = f32(math.sin(f64(i) * 0.37) * math.cos(f64(i) * 0.011)) }
+    wave: Waveform
+    WaveformInit(&wave, samples[:], 48000)
+    peaks: [100]WavePeak
+    testing.expect(t, WaveformBuildPeaks(&wave, peaks[:], 64))
+    for range in ([][2]int{{0, 5000}, {100, 3000}, {777, 1500}, {10, 40}, {4900, 6000}}) {
+        low, high := WaveformRange(&wave, range[0], range[1])
+        expected_low, expected_high: f32 = 1e30, -1e30
+        for s in samples[clamp(range[0], 0, 5000):clamp(range[1], 0, 5000)] { expected_low, expected_high = min(expected_low, s), max(expected_high, s) }
+        testing.expectf(t, low == expected_low && high == expected_high, "range %v: %v %v, expected %v %v", range, low, high, expected_low, expected_high)
+    }
+    small: [10]WavePeak
+    testing.expect(t, !WaveformBuildPeaks(&wave, small[:], 64) && wave.peaks == nil, "a storage that is too small is refused")
+}
+
+@(test)
+test_waveform_zooms_selects_and_keeps_markers :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    samples: [48000]f32
+    for i in 0 ..< len(samples) { samples[i] = f32(math.sin(f64(i) * 0.05)) }
+    markers: [4]WaveMarker
+    log: WaveLog
+    wave: Waveform
+    WaveformInit(&wave, samples[:], 48000, markers[:], &log)
+    wave.on_event = waveLogger
+    view: WaveformView
+    waveFrame(harness, pointerAt({-100, -100}), &wave, &view)
+    waveFrame(harness, pointerAt({-100, -100}), &wave, &view)
+    areas: WaveAreas = WaveformAreas(view.rect)
+    fit: f64 = WaveformSamplesPerPixel(&wave, &view, areas)
+    testing.expect(t, abs(fit * f64(areas.body.z) - 48000) < 1, "an unzoomed view holds the whole sample")
+
+    // the wheel zooms in around the pointer: the sample under it stays under it
+    mouse: Vec2 = {areas.body.x + areas.body.z * 0.5, areas.body.y + 40}
+    under: f64 = WaveformSampleAt(&wave, &view, areas, mouse.x)
+    wheel: Input = pointerAt(mouse)
+    wheel.wheel = {0, 3}
+    waveFrame(harness, wheel, &wave, &view)
+    testing.expect(t, WaveformSamplesPerPixel(&wave, &view, areas) < fit * 0.7)
+    testing.expect(t, abs(WaveformSampleAt(&wave, &view, areas, mouse.x) - under) < 1)
+    view.samples_per_pixel, view.origin = 0, 0
+
+    // a double click on the body adds a marker, a drag moves it, a double click on it removes it
+    at: Vec2 = {areas.body.x + 100, areas.body.y + 30}
+    waveFrame(harness, pointerAt(at), &wave, &view)
+    waveFrame(harness, pointerAt(at, down = true, pressed = true), &wave, &view)
+    waveFrame(harness, pointerAt(at, released = true), &wave, &view)
+    waveFrame(harness, pointerAt(at, down = true, pressed = true), &wave, &view)
+    waveFrame(harness, pointerAt(at, released = true), &wave, &view)
+    waveIdle(harness, &wave, &view)
+    testing.expect_value(t, wave.marker_count, 1)
+    marker_x: f32 = WaveformX(&wave, &view, areas, wave.markers[0].position)
+    testing.expect(t, abs(marker_x - at.x) < 1.5)
+    waveDrag(harness, {marker_x, at.y}, {marker_x + 50, at.y}, &wave, &view)
+    testing.expect(t, abs(WaveformX(&wave, &view, areas, wave.markers[0].position) - (marker_x + 50)) < 1.5)
+    testing.expect_value(t, waveCount(&log, .MARKER_MOVED), 1)
+
+    // a drag over empty body selects, a click clears
+    waveDrag(harness, {areas.body.x + 300, areas.body.y + 30}, {areas.body.x + 400, areas.body.y + 30}, &wave, &view)
+    testing.expect(t, view.has_selection && view.selection_end > view.selection_start)
+    testing.expect(t, abs((view.selection_end - view.selection_start) / fit - 100) < 2)
+    waveDrag(harness, {areas.body.x + 220, areas.body.y + 30}, {areas.body.x + 220, areas.body.y + 30}, &wave, &view)
+    testing.expect(t, !view.has_selection)
+
+    // the ruler moves the playhead
+    ruler: Vec2 = {areas.body.x + 200, areas.ruler.y + 8}
+    waveDrag(harness, ruler, ruler + {20, 0}, &wave, &view)
+    testing.expect(t, view.show_playhead && abs(view.playhead / fit - 220) < 2)
+    testing.expect(t, waveCount(&log, .SEEK) >= 2)
 }
