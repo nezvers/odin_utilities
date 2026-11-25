@@ -7122,3 +7122,12 @@ test_shortcut_editor_sets_resets_filters_and_flags_conflicts :: proc(t: ^testing
     testing.expect(t, !save_found && close_found)
     testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
 }
+
+@(test)
+test_unseen_releases_are_the_ones_before_the_seen_version :: proc(t: ^testing.T) {
+    releases: [3]Release = {{version = "3"}, {version = "2"}, {version = "1"}}
+    testing.expect_value(t, WhatsNewUnseen(releases[:], "3"), 0)
+    testing.expect_value(t, WhatsNewUnseen(releases[:], "2"), 1)
+    testing.expect_value(t, WhatsNewUnseen(releases[:], ""), 3)
+    testing.expect_value(t, WhatsNewUnseen(nil, "1"), 0)
+}

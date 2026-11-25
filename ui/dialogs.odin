@@ -10,9 +10,11 @@ package ui
 //     cancelled := UiProgressDialog(&ctx, "Exporting", &open, "Writing the file...", fraction)
 //     if UiPreferences(&ctx, "Preferences", &open, {"General", "Audio", "Shortcuts"}, &page) { switch page { case 0: ... } }        // the page is what you declare inside
 //
+//     UiWhatsNew(&ctx, "What is new", &open, releases[:], unseen = WhatsNewUnseen(releases[:], last_seen_version))
+//
 // Limits: one row of buttons (they do not wrap), texts wrap by words in a fixed width, no icons or pictures in a dialog (a program adds them around the call by using `UiModal` itself), the
 //     welcome screen shows at most WELCOME_RECENT (8) recent entries, preferences has no search and no "apply" (the program applies what the controls change at once), the progress dialog
-//     has one bar and one message.
+//     has one bar and one message, the what is new window shows releases newest first as markdown (no images, no "do not show again": the program keeps what version was seen).
 
 WELCOME_RECENT :: 8
 
@@ -156,4 +158,41 @@ UiPreferencesEnd :: proc(ctx: ^Context, name: string, open: ^bool, categories: [
         if UiButton(ctx, "Close") { open^ = false }
     }
     UiModalEnd(ctx, name, open, size)
+}
+
+Release :: struct {
+    version: string,
+    date: string,
+    notes: string,                  // markdown (UiMarkdown), alive until UiRender
+}
+
+// How many releases (the list is newest first) come before the one with `seen`: those are what a person has not read. All of them when `seen` is not in the list.
+WhatsNewUnseen :: proc(releases: []Release, seen: string) -> int {
+    for release, i in releases {
+        if release.version == seen { return i }
+    }
+    return len(releases)
+}
+
+// The window of the changes of a program: every release with its version and date, then its notes as markdown; the first `unseen` ones carry a "New" mark. Closes with the button.
+UiWhatsNew :: proc(ctx: ^Context, name: string, open: ^bool, releases: []Release, unseen: int = 0, width: f32 = 480, height: f32 = 360) {
+    if UiModal(ctx, name, open, {Fixed(width), Fixed(height)}) {
+        UiTitle(ctx, IdSplitName(name))
+        if UiScroll(ctx, "##releases", {Grow(), Grow()}, {gap = 8, padding = PaddingAll(2)}) {
+            for release, i in releases {
+                if UiRow(ctx, {gap = 8, size = {Grow(), Fit()}, align = {y = .CENTER}}) {
+                    UiTitle(ctx, UiFormat(ctx, "Version %s", release.version), 1.1)
+                    if i < unseen { UiChip(ctx, UiFormat(ctx, "New##new%d", i), true) }
+                    UiSpacer(ctx)
+                    UiLabelDim(ctx, release.date)
+                }
+                UiMarkdown(ctx, release.notes, UiFormat(ctx, "notes%d", i))
+                if i < len(releases) - 1 { UiSeparator(ctx) }
+            }
+        }
+        if UiRow(ctx, {size = {Grow(), {}}}) {
+            UiSpacer(ctx)
+            if UiButton(ctx, "Close") { open^ = false }
+        }
+    }
 }
