@@ -11,7 +11,8 @@ package ui_default
 // The style editor has a Fonts section with a field for each face and a serial that changes when a name does (`StyleEditor.fonts_serial`): a program loads the new fonts when it sees the serial move
 // (`ui_kit.UseSkinFonts` does it for the demos, `glue_karl2d.FontsLoad` and `glue_raylib.FontsLoad` take the bytes).
 //
-// Limits: a font per face, not per size or script (a program that needs a fallback for other scripts uses the text system, see ui/font); the icons are always Lucide; no font is embedded in the style
+// Limits: the layout measures every text in the regular face (the context has one measure proc), so a strong face that is much wider than the regular one overflows the buttons that are sized by their
+//     text (give such a control a size); a font per face, not per size or script (a program that needs a fallback for other scripts uses the text system, see ui/font); the icons are always Lucide; no font is embedded in the style
 //     file (only its name), so a skin that is moved takes its font files with it; a file that cannot be read or is not a font leaves the built in face.
 
 FONT_FILE_LENGTH :: 128
