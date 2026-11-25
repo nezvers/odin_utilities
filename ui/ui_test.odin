@@ -6394,6 +6394,7 @@ PadState :: struct {
     modwheel: f32,
     offset: f32,
     cells: [16]f32,
+    details: [16]StepDetail,
     lit: [128]bool,
     pressed: int,
     released: int,
@@ -6410,7 +6411,7 @@ padFrame :: proc(harness: ^Harness, input: Input, s: ^PadState) {
     pressed, released := UiKeyboard(&harness.ctx, "keys", 60, 71, &s.lit, 0, {Fixed(240), Fixed(80)})
     if pressed >= 0 { s.pressed = pressed }
     if released >= 0 { s.released = released }
-    UiStepGrid(&harness.ctx, "steps", s.cells[:], 2, 8, 3, 4, 1, {Fixed(160), Fixed(40)})
+    UiStepGrid(&harness.ctx, "steps", s.cells[:], 2, 8, 3, 4, 1, {Fixed(160), Fixed(40)}, details = s.details[:])
     UiEnd(&harness.ctx)
     UiRender(&harness.ctx)
 }
@@ -6594,6 +6595,42 @@ test_step_grid_paints_with_a_drag :: proc(t: ^testing.T) {
     // a drag that starts on an on cell turns the cells it passes off
     padDrag(harness, cell(grid, 0, 3), cell(grid, 0, 1), &s)
     testing.expect(t, s.cells[1] == 0 && s.cells[3] == 0)
+}
+
+@(test)
+test_step_grid_has_ratchets_and_lengths_with_modifiers :: proc(t: ^testing.T) {
+    testing.expect_value(t, StepRatchetNext(0), 2)
+    testing.expect_value(t, StepRatchetNext(1), 2)
+    testing.expect_value(t, StepRatchetNext(4), 1)
+    testing.expect_value(t, StepLengthAt({0, 0, 160, 40}, 8, 2, 90), 3)          // the pointer is on step 4 (counted from 0): 2, 3, 4
+    testing.expect_value(t, StepLengthAt({0, 0, 160, 40}, 8, 2, 10), 1)          // left of the step: at least 1
+    testing.expect_value(t, StepLengthAt({0, 0, 160, 40}, 8, 6, 500), 2)         // never past the end of the row
+
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: PadState
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    padFrame(harness, pointerAt({-100, -100}), &s)
+    grid: Rect = padRect(harness, "steps")
+    cell :: proc(grid: Rect, row: int, step: int) -> Vec2 { return {grid.x + grid.z * (f32(step) + 0.5) / 8, grid.y + grid.w * (f32(row) + 0.5) / 2} }
+    padDrag(harness, cell(grid, 0, 2), cell(grid, 0, 2), &s)
+    testing.expect(t, s.cells[2] == 1)
+    // Ctrl + click on an on step cycles the ratchet and does not turn it off
+    padDrag(harness, cell(grid, 0, 2), cell(grid, 0, 2), &s, {.CTRL})
+    testing.expect(t, s.cells[2] == 1 && s.details[2].ratchet == 2)
+    padDrag(harness, cell(grid, 0, 2), cell(grid, 0, 2), &s, {.CTRL})
+    testing.expect_value(t, s.details[2].ratchet, 3)
+    // Ctrl + click on an off step does nothing
+    padDrag(harness, cell(grid, 0, 5), cell(grid, 0, 5), &s, {.CTRL})
+    testing.expect(t, s.cells[5] == 1 && s.details[5].ratchet == 0, "an off step is painted on by an ordinary press, a Ctrl click on it too")
+    // Alt + drag to the right sets the length
+    padDrag(harness, cell(grid, 0, 2), cell(grid, 0, 4), &s, {.ALT})
+    testing.expect_value(t, s.details[2].length, 3)
+    testing.expect(t, s.cells[3] == 0 && s.cells[4] == 0, "the drag paints nothing")
+    // turning the step off takes the details away
+    padDrag(harness, cell(grid, 0, 2), cell(grid, 0, 2), &s)
+    testing.expect(t, s.cells[2] == 0 && s.details[2] == StepDetail{})
 }
 
 @(test)

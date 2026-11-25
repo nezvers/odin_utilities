@@ -13,7 +13,7 @@ package ui
 // given and returns true in the frame the person changed something.
 //
 // Limits: the range slider, wheel and scroll bar lie or stand as their name says (the range slider is horizontal, the wheel vertical, the scroll bar either); no keyboard control of the
-// handles of a range slider (use two `UiSlider`s for that); the XY pad is 0..1 on both axes (the program maps it); the keyboard has no multitouch and its velocity is the height of the press on the key (a gliding drag takes it from where it crosses into the key), not a measured speed; the step grid keeps one value per step (0 off, above 0 on: the program may use the number as a velocity), no per step lengths or ratchets.
+// handles of a range slider (use two `UiSlider`s for that); the XY pad is 0..1 on both axes (the program maps it); the keyboard has no multitouch and its velocity is the height of the press on the key (a gliding drag takes it from where it crosses into the key), not a measured speed; the step grid keeps one value per step (0 off, above 0 on: the program may use the number as a velocity) and, with `details`, a length and a ratchet (up to 4) each: no length over the end of the row, no ratchet timing or velocity shape, a step covered by a longer one is still its own step.
 
 import "core:math"
 
@@ -341,22 +341,63 @@ StepGridCellAt :: proc(rect: Rect, rows: int, steps: int, point: Vec2) -> (row: 
     return int((point.y - rect.y) / rect.w * f32(rows)), int((point.x - rect.x) / rect.z * f32(steps)), true
 }
 
+STEP_RATCHET_MAX :: 4
+
+// What a step does besides being on: it may last several steps and be struck again inside of its own step. The program keeps one per cell next to the values; the zero value is a plain step.
+StepDetail :: struct {
+    length: u8,                 // the steps it covers, this one included (0 and 1: just this step)
+    ratchet: u8,                // the strikes inside of the step (0 and 1: one, up to STEP_RATCHET_MAX)
+}
+
+// The ratchet after a Ctrl + click: 1, 2, 3, 4 and round again
+StepRatchetNext :: proc(ratchet: u8) -> u8 {
+    return max(ratchet, 1) % STEP_RATCHET_MAX + 1
+}
+
+// The length of the step at `step` that is dragged to the x of a point: the steps from it to the pointer (at least 1, never past the end of the row)
+StepLengthAt :: proc(rect: Rect, steps: int, step: int, x: f32) -> u8 {
+    if steps <= 0 || rect.z <= 0 { return 1 }
+    at: int = clamp(int((x - rect.x) / rect.z * f32(steps)), 0, steps - 1)
+    return u8(clamp(at - step + 1, 1, min(steps - step, 255)))
+}
+
 // A grid of `rows` x `steps` cells, `cells` row after row (length rows * steps; the program's, alive until UiRender). A press on a cell turns it on (to `on_value`) or off, and a drag paints the
 // cells it passes with the same. `playhead` is the step that is playing (-1: none), `beat` marks every n-th step column stronger (0: 4).
-UiStepGrid :: proc(ctx: ^Context, name: string, cells: []f32, rows: int, steps: int, playhead: int = -1, beat: int = 4, on_value: f32 = 1, size: Size = {}, disabled: bool = false) -> (changed: bool) {
+// `details` (kept by the program, rows * steps, alive until UiRender; nil: plain steps only) adds a length and a ratchet to a step: Alt + drag to the right from an on step sets how many steps it lasts,
+// Ctrl + click on an on step cycles its ratchet; a step that is turned off loses both.
+UiStepGrid :: proc(ctx: ^Context, name: string, cells: []f32, rows: int, steps: int, playhead: int = -1, beat: int = 4, on_value: f32 = 1, size: Size = {}, disabled: bool = false, details: []StepDetail = nil) -> (changed: bool) {
     id: Id = UiId(ctx, name)
     state: ^WidgetState = stateGet(ctx, id)
     interaction: Interaction = widgetBehavior(ctx, id, disabled)
     metrics: ^Metrics = &ctx.style.metrics
     assert(len(cells) >= rows * steps, "UiStepGrid: cells has to hold rows * steps values")
+    assert(details == nil || len(details) >= rows * steps, "UiStepGrid: details has to hold rows * steps values")
     if !disabled && interaction.pressed && (ctx.input.mouse_pressed || ctx.input.mouse_down) {
         if row, step, ok := StepGridCellAt(state.rect, rows, steps, ctx.input.mouse_position); ok {
             index: int = row * steps + step
             if ctx.input.mouse_pressed {
                 state.cursor = 0 if cells[index] > 0 else 1         // what this drag paints
                 state.anim = -1
+                // 2: Ctrl + click on an on step (the ratchet), 3: Alt + drag from an on step (the length); `anim` is the step it began on
+                if details != nil && cells[index] > 0 && .CTRL in ctx.input.modifiers {
+                    state.cursor = 2
+                    details[index].ratchet = StepRatchetNext(details[index].ratchet)
+                    changed = true
+                } else if details != nil && cells[index] > 0 && .ALT in ctx.input.modifiers {
+                    state.cursor = 3
+                    state.anim = f32(index)
+                }
             }
-            if f32(index) != state.anim {
+            if state.cursor == 3 && state.anim >= 0 {
+                origin: int = int(state.anim)
+                length: u8 = StepLengthAt(state.rect, steps, origin % steps, ctx.input.mouse_position.x)
+                if details[origin].length != length {
+                    details[origin].length = length
+                    changed = true
+                }
+            } else if state.cursor == 2 {
+                // a ratchet click paints nothing
+            } else if f32(index) != state.anim {
                 // every cell on the line from the last one to this one, so a fast drag leaves no gaps
                 from_row, from_step: int = row, step
                 if state.anim >= 0 { from_row, from_step = int(state.anim) / steps, int(state.anim) % steps }
@@ -367,6 +408,7 @@ UiStepGrid :: proc(ctx: ^Context, name: string, cells: []f32, rows: int, steps: 
                     target: f32 = on_value if state.cursor == 1 else 0
                     if cells[r * steps + s] != target {
                         cells[r * steps + s] = target
+                        if target == 0 && details != nil { details[r * steps + s] = {} }
                         changed = true
                     }
                 }
@@ -382,7 +424,7 @@ UiStepGrid :: proc(ctx: ^Context, name: string, cells: []f32, rows: int, steps: 
         cursor = .HAND,
         draw = {
             kind = .STEP_GRID, name = IdSplitName(name), values = cells[:rows * steps], cursor = steps, anchor = rows, actual = f32(playhead), minimum = f32(beat if beat > 0 else 4),
-            font_size = metrics.font_size, flags = flags,
+            user = raw_data(details) if len(details) >= rows * steps else nil, font_size = metrics.font_size, flags = flags,
         },
     })
     ElementClose(ctx)

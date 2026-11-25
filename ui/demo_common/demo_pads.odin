@@ -27,6 +27,7 @@ State :: struct {
     offset: f32,
     lit: [128]bool,
     cells: [32]f32,
+    details: [32]ui.StepDetail,
     played: int,
     velocity: f32,
     root: int,
@@ -39,6 +40,8 @@ init :: proc(ctx: ^kit.Context) {
     state = {low = 25, high = 70, x = 0.3, y = 0.65, ghost = {0.45, 0.8}, modwheel = 0.35, offset = 120, played = -1, root = 2, mask = 0b101010110101}
     for step in ([]int{0, 3, 6, 8, 11, 14}) { state.cells[step] = 1 }          // kick
     for step in ([]int{4, 12}) { state.cells[16 + step] = 1 }                  // snare
+    state.details[14].ratchet = 3                                              // a roll on the last kick
+    state.details[16 + 12].length = 3                                          // a long snare
     ui_demo_init(&state.app)
     ctx.background = {17, 19, 21, 255}
 }
@@ -54,7 +57,7 @@ draw :: proc(ctx: ^kit.Context) {
                 ui.UiLabelDim(c, "Scroll")
                 ui.UiScrollBar(c, "bar", &state.offset, 1000, 250, true, {ui.Fixed(250), {}})
                 ui.UiLabelDim(c, "Steps")
-                ui.UiStepGrid(c, "steps", state.cells[:], 2, 16, 5, 4, 1, {ui.Fixed(250), ui.Fixed(60)})
+                ui.UiStepGrid(c, "steps", state.cells[:], 2, 16, 5, 4, 1, {ui.Fixed(250), ui.Fixed(60)}, details = state.details[:])
             }
             ui.UiXYPad(c, "xy", &state.x, &state.y, {0.5, 0.5}, &state.ghost, {ui.Fixed(130), ui.Fixed(130)})
             ui.UiWheel(c, "bend", &state.bend, -1, 1, 0, true, {ui.Fixed(34), ui.Fixed(130)})
@@ -89,6 +92,7 @@ script: []kit.Step = {
     kit.ClickAt(&target),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.cells[16 + 1] == 1 }, "a click turns a step on"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.details[14].ratchet == 3 && state.details[16 + 12].length == 3 }, "the grid keeps its details"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return state.mask == 0b101010110101 && state.root == 2 }, "D major to start"),
     kit.Check(proc(ctx: ^kit.Context) -> bool {
         id: ui.Id = ui.UiIdPath("pads", "scale", "D# ##n1")

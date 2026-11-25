@@ -137,7 +137,34 @@ DrawStepGrid :: proc(ctx: ^ui.Context, info: ^ui.DrawInfo) {
             level: f32 = info.values[row * steps + step] if row * steps + step < len(info.values) else 0
             color: ui.Color = theme.track if (step / beat) % 2 == 0 else ui.ColorLerp(theme.track, theme.border, 0.5)
             if level > 0 { color = ui.ColorLerp(theme.accent_soft, theme.accent, clamp(level, 0, 1)) }
-            FillRounded(painter, cell, theme.rounding * 0.6, color)
+            detail: ui.StepDetail = stepDetail(info, row * steps + step)
+            if level > 0 && detail.ratchet > 1 {
+                // a ratchet is drawn as that many strikes side by side
+                count: f32 = f32(min(detail.ratchet, ui.STEP_RATCHET_MAX))
+                piece: f32 = max((cell.z - (count - 1) * 2) / count, 1)
+                for strike in 0 ..< int(count) {
+                    FillRounded(painter, {cell.x + f32(strike) * (piece + 2), cell.y, piece, cell.w}, theme.rounding * 0.4, color)
+                }
+            } else {
+                FillRounded(painter, cell, theme.rounding * 0.6, color)
+            }
         }
     }
+    // the tail of a long step, over the cells it covers
+    for row in 0 ..< rows {
+        for step in 0 ..< steps {
+            index: int = row * steps + step
+            detail: ui.StepDetail = stepDetail(info, index)
+            if detail.length < 2 || index >= len(info.values) || info.values[index] <= 0 { continue }
+            covered: int = min(int(detail.length), steps - step)
+            tail: ui.Rect = {rect.x + f32(step + 1) * cell_width, rect.y + f32(row) * cell_height + cell_height * 0.5 - 2, f32(covered - 1) * cell_width - 1.5, 4}
+            FillRounded(painter, tail, 2, ui.ColorLerp(theme.accent_soft, theme.accent, clamp(info.values[index], 0, 1)))
+        }
+    }
+}
+
+@(private = "file")
+stepDetail :: proc(info: ^ui.DrawInfo, index: int) -> ui.StepDetail {
+    if info.user == nil { return {} }
+    return (cast([^]ui.StepDetail)info.user)[index]
 }
