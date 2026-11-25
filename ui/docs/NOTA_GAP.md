@@ -46,7 +46,7 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 | ~~Waveform view~~ done: `UiWaveform` (min / max columns with a peak table, zoom, ruler in seconds, selection, markers, playhead). Left: stereo, fades and gain handles, editing | `WaveformPainter`, `AudioClipEditorView` | | done |
 | ~~Step / pattern grid~~ done: `UiStepGrid` (paint by drag, playhead column, beat shading). Left: per step lengths, ratchets | `DrumPatternView`, `ArpGrid`, `RhythmViews` | | done |
 | ~~Piano keyboard~~ done: `UiKeyboard` (lit notes, root marked, press and glide send note on / off). Left: velocity by press height | `ChordKeysViz`, `KeysViews` | | done |
-| Modulation matrix (sources x targets, amount per cell) | `VoltMatrix` | `UiTable` | low |
+| ~~Modulation matrix~~ done: `UiModMatrix` (click connects, drag sets, wheel nudges, double click clears; bars from the middle) | `VoltMatrix` | | done |
 | ~~Arrangement overview strip~~ done: `UiOverview` (clip blocks, sections band, draggable and zoomable window; used in the nota arrangement). Left: marking sections by drag | `ArrangementView.Overview`, `.Sections` | | done |
 | ~~Bars and beats on the ruler, grid snap choices~~ done: `TimelineView.tempo` turns the ruler into bars and beats, `TimelineSnapChoice` (off, bar, 1/4 .. 1/32, auto). Left: tempo map, triplets | `ArrangementView.TimeAxis`, `SnapChip` | | done |
 | ~~Clip body drawing~~ done: `TimelineClipSetBody` (notes as dashes, mirrored peaks, pattern cells; the content repeats along the clip, `offset` for a trimmed one) | `ArrangementView` clips | | done |

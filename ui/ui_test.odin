@@ -6888,3 +6888,73 @@ test_scale_picker_toggles_notes_and_picks_a_scale :: proc(t: ^testing.T) {
     testing.expect_value(t, mask, u16(0b101010110101))
     testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
 }
+
+@(private = "file")
+ModTest :: struct {
+    amounts: [6]f32,
+    routing: ModMatrix,
+}
+
+@(private = "file")
+matrixFrame :: proc(harness: ^Harness, input: Input, s: ^ModTest) -> bool {
+    frame(harness, input, {700, 300})
+    changed: bool = UiModMatrix(&harness.ctx, "Matrix", &s.routing, {Fixed(400), Fixed(120)})
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+    return changed
+}
+
+@(test)
+test_mod_matrix_cells_click_drag_wheel_and_clear :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: ModTest
+    s.routing = {sources = {"LFO", "Env"}, targets = {"Cutoff", "Pitch", "Pan"}, amounts = s.amounts[:]}
+    for _ in 0 ..< 2 { matrixFrame(harness, pointerAt({-100, -100}), &s) }
+    rect, found := UiElementRect(&harness.ctx, UiId(&harness.ctx, "Matrix"))
+    testing.expect(t, found)
+    row, column, ok := ModMatrixCellAt(rect, 2, 3, {rect.x + rect.z - 5, rect.y + rect.w - 5})
+    testing.expect(t, ok && row == 1 && column == 2, "the last cell is at the bottom right")
+    _, _, ok = ModMatrixCellAt(rect, 2, 3, {rect.x + 5, rect.y + rect.w * 0.5})
+    testing.expect(t, !ok, "the names are not cells")
+    cell: Rect = ModMatrixCellRect(rect, 2, 3, 0, 1)
+    at: Vec2 = {cell.x + cell.z * 0.5, cell.y + cell.w * 0.5}
+    idle :: proc(harness: ^Harness, s: ^ModTest) { for _ in 0 ..< 30 { matrixFrame(harness, pointerAt({-100, -100}), s) } }
+    // a click on an empty cell connects it at half
+    matrixFrame(harness, pointerAt(at), &s)
+    matrixFrame(harness, pointerAt(at, down = true, pressed = true), &s)
+    testing.expect(t, matrixFrame(harness, pointerAt(at, released = true), &s))
+    testing.expect_value(t, s.amounts[1], 0.5)
+    sel_row, sel_column, selected := ModMatrixSelected(&harness.ctx, "Matrix", &s.routing)
+    testing.expect(t, selected && sel_row == 0 && sel_column == 1)
+    idle(harness, &s)
+    // a drag up by one cell height: a fifth more
+    matrixFrame(harness, pointerAt(at), &s)
+    matrixFrame(harness, pointerAt(at, down = true, pressed = true), &s)
+    matrixFrame(harness, pointerAt(at - {0, cell.w}, down = true), &s)
+    matrixFrame(harness, pointerAt(at - {0, cell.w}, released = true), &s)
+    testing.expect(t, abs(s.amounts[1] - 0.7) < 0.01, "a cell height is a fifth of the range")
+    idle(harness, &s)
+    // down far: it goes negative and stays inside of -1
+    matrixFrame(harness, pointerAt(at), &s)
+    matrixFrame(harness, pointerAt(at, down = true, pressed = true), &s)
+    matrixFrame(harness, pointerAt(at + {0, cell.w * 20}, down = true), &s)
+    matrixFrame(harness, pointerAt(at + {0, cell.w * 20}, released = true), &s)
+    testing.expect_value(t, s.amounts[1], -1)
+    idle(harness, &s)
+    // the wheel moves a hovered cell by 5 %
+    wheel: Input = pointerAt(at)
+    wheel.wheel = {0, 1}
+    matrixFrame(harness, pointerAt(at), &s)
+    matrixFrame(harness, wheel, &s)
+    testing.expect(t, abs(s.amounts[1] - (-0.95)) < 0.001)
+    idle(harness, &s)
+    // a double click clears it
+    matrixFrame(harness, pointerAt(at), &s)
+    matrixFrame(harness, pointerAt(at, down = true, pressed = true), &s)
+    matrixFrame(harness, pointerAt(at, released = true), &s)
+    matrixFrame(harness, pointerAt(at, down = true, pressed = true), &s)
+    testing.expect_value(t, s.amounts[1], 0)
+    testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
+}
