@@ -49,7 +49,7 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 | Modulation matrix (sources x targets, amount per cell) | `VoltMatrix` | `UiTable` | low |
 | ~~Arrangement overview strip~~ done: `UiOverview` (clip blocks, sections band, draggable and zoomable window; used in the nota arrangement). Left: marking sections by drag | `ArrangementView.Overview`, `.Sections` | | done |
 | ~~Bars and beats on the ruler, grid snap choices~~ done: `TimelineView.tempo` turns the ruler into bars and beats, `TimelineSnapChoice` (off, bar, 1/4 .. 1/32, auto). Left: tempo map, triplets | `ArrangementView.TimeAxis`, `SnapChip` | | done |
-| ~~Clip body drawing~~ done: `TimelineClipSetBody` (notes as dashes, mirrored peaks, pattern cells; the content repeats along the clip) | `ArrangementView` clips | | done |
+| ~~Clip body drawing~~ done: `TimelineClipSetBody` (notes as dashes, mirrored peaks, pattern cells; the content repeats along the clip, `offset` for a trimmed one) | `ArrangementView` clips | | done |
 | Node graph nodes with an on/off switch in the header, CV ports (diamond), edge colours by signal kind, a minimap | `ModularView` | `UiGraph` (round pins, no header widgets) | medium |
 
 ## Look

@@ -6772,6 +6772,18 @@ test_clip_body_places_notes_peaks_and_cells :: proc(t: ^testing.T) {
     rect, ok = ClipBodyNoteRect(&body, area, 10.5, notes[1], 2, low, high)
     testing.expect(t, ok && rect.x + rect.z <= 100.001, "the note is cut at the end of the clip")
     testing.expect_value(t, ClipBodyArea({0, 0, 100, 40}, 18), Rect{2, 18, 96, 20})
+    // trimmed by 1: the note at 0..1 is gone, the one at 2 starts at 1; a note that is half cut starts at the edge
+    trimmed: ClipBody = {kind = .NOTES, notes = notes[:], content_length = 4, offset = 1}
+    _, ok = ClipBodyNoteRect(&trimmed, area, 10, notes[0], 0, low, high)
+    testing.expect(t, !ok, "a note that ended before the trim is not shown")
+    rect, ok = ClipBodyNoteRect(&trimmed, area, 10, notes[1], 0, low, high)
+    testing.expect(t, ok && near(rect.x, 10), "starts at 2 - 1")
+    trimmed.offset = 2.5
+    rect, ok = ClipBodyNoteRect(&trimmed, area, 10, notes[1], 0, low, high)
+    testing.expect(t, ok && near(rect.x, 0) && near(rect.z, 5), "cut at the left edge: 0.5 of its 1 left")
+    stretched: ClipBody = {kind = .NOTES, notes = notes[:], offset = 3}
+    rect, ok = ClipBodyNoteRect(&stretched, area, 10, notes[1], 0, low, high)
+    testing.expect(t, ok && near(rect.x, 20), "no content length: no trim")
 
     peaks: [4]f32 = {0.1, 0.9, 0.2, 0.3}
     wave: ClipBody = {kind = .WAVEFORM, peaks = peaks[:]}
