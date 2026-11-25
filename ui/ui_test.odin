@@ -5693,3 +5693,192 @@ test_value_bar_pan_text :: proc(t: ^testing.T) {
     _, ok = valueBarPanParse("left")
     testing.expect(t, !ok)
 }
+
+@(private = "file")
+PianoLog :: struct {
+    events: [32]PianoEvent,
+    count: int,
+}
+
+@(private = "file")
+pianoLogger :: proc(roll: ^PianoRoll, event: ^PianoEvent) {
+    log: ^PianoLog = cast(^PianoLog)roll.user
+    if log.count < len(log.events) {
+        log.events[log.count] = event^
+        log.count += 1
+    }
+}
+
+@(private = "file")
+pianoCount :: proc(log: ^PianoLog, kind: PianoEventKind) -> (count: int) {
+    for i in 0 ..< log.count {
+        if log.events[i].kind == kind { count += 1 }
+    }
+    return
+}
+
+@(private = "file")
+rollFrame :: proc(harness: ^Harness, input: Input, roll: ^PianoRoll, view: ^PianoRollView) {
+    frame(harness, input)
+    UiPianoRoll(&harness.ctx, "roll", roll, view)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(private = "file")
+rollIdle :: proc(harness: ^Harness, roll: ^PianoRoll, view: ^PianoRollView) {
+    for _ in 0 ..< 30 { rollFrame(harness, pointerAt({-100, -100}), roll, view) }     // longer than a double click
+}
+
+@(private = "file")
+rollClick :: proc(harness: ^Harness, at: Vec2, roll: ^PianoRoll, view: ^PianoRollView, modifiers: Modifiers = {}) {
+    press: Input = pointerAt(at, down = true, pressed = true)
+    press.modifiers = modifiers
+    rollFrame(harness, pointerAt(at), roll, view)
+    rollFrame(harness, press, roll, view)
+    rollFrame(harness, pointerAt(at, released = true), roll, view)
+    rollIdle(harness, roll, view)
+}
+
+@(private = "file")
+rollDrag :: proc(harness: ^Harness, from: Vec2, to: Vec2, roll: ^PianoRoll, view: ^PianoRollView) {
+    rollFrame(harness, pointerAt(from), roll, view)
+    rollFrame(harness, pointerAt(from, down = true, pressed = true), roll, view)
+    rollFrame(harness, pointerAt(to, down = true), roll, view)
+    rollFrame(harness, pointerAt(to, released = true), roll, view)
+    rollIdle(harness, roll, view)
+}
+
+@(test)
+test_piano_roll_geometry_agrees_with_itself :: proc(t: ^testing.T) {
+    view: PianoRollView = {top_pitch = 85, origin = 2, zoom = 40, row_height = 12}
+    areas: PianoAreas = PianoRollAreas(&view, {10, 20, 600, 400})
+    testing.expect(t, near(areas.grid.x, 10 + PIANO_KEYS_WIDTH) && near(areas.grid.y, 20 + PIANO_RULER_HEIGHT))
+    testing.expect(t, near(areas.lane.w, PIANO_LANE_HEIGHT) && near(areas.grid.w + areas.lane.w + PIANO_RULER_HEIGHT, 400), "ruler, grid and lane fill the height")
+    for beat in ([]f64{2, 3.5, 10}) {
+        testing.expect(t, abs(PianoRollBeatAt(&view, areas, PianoRollBeatX(&view, areas, beat)) - beat) < 1e-4)
+    }
+    for pitch in ([]int{84, 60, 55}) {
+        y: f32 = PianoRollPitchY(&view, areas, pitch)
+        testing.expect_value(t, PianoRollPitchAt(&view, areas, y + 1), pitch)
+        testing.expect_value(t, PianoRollPitchAt(&view, areas, y + 11), pitch)
+    }
+    testing.expect(t, near(PianoRollPitchY(&view, areas, 84), areas.grid.y), "the highest row of a view that starts at 85 is at the top")
+    view.scale_mask = 0b101010110101       // major from the root
+    testing.expect(t, PianoRollInScale(&view, 60) && PianoRollInScale(&view, 64) && !PianoRollInScale(&view, 61))
+    view.scale_root = 2
+    testing.expect(t, PianoRollInScale(&view, 62) && !PianoRollInScale(&view, 63))
+}
+
+@(test)
+test_piano_roll_adds_moves_resizes_and_removes_notes :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    storage: [8]PianoNote
+    log: PianoLog
+    roll: PianoRoll
+    PianoRollInit(&roll, storage[:], 4, &log)
+    roll.on_event = pianoLogger
+    view: PianoRollView = {snap = 0.25}
+    rollFrame(harness, pointerAt({-100, -100}), &roll, &view)
+    rollFrame(harness, pointerAt({-100, -100}), &roll, &view)
+    // the grid starts at (56, 22), 48 pixels a beat, 16 a row, the top row is the pitch 84
+
+    at: Vec2 = {56 + 48 * 2 + 5, 22 + 16 * 4 + 5}
+    rollFrame(harness, pointerAt(at), &roll, &view)
+    rollFrame(harness, pointerAt(at, down = true, pressed = true), &roll, &view)
+    rollFrame(harness, pointerAt(at, released = true), &roll, &view)
+    rollFrame(harness, pointerAt(at, down = true, pressed = true), &roll, &view)
+    rollFrame(harness, pointerAt(at, released = true), &roll, &view)
+    rollIdle(harness, &roll, &view)
+    testing.expect_value(t, roll.count, 1)
+    testing.expect(t, near(f32(roll.notes[0].start), 2) && roll.notes[0].pitch == 80 && near(f32(roll.notes[0].length), 0.25), "on the grid, at the row that was pressed")
+    testing.expect(t, roll.notes[0].selected)
+    testing.expect_value(t, pianoCount(&log, .ADDED), 1)
+
+    // the note is 12 pixels wide at x 152: a drag from its body moves it by whole steps and rows
+    body: Vec2 = {56 + 96 + 3, 22 + 16 * 4 + 8}
+    rollDrag(harness, body, body + {48, -16}, &roll, &view)
+    testing.expect(t, near(f32(roll.notes[0].start), 3) && roll.notes[0].pitch == 81, "a beat later and a pitch higher")
+    testing.expect_value(t, pianoCount(&log, .MOVED), 1)
+    moved: PianoEvent = log.events[log.count - 1]
+    testing.expect(t, moved.kind == .MOVED && near(f32(moved.delta_beats), 1) && moved.delta_pitch == 1)
+
+    // the right edge changes the length, on the grid
+    edge: Vec2 = {56 + 144 + 10, 22 + 16 * 3 + 8}
+    rollDrag(harness, edge, edge + {24, 0}, &roll, &view)
+    testing.expect(t, near(f32(roll.notes[0].length), 0.75) && near(f32(roll.notes[0].start), 3), "half a beat longer")
+    rollDrag(harness, edge + {24, 0}, edge + {-400, 0}, &roll, &view)
+    testing.expect(t, near(f32(roll.notes[0].length), 0.25), "the length stops at the snap step")
+
+    // the velocity lane is the bottom 80 pixels of the widget
+    areas: PianoAreas = PianoRollAreas(&view, view.rect)
+    stem: Vec2 = {PianoRollBeatX(&view, areas, 3), areas.lane.y + 20}
+    half: Vec2 = {stem.x, areas.lane.y + areas.lane.w - 4 - (areas.lane.w - 8) * 0.5}
+    rollDrag(harness, stem, half, &roll, &view)
+    testing.expect(t, abs(roll.notes[0].velocity - 0.5) < 0.02, "half of the height of the lane")
+    testing.expect_value(t, pianoCount(&log, .VELOCITY), 1)
+
+    harness.ctx.focus = UiId(&harness.ctx, "roll")
+    rollFrame(harness, (Input){mouse_position = {-100, -100}, keys = {.DELETE}}, &roll, &view)
+    testing.expect_value(t, roll.count, 0)
+    testing.expect_value(t, pianoCount(&log, .REMOVED), 1)
+}
+
+@(test)
+test_piano_roll_selection_keys_and_the_ruler :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    storage: [8]PianoNote
+    log: PianoLog
+    roll: PianoRoll
+    PianoRollInit(&roll, storage[:], 4, &log)
+    roll.on_event = pianoLogger
+    view: PianoRollView = {snap = 1}
+    PianoRollAdd(&roll, 0, 1, 84)
+    PianoRollAdd(&roll, 2, 1, 84)
+    rollFrame(harness, pointerAt({-100, -100}), &roll, &view)
+    rollFrame(harness, pointerAt({-100, -100}), &roll, &view)
+    first: Vec2 = {56 + 10, 22 + 8}
+    second: Vec2 = {56 + 96 + 10, 22 + 8}
+    rollClick(harness, first, &roll, &view)
+    testing.expect(t, roll.notes[0].selected && !roll.notes[1].selected)
+    rollClick(harness, second, &roll, &view, {.SHIFT})
+    testing.expect(t, roll.notes[0].selected && roll.notes[1].selected, "Shift adds to the selection")
+    rollClick(harness, {56 + 300, 22 + 16 * 8}, &roll, &view)
+    testing.expect_value(t, PianoRollSelectedCount(&roll), 0)
+    // a key plays and stops, a drag glides to the next key
+    rollDrag(harness, {20, 22 + 8}, {20, 22 + 16 + 8}, &roll, &view)
+    testing.expect_value(t, pianoCount(&log, .PREVIEW_ON), 2)
+    testing.expect_value(t, pianoCount(&log, .PREVIEW_OFF), 2)
+    // the ruler moves the playhead, on the grid
+    rollClick(harness, {56 + 48 * 5 + 20, 10}, &roll, &view)
+    testing.expect(t, view.show_playhead && near(f32(view.playhead), 5))
+    testing.expect_value(t, pianoCount(&log, .SEEK), 1)
+    // the wheel scrolls the pitches, Ctrl zooms around the pointer
+    top: f32 = view.top_pitch
+    wheel: Input = pointerAt({200, 100})
+    wheel.wheel = {0, -1}
+    rollFrame(harness, wheel, &roll, &view)
+    testing.expect(t, view.top_pitch < top, "the wheel down shows lower pitches")
+    zoom: f32 = PianoRollZoom(&view)
+    wheel.wheel = {0, 1}
+    wheel.modifiers = {.CTRL}
+    rollFrame(harness, wheel, &roll, &view)
+    testing.expect(t, PianoRollZoom(&view) > zoom)
+}
+
+@(test)
+test_piano_roll_refuses_a_note_when_the_storage_is_full :: proc(t: ^testing.T) {
+    storage: [2]PianoNote
+    roll: PianoRoll
+    PianoRollInit(&roll, storage[:])
+    _, a := PianoRollAdd(&roll, 0, 1, 60)
+    _, b := PianoRollAdd(&roll, 1, 1, 62)
+    _, c := PianoRollAdd(&roll, 2, 1, 64)
+    testing.expect(t, a && b && !c)
+    PianoRollRemove(&roll, 0)
+    testing.expect(t, roll.count == 1 && roll.notes[0].pitch == 62, "the notes after the removed one move up")
+}

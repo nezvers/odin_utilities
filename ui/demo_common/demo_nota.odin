@@ -6,7 +6,6 @@ package demo_common
 // Where Nota has a widget that `ui` does not (see docs/NOTA_GAP.md) the screen draws it by hand with a custom element: those places are marked `GAP`, and each is one
 // entry of that list, so the demo is also the checklist of what the library still needs.
 
-import "core:fmt"
 import "core:math"
 import ui ".."
 import ui_default "../default_style"
@@ -31,13 +30,6 @@ FILTERS: [5]string = {"Synths", "Keys & physical", "Drums", "Samplers", "Racks"}
 PRESETS: [4]string = {"Init", "Warm pad", "Glass bell", "Sub bass"}
 INPUTS: [3]string = {"All inputs", "In 1", "In 2"}
 NOTE_NAMES: [12]string = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
-
-Note :: struct {
-    start: f32,         // beats
-    length: f32,
-    pitch: int,         // MIDI number
-    velocity: f32,
-}
 
 State :: struct {
     app: UiDemo,
@@ -77,7 +69,9 @@ State :: struct {
     graph_view: ui.GraphView,
     nodes: [4]ui.NodeHandle,
     // piano roll
-    notes: [14]Note,
+    notes: [128]ui.PianoNote,
+    roll: ui.PianoRoll,
+    roll_view: ui.PianoRollView,
     snap: int,
     quantize: f32,
     scale_on: bool,
@@ -86,7 +80,7 @@ State :: struct {
 state: State
 
 init :: proc(ctx: ^kit.Context) {
-    state = {bpm = 124, cutoff = 0.62, resonance = 0.25, drift = 0.25, detune = 0.04, on = {true, true}, quantize = 80, pad_pan = -0.3, mod_amount = 45, show_sends = true, show_io = true, snap = 1}
+    state = {bpm = 124, cutoff = 0.62, resonance = 0.25, drift = 0.25, detune = 0.04, on = {true, true}, quantize = 80, pad_pan = -0.3, mod_amount = 45, show_sends = true, show_io = true, snap = 2, scale_on = true}
     ui_demo_init(&state.app)
     ctx.background = {17, 19, 21, 255}        // the background of the dark theme (ui_default.THEME_DARK)
     for i in 0 ..< CHANNELS {
@@ -138,8 +132,10 @@ init :: proc(ctx: ^kit.Context) {
     }
     // the piano roll: a hook of the lead
     pitches: [14]int = {69, 72, 74, 72, 76, 74, 72, 69, 71, 72, 76, 79, 77, 74}
-    for i in 0 ..< len(state.notes) {
-        state.notes[i] = {start = f32(i) * 1.0 + (0.5 if i % 4 == 3 else 0), length = 0.5 if i % 3 != 0 else 1.5, pitch = pitches[i], velocity = 0.45 + 0.5 * f32((i * 37) % 10) / 10}
+    ui.PianoRollInit(&state.roll, state.notes[:])
+    state.roll_view = {snap = 0.25, scale_mask = 0b101010110101, scale_root = 0, top_pitch = 86}
+    for i in 0 ..< len(pitches) {
+        ui.PianoRollAdd(&state.roll, f64(i) * 1.0 + (0.5 if i % 4 == 3 else 0), 0.5 if i % 3 != 0 else 1.5, pitches[i], 0.45 + 0.5 * f32((i * 37) % 10) / 10)
     }
 }
 
@@ -386,56 +382,13 @@ pianoRoll :: proc(c: ^ui.Context, screen: ui.Vec2) {
             ui.UiSpacer(c)
             ui.UiLabelDim(c, "32 beats")
         }
-        ui.UiCustom(c, "##roll", rollDraw, {ui.Grow(), ui.Grow()}, nil, 0, true)       // GAP: piano roll (keys, notes, ruler, velocity lane)
+        snap_steps: [4]f64 = {1, 0.5, 0.25, 0.125}
+        state.roll_view.snap = snap_steps[state.snap]
+        if !state.scale_on { state.roll_view.scale_mask = 0 } else { state.roll_view.scale_mask = 0b101010110101 }
+        state.roll_view.playhead = math.mod(f64(state.time) * 2, 16) if state.playing else 0.4
+        state.roll_view.show_playhead = true
+        ui.UiPianoRoll(c, "roll", &state.roll, &state.roll_view)
     }
-}
-
-KEY_WIDTH :: 54
-RULER_HEIGHT :: 22
-VELOCITY_HEIGHT :: 90
-LOW_NOTE :: 57
-HIGH_NOTE :: 84
-BEATS_SHOWN :: 16
-
-rollDraw :: proc(c: ^ui.Context, info: ^ui.DrawInfo) {
-    painter: ^ui_default.Painter = ui_default.PainterOf(c)
-    theme: ^ui_default.Theme = &painter.theme
-    area: ui.Rect = info.rect
-    grid: ui.Rect = {area.x + KEY_WIDTH, area.y + RULER_HEIGHT, area.z - KEY_WIDTH, area.w - RULER_HEIGHT - VELOCITY_HEIGHT}
-    rows: int = HIGH_NOTE - LOW_NOTE + 1
-    row_height: f32 = grid.w / f32(rows)
-    beat_width: f32 = grid.z / BEATS_SHOWN
-    painter.fill_rect(painter, grid, theme.track)
-    for note in LOW_NOTE ..= HIGH_NOTE {
-        y: f32 = grid.y + f32(HIGH_NOTE - note) * row_height
-        pitch_class: int = note % 12
-        black: bool = pitch_class == 1 || pitch_class == 3 || pitch_class == 6 || pitch_class == 8 || pitch_class == 10
-        if black { painter.fill_rect(painter, {grid.x, y, grid.z, row_height}, {0, 0, 0, 50}) }
-        painter.fill_rect(painter, {area.x, y, KEY_WIDTH - 2, row_height - 1}, theme.panel if black else theme.track)
-        if pitch_class == 0 { painter.draw_text(painter, fmt.tprintf("C%d", note / 12 - 1), {area.x + 6, y}, row_height * 0.9, theme.text_dim) }
-    }
-    for beat in 0 ..= BEATS_SHOWN {
-        x: f32 = grid.x + f32(beat) * beat_width
-        bar: bool = beat % 4 == 0
-        painter.fill_rect(painter, {x, grid.y, 1, grid.w + VELOCITY_HEIGHT}, theme.border if !bar else theme.text_dim)
-        if bar { painter.draw_text(painter, fmt.tprintf("%d", beat / 4 + 9), {x + 4, area.y + 3}, 13, theme.text) }
-    }
-    ui_default.Line(painter, {grid.x - 20, grid.y}, {grid.x - 20, grid.y}, 1, theme.accent)
-    // the notes and under them their velocities
-    velocity_area: ui.Rect = {grid.x, grid.y + grid.w, grid.z, VELOCITY_HEIGHT}
-    painter.fill_rect(painter, velocity_area, theme.panel)
-    for note in state.notes {
-        if note.pitch < LOW_NOTE || note.pitch > HIGH_NOTE || note.start >= BEATS_SHOWN { continue }
-        x: f32 = grid.x + note.start * beat_width
-        y: f32 = grid.y + f32(HIGH_NOTE - note.pitch) * row_height
-        ui_default.FillRounded(painter, {x, y + 1, note.length * beat_width - 1, row_height - 2}, 0.2, theme.accent_soft)
-        stem: f32 = (VELOCITY_HEIGHT - 12) * note.velocity
-        painter.fill_rect(painter, {x - 1, velocity_area.y + VELOCITY_HEIGHT - 4 - stem, 2, stem}, theme.accent)
-        ui_default.Disc(painter, {x, velocity_area.y + VELOCITY_HEIGHT - 4 - stem}, 3, theme.accent)
-    }
-    // the playhead
-    head: f32 = grid.x + math.mod(state.time * 2, BEATS_SHOWN) * beat_width if state.playing else grid.x + 0.4 * beat_width
-    painter.fill_rect(painter, {head, area.y, 1.5, area.w}, {250, 180, 60, 255})
 }
 
 script: []kit.Step = {

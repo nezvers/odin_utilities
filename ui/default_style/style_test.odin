@@ -109,6 +109,9 @@ Everything :: struct {
     off: bool,
     value: f32,
     pan: f32,
+    roll: ui.PianoRoll,
+    roll_view: ui.PianoRollView,
+    roll_notes: [4]ui.PianoNote,
     number: int,
     choice: int,
     text: [32]u8,
@@ -147,6 +150,10 @@ everythingInit :: proc(e: ^Everything, theme: Theme, with_icons: bool) {
     ui.ChartViewInit(&e.chart)
     e.points = {{0, 10}, {1, 30}, {2, 20}, {3, 45}, {4, 25}}
     e.series = {{name = "Sales", points = e.points[:]}}
+    ui.PianoRollInit(&e.roll, e.roll_notes[:])
+    ui.PianoRollAdd(&e.roll, 0, 1, 80)
+    ui.PianoRollAdd(&e.roll, 1, 2, 77)
+    e.roll_view = {snap = 0.5, scale_mask = 0b101010110101, show_playhead = true, playhead = 1}
     ui.TreeInit(&e.tree)
     ui.TreeViewInit(&e.tree_view)
     folder, _ := ui.TreeAdd(&e.tree, {}, "folder", branch = true, icon = .FOLDER)
@@ -756,4 +763,24 @@ test_a_text_field_draws_a_long_text_moved_and_clipped :: proc(t: ^testing.T) {
     testing.expect_value(t, recorder.text_count, 1)
     testing.expect_value(t, recorder.clip_count, 0)
     testing.expect(t, !recorder.bad_rect)
+}
+
+@(test)
+test_the_style_draws_a_piano_roll :: proc(t: ^testing.T) {
+    for theme in ([2]Theme{THEME_DARK, THEME_LIGHT}) {
+        e: ^Everything = new(Everything)
+        defer free(e)
+        everythingInit(e, theme, true)
+        for _ in 0 ..< 3 {
+            c: ^ui.Context = &e.ctx
+            e.recorder = {}
+            ui.UiBegin(c, {mouse_position = {-100, -100}}, 1.0 / 60, {800, 600}, &e.style)
+            ui.UiPianoRoll(c, "roll", &e.roll, &e.roll_view, {ui.Fixed(600), ui.Fixed(360)})
+            ui.UiEnd(c)
+            ui.UiRender(c)
+        }
+        testing.expect(t, e.recorder.rects > 60, "rows, lines, keys and the lane are drawn")
+        testing.expect(t, !e.recorder.bad_rect)
+        testing.expect_value(t, ui.UiProblems(&e.ctx), ui.Problems{})
+    }
 }

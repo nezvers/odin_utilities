@@ -40,7 +40,7 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 ## Graphs and editors
 | Missing | Nota source | Have | Priority |
 |---|---|---|---|
-| **Piano roll**: key column, note rectangles (add, move, resize, velocity), ruler in bars and beats, velocity / controller lanes under it, scale highlight | `PianoRollView*` | `UiTimeline` (tracks of clips, no pitch rows, no per note velocity) | high |
+| ~~Piano roll~~ done: `UiPianoRoll` (keys, notes add / move / resize / delete, ruler in bars and beats, velocity lane, scale highlight, preview events). Left: controller lanes, box select, copy / paste, triplet grids | `PianoRollView*` | | done |
 | **Frequency response graph with draggable band nodes** (log frequency axis, dB axis, a curve from the filters, hover read-out) and a spectrum fill under it | `Eq8Views`, `FilterGraphBase`, `SpectrumFill`, `Fft` | `UiChart` (no log axis, no draggable points) | high |
 | Envelope editors: ADSR with draggable points, LFO strip, plots with titled corner axes | `ClipAdsrKit`, `VoltEnv`, `AuroraLfoStrip`, `NotaGraph` | timeline automation lanes | medium |
 | Waveform view (audio clip, sample, grain) with zoom and markers | `WaveformPainter`, `AudioClipEditorView`, `GrainWaveViz` | none | high |
@@ -62,4 +62,4 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 3. Track header row and bars-and-beats ruler (the arrangement screen).
 4. Mixer fader with a scale and a stereo meter (the mixer).
 5. Frequency graph with draggable bands (EQ, filters) and the waveform view.
-6. Piano roll (the biggest: note editing).
+6. ~~Piano roll~~ (done).

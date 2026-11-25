@@ -155,7 +155,7 @@ Tick an item when it is done and verified (tests pass, committed).
 
 ## Nota gaps (docs/NOTA_GAP.md, demo `nota`)
 - [x] Value bar (`UiValueBar`, `widgets_valuebar.odin`): a filling bar with the value inside, relative drag, Shift for fine, double click or Enter to type, Ctrl + click or Delete to reset, snap, bipolar fill (`ValueBarPan`: 30L / C / 12R), modulation hatch by the tag "modulation"; used by the `nota` demo
-- [ ] (high) Piano roll widget: key column, notes (add, move, resize, velocity), bars and beats ruler, velocity and controller lanes
+- [x] Piano roll widget: key column, notes (add, move, resize, velocity), bars and beats ruler, velocity and controller lanes
 - [ ] (high) Frequency response graph with draggable band nodes (log frequency axis, dB axis) and a spectrum fill; waveform view with zoom and markers
 - [ ] (high) Mixer fader with a dB scale and a stereo meter; bars and beats on the timeline ruler with grid snap choices
 - [ ] (high) Device card (header with switch and preset selector with arrows, tabs, sections divided by rules) and track header row (colour strip, M / S / R, value bar, pan, input)
