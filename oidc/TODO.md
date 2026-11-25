@@ -6,7 +6,7 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] Against real providers (`OIDC_LIVE=1 odin test oidc`): discovery and keys of Google (2 RSA keys), Microsoft (7), SpacetimeAuth (1) and Duende demo (1), and a real RS256 access token of the Duende demo client (`m2m`) verified, tampering and foreign keys refused
 - [ ] (high) A whole login with a person at a real provider (needs a client id: SpacetimeAuth project, Google client, Auth0 application): write down the redirect URI and scope settings that worked
 - [x] A login window in the arena example with the `ui` library (`spacetimedb/arena/demo_common/signin.odin`, `screens.odin`): sign in, the name from the claims, the refresh token kept encrypted per provider (DPAPI on Windows); Google, Discord and SpacetimeAuth are offered when the settings file has a client id; GitHub is not (its access token is not an ID token, SpacetimeDB cannot take it)
-- [ ] (medium) Cache the keys with an expiry and fetch them again when a token names a `kid` that is not in the set (a provider rotates keys)
+- [x] Cache the keys with an expiry and fetch them again when a token does not fit them (`key_cache.odin`: `KeyCache`, `KeyCacheVerify`, min gap between fetches; `AuthSession` and `LoginPoll` still fetch once per login, a long running verifier uses the cache)
 - [ ] (medium) `end_session_endpoint` (log out at the provider), token revocation, `userinfo` into a struct
 - [ ] (medium) Client credentials flow for services (a dedicated server that talks to a database as itself)
 - [ ] (medium) The identity of a login without a connection: blake3 (`iss|sub`) is needed (Odin's core has none)
