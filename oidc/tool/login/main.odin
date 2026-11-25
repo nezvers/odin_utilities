@@ -101,7 +101,7 @@ run :: proc(arguments: []string) -> int {
         return failed(fmt.tprintf("%s.client_id is not set in the settings file (see oidc/providers/README.md)", name), 2)
     }
     say(fmt.tprintf("%s: client id %s...", name, config.client_id[:min(6, len(config.client_id))]))
-    if preset == .GITHUB { return githubDevice(config, issuer, timeout) }
+    if preset == .GITHUB { return githubDevice(config, issuer, timeout, open_browser) }
     return browserLogin(config, open_browser, timeout)
 }
 
@@ -188,7 +188,7 @@ redirectOf :: proc(login: ^oidc.Login) -> string {
     return query if query != "" else "(see the address)"
 }
 
-githubDevice :: proc(config: oidc.ClientConfig, issuer: string, timeout: f64) -> int {
+githubDevice :: proc(config: oidc.ClientConfig, issuer: string, timeout: f64, open_browser: bool) -> int {
     metadata: ^oidc.Metadata = new(oidc.Metadata)
     defer free(metadata)
     oidc.PresetMetadataGithub(metadata)
@@ -203,6 +203,11 @@ githubDevice :: proc(config: oidc.ClientConfig, issuer: string, timeout: f64) ->
         return failed("GitHub refused the device flow: is \"Enable Device Flow\" ticked for the OAuth App, and is the client id right?", 1)
     }
     say(fmt.tprintf("open %s and type the code  %s", device.verification_uri, device.user_code))
+    // like the other providers: the browser is asked to open the page (the code is still typed there, GitHub gives no address that carries it)
+    if open_browser {
+        page: string = device.verification_uri_complete if device.verification_uri_complete != "" else device.verification_uri
+        if oidc.BrowserOpen(page) { say("the browser was asked to open it") }
+    }
     tokens: ^oidc.Tokens = new(oidc.Tokens)
     defer free(tokens)
     started: time.Tick = time.tick_now()

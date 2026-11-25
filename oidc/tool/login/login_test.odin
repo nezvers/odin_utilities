@@ -54,7 +54,7 @@ idle :: proc(login: ^oidc.Login) {
 
 // Starts a provider and the hooks, runs the tool with a settings file that names `provider_name`, returns the exit code and what the tool said
 @(private = "file")
-runTool :: proc(options: mock.Options, fault: mock.Fault, provider_name: string, extra: []string, play: bool, output: ^strings.Builder, more_settings: string = "") -> int {
+runTool :: proc(options: mock.Options, fault: mock.Fault, provider_name: string, extra: []string, play: bool, output: ^strings.Builder, more_settings: string = "", browser: bool = false) -> int {
     provider := new(mock.Provider)
     defer free(provider)
     if !mock.Start(provider, options) { return -1 }
@@ -73,7 +73,9 @@ runTool :: proc(options: mock.Options, fault: mock.Fault, provider_name: string,
     defer _ = os.remove(file)
     arguments: [dynamic]string
     arguments.allocator = context.temp_allocator
-    append(&arguments, provider_name, "--no-browser", "--file", file, "--issuer", mock.Issuer(provider), "--timeout", "20")
+    append(&arguments, provider_name)
+    if !browser { append(&arguments, "--no-browser") }
+    append(&arguments, "--file", file, "--issuer", mock.Issuer(provider), "--timeout", "20")
     append(&arguments, ..extra)
     return run(arguments[:])
 }
@@ -196,6 +198,29 @@ test_the_github_device_flow :: proc(t: ^testing.T) {
     }
     testing.expect(t, !strings.contains(text, "access-"), "no access token in the output")
 }
+
+@(test)
+test_the_github_device_flow_opens_the_browser_at_the_code_page :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    output: strings.Builder
+    defer strings.builder_destroy(&output)
+    opened = false
+    oidc.BrowserLauncher = proc(command: []string) -> bool {
+        for part in command {
+            if strings.contains(part, "/activate") { opened = true }
+        }
+        return true
+    }
+    defer oidc.BrowserLauncher = nil
+    code: int = runTool({algorithm = .ES256, client_id = "game", subject = "user-9"}, .NONE, "github", nil, false, &output, "", true)
+    text: string = strings.to_string(output)
+    testing.expect_value(t, code, 0)
+    testing.expectf(t, opened && strings.contains(text, "the browser was asked to open it"), "the page of the code was opened: %s", text)
+}
+
+@(private = "file")
+opened: bool
 
 @(test)
 test_the_device_code_of_an_unknown_client_is_refused :: proc(t: ^testing.T) {
