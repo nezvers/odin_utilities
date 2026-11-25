@@ -57,6 +57,7 @@ Options :: struct {
     header_padding: int,    // the user info answer has a header of this many bytes (real providers send kilobytes of headers)
     rotate_refresh: bool,   // a refresh token can be used once: the answer has a new one (providers that rotate), the old one is `invalid_grant`
     userinfo_name: string,  // not "": the user info carries this `name` (the ID token never does, as at Discord)
+    service_subject: string, // not "": the service token carries this `sub` (Auth0 names it `<client>@clients`; SpacetimeDB needs a subject to make an identity)
     omit_nonce: bool,       // the ID token has no nonce claim (Discord with a client secret)
     service_secret: string, // not "": the client credentials grant works with this client_secret (a service token without `sub`, audience = the scope), otherwise it is `invalid_client`
 }
@@ -387,7 +388,8 @@ issue :: proc(provider: ^Provider, client: net.TCP_Socket, nonce: string) {
 issueService :: proc(provider: ^Provider, client: net.TCP_Socket, scope: string) {
     now: i64 = oidc.NowUnix()
     lifetime: i64 = provider.options.lifetime if provider.options.lifetime != 0 else 600
-    payload: string = fmt.tprintf("{{\"iss\":\"%s\",\"aud\":\"%s\",\"client_id\":\"%s\",\"exp\":%d,\"iat\":%d}}", Issuer(provider), scope, provider.options.client_id, now + lifetime, now)
+    sub_claim: string = fmt.tprintf("\"sub\":\"%s\",", provider.options.service_subject) if provider.options.service_subject != "" else ""
+    payload: string = fmt.tprintf("{{%s\"iss\":\"%s\",\"aud\":\"%s\",\"client_id\":\"%s\",\"exp\":%d,\"iat\":%d}}", sub_claim, Issuer(provider), scope, provider.options.client_id, now + lifetime, now)
     out: [3072]u8
     token: string
     if provider.options.algorithm == .ES256 {

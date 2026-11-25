@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:testing"
+import "core:time"
 import "../oidc"
 import mock "../oidc/mock"
 
@@ -249,4 +250,96 @@ test_a_session_is_restored_from_a_stored_refresh_token :: proc(t: ^testing.T) {
     defer free(nowhere)
     testing.expect(t, !AuthSessionFromRefresh(nowhere, {issuer = "http://127.0.0.1:9", client_id = "game"}, "token"))
     testing.expect(t, strings.contains(nowhere.error, "cannot be reached"), nowhere.error)
+}
+
+// A program that is not a person (client credentials): its token is checked like any other, needs a subject, is renewed by asking again, and the server lets it in as one identity when the module trusts
+// the issuer and the audience (the scope).
+@(test)
+test_a_service_connects_as_itself_with_the_client_credentials_grant :: proc(t: ^testing.T) {
+    module_path: string = FixturePath("auth-odin")
+    if module_path == "" || !os.exists(ServerCliPath()) {
+        fmt.println("[spacetimedb] no server or no auth module: run `odin run spacetimedb/tool/setup`")
+        return
+    }
+    module, read_error := os.read_entire_file(module_path, context.temp_allocator)
+    testing.expect(t, read_error == nil)
+    root: string = "spacetimedb_test_server_auth_service"
+    defer ServerRemove(root)
+    server: Server
+    testing.expect(t, ServerStart(&server, {root = root, port = 3192, in_memory = true}), "the server starts")
+    defer ServerStop(&server)
+
+    pair: AuthPair = {provider = new(mock.Provider)}
+    defer free(pair.provider)
+    testing.expect(t, mock.Start(pair.provider, {algorithm = .ES256, client_id = "server", subject = "unused", service_secret = "s3cret", service_subject = "server@clients", lifetime = 30}), "the provider starts")
+    defer mock.Stop(pair.provider)
+    oidc.HttpIdle, oidc.HttpIdleUser = authIdle, &pair
+    StreamIdle, StreamIdleUser = authIdle, &pair
+    defer {
+        oidc.HttpIdle, oidc.HttpIdleUser = nil, nil
+        StreamIdle, StreamIdleUser = nil, nil
+    }
+    issuer: string = mock.Issuer(pair.provider)
+    config: oidc.ClientConfig = {issuer = issuer, client_id = "server", client_secret = "s3cret"}
+
+    session: ^AuthSession = new(AuthSession)
+    defer free(session)
+    testing.expectf(t, AuthSessionService(session, config, "api"), "the service session: %s", session.error)
+    testing.expect(t, AuthToken(session) != "" && session.tokens.id_token == "" && session.expires > oidc.NowUnix())
+    // a wrong secret is refused, and so is a provider whose service tokens have no subject
+    wrong: ^AuthSession = new(AuthSession)
+    defer free(wrong)
+    testing.expect(t, !AuthSessionService(wrong, {issuer = issuer, client_id = "server", client_secret = "no"}, "api"))
+    testing.expect_value(t, wrong.error, "the provider refused the service login")
+    pair.provider.options.service_subject = ""
+    nameless: ^AuthSession = new(AuthSession)
+    defer free(nameless)
+    testing.expect(t, !AuthSessionService(nameless, config, "api"))
+    testing.expect_value(t, nameless.error, "the service token has no subject")
+    pair.provider.options.service_subject = "server@clients"
+
+    // the token ends soon (30 s, renewed inside the last 60): asking again gives another one
+    first: string = strings.clone(AuthToken(session), context.temp_allocator)
+    time.sleep(1100 * time.Millisecond)
+    testing.expect(t, AuthRefresh(session) != first, "a service token that ends soon is replaced")
+
+    response := make([]u8, 8192)
+    defer delete(response)
+    _, token_view, made := IdentityCreate(server.endpoint, response)
+    testing.expect(t, made)
+    owner_token: string = strings.clone(string(token_view), context.temp_allocator)
+    published: HttpResult = DatabasePublish(server.endpoint, "auth", module, owner_token, response)
+    testing.expectf(t, published.ok && published.status == 200, "the module is published: %d %s", published.status, string(published.body))
+    arena: runtime.Arena
+    allocator: runtime.Allocator = runtime.arena_allocator(&arena)
+    defer runtime.arena_destroy(&arena)
+    owner := new(Connection)
+    service := new(Connection)
+    defer { free(owner); free(service) }
+    receive := make([]u8, 1 << 16)
+    message := make([]u8, 1 << 16)
+    service_receive := make([]u8, 1 << 16)
+    service_message := make([]u8, 1 << 16)
+    defer { delete(receive); delete(message); delete(service_receive); delete(service_message) }
+    testing.expect(t, ConnectionOpen(owner, {endpoint = server.endpoint, database = "auth", token = owner_token}, receive, message), owner.error)
+    defer ConnectionClose(owner)
+    _, greeted := ConnectionWait(owner, isInitial, nil, allocator)
+    testing.expect(t, greeted)
+    arguments: [256]u8
+    writer: Writer = WriterMake(arguments[:])
+    WriteString(&writer, issuer)
+    WriteString(&writer, "api")
+    _ = ConnectionCallReducer(owner, "set_policy", WriterBytes(&writer))
+    _, policy_set := ConnectionWait(owner, proc(message: ServerMessage, user: rawptr) -> bool {
+        _, is_result := message.(ReducerResult)
+        return is_result
+    }, nil, allocator)
+    testing.expect(t, policy_set, "the policy is set")
+
+    testing.expect(t, ConnectionOpen(service, {endpoint = server.endpoint, database = "auth", token = AuthToken(session), refresh = AuthRefresh, refresh_user = session}, service_receive, service_message), service.error)
+    defer ConnectionClose(service)
+    _, service_greeted := ConnectionWait(service, isInitial, nil, allocator)
+    testing.expect(t, service_greeted, "the service is let in")
+    sql: HttpResult = DatabaseSql(server.endpoint, "auth", "SELECT * FROM login", AuthToken(session), response)
+    testing.expectf(t, strings.contains(string(sql.body), "server@clients") && strings.contains(string(sql.body), issuer), "the module recorded the service: %s", string(sql.body))
 }

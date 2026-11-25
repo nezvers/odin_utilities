@@ -30,6 +30,9 @@ AuthSession :: struct {
     tokens: oidc.Tokens,
     claims_scratch: [4096]u8,
     expires: i64,               // when the ID token stops being good (seconds since the Unix epoch)
+    service: bool,              // a program, not a person (`AuthSessionService`): the token is the access token of the client credentials grant, renewed by asking again
+    service_scope: [128]u8,
+    service_scope_length: int,
     error: string,
 }
 
@@ -108,15 +111,60 @@ rebaseTokens :: proc(tokens: ^oidc.Tokens, old_start: uintptr) {
     tokens.error, tokens.error_description = "", ""
 }
 
-// The token for the connection: the ID token
+// The token for the connection: the ID token (a service has the access token of its grant)
 AuthToken :: proc(session: ^AuthSession) -> string {
-    return session.tokens.id_token
+    return session.tokens.access_token if session.service else session.tokens.id_token
+}
+
+// A session for a program that is not a person (a dedicated server that talks to the database as itself): the client credentials grant with the client id and secret of `config`, `scope` is what the
+// provider takes as the audience (the one the module trusts). The token is checked like any other (signature, issuer, audience, expiry) and has to carry a subject: SpacetimeDB makes the identity of
+// issuer + subject, so a provider whose service tokens have none (Auth0 gives `<client>@clients`, others do not) cannot be used. `AuthRefresh` asks again before it ends: there is no refresh token.
+AuthSessionService :: proc(session: ^AuthSession, config: oidc.ClientConfig, scope: string) -> bool {
+    session^ = {}
+    session.config, session.service = config, true
+    session.service_scope_length = copy(session.service_scope[:], scope)
+    if !oidc.Discover(config.issuer, &session.metadata) {
+        session.error = AUTH_UNREACHABLE
+        return false
+    }
+    return authServiceRenew(session)
+}
+
+@(private)
+authServiceRenew :: proc(session: ^AuthSession) -> bool {
+    renewed: ^oidc.Tokens = new(oidc.Tokens)
+    defer free(renewed)
+    scope: string = string(session.service_scope[:session.service_scope_length])
+    if !oidc.ClientCredentials(&session.metadata, session.config, scope, renewed) || renewed.access_token == "" {
+        session.error = "the provider refused the service login"
+        return false
+    }
+    keys: ^oidc.KeySet = new(oidc.KeySet)
+    defer free(keys)
+    if !oidc.FetchKeys(&session.metadata, keys) {
+        session.error = "the keys of the provider could not be fetched"
+        return false
+    }
+    scratch: [4096]u8
+    claims, error := oidc.JwtVerify(renewed.access_token, keys, {issuer = session.metadata.issuer, audience = scope}, scratch[:])
+    if error != .NONE {
+        session.error = "the service token has no subject" if error == .MALFORMED else oidc.VerifyErrorText(error)
+        return false
+    }
+    session.tokens = renewed^
+    rebaseTokens(&session.tokens, uintptr(raw_data(renewed.storage[:])))
+    session.expires = claims.expires
+    return true
 }
 
 // For `ConnectionConfig.refresh`: the ID token, renewed with the refresh token when it is about to expire (or has). A provider that cannot be reached leaves the old one in use: the server says
 // when it is no longer good.
 AuthRefresh :: proc(user: rawptr) -> string {
     session: ^AuthSession = cast(^AuthSession)user
+    if session.service {
+        if oidc.NowUnix() + 60 >= session.expires { _ = authServiceRenew(session) }       // a failure keeps the old token: the server says when it is no longer good
+        return session.tokens.access_token
+    }
     if session.tokens.refresh_token != "" && oidc.NowUnix() + 60 >= session.expires {
         renewed: ^oidc.Tokens = new(oidc.Tokens)
         defer free(renewed)
