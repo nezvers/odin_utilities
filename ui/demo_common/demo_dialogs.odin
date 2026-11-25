@@ -1,0 +1,133 @@
+#+private file
+package demo_common
+
+// The ready made windows of ui/dialogs.odin: a question with three buttons, the about window, the welcome screen, a progress window and the preferences window with a page per category.
+// The script opens the preferences, switches the page and changes a setting, then answers the question.
+
+import ui ".."
+import kit "../../demo_kit"
+
+@(private="package")
+demo_dialogs: kit.Demo = {
+    name = "dialogs",
+    init = init,
+    draw = draw,
+    script = script,
+}
+
+CATEGORIES: [3]string = {"General", "Audio", "Shortcuts"}
+RECENT: [3]string = {"Night drive.nota", "Sketch 4.nota", "Drums only.nota"}
+ACTIONS: [2]string = {"New project", "Open..."}
+
+State :: struct {
+    app: UiDemo,
+    prefs: bool,
+    confirm: bool,
+    about: bool,
+    welcome: bool,
+    progress: bool,
+    page: int,
+    autosave: bool,
+    buffer: f32,
+    answer: int,
+    action: int,
+    recent: int,
+    fraction: f32,
+}
+
+state: State
+
+init :: proc(ctx: ^kit.Context) {
+    state = {autosave = true, buffer = 0.4, answer = -1, action = -1, recent = -1, fraction = 0.35}
+    ui_demo_init(&state.app)
+    ctx.background = {17, 19, 21, 255}
+}
+
+draw :: proc(ctx: ^kit.Context) {
+    ui_demo_begin(&state.app, ctx)
+    c: ^ui.Context = &state.app.ctx
+    if ui.UiPanel(c, "dialogs", {size = {ui.Fixed(520), ui.Fixed(200)}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(10), gap = 8}) {
+        if ui.UiRow(c, {gap = 8}) {
+            if ui.UiButton(c, "Preferences") { state.prefs = true }
+            if ui.UiButton(c, "Save?") { state.confirm = true }
+            if ui.UiButton(c, "About") { state.about = true }
+            if ui.UiButton(c, "Welcome") { state.welcome = true }
+            if ui.UiButton(c, "Export") { state.progress = true }
+        }
+        ui.UiLabelf(c, "answer %d, action %d, recent %d", state.answer, state.action, state.recent)
+    }
+    if ui.UiPreferences(c, "Preferences", &state.prefs, CATEGORIES[:], &state.page, {ui.Fixed(520), ui.Fixed(320)}) {
+        switch state.page {
+        case 0:
+            ui.UiToggle(c, "Save automatically", &state.autosave)
+        case 1:
+            ui.UiLabelDim(c, "Buffer size")
+            ui.UiSlider(c, "Buffer", &state.buffer, 0, 1, {ui.Grow(), {}})
+        case 2:
+            ui.UiLabelDim(c, "Click a field and press the keys")
+        }
+    }
+    if answer := ui.UiConfirm(c, "Save changes?", &state.confirm, "The project has changes that are not saved.", {"Save", "Don't save", "Cancel"}); answer >= 0 { state.answer = answer }
+    ui.UiAboutDialog(c, "About", &state.about, {name = "Nota", version = "0.60.1", description = "A small DAW made with the ui library.", credits = "Layout from Clay, the look follows Baldr.", copyright = "2026"})
+    if action, recent := ui.UiWelcome(c, "Welcome", &state.welcome, {headline = "Nota", tagline = "Pick up where you left off.", actions = ACTIONS[:], recent = RECENT[:]}); action >= 0 || recent >= 0 {
+        state.action, state.recent = action, recent
+    }
+    if ui.UiProgressDialog(c, "Exporting", &state.progress, "Writing the mix to disk...", state.fraction) { state.progress = false }
+    ui_demo_end(&state.app)
+}
+
+target: ui.Vec2
+
+button :: proc(name: string) -> bool {
+    rect, found := ui.UiElementRect(&state.app.ctx, ui.UiIdPath("dialogs", name))
+    if found { target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5} }
+    return found
+}
+
+inside :: proc(window: string, name: string) -> bool {
+    rect, found := ui.UiElementRect(&state.app.ctx, ui.UiIdPath(window, name))
+    if found { target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5} }
+    return found
+}
+
+inside3 :: proc(window: string, container: string, name: string) -> bool {
+    rect, found := ui.UiElementRect(&state.app.ctx, ui.UiIdPath(window, container, name))
+    if found { target = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5} }
+    return found
+}
+
+script: []kit.Step = {
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return button("Preferences") }, "the Preferences button"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.prefs && inside3("Preferences", "##categories", "Audio##cat1") }, "the category Audio"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.page == 1 }, "a click on a category shows its page"),
+    kit.MoveTo({900, 20}),
+    kit.Wait(3),
+    kit.Capture("dialogs_preferences"),
+    kit.Wait(2),
+    kit.Tap(.ESCAPE),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return !state.prefs }, "Escape closes the window"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return button("Save?") }, "the Save? button"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.confirm && inside("Save changes?", "Don't save") }, "the middle button"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.answer == 1 && !state.confirm }, "a button answers and closes"),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return button("Welcome") }, "the Welcome button"),
+    kit.ClickAt(&target),
+    kit.Wait(4),
+    kit.MoveTo({900, 20}),
+    kit.Wait(3),
+    kit.Capture("dialogs_welcome"),
+    kit.Wait(2),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return inside("Welcome", "Sketch 4.nota##recent1") }, "a recent file"),
+    kit.ClickAt(&target),
+    kit.Wait(3),
+    kit.Check(proc(ctx: ^kit.Context) -> bool { return state.recent == 1 && !state.welcome }, "a click on a recent file picks it"),
+}

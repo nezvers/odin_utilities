@@ -594,7 +594,13 @@ UiMenuItem :: proc(ctx: ^Context, name: string, shortcut: string = "", checked: 
 // A dialog over a dimmed screen: `if UiModal(&ctx, "Delete?", &open) { ... }`. Nothing under it reacts while it is open (the pointer and the
 // keyboard focus stay in it), Escape closes it.
 @(deferred_in = UiModalEnd)
-UiModal :: proc(ctx: ^Context, name: string, open: ^bool, size: Size = {}) -> bool {
+UiModal :: proc(ctx: ^Context, name: string, open: ^bool, size: Size = {}, layout: Layout = {}) -> bool {
+    return modalOpen(ctx, name, open, size, layout)
+}
+
+// The opening of a modal without the deferred close, for a widget that is a modal itself and closes it in its own end (UiPreferences)
+@(private)
+modalOpen :: proc(ctx: ^Context, name: string, open: ^bool, size: Size, layout_in: Layout = {}) -> bool {
     if open^ && ctx.cancel_pending {
         open^ = false
         ctx.cancel_pending = false
@@ -612,7 +618,7 @@ UiModal :: proc(ctx: ^Context, name: string, open: ^bool, size: Size = {}) -> bo
         draw = {kind = .BACKDROP},
     })
     ElementClose(ctx)
-    layout: Layout = layoutOrDefault(ctx, {})
+    layout: Layout = layoutOrDefault(ctx, layout_in)
     layout.size = size
     ctx.modal_next = id
     return ElementOpen(ctx, {
@@ -624,7 +630,7 @@ UiModal :: proc(ctx: ^Context, name: string, open: ^bool, size: Size = {}) -> bo
     })
 }
 
-UiModalEnd :: proc(ctx: ^Context, name: string, open: ^bool, size: Size = {}) {
+UiModalEnd :: proc(ctx: ^Context, name: string, open: ^bool, size: Size = {}, layout: Layout = {}) {
     ElementClose(ctx)
 }
 

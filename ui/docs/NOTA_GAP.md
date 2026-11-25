@@ -34,7 +34,7 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 | Vertical icon rail with an active mark (the left navigation), side panel with search, filter chips and a tree with a right aligned subtitle | `MainWindow.axaml`, `BrowserView` | `UiTree`, `UiChip`, `UiTextField` | medium |
 | Transport bar: stop / play / record, position readout (`1.1.00 bars`), tempo as a drag number, time signature, snap chip, DSP %, master meter | `MainWindow.axaml` | buttons, labels | medium |
 | Window chrome: tool windows (device, scope, mixer) that dock back | `NotaWindow`, `DeviceWindow` | `UiWindow*`, `UiDock` | low |
-| Dialogs: welcome, about, what's new, save changes, progress, preferences with a category list, shortcut editor | `*Window.cs` | `UiModal`, `UiShortcutField`, `UiSettings` | low |
+| Dialogs: ~~welcome, about, save changes, progress, preferences with a category list~~ done (`dialogs.odin`); left: what's new, a shortcut editor page (`UiShortcutField` exists) | `*Window.cs` | `UiModal`, `UiShortcutField`, `UiSettings` | low |
 | History (undo list) view, MIDI learn overlay, "show me" hints | `HistoryView`, `MidiLearnOverlay` | none | low |
 
 ## Graphs and editors

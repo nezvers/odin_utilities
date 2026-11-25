@@ -7014,3 +7014,47 @@ test_history_view_names_the_steps_and_jumps_on_a_click :: proc(t: ^testing.T) {
     testing.expect(t, !TimelineHistoryJump(&h.history, &h.timeline, 9))
     testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
 }
+
+@(test)
+test_dialogs_are_balanced_open_and_closed_and_answer_by_click :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    open: [5]bool
+    page: int
+    answer: int = -2
+    run :: proc(harness: ^Harness, input: Input, open: ^[5]bool, page: ^int, answer: ^int) {
+        frame(harness, input, {700, 500})
+        c: ^Context = &harness.ctx
+        names: [2]string = {"One", "Two"}
+        if UiPreferences(c, "Prefs", &open[0], names[:], page) { UiLabel(c, "page") }
+        if result := UiConfirm(c, "Sure?", &open[1], "Really?", {"Yes", "No"}); result >= 0 { answer^ = result }
+        UiAboutDialog(c, "About", &open[2], {name = "App", version = "1"})
+        UiWelcome(c, "Welcome", &open[3], {headline = "App", actions = {"New"}})
+        UiProgressDialog(c, "Busy", &open[4], "Working", 0.5)
+        UiEnd(c)
+        UiRender(c)
+    }
+    for _ in 0 ..< 3 { run(harness, pointerAt({-100, -100}), &open, &page, &answer) }
+    testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
+    for i in 0 ..< 5 {
+        open[i] = true
+        for _ in 0 ..< 4 { run(harness, pointerAt({-100, -100}), &open, &page, &answer) }
+        testing.expect_value(t, UiProblems(&harness.ctx), Problems{})
+        // Escape closes whichever is open
+        run(harness, (Input){mouse_position = {-100, -100}, keys = {.ESCAPE}}, &open, &page, &answer)
+        run(harness, pointerAt({-100, -100}), &open, &page, &answer)
+        testing.expect(t, !open[i], "Escape closes the window")
+    }
+    // a click on the second button of the question answers 1 and closes it
+    open[1] = true
+    for _ in 0 ..< 4 { run(harness, pointerAt({-100, -100}), &open, &page, &answer) }
+    rect, found := UiElementRect(&harness.ctx, UiIdPath("Sure?", "No"))
+    testing.expect(t, found)
+    at: Vec2 = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    run(harness, pointerAt(at), &open, &page, &answer)
+    run(harness, pointerAt(at, down = true, pressed = true), &open, &page, &answer)
+    run(harness, pointerAt(at, released = true), &open, &page, &answer)
+    testing.expect_value(t, answer, 1)
+    testing.expect(t, !open[1])
+}
