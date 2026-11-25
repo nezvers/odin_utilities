@@ -560,3 +560,26 @@ test_revoking_a_refresh_token_and_the_end_session_address :: proc(t: ^testing.T)
     testing.expect(t, !oidc.Revoke(&none, config, refresh))
     testing.expect_value(t, oidc.EndSessionUrl(&none, "x", "", out[:]), "")
 }
+
+// A provider that leaves the nonce out (Discord with a client secret): refused unless the config says `nonce_optional`; a WRONG nonce is refused either way
+@(test)
+test_a_token_without_a_nonce_needs_nonce_optional :: proc(t: ^testing.T) {
+    sync.mutex_lock(&tests_lock)
+    defer sync.mutex_unlock(&tests_lock)
+    for optional in ([]bool{false, true}) {
+        pair: Pair
+        if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-3", omit_nonce = true}, .NONE, &pair) { testing.fail_now(t, "the provider does not start") }
+        defer without(&pair)
+        config: oidc.ClientConfig = {issuer = Issuer(pair.provider), client_id = "game", nonce_optional = optional}
+        testing.expect(t, oidc.LoginBegin(pair.login, config), oidc.LoginError(pair.login))
+        browse(t, pair.login)
+        testing.expect_value(t, pair.login.state, oidc.LoginState.DONE if optional else oidc.LoginState.FAILED)
+    }
+    pair: Pair
+    if !withProvider({algorithm = .ES256, client_id = "game", subject = "user-3"}, .WRONG_NONCE, &pair) { testing.fail_now(t, "the provider does not start") }
+    defer without(&pair)
+    config: oidc.ClientConfig = {issuer = Issuer(pair.provider), client_id = "game", nonce_optional = true}
+    testing.expect(t, oidc.LoginBegin(pair.login, config), oidc.LoginError(pair.login))
+    browse(t, pair.login)
+    testing.expect_value(t, pair.login.state, oidc.LoginState.FAILED)
+}

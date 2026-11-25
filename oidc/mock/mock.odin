@@ -57,6 +57,7 @@ Options :: struct {
     header_padding: int,    // the user info answer has a header of this many bytes (real providers send kilobytes of headers)
     rotate_refresh: bool,   // a refresh token can be used once: the answer has a new one (providers that rotate), the old one is `invalid_grant`
     userinfo_name: string,  // not "": the user info carries this `name` (the ID token never does, as at Discord)
+    omit_nonce: bool,       // the ID token has no nonce claim (Discord with a client secret)
     service_secret: string, // not "": the client credentials grant works with this client_secret (a service token without `sub`, audience = the scope), otherwise it is `invalid_client`
 }
 
@@ -361,7 +362,8 @@ issue :: proc(provider: ^Provider, client: net.TCP_Socket, nonce: string) {
     case .NONE, .BAD_SIGNATURE, .WRONG_NONCE, .HS256:
     }
     shown_nonce: string = "not-the-nonce" if provider.fault == .WRONG_NONCE else nonce
-    payload: string = fmt.tprintf("{{\"iss\":\"%s\",\"sub\":\"%s\",\"aud\":\"%s\",\"exp\":%d,\"iat\":%d,\"nonce\":\"%s\",\"email\":\"%s\"}}", issuer, provider.options.subject, audience, expires, now, shown_nonce, provider.options.email)
+    nonce_claim: string = "" if provider.options.omit_nonce else fmt.tprintf(",\"nonce\":\"%s\"", shown_nonce)
+    payload: string = fmt.tprintf("{{\"iss\":\"%s\",\"sub\":\"%s\",\"aud\":\"%s\",\"exp\":%d,\"iat\":%d%s,\"email\":\"%s\"}}", issuer, provider.options.subject, audience, expires, now, nonce_claim, provider.options.email)
     out: [3072]u8
     id_token: string
     switch {

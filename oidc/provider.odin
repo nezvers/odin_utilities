@@ -73,6 +73,10 @@ Discover :: proc(issuer: string, metadata: ^Metadata) -> bool {
     metadata.device_authorization_endpoint = keep(metadata.storage[:], &metadata.used, jsonText(object, "device_authorization_endpoint"))
     metadata.end_session_endpoint = keep(metadata.storage[:], &metadata.used, jsonText(object, "end_session_endpoint"))
     metadata.revocation_endpoint = keep(metadata.storage[:], &metadata.used, jsonText(object, "revocation_endpoint"))
+    // Discord lists no revocation endpoint in its document, but has one (it asks for the client secret)
+    if metadata.revocation_endpoint == "" && strings.trim_right(issuer, "/") == "https://discord.com" {
+        metadata.revocation_endpoint = keep(metadata.storage[:], &metadata.used, "https://discord.com/api/oauth2/token/revoke")
+    }
     // the issuer of the document has to be the one that was asked: a provider cannot speak for another one
     if strings.trim_right(metadata.issuer, "/") != strings.trim_right(issuer, "/") { return false }
     return metadata.token_endpoint != "" && metadata.jwks_uri != ""
@@ -91,6 +95,7 @@ ClientConfig :: struct {
     client_secret: string,          // "" for a public client (a game on a player's computer cannot keep a secret: use PKCE and no secret)
     scopes: string,                 // "": "openid profile email"
     redirect_port: int,             // loopback login: the port of the redirect (0: any free one; some providers want a registered one)
+    nonce_optional: bool,           // the provider leaves the nonce out of the ID token (Discord with a client secret): a token WITHOUT a nonce is accepted, one with a wrong nonce never (the nonce is the last check of JwtVerify, the rest has passed)
     oauth_only: bool,               // OAuth 2.0 without OpenID Connect (GitHub): the browser flow gives an access token and no ID token; the person is named by the user info
     extra: string,                  // more query parameters for the authorization request, already encoded (`audience=...&prompt=login`)
 }

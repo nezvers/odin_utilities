@@ -34,6 +34,7 @@ PresetConfig :: proc(preset: Preset, client_id: string, client_secret: string = 
     case .DISCORD:
         config.issuer = "https://discord.com"
         config.scopes = "openid identify email"
+        config.nonce_optional = true                  // found live: with a client secret the ID token carries no nonce
     case .GITHUB:
         config.issuer = "https://github.com"          // a name only: GitHub has no discovery document
         config.scopes = "read:user"

@@ -243,8 +243,12 @@ LoginPoll :: proc(login: ^Login) -> LoginState {
         return login.state
     }
     claims, error := JwtVerify(login.tokens.id_token, &login.keys, {issuer = login.metadata.issuer, audience = login.config.client_id, nonce = string(login.nonce[:login.nonce_length])}, login.claims_storage[:])
+    if error == .NONCE && login.config.nonce_optional && claims.nonce == "" { error = .NONE }
     if error != .NONE {
-        failPage(client, login, fmt.tprintf("the ID token is not accepted: %s", VerifyErrorText(error)))
+        detail: string
+        // a nonce that is missing or of another length tells a provider that does not echo it from a replayed login (lengths only, never the values)
+        if error == .NONCE { detail = fmt.tprintf(" (token nonce %d characters, sent %d)", len(claims.nonce), login.nonce_length) }
+        failPage(client, login, fmt.tprintf("the ID token is not accepted: %s%s", VerifyErrorText(error), detail))
         return login.state
     }
     login.claims = claims
