@@ -5548,3 +5548,26 @@ test_a_read_only_field_and_area_can_be_selected_and_copied_but_not_changed :: pr
         testing.expect_value(t, string(clip[:copied]), "DE")
     }
 }
+
+@(test)
+test_exact_layout_keeps_zero_padding_and_gap :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    frame(harness)
+    if UiPanel(&harness.ctx, "plain", {size = {Fixed(100), Fit()}}) {
+        UiSpacer(&harness.ctx)
+    }
+    if UiPanel(&harness.ctx, "flush", {size = {Fixed(100), Fit()}, exact = true}) {
+        ElementOpen(&harness.ctx, {id = 21, layout = {size = {Fixed(40), Fixed(20)}}})
+        ElementClose(&harness.ctx)
+        ElementOpen(&harness.ctx, {id = 22, layout = {size = {Fixed(40), Fixed(20)}}})
+        ElementClose(&harness.ctx)
+    }
+    UiEnd(&harness.ctx)
+    first, _ := UiElementRect(&harness.ctx, 21)
+    second, _ := UiElementRect(&harness.ctx, 22)
+    flush, _ := UiElementRect(&harness.ctx, UiId(&harness.ctx, "flush"))
+    testing.expect(t, near(second.y, first.y + 20), "no gap between the children")
+    testing.expect(t, near(flush.z, 100) && near(flush.w, 40), "no padding: the panel is as high as its two children")
+}

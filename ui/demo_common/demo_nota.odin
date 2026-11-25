@@ -204,8 +204,8 @@ statusBar :: proc(c: ^ui.Context) {
 // Arrangement: the browser, the tracks and the devices under them
 
 arrangement :: proc(c: ^ui.Context, screen: ui.Vec2) {
-    if ui.UiPanel(c, "arrangement", {size = {ui.Grow(), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(0), gap = 0}, blocks_pointer = false) {
-        if ui.UiPanel(c, "top", {size = {ui.Grow(), ui.Percent(0.58)}, direction = .LEFT_TO_RIGHT, padding = ui.PaddingAll(0), gap = 0}, blocks_pointer = false) {
+    if ui.UiColumn(c, {size = {ui.Grow(), ui.Grow()}, exact = true}) {
+        if ui.UiRow(c, {size = {ui.Grow(), ui.Percent(0.58)}, exact = true}) {
             browser(c)
             ui.UiTimeline(c, "Arrangement", &state.timeline, &state.view, {ui.Grow(), ui.Grow()})
         }
@@ -216,14 +216,14 @@ arrangement :: proc(c: ^ui.Context, screen: ui.Vec2) {
 browser :: proc(c: ^ui.Context) {
     if ui.UiPanel(c, "browser", {size = {ui.Fixed(260), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(10), gap = 8}) {
         ui.UiTextField(c, "##search", state.search[:], &state.search_length, {ui.Grow(), {}})      // GAP: search field with a count and a filter button
-        if ui.UiPanel(c, "filters", {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 6}, blocks_pointer = false) {
+        if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 6}) {
             for name, i in FILTERS[:3] {
                 if ui.UiChip(c, name, state.filters[i]) { state.filters[i] = !state.filters[i] }
             }
         }
         ui.UiSeparatorText(c, "Built-in")
         for item in BROWSER {
-            if ui.UiPanel(c, item[0], {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 6, align = {y = .CENTER}}, blocks_pointer = false) {
+            if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 6, align = {y = .CENTER}}) {
                 ui.UiLabel(c, item[0])
                 ui.UiSpacer(c)
                 ui.UiLabelDim(c, item[1])
@@ -237,7 +237,7 @@ devices :: proc(c: ^ui.Context) {
     if ui.UiPanel(c, "devices", {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, padding = ui.PaddingAll(8), gap = 8}) {
         if ui.UiPanel(c, "Nota Pentad", {size = {ui.Percent(0.5), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(8), gap = 8}) {
             deviceHeader(c, "Nota Pentad", &state.on[0])
-            if ui.UiPanel(c, "pentad body", {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, gap = 18, align = {y = .CENTER}}, blocks_pointer = false) {
+            if ui.UiRow(c, {size = {ui.Grow(), ui.Grow()}, gap = 18, align = {y = .CENTER}}) {
                 knob(c, "Cutoff", &state.cutoff, "%.2f")
                 knob(c, "Reson", &state.resonance, "%.2f")
                 knob(c, "Drift", &state.drift, "%.2f")
@@ -254,7 +254,7 @@ devices :: proc(c: ^ui.Context) {
 
 // GAP: the preset selector (arrows + dropdown) and the card header
 deviceHeader :: proc(c: ^ui.Context, title: string, on: ^bool) {
-    if ui.UiPanel(c, "header", {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 8, align = {y = .CENTER}}, blocks_pointer = false) {
+    if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 8, align = {y = .CENTER}}) {
         ui.UiLabel(c, title)
         ui.UiButton(c, "<##prev", {ui.Fixed(24), {}})
         ui.UiDropdown(c, "##preset", PRESETS[:], &state.preset, {ui.Fixed(140), {}})
@@ -303,8 +303,8 @@ eqGraph :: proc(c: ^ui.Context, info: ^ui.DrawInfo) {
 // Mixer: a strip per channel
 
 mixer :: proc(c: ^ui.Context) {
-    if ui.UiPanel(c, "mixer", {size = {ui.Grow(), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(8), gap = 8}, blocks_pointer = false) {
-        if ui.UiPanel(c, "strips", {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, gap = 4}, blocks_pointer = false) {
+    if ui.UiColumn(c, {size = {ui.Grow(), ui.Grow()}, padding = ui.PaddingAll(8), gap = 8}) {
+        if ui.UiRow(c, {size = {ui.Grow(), ui.Grow()}, gap = 4}) {
             for i in 0 ..< CHANNELS { strip(c, i) }
         }
         if ui.UiPanel(c, "mixer bar", {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 10, align = {y = .CENTER}}) {
@@ -328,12 +328,12 @@ strip :: proc(c: ^ui.Context, i: int) {
             ui.UiSlider(c, ui.UiFormat(c, "A##s%d", i), &state.send[i], 0, 1, {ui.Grow(), {}}, "%.2f")       // GAP: value bar with the value inside and a typed entry
         }
         ui.UiKnob(c, ui.UiFormat(c, "Pan##p%d", i), &state.pan[i], -1, 1, 0, {ui.Fixed(44), ui.Fixed(44)}, "%.1f")   // GAP: pan with the centre mark and 30L / C / 12R
-        if ui.UiPanel(c, ui.UiFormat(c, "fader row %d", i), {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, gap = 8, align = {x = .CENTER}}, blocks_pointer = false) {
+        if ui.UiRow(c, {size = {ui.Grow(), ui.Grow()}, gap = 8, align = {x = .CENTER}}) {
             ui.UiFader(c, ui.UiFormat(c, "Vol##v%d", i), &state.volume[i], 0, 1, 0.7, {ui.Fixed(26), ui.Grow()}, "%.2f")    // GAP: dB scale next to the fader
             level: f32 = state.volume[i] * (0.55 + 0.4 * math.sin(state.time * (2 + f32(i)) + f32(i)))
             ui.UiMeter(c, ui.UiFormat(c, "meter %d", i), max(level, 0), max(level, 0) * 1.1, 0, 1, {ui.Fixed(10), ui.Grow()})
         }
-        if ui.UiPanel(c, ui.UiFormat(c, "buttons %d", i), {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, gap = 4, align = {x = .CENTER}}, blocks_pointer = false) {
+        if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 4, align = {x = .CENTER}}) {
             ui.UiToggle(c, ui.UiFormat(c, "M##m%d", i), &state.mute[i])
             ui.UiToggle(c, ui.UiFormat(c, "S##s%d", i), &state.solo[i])
             if i < 6 { ui.UiToggle(c, ui.UiFormat(c, "R##r%d", i), &state.arm[i]) }
@@ -345,7 +345,7 @@ strip :: proc(c: ^ui.Context, i: int) {
 // Modular: the chain of a track as a graph
 
 modular :: proc(c: ^ui.Context) {
-    if ui.UiPanel(c, "modular", {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, padding = ui.PaddingAll(0), gap = 0}, blocks_pointer = false) {
+    if ui.UiRow(c, {size = {ui.Grow(), ui.Grow()}, exact = true}) {
         if ui.UiGraph(c, "chain", &state.graph, &state.graph_view, {ui.Grow(), ui.Grow()}) {
             order: [4]ui.NodeHandle
             count: int = ui.GraphNodesByDepth(&state.graph, order[:], &state.graph_view)
@@ -366,7 +366,7 @@ modular :: proc(c: ^ui.Context) {
 // Piano roll
 
 pianoRoll :: proc(c: ^ui.Context, screen: ui.Vec2) {
-    if ui.UiPanel(c, "piano roll", {size = {ui.Grow(), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(0), gap = 0}, blocks_pointer = false) {
+    if ui.UiColumn(c, {size = {ui.Grow(), ui.Grow()}, exact = true}) {
         if ui.UiPanel(c, "clip bar", {size = {ui.Grow(), ui.Fit()}, direction = .LEFT_TO_RIGHT, padding = ui.PaddingXY(10, 6), gap = 12, align = {y = .CENTER}}) {
             ui.UiTitle(c, "Hook")
             ui.UiLabelDim(c, "MIDI")

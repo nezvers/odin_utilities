@@ -118,7 +118,7 @@ textWidth :: proc(ctx: ^Context, text: string) -> f32 {
 // ------------------------------------------------------------------------------------------------------------------------
 // Containers: `if UiPanel(...) { children }`. The block closes the element when it ends.
 
-// A background with children. A zero layout is a column with the padding and the gap of the style.
+// A background with children. A zero layout is a column with the padding and the gap of the style; `exact = true` keeps a zero padding and gap (panels that sit flush against each other).
 @(deferred_in = UiPanelEnd)
 UiPanel :: proc(ctx: ^Context, name: string = "", layout: Layout = {}, blocks_pointer: bool = true) -> bool {
     id: Id = UiId(ctx, name) if name != "" else 0
@@ -161,7 +161,7 @@ UiWindowEnd :: proc(ctx: ^Context, name: string, position: Vec2, size: Size = {}
 @(private)
 layoutOrDefault :: proc(ctx: ^Context, layout: Layout) -> Layout {
     result: Layout = layout
-    if layout.padding == {} && layout.gap == 0 {
+    if !layout.exact && layout.padding == {} && layout.gap == 0 {
         result.padding = PaddingAll(ctx.style.metrics.gap + 4)
         result.gap = ctx.style.metrics.gap
     }
@@ -173,7 +173,7 @@ layoutOrDefault :: proc(ctx: ^Context, layout: Layout) -> Layout {
 UiRow :: proc(ctx: ^Context, layout: Layout = {}) -> bool {
     result: Layout = layout
     result.direction = .LEFT_TO_RIGHT
-    if result.gap == 0 { result.gap = ctx.style.metrics.gap }
+    if result.gap == 0 && !result.exact { result.gap = ctx.style.metrics.gap }
     return ElementOpen(ctx, {layout = result})
 }
 
@@ -186,7 +186,7 @@ UiRowEnd :: proc(ctx: ^Context, layout: Layout = {}) {
 UiColumn :: proc(ctx: ^Context, layout: Layout = {}) -> bool {
     result: Layout = layout
     result.direction = .TOP_TO_BOTTOM
-    if result.gap == 0 { result.gap = ctx.style.metrics.gap }
+    if result.gap == 0 && !result.exact { result.gap = ctx.style.metrics.gap }
     return ElementOpen(ctx, {layout = result})
 }
 

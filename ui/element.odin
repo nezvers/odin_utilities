@@ -97,6 +97,7 @@ Layout :: struct {
     gap: f32,                       // between the children
     align: ChildAlign,              // where the children sit in the space that is left
     direction: LayoutDirection,
+    exact: bool,                    // the padding and the gap are what they say, also zero: without it a layout with no padding and no gap gets the ones of the style (panels, windows) or the gap (rows, columns)
 }
 
 // Where on the parent / on the floating element the two are joined: (LEFT, BOTTOM) of the parent on (LEFT, TOP) of the element puts it under
