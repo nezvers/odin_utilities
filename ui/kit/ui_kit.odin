@@ -25,29 +25,58 @@ Fonts :: struct {
     backend: ^kit.Backend,
     faces: [ui_default.Face]kit.Font,
     icons: kit.Font,
+    skin_serial: u32,           // the skin the faces were made from
 }
 
 @(private)
 fonts: Fonts
 
+// The font files of a skin (ui_default.SkinFontsRead): a face that has bytes is drawn in that font, the others in the built in one. The bytes have to stay alive until the next call; the kit loads the
+// fonts again before the next frame.
+@(private)
+skin_bytes: ui_default.SkinFontBytes
+@(private)
+skin_serial: u32
+
+UseSkinFonts :: proc(bytes: ^ui_default.SkinFontBytes) {
+    skin_bytes = bytes^ if bytes != nil else {}
+    skin_serial += 1
+}
+
 // Loads the fonts into the backend of `ctx` when they are not there yet, and tells the painter their numbers
 @(private)
 fontsEnsure :: proc(painter: ^ui_default.Painter, ctx: ^kit.Context) {
-    if fonts.backend != ctx.backend {
+    if fonts.backend == ctx.backend && fonts.skin_serial != skin_serial {
+        // another skin: the faces of the old one go (the icons stay)
+        for face in ui_default.Face {
+            if fonts.faces[face] != kit.FONT_DEFAULT { kit.FontUnload(ctx, fonts.faces[face]) }
+        }
+        icons_font: kit.Font = fonts.icons
+        fonts = {backend = ctx.backend, icons = icons_font}
+        fontsLoadFaces(ctx)
+    } else if fonts.backend != ctx.backend {
         fonts = {backend = ctx.backend}
-        fonts.faces[.REGULAR] = kit.FontLoad(ctx, INTER_REGULAR, 32, 1280)
-        fonts.faces[.STRONG] = kit.FontLoad(ctx, INTER_SEMIBOLD, 32, 1280)
-        fonts.faces[.ITALIC] = kit.FontLoad(ctx, INTER_ITALIC, 32, 1280)
-        fonts.faces[.MONO] = kit.FontLoad(ctx, JETBRAINS_MONO, 32, 1280)
-        fonts.faces[.MONO_STRONG] = kit.FontLoad(ctx, JETBRAINS_MONO_BOLD, 32, 1280)
-        fonts.faces[.STRONG_ITALIC] = kit.FontLoad(ctx, INTER_SEMIBOLD_ITALIC, 32, 1280)
-        fonts.faces[.MONO_ITALIC] = kit.FontLoad(ctx, JETBRAINS_MONO_ITALIC, 32, 1280)
-        fonts.faces[.MONO_STRONG_ITALIC] = kit.FontLoad(ctx, JETBRAINS_MONO_BOLD_ITALIC, 32, 1280)
+        fontsLoadFaces(ctx)
         fonts.icons = kit.FontLoad(ctx, icons.LUCIDE_FONT, 32, len(icons.Icon) - 1, int(icons.ICON_FIRST_CHARACTER))       // without NONE, which has no glyph
     }
     for face in ui_default.Face { painter.glue_fonts[face] = u32(fonts.faces[face]) }
     painter.glue_icon_font = u32(fonts.icons)
     painter.glue_ready = true
+}
+
+@(private)
+fontsLoadFaces :: proc(ctx: ^kit.Context) {
+    sources: [ui_default.Face][]u8 = {
+        .REGULAR = INTER_REGULAR, .STRONG = INTER_SEMIBOLD, .ITALIC = INTER_ITALIC, .MONO = JETBRAINS_MONO, .MONO_STRONG = JETBRAINS_MONO_BOLD,
+        .STRONG_ITALIC = INTER_SEMIBOLD_ITALIC, .MONO_ITALIC = JETBRAINS_MONO_ITALIC, .MONO_STRONG_ITALIC = JETBRAINS_MONO_BOLD_ITALIC,
+    }
+    for face in ui_default.Face {
+        bytes: []u8 = skin_bytes[face] if len(skin_bytes[face]) > 0 else sources[face]
+        loaded: kit.Font = kit.FontLoad(ctx, bytes, 32, 1280)
+        if loaded == kit.FONT_DEFAULT && len(skin_bytes[face]) > 0 { loaded = kit.FontLoad(ctx, sources[face], 32, 1280) }       // a file that is no font: the built in one
+        fonts.faces[face] = loaded
+    }
+    fonts.skin_serial = skin_serial
 }
 
 // The kit font of the face the painter is set to (the regular one for a face that could not be loaded, the font of the kit before the fonts are loaded)

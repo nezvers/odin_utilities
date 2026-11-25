@@ -20,7 +20,7 @@ FileStore :: struct {
 // A store over the folder (it is copied: a literal or a temporary string will do). Give the `StyleStore` to the style editor; the `FileStore` has to live as long as it is used.
 FileStyleStoreMake :: proc(file_store: ^FileStore, folder: string) -> StyleStore {
     file_store.length = copy(file_store.folder[:], folder)
-    return {user = file_store, list = fileList, load = fileLoad, save = fileSave, delete = fileDelete}
+    return {user = file_store, list = fileList, load = fileLoad, save = fileSave, delete = fileDelete, load_fonts = fileLoadFonts, save_fonts = fileSaveFonts}
 }
 
 @(private)
@@ -65,7 +65,43 @@ fileSave :: proc(store: ^StyleStore, name: string, theme: ^Theme) -> bool {
     os.make_directory_all(string(file_store.folder[:file_store.length]))
     buffer: [4096]u8
     text: string = ThemeText(theme, buffer[:])
-    return os.write_entire_file(path, transmute([]u8)text) == nil
+    // the fonts the file names stay (a theme saved alone does not take the fonts away)
+    fonts: SkinFonts
+    if old, err := os.read_entire_file(path, context.temp_allocator); err == nil { SkinFontsParse(string(old), &fonts) }
+    font_lines: [FONT_LINES_SIZE]u8
+    all: [4096 + FONT_LINES_SIZE]u8
+    length: int = copy(all[:], text)
+    length += copy(all[length:], SkinFontsText(&fonts, font_lines[:]))
+    return os.write_entire_file(path, all[:length]) == nil
+}
+
+FONT_LINES_SIZE :: 8 * (FONT_FILE_LENGTH + 40)
+
+@(private)
+fileLoadFonts :: proc(store: ^StyleStore, name: string, fonts: ^SkinFonts) -> bool {
+    path, ok := filePath(store, name)
+    if !ok { return false }
+    data, err := os.read_entire_file(path, context.temp_allocator)
+    if err != nil { return false }
+    fonts^ = {}
+    SkinFontsParse(string(data), fonts)
+    return true
+}
+
+// The colors of the file stay, the font lines are replaced
+@(private)
+fileSaveFonts :: proc(store: ^StyleStore, name: string, fonts: ^SkinFonts) -> bool {
+    path, ok := filePath(store, name)
+    if !ok { return false }
+    old, err := os.read_entire_file(path, context.temp_allocator)
+    if err != nil { return false }
+    kept: [4096 + 64]u8
+    colors: string = SkinTextWithoutFonts(string(old), kept[:])
+    font_lines: [FONT_LINES_SIZE]u8
+    all: [4096 + 64 + FONT_LINES_SIZE]u8
+    length: int = copy(all[:], colors)
+    length += copy(all[length:], SkinFontsText(fonts, font_lines[:]))
+    return os.write_entire_file(path, all[:length]) == nil
 }
 
 @(private)

@@ -58,7 +58,8 @@ JETBRAINS_MONO_BOLD_ITALIC :: #load("../../assets/fonts/jetbrains_mono/JetBrains
 INTER_SEMIBOLD_ITALIC :: #load("../../assets/fonts/inter/Inter-SemiBoldItalic.ttf")
 
 // Loads the fonts of the style (the window has to be open). `size` is the height the glyphs are made in: text of that size is the sharpest.
-FontsLoad :: proc(fonts: ^Fonts, size: i32 = 32, glyph_count: int = 1280) {
+// `skin`: the font files of a skin (ui_default.SkinFontsRead): a face that has bytes is drawn in that font.
+FontsLoad :: proc(fonts: ^Fonts, size: i32 = 32, glyph_count: int = 1280, skin: ^ui_default.SkinFontBytes = nil) {
     codepoints: []rune = make([]rune, max(glyph_count, len(icons.Icon)), context.temp_allocator)
     for i in 0 ..< glyph_count { codepoints[i] = rune(i) }
     load :: proc(bytes: []u8, size: i32, codepoints: []rune) -> rl.Font {
@@ -66,18 +67,16 @@ FontsLoad :: proc(fonts: ^Fonts, size: i32 = 32, glyph_count: int = 1280) {
         rl.SetTextureFilter(loaded.texture, .BILINEAR)
         return loaded
     }
-    fonts.faces[.REGULAR] = load(INTER_REGULAR, size, codepoints[:glyph_count])
-    fonts.faces[.STRONG] = load(INTER_SEMIBOLD, size, codepoints[:glyph_count])
-    fonts.faces[.ITALIC] = load(INTER_ITALIC, size, codepoints[:glyph_count])
-    fonts.faces[.MONO] = load(JETBRAINS_MONO, size, codepoints[:glyph_count])
-    fonts.faces[.MONO_STRONG] = load(JETBRAINS_MONO_BOLD, size, codepoints[:glyph_count])
-    fonts.faces[.STRONG_ITALIC] = load(INTER_SEMIBOLD_ITALIC, size, codepoints[:glyph_count])
-    fonts.faces[.MONO_ITALIC] = load(JETBRAINS_MONO_ITALIC, size, codepoints[:glyph_count])
-    fonts.faces[.MONO_STRONG_ITALIC] = load(JETBRAINS_MONO_BOLD_ITALIC, size, codepoints[:glyph_count])
     sources: [ui_default.Face][]u8 = {
         .REGULAR = INTER_REGULAR, .STRONG = INTER_SEMIBOLD, .ITALIC = INTER_ITALIC, .MONO = JETBRAINS_MONO, .MONO_STRONG = JETBRAINS_MONO_BOLD,
         .STRONG_ITALIC = INTER_SEMIBOLD_ITALIC, .MONO_ITALIC = JETBRAINS_MONO_ITALIC, .MONO_STRONG_ITALIC = JETBRAINS_MONO_BOLD_ITALIC,
     }
+    if skin != nil {
+        for face in ui_default.Face {
+            if len(skin[face]) > 0 { sources[face] = skin[face] }
+        }
+    }
+    for face in ui_default.Face { fonts.faces[face] = load(sources[face], size, codepoints[:glyph_count]) }
     fonts.glyph_count = glyph_count
     for face in ui_default.Face {
         fonts.source_bytes[face] = sources[face]

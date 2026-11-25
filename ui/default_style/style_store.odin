@@ -18,6 +18,8 @@ StyleStore :: struct {
     load: proc(store: ^StyleStore, name: string, theme: ^Theme) -> bool,           // changes only the fields the style has
     save: proc(store: ^StyleStore, name: string, theme: ^Theme) -> bool,           // false when the name is not a valid one or the storage refuses
     delete: proc(store: ^StyleStore, name: string) -> bool,
+    load_fonts: proc(store: ^StyleStore, name: string, fonts: ^SkinFonts) -> bool,     // optional (nil: the store keeps no fonts): the font files the style names, see skin.odin
+    save_fonts: proc(store: ^StyleStore, name: string, fonts: ^SkinFonts) -> bool,     // keeps the colors the style has; `save` keeps the fonts
 }
 
 // The name `index` of a list as a string (it lives in the list)
@@ -52,11 +54,12 @@ MemoryStyles :: struct {
     names: [MEMORY_STYLES][STYLE_NAME_LENGTH]u8,
     lengths: [MEMORY_STYLES]int,
     themes: [MEMORY_STYLES]Theme,
+    fonts: [MEMORY_STYLES]SkinFonts,
     count: int,
 }
 
 MemoryStyleStoreMake :: proc(memory: ^MemoryStyles) -> StyleStore {
-    return {user = memory, list = memoryList, load = memoryLoad, save = memorySave, delete = memoryDelete}
+    return {user = memory, list = memoryList, load = memoryLoad, save = memorySave, delete = memoryDelete, load_fonts = memoryLoadFonts, save_fonts = memorySaveFonts}
 }
 
 @(private)
@@ -92,9 +95,28 @@ memorySave :: proc(store: ^StyleStore, name: string, theme: ^Theme) -> bool {
         if memory.count >= MEMORY_STYLES { return false }
         at = memory.count
         memory.count += 1
+        memory.fonts[at] = {}
     }
     memory.lengths[at] = copy(memory.names[at][:], name)
     memory.themes[at] = theme^
+    return true
+}
+
+@(private)
+memoryLoadFonts :: proc(store: ^StyleStore, name: string, fonts: ^SkinFonts) -> bool {
+    memory: ^MemoryStyles = cast(^MemoryStyles)store.user
+    at: int = memoryFind(memory, name)
+    if at < 0 { return false }
+    fonts^ = memory.fonts[at]
+    return true
+}
+
+@(private)
+memorySaveFonts :: proc(store: ^StyleStore, name: string, fonts: ^SkinFonts) -> bool {
+    memory: ^MemoryStyles = cast(^MemoryStyles)store.user
+    at: int = memoryFind(memory, name)
+    if at < 0 { return false }
+    memory.fonts[at] = fonts^
     return true
 }
 
@@ -104,7 +126,7 @@ memoryDelete :: proc(store: ^StyleStore, name: string) -> bool {
     at: int = memoryFind(memory, name)
     if at < 0 { return false }
     for k in at ..< memory.count - 1 {
-        memory.names[k], memory.lengths[k], memory.themes[k] = memory.names[k + 1], memory.lengths[k + 1], memory.themes[k + 1]
+        memory.names[k], memory.lengths[k], memory.themes[k], memory.fonts[k] = memory.names[k + 1], memory.lengths[k + 1], memory.themes[k + 1], memory.fonts[k + 1]
     }
     memory.count -= 1
     return true

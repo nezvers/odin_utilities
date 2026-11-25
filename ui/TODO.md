@@ -160,4 +160,5 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Mixer fader with a dB scale and a stereo meter; bars and beats on the timeline ruler with grid snap choices
 - [x] Device card (header with switch and preset selector with arrows, tabs, sections divided by rules) and track header row (colour strip, M / S / R, value bar, pan, input)
 - [x] (medium) Clip bodies (`clip_body.odin`: notes, peaks, cells inside a clip), arrangement overview strip, `overview.odin` (sections are shown, not edited; parameter picker and command palette are done: `picker.odin`; range slider, XY pad, wheel, thin scroll bar, step grid and keyboard are done: `widgets_pads.odin`)
-- [ ] (low) Skins with fonts (the windows are done: `dialogs.odin`; what is left of them: "what is new", a shortcut editor page, icons in a dialog)
+- [x] Skins with fonts: a style names a font file for each face (`default_style/skin.odin`, the editor's Fonts section, the stores, `kit.UseSkinFonts`, `FontsLoad(..., skin)` of both glue packages)
+- [ ] (low) What is left of the windows (`dialogs.odin`): "what is new", a shortcut editor page, icons in a dialog; skins: a font per size or script, fonts embedded in the style file, a size scale

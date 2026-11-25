@@ -10,6 +10,7 @@ package demo_common
 import ui ".."
 import ui_default "../default_style"
 import kit "../../demo_kit"
+import ui_kit "../kit"
 
 STYLES_FOLDER :: #directory + "../styles"
 CURRENT_STYLE :: "current"
@@ -22,6 +23,8 @@ Shared :: struct {
     ready: bool,
     open: bool,
     seeded: bool,       // the editor took the theme of the demo it was opened in
+    font_bytes: ui_default.SkinFontBytes,   // the files of the fonts of the current skin
+    font_serial: u32,   // the serial of the editor the fonts were read at
 }
 
 @(private = "file")
@@ -49,7 +52,18 @@ demoStyleReady :: proc() {
         shared.editor.theme = loaded
         shared.editor.apply = true
         shared.seeded = true
+        if shared.store.load_fonts != nil { shared.store.load_fonts(&shared.store, CURRENT_STYLE, &shared.editor.fonts) }
+        demoStyleFonts()
     }
+}
+
+// The fonts of the skin: read when the editor says a name changed (or the current style had some), the kit draws in them from the next frame
+@(private = "file")
+demoStyleFonts :: proc() {
+    if ui_default.SkinFontsCount(&shared.editor.fonts) == 0 && shared.font_serial == 0 && shared.editor.fonts_serial == 0 { return }
+    ui_default.SkinFontsRead(&shared.editor.fonts, STYLES_FOLDER, &shared.font_bytes)
+    ui_kit.UseSkinFonts(&shared.font_bytes)
+    shared.font_serial = shared.editor.fonts_serial
 }
 
 // Before the frame of a demo's ui: the demo has set its own theme, the current style takes its place (and the ground behind the ui)
@@ -82,5 +96,9 @@ demoStyleEnd :: proc(ctx: ^ui.Context, painter: ^ui_default.Painter, kit_ctx: ^k
     if ui_default.UiStyleEditor(ctx, &shared.editor, &shared.store) {
         shared.editor.apply = true
         shared.store.save(&shared.store, CURRENT_STYLE, &shared.editor.theme)
+    }
+    if shared.editor.fonts_serial != shared.font_serial {
+        if shared.store.save_fonts != nil { shared.store.save_fonts(&shared.store, CURRENT_STYLE, &shared.editor.fonts) }
+        demoStyleFonts()
     }
 }

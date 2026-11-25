@@ -45,7 +45,8 @@ JETBRAINS_MONO_BOLD_ITALIC :: #load("../../assets/fonts/jetbrains_mono/JetBrains
 INTER_SEMIBOLD_ITALIC :: #load("../../assets/fonts/inter/Inter-SemiBoldItalic.ttf")
 
 // Loads the fonts of the style (after karl2d.init). The fonts make their glyphs at the sizes they are drawn in. False when one could not be loaded (it is then the default font).
-FontsLoad :: proc(fonts: ^Fonts) -> bool {
+// `skin`: the font files of a skin (ui_default.SkinFontsRead): a face that has bytes is drawn in that font, a font that does not load is the built in one.
+FontsLoad :: proc(fonts: ^Fonts, skin: ^ui_default.SkinFontBytes = nil) -> bool {
     all: bool = true
     load :: proc(bytes: []u8, all: ^bool) -> karl2d.Font {
         loaded, ok := karl2d.load_dynamic_font_from_bytes(bytes)
@@ -55,14 +56,20 @@ FontsLoad :: proc(fonts: ^Fonts) -> bool {
         }
         return loaded
     }
-    fonts.faces[.REGULAR] = load(INTER_REGULAR, &all)
-    fonts.faces[.STRONG] = load(INTER_SEMIBOLD, &all)
-    fonts.faces[.ITALIC] = load(INTER_ITALIC, &all)
-    fonts.faces[.MONO] = load(JETBRAINS_MONO, &all)
-    fonts.faces[.MONO_STRONG] = load(JETBRAINS_MONO_BOLD, &all)
-    fonts.faces[.STRONG_ITALIC] = load(INTER_SEMIBOLD_ITALIC, &all)
-    fonts.faces[.MONO_ITALIC] = load(JETBRAINS_MONO_ITALIC, &all)
-    fonts.faces[.MONO_STRONG_ITALIC] = load(JETBRAINS_MONO_BOLD_ITALIC, &all)
+    sources: [ui_default.Face][]u8 = {
+        .REGULAR = INTER_REGULAR, .STRONG = INTER_SEMIBOLD, .ITALIC = INTER_ITALIC, .MONO = JETBRAINS_MONO, .MONO_STRONG = JETBRAINS_MONO_BOLD,
+        .STRONG_ITALIC = INTER_SEMIBOLD_ITALIC, .MONO_ITALIC = JETBRAINS_MONO_ITALIC, .MONO_STRONG_ITALIC = JETBRAINS_MONO_BOLD_ITALIC,
+    }
+    for face in ui_default.Face {
+        if skin != nil && len(skin[face]) > 0 {
+            own, ok := karl2d.load_dynamic_font_from_bytes(skin[face])
+            if ok {
+                fonts.faces[face] = own
+                continue
+            }
+        }
+        fonts.faces[face] = load(sources[face], &all)
+    }
     fonts.icons = load(icons.LUCIDE_FONT, &all)
     return all
 }

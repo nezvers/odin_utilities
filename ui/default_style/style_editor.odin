@@ -40,6 +40,9 @@ StyleEditor :: struct {
     status_length: int,
     rgb: [3]f32,                // the working copy of a color field for the picker
     alpha: f32,
+    fonts: SkinFonts,           // the font files of the skin (skin.odin): a field for each face
+    fonts_serial: u32,          // changes when a font name does or a style with fonts is loaded: the program loads the fonts then
+    show_fonts: bool,
 }
 
 StyleEditorInit :: proc(editor: ^StyleEditor, theme: Theme, position: ui.Vec2 = {40, 40}) {
@@ -187,6 +190,11 @@ UiStyleEditor :: proc(ctx: ^ui.Context, editor: ^StyleEditor, store: ^StyleStore
                     name: string = options[editor.chosen]
                     if store.load(store, name, &editor.theme) {
                         changed = true
+                        if store.load_fonts != nil {
+                            editor.fonts = {}
+                            store.load_fonts(store, name, &editor.fonts)
+                            editor.fonts_serial += 1
+                        }
                         editor.name_length = copy(editor.name[:], name)
                         styleStatus(editor, ui.UiFormat(ctx, "loaded %s", name))
                     } else {
@@ -204,6 +212,7 @@ UiStyleEditor :: proc(ctx: ^ui.Context, editor: ^StyleEditor, store: ^StyleStore
             if ui.UiDisabled(ctx, !valid) {
                 if ui.UiButton(ctx, "Save") {
                     if store.save(store, name, &editor.theme) {
+                        if store.save_fonts != nil { store.save_fonts(store, name, &editor.fonts) }
                         editor.listed = false
                         styleStatus(editor, ui.UiFormat(ctx, "saved %s", name))
                     } else {
@@ -221,6 +230,19 @@ UiStyleEditor :: proc(ctx: ^ui.Context, editor: ^StyleEditor, store: ^StyleStore
             }
             ui.ElementClose(ctx)
             if editor.status_length > 0 { ui.UiLabelDim(ctx, string(editor.status[:editor.status_length])) }
+        }
+        ui.UiToggle(ctx, "Fonts", &editor.show_fonts)
+        if editor.show_fonts {
+            ui.UiLabelDim(ctx, "A font file for a face (empty: the built in one)")
+            for face in Face {
+                if ui.UiRow(ctx, {gap = 6, size = {ui.Grow(), ui.Fit()}}) {
+                    ui.UiLabelDim(ctx, FaceKey(face))
+                    ui.UiSpacer(ctx)
+                    if changed_name, _ := ui.UiTextField(ctx, ui.UiFormat(ctx, "##font%d", int(face)), editor.fonts.files[face][:], &editor.fonts.lengths[face], {ui.Fixed(190), {}}); changed_name {
+                        editor.fonts_serial += 1
+                    }
+                }
+            }
         }
         ui.UiTextField(ctx, "##style_filter", editor.filter[:], &editor.filter_length, {ui.Grow(), {}})
         // the fields: the ones the picked element is drawn with first
