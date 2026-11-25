@@ -20,7 +20,7 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 ## Pickers and headers
 | Missing | Nota source | Have | Priority |
 |---|---|---|---|
-| **Preset selector**: dropdown with previous / next arrows | device card headers (`DeviceCardKit`) | `UiDropdown` | high |
+| ~~Preset selector~~ done: `UiPresetSelector` | device card headers (`DeviceCardKit`) | | done |
 | Key and scale pickers (root note + scale, "Project key" shortcuts) | `KeyPicker`, `ScaleNoteMap` | none | low |
 | Parameter picker: searchable list popup at the pointer or under an anchor | `ParamPickerPanel` | `UiCombo`, `UiComplete` | medium |
 | Command palette | `CommandPaletteView` | `UiComplete` + `UiModal` (not assembled) | medium |
@@ -28,8 +28,8 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 ## Containers and compound views
 | Missing | Nota source | Have | Priority |
 |---|---|---|---|
-| **Device card**: header (on/off, name, preset, fold, close), tabs inside, sections divided by rules, scrolls sideways in a chain, drag to reorder | `DeviceCards/*`, `RuleSection`, `DeviceChainView` | `UiCard`, `UiCollapsing`, drag and drop | high |
-| **Track header** row: colour strip, name and kind, M / S / R, value bar, pan, input dropdown, group fold | `ArrangementView.Tracks` | `UiTable`, tags | high |
+| ~~Device card~~ done: `UiDeviceCard` (switch, title, preset selector, fold, close) with `UiDeviceSection` (rules, small titles). Left: reorder by drag, tabs inside (use `UiTabBar`) | `DeviceCards/*`, `RuleSection`, `DeviceChainView` | | done |
+| ~~Track header row~~ done: `UiTrackHeader` (strip, fold, name and kind, M / S / R, volume, pan, input). Left: meter, group indentation | `ArrangementView.Tracks` | | done |
 | **Mixer strip** and a row of them that scrolls sideways; a "Show sends / I/O / compact" bar | `MixerView` | composed from panels | medium |
 | Vertical icon rail with an active mark (the left navigation), side panel with search, filter chips and a tree with a right aligned subtitle | `MainWindow.axaml`, `BrowserView` | `UiTree`, `UiChip`, `UiTextField` | medium |
 | Transport bar: stop / play / record, position readout (`1.1.00 bars`), tempo as a drag number, time signature, snap chip, DSP %, master meter | `MainWindow.axaml` | buttons, labels | medium |
@@ -58,8 +58,8 @@ The demo `nota` (`demo_common/demo_nota.odin`) recreates four screens (arrangeme
 
 ## Order that gives the most
 1. ~~Value bar with typed entry, pan bar~~ (done).
-2. Preset selector and device card (the bottom half of the arrangement screen).
-3. Track header row and bars-and-beats ruler (the arrangement screen).
+2. ~~Preset selector and device card~~ (done).
+3. ~~Track header row and bars-and-beats ruler~~ (done).
 4. ~~Mixer fader with a scale and a stereo meter~~ (done).
 5. ~~Frequency graph with draggable bands and the waveform view~~ (done).
 6. ~~Piano roll~~ (done).

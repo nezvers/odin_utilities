@@ -60,6 +60,7 @@ State :: struct {
     volume: [CHANNELS]f32,
     levels: [CHANNELS]ui.MixerLevels,
     snap_choice: int,
+    eq_preset: int,
     position: [24]u8,
     pan: [CHANNELS]f32,
     send: [CHANNELS]f32,
@@ -251,38 +252,33 @@ browser :: proc(c: ^ui.Context) {
 // The device strip: a card per device with a switch, a preset selector, tabs and the parameters
 devices :: proc(c: ^ui.Context) {
     if ui.UiPanel(c, "devices", {size = {ui.Grow(), ui.Grow()}, direction = .LEFT_TO_RIGHT, padding = ui.PaddingAll(8), gap = 8}) {
-        if ui.UiPanel(c, "Nota Pentad", {size = {ui.Percent(0.5), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(8), gap = 8}) {
-            deviceHeader(c, "Nota Pentad", &state.on[0])
-            if ui.UiRow(c, {size = {ui.Grow(), ui.Grow()}, gap = 18, align = {y = .CENTER}}) {
-                knob(c, "Cutoff", &state.cutoff, "%.2f")
-                knob(c, "Reson", &state.resonance, "%.2f")
-                knob(c, "Drift", &state.drift, "%.2f")
-                knob(c, "Detune", &state.detune, "%.2f")
-                ui.UiFader(c, "Glide", &state.drift, 0, 1, 0, {ui.Fixed(26), ui.Fixed(96)})
-                if ui.UiColumn(c, {size = {ui.Fixed(190), ui.Fit()}, gap = 8}) {
-                    ui.UiValueBar(c, "Pan", &state.pad_pan, ui.ValueBarPan(), {ui.Grow(), {}})
-                    if ui.UiTagged(c, "modulation") {
-                        ui.UiValueBar(c, "Cutoff mod", &state.mod_amount, {minimum = -100, maximum = 100, bipolar = true, format = "%.0f %%"}, {ui.Grow(), {}})
-                    }
+        pentad: ui.DeviceCard = {title = "Nota Pentad", on = &state.on[0], presets = PRESETS[:], preset = &state.preset}
+        if ui.UiDeviceCard(c, "Nota Pentad", pentad, {ui.Percent(0.5), ui.Grow()}) {
+            if ui.UiDeviceSection(c, "filter", "Filter", false, {ui.Grow(), ui.Grow()}) {
+                if ui.UiRow(c, {gap = 18}) {
+                    knob(c, "Cutoff", &state.cutoff, "%.2f")
+                    knob(c, "Reson", &state.resonance, "%.2f")
+                }
+            }
+            if ui.UiDeviceSection(c, "osc", "Oscillator", true, {ui.Grow(), ui.Grow()}) {
+                if ui.UiRow(c, {gap = 18}) {
+                    knob(c, "Drift", &state.drift, "%.2f")
+                    knob(c, "Detune", &state.detune, "%.2f")
+                }
+            }
+            if ui.UiDeviceSection(c, "mod", "Modulation", true, {ui.Fixed(210), ui.Grow()}) {
+                ui.UiValueBar(c, "Pan", &state.pad_pan, ui.ValueBarPan(), {ui.Grow(), {}})
+                if ui.UiTagged(c, "modulation") {
+                    ui.UiValueBar(c, "Cutoff mod", &state.mod_amount, {minimum = -100, maximum = 100, bipolar = true, format = "%.0f %%"}, {ui.Grow(), {}})
                 }
             }
         }
-        if ui.UiPanel(c, "Nota EQ-8", {size = {ui.Grow(), ui.Grow()}, direction = .TOP_TO_BOTTOM, padding = ui.PaddingAll(8), gap = 8}) {
-            deviceHeader(c, "Nota EQ-8", &state.on[1])
-            ui.UiFreqGraph(c, "eq graph", &state.eq, &state.eq_view)
+        eq_card: ui.DeviceCard = {title = "Nota EQ-8", on = &state.on[1], presets = PRESETS[:], preset = &state.eq_preset}
+        if ui.UiDeviceCard(c, "Nota EQ-8", eq_card, {ui.Grow(), ui.Grow()}) {
+            if ui.UiDeviceSection(c, "graph", "", false, {ui.Grow(), ui.Grow()}) {
+                ui.UiFreqGraph(c, "eq graph", &state.eq, &state.eq_view)
+            }
         }
-    }
-}
-
-// GAP: the preset selector (arrows + dropdown) and the card header
-deviceHeader :: proc(c: ^ui.Context, title: string, on: ^bool) {
-    if ui.UiRow(c, {size = {ui.Grow(), ui.Fit()}, gap = 8, align = {y = .CENTER}}) {
-        ui.UiLabel(c, title)
-        ui.UiButton(c, "<##prev", {ui.Fixed(24), {}})
-        ui.UiDropdown(c, "##preset", PRESETS[:], &state.preset, {ui.Fixed(140), {}})
-        ui.UiButton(c, ">##next", {ui.Fixed(24), {}})
-        ui.UiSpacer(c)
-        ui.UiSwitch(c, "##on", on)
     }
 }
 

@@ -158,6 +158,6 @@ Tick an item when it is done and verified (tests pass, committed).
 - [x] Piano roll widget: key column, notes (add, move, resize, velocity), bars and beats ruler, velocity and controller lanes
 - [x] Frequency response graph with draggable band nodes (log frequency axis, dB axis) and a spectrum fill; waveform view with zoom and markers
 - [x] Mixer fader with a dB scale and a stereo meter; bars and beats on the timeline ruler with grid snap choices
-- [ ] (high) Device card (header with switch and preset selector with arrows, tabs, sections divided by rules) and track header row (colour strip, M / S / R, value bar, pan, input)
+- [x] Device card (header with switch and preset selector with arrows, tabs, sections divided by rules) and track header row (colour strip, M / S / R, value bar, pan, input)
 - [ ] (medium) Range slider, XY pad, pitch wheel with spring, standalone thin scroll bar, step / pattern grid, piano keyboard display, parameter picker, command palette, arrangement overview strip
 - [ ] (low) Key and scale picker, modulation matrix, history view, welcome / about / preferences windows, skins with fonts

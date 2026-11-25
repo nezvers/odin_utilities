@@ -6278,3 +6278,108 @@ test_timeline_counts_bars_and_beats_and_snaps_to_music :: proc(t: ^testing.T) {
     TimelineApplySnap(&view, .AUTO)
     testing.expect(t, near(f32(view.snap), 2), "zoomed out it is a bar")
 }
+
+@(private = "file")
+DeviceState :: struct {
+    on: bool,
+    folded: bool,
+    closed: bool,
+    preset: int,
+    low: f32,
+    mute: bool,
+    volume: f32,
+    pan: f32,
+    fold: bool,
+    body_seen: bool,
+}
+
+@(private = "file")
+deviceFrame :: proc(harness: ^Harness, input: Input, s: ^DeviceState) {
+    frame(harness, input)
+    names: [3]string = {"Init", "Warm", "Bright"}
+    card: DeviceCard = {title = "EQ", on = &s.on, folded = &s.folded, close = &s.closed, presets = names[:], preset = &s.preset}
+    s.body_seen = false
+    if UiDeviceCard(&harness.ctx, "dev", card) {
+        if UiDeviceSection(&harness.ctx, "low", "Low", rule = false) {
+            s.body_seen = true
+            UiSlider(&harness.ctx, "low", &s.low)
+        }
+        if UiDeviceSection(&harness.ctx, "high", "High") { UiLabel(&harness.ctx, "x") }
+    }
+    header: TrackHeader = {name = "Drums", kind = "Instrument", color = {200, 80, 80, 255}, mute = &s.mute, volume = &s.volume, pan = &s.pan, fold = &s.fold}
+    UiTrackHeader(&harness.ctx, "track", header)
+    UiEnd(&harness.ctx)
+    UiRender(&harness.ctx)
+}
+
+@(private = "file")
+deviceClick :: proc(harness: ^Harness, s: ^DeviceState, path: ..string) -> bool {
+    rect, found := UiElementRect(&harness.ctx, UiIdPath(..path))
+    if !found { return false }
+    at: Vec2 = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    deviceFrame(harness, pointerAt(at), s)
+    deviceFrame(harness, pointerAt(at, down = true, pressed = true), s)
+    deviceFrame(harness, pointerAt(at, released = true), s)
+    for _ in 0 ..< 30 { deviceFrame(harness, pointerAt({-100, -100}), s) }
+    return true
+}
+
+@(test)
+test_device_card_header_and_track_header_work_through_their_pointers :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    s: DeviceState = {on = true, low = 0.3}
+    deviceFrame(harness, pointerAt({-100, -100}), &s)
+    deviceFrame(harness, pointerAt({-100, -100}), &s)
+    testing.expect(t, s.body_seen, "the body is declared while the card is open")
+
+    testing.expect(t, deviceClick(harness, &s, "dev", "##on"), "the switch is found")
+    testing.expect(t, !s.on, "the switch turns the device off")
+    testing.expect(t, deviceClick(harness, &s, "dev", "##preset", "##prev"))
+    testing.expect_value(t, s.preset, 2)               // wraps from the first to the last
+    testing.expect(t, deviceClick(harness, &s, "dev", "##preset", "##next"))
+    testing.expect_value(t, s.preset, 0)
+    testing.expect(t, deviceClick(harness, &s, "dev", "##fold"))
+    testing.expect(t, s.folded && !s.body_seen, "folded: the body is not declared")
+    testing.expect(t, deviceClick(harness, &s, "dev", "##fold"))
+    testing.expect(t, !s.folded && s.body_seen)
+    testing.expect(t, deviceClick(harness, &s, "dev", "##close"))
+    testing.expect(t, s.closed)
+
+    testing.expect(t, deviceClick(harness, &s, "track", "M##m"))
+    testing.expect(t, s.mute)
+    testing.expect(t, deviceClick(harness, &s, "track", "##fold"))
+    testing.expect(t, s.fold)
+    testing.expect_value(t, ui_problems(harness), Problems{})
+}
+
+@(private = "file")
+ui_problems :: proc(harness: ^Harness) -> Problems {
+    return UiProblems(&harness.ctx)
+}
+
+@(test)
+test_preset_selector_without_wrap_stops_at_the_ends :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    defer free(harness)
+    harnessInit(harness)
+    names: [2]string = {"A", "B"}
+    selected: int
+    for _ in 0 ..< 2 {
+        frame(harness, pointerAt({-100, -100}))
+        UiPresetSelector(&harness.ctx, "p", names[:], &selected, wrap = false)
+        UiEnd(&harness.ctx)
+        UiRender(&harness.ctx)
+    }
+    rect, found := UiElementRect(&harness.ctx, UiIdPath("p", "##prev"))
+    testing.expect(t, found)
+    at: Vec2 = {rect.x + rect.z * 0.5, rect.y + rect.w * 0.5}
+    for input in ([]Input{pointerAt(at), pointerAt(at, down = true, pressed = true), pointerAt(at, released = true)}) {
+        frame(harness, input)
+        UiPresetSelector(&harness.ctx, "p", names[:], &selected, wrap = false)
+        UiEnd(&harness.ctx)
+        UiRender(&harness.ctx)
+    }
+    testing.expect_value(t, selected, 0)
+}
