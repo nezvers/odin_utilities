@@ -172,8 +172,10 @@ test_the_spacetimeauth_settings :: proc(t: ^testing.T) {
 // sends is checked like one of a login (audience, expiry).
 @(test)
 test_a_session_is_restored_from_a_stored_refresh_token :: proc(t: ^testing.T) {
-    pair: AuthPair = {provider = new(mock.Provider), login = new(oidc.Login)}
-    defer { free(pair.provider); free(pair.login) }
+    // `pair.login` is pointed at a second login later in the test: the first one is freed through its own name (freeing `pair.login` at the end freed the second twice and leaked the first)
+    first_login: ^oidc.Login = new(oidc.Login)
+    pair: AuthPair = {provider = new(mock.Provider), login = first_login}
+    defer { free(pair.provider); free(first_login) }
     testing.expect(t, mock.Start(pair.provider, {algorithm = .RS256, client_id = "game", subject = "user-restore", rotate_refresh = true}), "the provider starts")
     defer mock.Stop(pair.provider)
     oidc.HttpIdle, oidc.HttpIdleUser = authIdle, &pair
