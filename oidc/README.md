@@ -40,7 +40,7 @@ A program that wants the person to sign in once keeps the **refresh token** betw
 
 What it does **not** stop: a program that runs as the same user on the same computer can ask Windows to decrypt (as it could read the memory of the game). It protects the file at rest, like the saved passwords of a browser.
 
-On **macOS and Linux nothing is stored yet** (`StoreAvailable()` is false, `StoreWrite` is false): the keychain and the Secret Service are the right homes and are not written and tested, and a plain file is not acceptable. The person signs in at every start. A file of the first, plain text, format is overwritten and deleted when it is found. To forget the stored sign in delete the file; to end the session for good, revoke the app in the account settings of the provider.
+On **macOS and Linux** the file is encrypted with a random key (ChaCha20-Poly1305) that the keychain (`security`) or the Secret Service (`secret-tool`) keeps; this is written and type checked but NOT run on those systems yet. Where the tool is missing (a server without a desktop, a BSD) nothing is stored (`StoreAvailable()` is false), never a plain file.
 
 ## Used by
 - `odin_utilities/spacetimedb/arena`: the start screen has Sign in (the `ui` library, `signin.odin`): the name and the identity of the player are the ones of the account.

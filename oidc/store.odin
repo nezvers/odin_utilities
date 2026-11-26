@@ -5,8 +5,7 @@ package oidc
 //
 // A refresh token is a credential, so it is never stored as plain text. The whole content (token, provider, issuer, client id, name) is ENCRYPTED by the operating system with a key of the logged in user:
 // on Windows DPAPI (protect_windows.odin). A copy of the file, a backup, a sync folder or a stolen disk gives nothing: it cannot be decrypted on another computer or under another account. What this does not
-// stop is a program that runs as the same user on the same computer (it can ask Windows to decrypt, like it could read the memory of this program). Where the system has no such protection (not written
-// yet for macOS and Linux) NOTHING is stored: `StoreAvailable` is false, `StoreWrite` is false, and the person signs in at every start. A file of the earlier plain text format is overwritten and deleted when
+// stop is a program that runs as the same user on the same computer (it can ask Windows to decrypt, like it could read the memory of this program). Where the system has no such protection (macOS and Linux have one in protect_other.odin, untested there; a system without its tool) NOTHING is stored: `StoreAvailable` is false, `StoreWrite` is false, and the person signs in at every start. A file of the earlier plain text format is overwritten and deleted when
 // it is found. The file is in the per user configuration folder, never in a project; it holds no ID token, no access token and no client secret; the buffers that held the token are wiped after use; a new
 // refresh token replaces the old one when the provider rotates it; it is deleted when the person signs out or the provider says no. No hidden allocation: the caller gives the buffer that the strings of what
 // was read point into (wipe it when done: `StoreWipe`).
