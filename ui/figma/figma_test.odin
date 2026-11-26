@@ -24,7 +24,8 @@ test_the_fixture_generates_the_committed_source_and_it_compiles :: proc(t: ^test
     if !ok { return }
     golden, golden_error := os.read_entire_file(FIXTURES + "generated/login/login.odin", context.temp_allocator)
     testing.expect(t, golden_error == nil)
-    testing.expect(t, source == string(golden), "the generated source is the committed one (run: odin run ui/figma/tool -- --in ui/figma/fixtures/login.json --package login --ui ../../../.. --out ui/figma/fixtures/generated/login/login.odin)")
+    normalized, _ := strings.replace_all(string(golden), "\r\n", "\n", context.temp_allocator)
+    testing.expect(t, source == normalized, "the generated source is the committed one (run: odin run ui/figma/tool -- --in ui/figma/fixtures/login.json --package login --ui ../../../.. --out ui/figma/fixtures/generated/login/login.odin)")
     testing.expect_value(t, len(warnings), 3)
     check, _, check_errors, check_error := os.process_exec({command = {"odin", "check", FIXTURES + "generated/login", "-no-entry-point", "-strict-style", "-vet"}}, context.temp_allocator)
     testing.expect(t, check_error == nil && check.exit_code == 0, string(check_errors))
