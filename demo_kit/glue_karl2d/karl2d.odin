@@ -25,6 +25,7 @@ State :: struct {
     sound_count: u32,
     fonts: [MAX_FONTS]karl2d.Font,
     font_count: u32,
+    font_used: [MAX_FONTS]bool,     // a slot is free again after font_unload (a program that reloads its code loads its fonts again)
     default_font: karl2d.Font,      // Fira Code (assets/fonts): the font of every text that does not ask for another one
     vector_text: font_karl2d.TextSystem,    // the text drawn from the outlines of the font (-define:DEMO_VECTOR_TEXT)
     last_mouse: kit.Vec2,
@@ -122,23 +123,27 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         },
         font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int, first_glyph: int) -> kit.Font {
             state: ^State = cast(^State)backend.state
-            if state.font_count + 1 >= MAX_FONTS { return kit.FONT_DEFAULT }
+            index: u32 = 0
+            for candidate in 1 ..< u32(MAX_FONTS) { if !state.font_used[candidate] { index = candidate; break } }
+            if index == 0 { return kit.FONT_DEFAULT }
             when kit.DEMO_VECTOR_TEXT != "" {
                 // the text is drawn from outlines: the font is one more face of the text system (font n is face n)
-                if !font_karl2d.TextSystemAddFace(&state.vector_text, int(state.font_count) + 1, bytes) { return kit.FONT_DEFAULT }
+                if !font_karl2d.TextSystemAddFace(&state.vector_text, int(index), bytes) { return kit.FONT_DEFAULT }
             }
             // a dynamic font makes the glyphs it needs when they are drawn: any language works
             font, ok := karl2d.load_dynamic_font_from_bytes(bytes)
             if !ok { return kit.FONT_DEFAULT }
-            state.font_count += 1
-            state.fonts[state.font_count] = font
-            return kit.Font(state.font_count)
+            state.font_used[index] = true
+            state.font_count = max(state.font_count, index)
+            state.fonts[index] = font
+            return kit.Font(index)
         },
         font_unload = proc(backend: ^kit.Backend, font: kit.Font) {
             state: ^State = cast(^State)backend.state
-            if u32(font) == 0 || u32(font) > state.font_count { return }
+            if u32(font) == 0 || u32(font) > state.font_count || !state.font_used[font] { return }
             karl2d.destroy_font(state.fonts[font])
             state.fonts[font] = {}
+            state.font_used[font] = false
         },
         measure_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, size: f32) -> kit.Vec2 {
             state: ^State = cast(^State)backend.state

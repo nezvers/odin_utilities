@@ -79,6 +79,14 @@ fontsLoadFaces :: proc(ctx: ^kit.Context) {
     fonts.skin_serial = skin_serial
 }
 
+// Gives the fonts back to the backend. A program that loads its code again while it runs (hot reload) calls this from the old code, so the new code loads them again into free slots
+FontsRelease :: proc(ctx: ^kit.Context) {
+    if fonts.backend != ctx.backend { return }
+    for face in ui_default.Face { if fonts.faces[face] != kit.FONT_DEFAULT { kit.FontUnload(ctx, fonts.faces[face]) } }
+    if fonts.icons != kit.FONT_DEFAULT { kit.FontUnload(ctx, fonts.icons) }
+    fonts = {}
+}
+
 // The kit font of the face the painter is set to (the regular one for a face that could not be loaded, the font of the kit before the fonts are loaded)
 @(private)
 fontOf :: proc(painter: ^ui_default.Painter) -> kit.Font {
