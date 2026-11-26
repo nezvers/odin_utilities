@@ -50,6 +50,18 @@
             "osx": {
                 "command": "odin build demo_karl2d -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.bin"
             }
+        },
+        {
+            "label": "Test Figma",
+            "type": "shell",
+            "command": "odin test figma -strict-style -vet && odin test figma/tool -strict-style -vet",
+            "group": "test"
+        },
+        {
+            "label": "Run Figma (fixture to stdout)",
+            "type": "shell",
+            "command": "odin run figma/tool -strict-style -vet -- --in figma/fixtures/login.json --package login --ui ../../../..",
+            "group": "build"
         }
     ]
 }

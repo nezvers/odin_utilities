@@ -6,6 +6,9 @@ sizing fit / grow / fixed / percent with min and max, padding, child gap, alignm
 scrolling containers, text wrapping, aspect ratio. Clay's element ids and its two pass sizing are kept, the macros, transitions and the debug
 view are not, and the output is not rectangles but `DrawInfo` for your style procs.
 
+## Figma to code
+`figma/` turns the JSON of a Figma file into Odin source that builds the design with this library (layout, panels, labels, buttons, sliders, toggles, text fields): `odin run ui/figma/tool -- --in design.json --out screen.odin --package screen --ui ../ui`. It imports only `core`, so the folder copies to another project as it is. See `figma/README.md`.
+
 ## Idea
 - **The library never draws.** For every element with something to show it calls a style proc of yours with the rectangle and what is known:
   `DrawInfo{kind, rect, flags, name, text, value 0..1, actual, minimum, maximum, hover, press, font_size, cursor, user}`.

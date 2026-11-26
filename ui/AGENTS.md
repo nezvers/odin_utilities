@@ -5,6 +5,7 @@ What is not obvious from the code of this library. The rules that hold for every
 ## Where things are
 - `ui/docs/INVENTORY.md` lists the files and what each widget and style does (grep by name). `odin run tool/todo -- limits ui` prints what widgets do not do.
 - Layout ported from Clay (MIT, credited in README); the look follows Baldr (zlib, credited in `default_style/default_style.odin` and README; no code of it).
+- `figma/` (package `ui_figma`, own README): Figma JSON in, Odin ui source out (`odin run ui/figma/tool -- --in design.json ...`). Imports only `core` so the folder can be copied to odin_plug; the generated file imports the ui package by `--ui` (path as seen from the output). `parse.odin` reads the nodes, `generate.odin` maps them (names of widgets: `WIDGET_NAMES`); the committed `fixtures/generated/login/login.odin` is compared and compiled by `figma_test.odin`: regenerate it after changing the generator (command in the test message). Colors/fonts are not carried over (limits in its README).
 - Packages: `default_style/` (`ui_default`: `Painter` + default style), `kit/` (Painter + input over demo_kit; loads fonts once per backend), `glue_raylib/`, `glue_karl2d/` (Painter + `InputPoll`, `Fonts`, `FontsLoad`, `PainterUseFonts/PainterUseVectorFonts`), `demo_common/` (all demos with scripts; `demo_imgui` follows Dear ImGui's demo window).
 
 ## Rules for widgets
