@@ -32,6 +32,7 @@ State :: struct {
     sound_count: u32,
     fonts: [MAX_FONTS]rl.Font,
     font_count: u32,
+    font_used: [MAX_FONTS]bool,     // a slot is free again after font_unload: demos that load fonts one after the other must not run out of them
     // what the text needs to look like the Karl2D text: the glyphs made at the size they are drawn at (raylib scales one atlas, which blurs) and the exact advances of the file
     // (raylib keeps whole pixels, which crowds the letters)
     sources: [MAX_FONTS]font.Font,
@@ -132,9 +133,14 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         font_load = proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int, first_glyph: int) -> kit.Font { return fontLoad(backend, bytes, size, glyph_count, first_glyph, cast(^State)backend.state) },
         font_unload = proc(backend: ^kit.Backend, font: kit.Font) {
             state: ^State = cast(^State)backend.state
-            if u32(font) == 0 || u32(font) > state.font_count { return }
+            if u32(font) == 0 || u32(font) > state.font_count || !state.font_used[font] { return }
             rl.UnloadFont(state.fonts[font])
             state.fonts[font] = {}
+            state.font_used[font] = false
+            state.source_ok[font] = false
+            // the copies of the font at other sizes belong to the slot: the next font in it must not draw with them
+            for i in 0 ..< state.sized_count[font] { rl.UnloadFont(state.sized[font][i].font) }
+            state.sized_count[font] = 0
         },
         measure_text_font = proc(backend: ^kit.Backend, font: kit.Font, text: string, size: f32) -> kit.Vec2 {
             state: ^State = cast(^State)backend.state
@@ -407,23 +413,26 @@ vectorFace :: proc(state: ^State, font: kit.Font) -> u8 {
 
 @(private)
 fontLoad :: proc(backend: ^kit.Backend, bytes: []u8, size: f32, glyph_count: int, first_glyph: int, state: ^State) -> kit.Font {
-    if state.font_count + 1 >= MAX_FONTS { return kit.FONT_DEFAULT }
+    index: u32 = 0
+    for candidate in 1 ..< u32(MAX_FONTS) { if !state.font_used[candidate] { index = candidate; break } }
+    if index == 0 { return kit.FONT_DEFAULT }
     when kit.DEMO_VECTOR_TEXT != "" {
         // the text is drawn from outlines: the font is one more face of the text system (the first font is the regular face it was made with)
-        if state.font_count > 0 && !font_raylib.TextSystemAddFace(&state.vector_text, int(state.font_count), bytes) { return kit.FONT_DEFAULT }
+        if index > 1 && !font_raylib.TextSystemAddFace(&state.vector_text, int(index) - 1, bytes) { return kit.FONT_DEFAULT }
     }
     codepoints: [dynamic]rune
     defer delete(codepoints)
     for i in 0 ..< glyph_count { append(&codepoints, rune(first_glyph + i)) }
     loaded: rl.Font = rl.LoadFontFromMemory(".ttf", raw_data(bytes), i32(len(bytes)), i32(size), raw_data(codepoints), i32(len(codepoints)))
     if loaded.texture.id == 0 { return kit.FONT_DEFAULT }
-    state.font_count += 1
-    state.fonts[state.font_count] = loaded
+    state.font_used[index] = true
+    state.font_count = max(state.font_count, index)
+    state.fonts[index] = loaded
     // the file stays with the caller (an embedded font lives for ever): the exact advances and the glyphs of other sizes are made from it
-    state.source_bytes[state.font_count] = bytes
-    state.source_ok[state.font_count] = font.FontInit(&state.sources[state.font_count], bytes)
-    state.source_first[state.font_count], state.source_count[state.font_count] = first_glyph, glyph_count
-    return kit.Font(state.font_count)
+    state.source_bytes[index] = bytes
+    state.source_ok[index] = font.FontInit(&state.sources[index], bytes)
+    state.source_first[index], state.source_count[index] = first_glyph, glyph_count
+    return kit.Font(index)
 }
 
 @(private)
