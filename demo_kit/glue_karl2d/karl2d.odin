@@ -81,7 +81,11 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         state = state,
         begin_frame = beginFrame,
         end_frame = proc(backend: ^kit.Backend) { karl2d.present() },
-        shutdown = proc(backend: ^kit.Backend) { karl2d.shutdown() },
+        shutdown = proc(backend: ^kit.Backend) {
+            // the 3D layer made for the screen capture holds D3D11 objects: it goes before the device (a no-op when it was never started)
+            when kit.DEMO_CAPTURE { karl2d.r3d_shutdown() }
+            karl2d.shutdown()
+        },
         screen_size = proc(backend: ^kit.Backend) -> kit.Vec2 { return {f32(karl2d.get_screen_width()), f32(karl2d.get_screen_height())} },
         clear = proc(backend: ^kit.Backend, color: kit.Color) { karl2d.clear(color) },
         draw_rect = proc(backend: ^kit.Backend, rect: kit.Rect, color: kit.Color) {
