@@ -54,6 +54,11 @@ ValueKind :: enum u8 {
     PACKED_FLOATS,          // a PackedFloat64Array: `floats`
     PACKED_STRINGS,         // a PackedStringArray: `items` (kind STRING each)
     DICTIONARY,             // `keys` (Strings) and `items`, same length: bool, int, float and String values
+    PACKED_INT32S,          // a PackedInt32Array: `ints32`
+    PACKED_FLOAT32S,        // a PackedFloat32Array: `floats32`
+    PACKED_VECTOR2S,        // a PackedVector2Array: `floats32`, x and y of every element one after the other
+    PACKED_VECTOR3S,        // a PackedVector3Array: `floats32`, x, y, z
+    PACKED_COLORS,          // a PackedColorArray: `floats32`, r, g, b, a
 }
 
 // An argument or a result. A string is UTF-8 bytes in `text`; a bool is `number` 0 or 1.
@@ -67,6 +72,8 @@ Value :: struct {
     object: rawptr,             // OBJECT: the engine's pointer; it stays the engine's, keep it only as long as the engine keeps the object
     ints: []i64,                // PACKED_INTS
     floats: []f64,              // PACKED_FLOATS
+    ints32: []i32,              // PACKED_INT32S
+    floats32: []f32,            // PACKED_FLOAT32S, PACKED_VECTOR2S, PACKED_VECTOR3S, PACKED_COLORS: the components of the elements one after the other (32 bit floats, as the engine has them)
 }
 
 // The results of a method, one line each: `ValueText` keeps the bytes of the string until the call ends (a string of the instance or temp memory)
@@ -184,6 +191,11 @@ variantTypeOf :: proc "contextless" (kind: ValueKind) -> GdVariantType {
     case .PACKED_INTS: return .PACKED_INT64_ARRAY
     case .PACKED_FLOATS: return .PACKED_FLOAT64_ARRAY
     case .PACKED_STRINGS: return .PACKED_STRING_ARRAY
+    case .PACKED_INT32S: return .PACKED_INT32_ARRAY
+    case .PACKED_FLOAT32S: return .PACKED_FLOAT32_ARRAY
+    case .PACKED_VECTOR2S: return .PACKED_VECTOR2_ARRAY
+    case .PACKED_VECTOR3S: return .PACKED_VECTOR3_ARRAY
+    case .PACKED_COLORS: return .PACKED_COLOR_ARRAY
     case .NONE: return .NIL
     }
     return .NIL
@@ -260,6 +272,12 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
             gd.packed_strings.to(&array, variant)
             values[i].items = readPackedStrings(&array, context.temp_allocator)
             gd.packed_strings.destroy(&array)
+        case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS:
+            ops, _ := packedOpsOf(kind)
+            array: GdBytes
+            ops.to(&array, variant)
+            values[i] = readPackedNumeric(kind, &array, context.temp_allocator)
+            ops.destroy(&array)
         case .NONE:
         }
         values[i].kind = kind
@@ -280,6 +298,7 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     case .PACKED_INTS: variantPackedInts(result, answer.ints)
     case .PACKED_FLOATS: variantPackedFloats(result, answer.floats)
     case .PACKED_STRINGS: variantPackedStrings(result, answer.items)
+    case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: variantPackedNumeric(result, method.result, answer)
     }
     free_all(context.temp_allocator)
 }
@@ -311,6 +330,7 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
         case .PACKED_INTS: values[i].ints = readPackedInts(args[i], context.temp_allocator)
         case .PACKED_FLOATS: values[i].floats = readPackedFloats(args[i], context.temp_allocator)
         case .PACKED_STRINGS: values[i].items = readPackedStrings(args[i], context.temp_allocator)
+        case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: values[i] = readPackedNumeric(kind, args[i], context.temp_allocator)
         case .NONE:
         }
         values[i].kind = kind
@@ -341,6 +361,10 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
     case .PACKED_STRINGS:
         gd.packed_strings.construct(result, nil)
         writePackedStrings(result, answer.items)
+    case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS:
+        ops, _ := packedOpsOf(method.result)
+        ops.construct(result, nil)
+        writePackedNumeric(method.result, result, answer)
     }
     free_all(context.temp_allocator)
 }
@@ -498,6 +522,7 @@ Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
         case .PACKED_INTS: variantPackedInts(&variants[i + 1], value.ints)
         case .PACKED_FLOATS: variantPackedFloats(&variants[i + 1], value.floats)
         case .PACKED_STRINGS: variantPackedStrings(&variants[i + 1], value.items)
+        case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: variantPackedNumeric(&variants[i + 1], value.kind, value)
         case .NONE:
         }
         pointers[i + 1] = &variants[i + 1]

@@ -144,6 +144,38 @@ counter_class: ge.Class = {
             }
             return {kind = .PACKED_STRINGS, items = out}
         }},
+        // The numeric packed arrays of the engine (32 bit): ints, floats, points, 3D points, colors
+        {"double_ints32", {.PACKED_INT32S}, .PACKED_INT32S, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []i32 = make([]i32, len(a[0].ints32), context.temp_allocator)
+            for number, i in a[0].ints32 { out[i] = number * 2 }
+            return {kind = .PACKED_INT32S, ints32 = out}
+        }},
+        {"halve_floats32", {.PACKED_FLOAT32S}, .PACKED_FLOAT32S, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []f32 = make([]f32, len(a[0].floats32), context.temp_allocator)
+            for number, i in a[0].floats32 { out[i] = number / 2 }
+            return {kind = .PACKED_FLOAT32S, floats32 = out}
+        }},
+        // every point moves by (10, 20): x and y of an element lie next to each other
+        {"shift_points", {.PACKED_VECTOR2S}, .PACKED_VECTOR2S, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []f32 = make([]f32, len(a[0].floats32), context.temp_allocator)
+            for i := 0; i + 1 < len(out); i += 2 {
+                out[i], out[i + 1] = a[0].floats32[i] + 10, a[0].floats32[i + 1] + 20
+            }
+            return {kind = .PACKED_VECTOR2S, floats32 = out}
+        }},
+        {"stretch_points", {.PACKED_VECTOR3S}, .PACKED_VECTOR3S, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []f32 = make([]f32, len(a[0].floats32), context.temp_allocator)
+            for number, i in a[0].floats32 { out[i] = number * 2 }
+            return {kind = .PACKED_VECTOR3S, floats32 = out}
+        }},
+        // the color without its alpha inverted
+        {"invert_colors", {.PACKED_COLORS}, .PACKED_COLORS, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []f32 = make([]f32, len(a[0].floats32), context.temp_allocator)
+            for i := 0; i + 3 < len(out); i += 4 {
+                out[i], out[i + 1], out[i + 2], out[i + 3] = 1 - a[0].floats32[i], 1 - a[0].floats32[i + 1], 1 - a[0].floats32[i + 2], a[0].floats32[i + 3]
+            }
+            return {kind = .PACKED_COLORS, floats32 = out}
+        }},
         // Objects and calls into the engine: the child count of a Node, its parent, and the position of a Node2D
         {"child_count", {.OBJECT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             count, _ := engine.NodeGetChildCount(a[0].object)

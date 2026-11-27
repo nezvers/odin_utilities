@@ -32,9 +32,14 @@ GdVariantType :: enum u32 {
     DICTIONARY = 27,
     ARRAY = 28,
     PACKED_BYTE_ARRAY = 29,
+    PACKED_INT32_ARRAY = 30,
     PACKED_INT64_ARRAY = 31,
+    PACKED_FLOAT32_ARRAY = 32,
     PACKED_FLOAT64_ARRAY = 33,
     PACKED_STRING_ARRAY = 34,
+    PACKED_VECTOR2_ARRAY = 35,
+    PACKED_VECTOR3_ARRAY = 36,
+    PACKED_COLOR_ARRAY = 37,
 }
 
 GdCallErrorType :: enum i32 {
@@ -188,6 +193,7 @@ Interface :: struct {
     array_resize: proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32),
     dictionary_keys: proc "c" (dictionary: rawptr, args: [^]rawptr, result: rawptr, count: i32),
     packed_ints, packed_floats, packed_strings: PackedOps,
+    packed_ints32, packed_floats32, packed_vector2s, packed_vector3s, packed_colors: PackedOps,
     from_object: proc "c" (variant: ^GdVariant, value: rawptr),
     to_object: proc "c" (value: rawptr, variant: ^GdVariant),
     from_string_name: proc "c" (variant: ^GdVariant, value: rawptr),
@@ -247,6 +253,11 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     packedLoad(&gd.packed_ints, .PACKED_INT64_ARRAY, get, "packed_int64_array", constructor, method)
     packedLoad(&gd.packed_floats, .PACKED_FLOAT64_ARRAY, get, "packed_float64_array", constructor, method)
     packedLoad(&gd.packed_strings, .PACKED_STRING_ARRAY, get, "packed_string_array", constructor, method)
+    packedLoad(&gd.packed_ints32, .PACKED_INT32_ARRAY, get, "packed_int32_array", constructor, method)
+    packedLoad(&gd.packed_floats32, .PACKED_FLOAT32_ARRAY, get, "packed_float32_array", constructor, method)
+    packedLoad(&gd.packed_vector2s, .PACKED_VECTOR2_ARRAY, get, "packed_vector2_array", constructor, method)
+    packedLoad(&gd.packed_vector3s, .PACKED_VECTOR3_ARRAY, get, "packed_vector3_array", constructor, method)
+    packedLoad(&gd.packed_colors, .PACKED_COLOR_ARRAY, get, "packed_color_array", constructor, method)
     size_name_for_collections: GdStringName = stringName("size")
     resize_name_for_collections: GdStringName = stringName("resize")
     gd.from_bool = gd.variant_from_type(.BOOL)
@@ -416,7 +427,7 @@ variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator) -
         object: rawptr
         gd.to_object(&object, variant)
         return {kind = .OBJECT, object = object}
-    case .NIL, .DICTIONARY, .ARRAY, .PACKED_BYTE_ARRAY, .PACKED_INT64_ARRAY, .PACKED_FLOAT64_ARRAY, .PACKED_STRING_ARRAY:
+    case .NIL, .DICTIONARY, .ARRAY, .PACKED_BYTE_ARRAY, .PACKED_INT64_ARRAY, .PACKED_FLOAT64_ARRAY, .PACKED_STRING_ARRAY, .PACKED_INT32_ARRAY, .PACKED_FLOAT32_ARRAY, .PACKED_VECTOR2_ARRAY, .PACKED_VECTOR3_ARRAY, .PACKED_COLOR_ARRAY:
     }
     return {}
 }
@@ -434,7 +445,7 @@ valueToVariant :: proc "c" (variant: ^GdVariant, value: Value) {
     case .OBJECT:
         object: rawptr = value.object
         gd.from_object(variant, &object)
-    case .ARRAY, .DICTIONARY, .PACKED_INTS, .PACKED_FLOATS, .PACKED_STRINGS, .NONE:
+    case .ARRAY, .DICTIONARY, .PACKED_INTS, .PACKED_FLOATS, .PACKED_STRINGS, .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS, .NONE:
     }
 }
 
@@ -570,6 +581,59 @@ writePackedStrings :: proc "c" (array: rawptr, items: []Value) {
         // a fresh element is an empty String (no memory to release): the new text replaces it
         gd.string_new_utf8_len(cast(^GdString)gd.packed_strings.index(array, GdInt(i)), raw_data(item.text), GdInt(len(item.text)))
     }
+}
+
+// The five numeric packed arrays that are plain memory: PackedInt32Array (1 i32 per element) and PackedFloat32Array, PackedVector2Array, PackedVector3Array, PackedColorArray (1, 2, 3 and 4 f32
+// per element). One reader and one writer serve all of them: the elements lie one after the other, so the numbers are `count * components` of one type.
+packedOpsOf :: proc "contextless" (kind: ValueKind) -> (ops: ^PackedOps, components: int) {
+    #partial switch kind {
+    case .PACKED_INT32S: return &gd.packed_ints32, 1
+    case .PACKED_FLOAT32S: return &gd.packed_floats32, 1
+    case .PACKED_VECTOR2S: return &gd.packed_vector2s, 2
+    case .PACKED_VECTOR3S: return &gd.packed_vector3s, 3
+    case .PACKED_COLORS: return &gd.packed_colors, 4
+    }
+    return nil, 0
+}
+
+// Copies the numbers of the array `array` of the engine into a Value of `kind` (memory of `allocator`)
+readPackedNumeric :: proc "c" (kind: ValueKind, array: rawptr, allocator: runtime.Allocator) -> Value {
+    context = runtime.default_context()
+    ops, components := packedOpsOf(kind)
+    count: int = packedSize(ops, array)
+    value: Value = {kind = kind}
+    if kind == .PACKED_INT32S {
+        value.ints32 = make([]i32, count, allocator)
+        if count > 0 { copy(value.ints32, (cast([^]i32)ops.index_const(array, 0))[:count]) }
+    } else {
+        value.floats32 = make([]f32, count * components, allocator)
+        if count > 0 { copy(value.floats32, (cast([^]f32)ops.index_const(array, 0))[:count * components]) }
+    }
+    return value
+}
+
+// Fills an array that was just constructed (a vector array takes `len(floats32) / components` elements: a rest that does not fill an element is dropped)
+writePackedNumeric :: proc "c" (kind: ValueKind, array: rawptr, value: Value) {
+    ops, components := packedOpsOf(kind)
+    if kind == .PACKED_INT32S {
+        if len(value.ints32) == 0 { return }
+        packedResize(ops, array, len(value.ints32))
+        copy((cast([^]i32)ops.index(array, 0))[:len(value.ints32)], value.ints32)
+        return
+    }
+    count: int = len(value.floats32) / components
+    if count == 0 { return }
+    packedResize(ops, array, count)
+    copy((cast([^]f32)ops.index(array, 0))[:count * components], value.floats32[:count * components])
+}
+
+variantPackedNumeric :: proc "c" (result: ^GdVariant, kind: ValueKind, value: Value) {
+    ops, _ := packedOpsOf(kind)
+    array: GdBytes
+    ops.construct(&array, nil)
+    writePackedNumeric(kind, &array, value)
+    ops.from(result, &array)
+    ops.destroy(&array)
 }
 
 variantPackedInts :: proc "c" (result: ^GdVariant, numbers: []i64) {
