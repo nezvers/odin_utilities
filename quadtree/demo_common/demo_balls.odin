@@ -16,7 +16,8 @@ demo_balls: kit.Demo = {
     script = ballsScript,
 }
 
-// Balls bounce off the window and off each other. Every ball is an element of the tree: it is moved after the step, and the tree gives the neighbours to test against. Hold the left button to spawn more at the mouse.
+// Balls bounce off the window and off each other. The tree is rebuilt every frame after the balls moved (the item is the ball index) and gives the neighbours to test against.
+// Hold the left button to spawn more at the mouse.
 BALL_CAPACITY :: 2000
 BALL_START :: 60
 BALL_RADIUS_MIN :: 4.0
@@ -27,14 +28,13 @@ BALLS_PER_FRAME :: 2
 BOUNDS :: qt.Rect{0, 0, 1280, 720}
 
 Ball :: struct {
-    handle: qt.Handle,
     position: qt.Vec2,
     velocity: qt.Vec2,
     radius: f32,
     color: kit.Color,
 }
 
-BallTree :: qt.Quadtree(BALL_CAPACITY + 1, 6000, 24576)
+BallTree :: qt.Quadtree(BALL_CAPACITY, 6000, 24576)
 
 balls_tree: BallTree
 balls: [BALL_CAPACITY]Ball
@@ -64,12 +64,8 @@ ballsSpawn :: proc(position: qt.Vec2) -> bool {
     radius: f32 = BALL_RADIUS_MIN + rand.float32(balls_random) * (BALL_RADIUS_MAX - BALL_RADIUS_MIN)
     angle: f32 = rand.float32(balls_random) * math.TAU
     speed: f32 = BALL_SPEED_MIN + rand.float32(balls_random) * (BALL_SPEED_MAX - BALL_SPEED_MIN)
-    ball: ^Ball = &balls[balls_count]
-    handle, ok := qt.QuadtreeAdd(&balls_tree, ballRect(position, radius), ball)
-    if !ok { return false }
     hue: f32 = rand.float32(balls_random)
-    ball^ = {
-        handle = handle,
+    balls[balls_count] = {
         position = {clamp(position.x, radius, BOUNDS.w - radius), clamp(position.y, radius, BOUNDS.h - radius)},
         velocity = {math.cos(angle), math.sin(angle)} * speed,
         radius = radius,
@@ -98,23 +94,23 @@ ballsUpdate :: proc(ctx: ^kit.Context) {
         if ball.position.x > BOUNDS.w - ball.radius { ball.position.x = BOUNDS.w - ball.radius; ball.velocity.x = -abs(ball.velocity.x) }
         if ball.position.y < ball.radius { ball.position.y = ball.radius; ball.velocity.y = abs(ball.velocity.y) }
         if ball.position.y > BOUNDS.h - ball.radius { ball.position.y = BOUNDS.h - ball.radius; ball.velocity.y = -abs(ball.velocity.y) }
-        qt.QuadtreeMove(&balls_tree, ball.handle, ballRect(ball.position, ball.radius))
     }
+
+    // immediate mode: the tree only knows this frame, so it is built again from the moved balls
+    qt.QuadtreeClear(&balls_tree)
+    for &ball, index in balls[:balls_count] { qt.QuadtreeInsert(&balls_tree, ballRect(ball.position, ball.radius), index) }
 
     // the tree gives the balls whose boxes touch, the circles decide. A pair is handled once: from the ball with the lower index
     balls_pairs = 0
-    neighbours: [64]qt.Handle
+    neighbours: [64]qt.Item
     for &ball, index in balls[:balls_count] {
-        count: int = qt.QuadtreeQuery(&balls_tree, ballRect(ball.position, ball.radius), neighbours[:], ball.handle)
+        count: int = qt.QuadtreeQuery(&balls_tree, ballRect(ball.position, ball.radius), neighbours[:], index)
         for i in 0 ..< count {
-            element: ^qt.Element = qt.QuadtreeGet(&balls_tree, neighbours[i]) or_continue
-            other: ^Ball = cast(^Ball)element.ptr
-            if int(uintptr(other) - uintptr(&balls[0])) / size_of(Ball) < index { continue }
+            if neighbours[i] < index { continue }
             balls_pairs += 1
-            ballsCollide(&ball, other)
+            ballsCollide(&ball, &balls[neighbours[i]])
         }
     }
-    qt.QuadtreeCleanup(&balls_tree)
 }
 
 // Elastic collision, the mass is the area
@@ -145,14 +141,14 @@ ballsDraw :: proc(ctx: ^kit.Context) {
     kit.DrawText(ctx, fmt.tprintf("balls = %v, pairs tested = %v (all pairs would be %v), nodes = %v, links = %v", balls_count, balls_pairs, balls_count * (balls_count - 1) / 2, nodes, links), {10, 36}, 20, kit.DARK_GRAY)
 }
 
-// Every ball is inside of the window and the tree holds exactly the balls
+// Every ball is inside of the window and the rebuilt tree holds exactly the balls
 ballsConsistent :: proc(ctx: ^kit.Context) -> bool {
-    if int(qt.QuadtreeLen(&balls_tree)) != balls_count { return false }
+    if qt.QuadtreeLen(&balls_tree) != balls_count { return false }
     for &ball in balls[:balls_count] {
         if ball.position.x < ball.radius - 0.01 || ball.position.x > BOUNDS.w - ball.radius + 0.01 { return false }
         if ball.position.y < ball.radius - 0.01 || ball.position.y > BOUNDS.h - ball.radius + 0.01 { return false }
     }
-    everything: [BALL_CAPACITY]qt.Handle
+    everything: [BALL_CAPACITY]qt.Item
     return qt.QuadtreeQuery(&balls_tree, BOUNDS, everything[:]) == balls_count
 }
 

@@ -13,51 +13,42 @@ randomRect :: proc(state: rand.Generator, area: Rect, biggest: f32) -> Rect {
     return {area.x + rand.float32(state) * (area.w - width), area.y + rand.float32(state) * (area.h - height), width, height}
 }
 
-// What a brute force search finds: the tree must report exactly these
+// What a brute force search finds: the tree must report exactly these (the item of a rectangle is its index)
 @(private = "file")
-matches :: proc(t: ^testing.T, tree: ^TestTree, handles: []Handle, rect: Rect) {
-    out: [512]Handle
+matches :: proc(t: ^testing.T, tree: ^TestTree, rects: []Rect, rect: Rect) {
+    out: [512]Item
     count: int = QuadtreeQuery(tree, rect, out[:])
     expected: int
-    for handle in handles {
-        element, ok := QuadtreeGet(tree, handle)
-        if !ok || !RectOverlaps(element.rect, rect) { continue }
+    for other, index in rects {
+        if !RectOverlaps(other, rect) { continue }
         expected += 1
         found: bool
-        for i in 0 ..< count { if out[i] == handle { found = true } }
+        for i in 0 ..< count { if out[i] == index { found = true } }
         testing.expect(t, found, "an overlapping element is reported")
     }
     testing.expect_value(t, count, expected)
 }
 
 @(test)
-test_queries_match_a_brute_force_search_after_adds_moves_and_removals :: proc(t: ^testing.T) {
+test_queries_match_a_brute_force_search_over_several_rebuilt_frames :: proc(t: ^testing.T) {
     tree: ^TestTree = new(TestTree)
     defer free(tree)
     area: Rect = {0, 0, 1000, 800}
     QuadtreeInit(tree, area, 6, 6)
     seed: rand.Default_Random_State = rand.create(1234)
     state: rand.Generator = rand.default_random_generator(&seed)
-    handles: [dynamic]Handle
-    defer delete(handles)
-    for _ in 0 ..< 300 {
-        handle, ok := QuadtreeAdd(tree, randomRect(state, area, 120))
-        testing.expect(t, ok)
-        append(&handles, handle)
+    rects: [300]Rect
+    // every frame has other rectangles and a different count: nothing of the last frame may stay
+    for frame in 0 ..< 5 {
+        count: int = 300 - frame * 60
+        QuadtreeClear(tree)
+        for i in 0 ..< count {
+            rects[i] = randomRect(state, area, 120)
+            testing.expect(t, QuadtreeInsert(tree, rects[i], i))
+        }
+        testing.expect_value(t, QuadtreeLen(tree), count)
+        for _ in 0 ..< 20 { matches(t, tree, rects[:count], randomRect(state, area, 300)) }
     }
-    for _ in 0 ..< 20 { matches(t, tree, handles[:], randomRect(state, area, 300)) }
-    // move a third, remove a third
-    for handle, i in handles {
-        if i % 3 == 0 { testing.expect(t, QuadtreeMove(tree, handle, randomRect(state, area, 120))) }
-        if i % 3 == 1 { testing.expect(t, QuadtreeRemove(tree, handle)) }
-    }
-    QuadtreeCleanup(tree)
-    for _ in 0 ..< 20 { matches(t, tree, handles[:], randomRect(state, area, 300)) }
-    testing.expect_value(t, QuadtreeLen(tree), uint(200))
-    // a removed handle is stale
-    testing.expect(t, !QuadtreeRemove(tree, handles[1]))
-    _, got := QuadtreeGet(tree, handles[1])
-    testing.expect(t, !got)
 }
 
 @(test)
@@ -65,15 +56,15 @@ test_a_big_rectangle_is_reported_once_and_the_omitted_one_is_left_out :: proc(t:
     tree: ^TestTree = new(TestTree)
     defer free(tree)
     QuadtreeInit(tree, {0, 0, 100, 100}, 1, 5)
-    big, _ := QuadtreeAdd(tree, {1, 1, 98, 98})
-    for i in 0 ..< 20 { QuadtreeAdd(tree, {f32(i) * 4, f32(i) * 4, 2, 2}) }
-    out: [64]Handle
+    QuadtreeInsert(tree, {1, 1, 98, 98}, 100)
+    for i in 0 ..< 20 { QuadtreeInsert(tree, {f32(i) * 4, f32(i) * 4, 2, 2}, i) }
+    out: [64]Item
     count: int = QuadtreeQuery(tree, {0, 0, 100, 100}, out[:])
     testing.expect_value(t, count, 21)
     hits: int
-    for i in 0 ..< count { if out[i] == big { hits += 1 } }
+    for i in 0 ..< count { if out[i] == 100 { hits += 1 } }
     testing.expect_value(t, hits, 1)
-    testing.expect_value(t, QuadtreeQuery(tree, {0, 0, 100, 100}, out[:], big), 20)
+    testing.expect_value(t, QuadtreeQuery(tree, {0, 0, 100, 100}, out[:], 100), 20)
     // the buffer limits the result
     testing.expect_value(t, QuadtreeQuery(tree, {0, 0, 100, 100}, out[:5]), 5)
 }
@@ -83,16 +74,14 @@ test_points_and_rectangles_outside_of_the_tree :: proc(t: ^testing.T) {
     tree: ^TestTree = new(TestTree)
     defer free(tree)
     QuadtreeInit(tree, {0, 0, 100, 100}, 2, 4)
-    inside, _ := QuadtreeAdd(tree, {10, 10, 20, 20})
-    far, _ := QuadtreeAdd(tree, {500, -300, 10, 10})
-    out: [8]Handle
+    QuadtreeInsert(tree, {10, 10, 20, 20}, 1)
+    QuadtreeInsert(tree, {500, -300, 10, 10}, 2)
+    out: [8]Item
     testing.expect_value(t, QuadtreeQueryPoint(tree, {15, 15}, out[:]), 1)
-    testing.expect(t, out[0] == inside)
+    testing.expect_value(t, out[0], 1)
     testing.expect_value(t, QuadtreeQueryPoint(tree, {30, 15}, out[:]), 0)    // the right edge is outside
     testing.expect_value(t, QuadtreeQueryPoint(tree, {505, -295}, out[:]), 1)
-    testing.expect(t, out[0] == far)
-    testing.expect(t, QuadtreeMove(tree, far, {-80, 90, 5, 5}))
-    testing.expect_value(t, QuadtreeQueryPoint(tree, {-78, 92}, out[:]), 1)
+    testing.expect_value(t, out[0], 2)
 }
 
 @(test)
@@ -102,47 +91,27 @@ test_full_storage_fails_and_changes_nothing :: proc(t: ^testing.T) {
     tree: ^Small = new(Small)
     defer free(tree)
     QuadtreeInit(tree, {0, 0, 100, 100}, 1, 4)
-    added: [dynamic]Handle
-    defer delete(added)
+    accepted: [40]bool
     failed: bool
     for i in 0 ..< 40 {
-        handle, ok := QuadtreeAdd(tree, {f32(i % 10) * 9, f32(i / 10) * 20, 30, 30})
-        if ok { append(&added, handle) } else { failed = true }
+        accepted[i] = QuadtreeInsert(tree, {f32(i % 10) * 9, f32(i / 10) * 20, 30, 30}, i)
+        if !accepted[i] { failed = true }
     }
     testing.expect(t, failed, "storage ran out")
-    testing.expect_value(t, QuadtreeLen(tree), uint(len(added)))
+    added: int
+    for ok in accepted { if ok { added += 1 } }
+    testing.expect_value(t, QuadtreeLen(tree), added)
     nodes, links := QuadtreeUsage(tree)
     testing.expect(t, nodes <= 9 && links <= 12)
-    // everything that was accepted can be found and removed again, and then nothing is left in use
-    out: [32]Handle
-    testing.expect_value(t, QuadtreeQuery(tree, {-10, -10, 200, 200}, out[:]), len(added))
-    for handle in added { testing.expect(t, QuadtreeRemove(tree, handle)) }
-    QuadtreeCleanup(tree)
+    // everything that was accepted is found, nothing that failed
+    out: [32]Item
+    count: int = QuadtreeQuery(tree, {-10, -10, 200, 200}, out[:])
+    testing.expect_value(t, count, added)
+    for i in 0 ..< count { testing.expect(t, accepted[out[i]]) }
+    // a clear gives everything back
+    QuadtreeClear(tree)
     nodes, links = QuadtreeUsage(tree)
     testing.expect_value(t, nodes, 1)
     testing.expect_value(t, links, 0)
-}
-
-@(test)
-test_cleanup_gives_the_nodes_back :: proc(t: ^testing.T) {
-    tree: ^TestTree = new(TestTree)
-    defer free(tree)
-    QuadtreeInit(tree, {0, 0, 100, 100}, 2, 6)
-    handles: [dynamic]Handle
-    defer delete(handles)
-    for i in 0 ..< 40 {
-        handle, _ := QuadtreeAdd(tree, {f32(i) * 2.4, f32(i) * 2.4, 2, 2})
-        append(&handles, handle)
-    }
-    grown, _ := QuadtreeUsage(tree)
-    testing.expect(t, grown > 1, "the tree divided")
-    for handle in handles { QuadtreeRemove(tree, handle) }
-    QuadtreeCleanup(tree)
-    nodes, links := QuadtreeUsage(tree)
-    testing.expect_value(t, nodes, 1)
-    testing.expect_value(t, links, 0)
-    // the freed groups are used again, not new ones
-    for i in 0 ..< 40 { QuadtreeAdd(tree, {f32(i) * 2.4, f32(i) * 2.4, 2, 2}) }
-    again, _ := QuadtreeUsage(tree)
-    testing.expect_value(t, again, grown)
+    testing.expect(t, QuadtreeInsert(tree, {1, 1, 5, 5}, 0))
 }

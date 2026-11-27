@@ -1,15 +1,15 @@
-// Quadtree broad phase for 2D rectangles, without allocations. Elements live in a static handle map (a stable Handle for each element), the tree is made of fixed arrays:
-// nodes (groups of four children), and links (one link per element in a leaf). Everything fails instead of growing.
+// Immediate mode quadtree broad phase for 2D rectangles, without allocations. The tree is rebuilt every frame: QuadtreeClear, QuadtreeInsert everything that moves or exists, then query.
+// Nothing is stored between frames, so there is no remove, no move and no handle to keep valid: the caller owns the objects and the tree only holds a rectangle and the caller's `Item` (usually the index in
+// the caller's own array). All memory is fixed arrays (elements, nodes in groups of four, links), everything fails instead of growing.
 // The algorithm follows the quadtree of "dragon-energy" (Stack Overflow, see README): an element is stored in every leaf its rectangle overlaps, a leaf splits when it holds more than `max_elements`
-// (unless it is at `max_depth`), empty leaves are merged back by `QuadtreeCleanup`.
+// (unless it is at `max_depth`).
 package quadtree
 
-import hm "core:container/handle_map"
-
-Handle :: hm.Handle32
-HandleNone: Handle : {}
-
 Vec2 :: [2]f32
+
+// What the caller gets back from a query: any number that names the object, mostly an index into the caller's array
+Item :: int
+ITEM_NONE :: Item(-1)
 
 // x, y = top left corner
 Rect :: struct {
@@ -21,12 +21,11 @@ Rect :: struct {
 
 QUADTREE_MAX_DEPTH :: 16
 
-// A rectangle in the tree
+@(private)
 Element :: struct {
-    handle: Handle,     // Required by the handle map, set by QuadtreeAdd
     rect: Rect,
-    ptr: rawptr,        // Generic way to carry user facing data
-    stamp: u32,         // Runtime: the query that already reported this element (an element sits in several leaves)
+    item: Item,
+    stamp: u32,         // the query that already reported this element (an element sits in several leaves)
 }
 
 // Leaf: `count` >= 0 elements, `first` is the first link (-1 for none). Branch: `count` = -1, `first` is the first of its four children (top left, top right, bottom left, bottom right).
@@ -39,22 +38,22 @@ Node :: struct {
 @(private)
 Link :: struct {
     next: i32,
-    element: Handle,
+    element: i32,
 }
 
-// E = elements (usable capacity is E - 1), N = nodes (the root and groups of four), L = links (an element takes one for every leaf it overlaps).
+// E = elements, N = nodes (the root and groups of four), L = links (an element takes one for every leaf it overlaps). Size them with QuadtreeUsage.
 // Put it in a global or in your own struct: it holds all of its memory.
 Quadtree :: struct($E: uint, $N: uint, $L: uint) {
     bounds: Rect,               // Where the tree divides space. Rectangles outside still work: they sit in the border leaves
     max_elements: i32,          // A leaf with more elements splits
     max_depth: i32,
-    elements: hm.Static_Handle_Map(E, Element, Handle),
+    elements: [E]Element,
+    element_count: i32,
     nodes: [N]Node,
     node_used: i32,             // Nodes handed out: the root, then four at a time
-    group_free: i32,            // First of the freed groups of four (linked through `first`), -1 for none
     links: [L]Link,
     link_used: i32,             // Links handed out from the array so far
-    link_free: i32,             // First of the freed links (linked through `next`), -1 for none
+    link_free: i32,             // First of the links given back by a failed insert (linked through `next`), -1 for none
     links_in_use: i32,
     stamp: u32,
 }
@@ -68,99 +67,64 @@ Area :: struct {
     hy: f32,
 }
 
-// Set the area and remove all elements. `max_elements` is how many a leaf takes before it splits, `max_depth` how often the space is divided at most
+// Set the area and empty the tree. `max_elements` is how many a leaf takes before it splits, `max_depth` how often the space is divided at most
 QuadtreeInit :: proc(tree: ^Quadtree($E, $N, $L), bounds: Rect, max_elements: int = 8, max_depth: int = 8) {
     assert(bounds.w > 0 && bounds.h > 0)
     assert(max_elements >= 1)
     assert(max_depth >= 0 && max_depth <= QUADTREE_MAX_DEPTH)
-    assert(N >= 1 && L >= 1)
+    assert(E >= 1 && N >= 1 && L >= 1)
     tree.bounds = bounds
     tree.max_elements = i32(max_elements)
     tree.max_depth = i32(max_depth)
     QuadtreeClear(tree)
 }
 
-// Remove all elements, handles become invalid
+// Empty the tree: the first call of every frame. Costs nothing but resetting counters
 QuadtreeClear :: proc(tree: ^Quadtree($E, $N, $L)) {
-    hm.clear(&tree.elements)
+    tree.element_count = 0
     tree.nodes[0] = {first = -1, count = 0}
     tree.node_used = 1
-    tree.group_free = -1
     tree.link_used = 0
     tree.link_free = -1
     tree.links_in_use = 0
     tree.stamp = 0
 }
 
-QuadtreeLen :: proc(tree: ^Quadtree($E, $N, $L)) -> uint {
-    return hm.len(tree.elements)
+QuadtreeLen :: proc(tree: ^Quadtree($E, $N, $L)) -> int {
+    return int(tree.element_count)
 }
 
 // Nodes and links in use, to size N and L
 QuadtreeUsage :: proc(tree: ^Quadtree($E, $N, $L)) -> (nodes: int, links: int) {
-    free_nodes: int
-    for group := tree.group_free; group != -1; group = tree.nodes[group].first { free_nodes += 4 }
-    return int(tree.node_used) - free_nodes, int(tree.links_in_use)
+    return int(tree.node_used), int(tree.links_in_use)
 }
 
-// Add an element. Fails (nothing is changed) when the map, the nodes or the links are full
-QuadtreeAdd :: proc(tree: ^Quadtree($E, $N, $L), rect: Rect, ptr: rawptr = nil) -> (handle: Handle, ok: bool) {
-    handle, ok = hm.add(&tree.elements, Element{rect = rect, ptr = ptr})
-    if !ok { return }
-    if !nodeAdd(tree, 0, rootArea(tree), 0, handle, rect, true) {
-        nodeRemove(tree, 0, rootArea(tree), handle, rect)
-        hm.remove(&tree.elements, handle)
-        return HandleNone, false
-    }
-    return
-}
-
-// Returns false when the handle is not valid
-QuadtreeRemove :: proc(tree: ^Quadtree($E, $N, $L), handle: Handle) -> bool {
-    element: ^Element = hm.get(&tree.elements, handle) or_return
-    nodeRemove(tree, 0, rootArea(tree), handle, element.rect)
-    return hm.remove(&tree.elements, handle)
-}
-
-QuadtreeGet :: proc(tree: ^Quadtree($E, $N, $L), handle: Handle) -> (element: ^Element, ok: bool) {
-    return hm.get(&tree.elements, handle)
-}
-
-// Give an element another rectangle. Fails when the links are full: the element is then removed (a handle that stays valid with a rectangle the tree does not know would be worse)
-QuadtreeMove :: proc(tree: ^Quadtree($E, $N, $L), handle: Handle, rect: Rect) -> bool {
-    element: ^Element = hm.get(&tree.elements, handle) or_return
-    nodeRemove(tree, 0, rootArea(tree), handle, element.rect)
-    old: Rect = element.rect
-    element.rect = rect
-    if nodeAdd(tree, 0, rootArea(tree), 0, handle, rect, true) { return true }
-    nodeRemove(tree, 0, rootArea(tree), handle, rect)
-    element.rect = old
-    if !nodeAdd(tree, 0, rootArea(tree), 0, handle, old, true) {
-        nodeRemove(tree, 0, rootArea(tree), handle, old)
-        hm.remove(&tree.elements, handle)
-    }
+// Put a rectangle into the tree. Fails (nothing is changed) when the elements, the nodes or the links are full
+QuadtreeInsert :: proc(tree: ^Quadtree($E, $N, $L), rect: Rect, item: Item) -> bool {
+    if tree.element_count >= i32(E) { return false }
+    index: i32 = tree.element_count
+    tree.elements[index] = {rect = rect, item = item}
+    tree.element_count += 1
+    if nodeAdd(tree, 0, rootArea(tree), 0, index, rect, true) { return true }
+    nodeRemove(tree, 0, rootArea(tree), index, rect)
+    tree.element_count -= 1
     return false
 }
 
-// Handles of the elements whose rectangle overlaps `rect` (each once, `omit` left out). Returns how many were written: results are limited by the size of `out`
-QuadtreeQuery :: proc(tree: ^Quadtree($E, $N, $L), rect: Rect, out: []Handle, omit: Handle = HandleNone) -> int {
+// Items of the elements whose rectangle overlaps `rect` (each once, `omit` left out). Returns how many were written: results are limited by the size of `out`
+QuadtreeQuery :: proc(tree: ^Quadtree($E, $N, $L), rect: Rect, out: []Item, omit: Item = ITEM_NONE) -> int {
     query: Query = {rect = rect, out = out, omit = omit}
-    stampNext(tree)
+    tree.stamp += 1
     nodeQuery(tree, 0, rootArea(tree), &query)
     return query.count
 }
 
-// Handles of the elements whose rectangle contains the point
-QuadtreeQueryPoint :: proc(tree: ^Quadtree($E, $N, $L), point: Vec2, out: []Handle) -> int {
-    query: Query = {rect = {point.x, point.y, 0, 0}, out = out, point = true}
-    stampNext(tree)
+// Items of the elements whose rectangle contains the point
+QuadtreeQueryPoint :: proc(tree: ^Quadtree($E, $N, $L), point: Vec2, out: []Item) -> int {
+    query: Query = {rect = {point.x, point.y, 0, 0}, out = out, omit = ITEM_NONE, point = true}
+    tree.stamp += 1
     nodeQuery(tree, 0, rootArea(tree), &query)
     return query.count
-}
-
-// Merge four empty leaves into their parent, so the nodes can be used again. Call it now and then (once a frame is fine), after elements moved or were removed
-QuadtreeCleanup :: proc(tree: ^Quadtree($E, $N, $L)) {
-    nodeCleanup(tree, 0)
 }
 
 // Called for every node by QuadtreeVisit. `count` is the number of elements of a leaf (0 for a branch)
@@ -185,8 +149,8 @@ RectContainsPoint :: proc(rect: Rect, point: Vec2) -> bool {
 @(private)
 Query :: struct {
     rect: Rect,
-    out: []Handle,
-    omit: Handle,
+    out: []Item,
+    omit: Item,
     point: bool,
     count: int,
 }
@@ -244,37 +208,31 @@ linkGive :: proc(tree: ^Quadtree($E, $N, $L), link: i32) {
     tree.links_in_use -= 1
 }
 
+// A group of four empty leaves, -1 when the nodes are used up
 @(private)
 groupTake :: proc(tree: ^Quadtree($E, $N, $L)) -> i32 {
-    group: i32 = -1
-    if tree.group_free != -1 {
-        group = tree.group_free
-        tree.group_free = tree.nodes[group].first
-    } else if tree.node_used + 4 <= i32(N) {
-        group = tree.node_used
-        tree.node_used += 4
-    } else {
-        return -1
-    }
+    if tree.node_used + 4 > i32(N) { return -1 }
+    group: i32 = tree.node_used
+    tree.node_used += 4
     for i: i32 = 0; i < 4; i += 1 { tree.nodes[group + i] = {first = -1, count = 0} }
     return group
 }
 
 // Put the element into every leaf its rectangle overlaps. A leaf that gets too full splits, only from the outermost call: the elements of a split are put into the new children without splitting those again
 @(private)
-nodeAdd :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, depth: i32, handle: Handle, rect: Rect, may_split: bool) -> bool {
+nodeAdd :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, depth: i32, element: i32, rect: Rect, may_split: bool) -> bool {
     if tree.nodes[node].count < 0 {
         first: i32 = tree.nodes[node].first
         hit: [4]bool = quadrants(area, rect)
         for quadrant in 0 ..< 4 {
             if !hit[quadrant] { continue }
-            if !nodeAdd(tree, first + i32(quadrant), areaChild(area, quadrant), depth + 1, handle, rect, may_split) { return false }
+            if !nodeAdd(tree, first + i32(quadrant), areaChild(area, quadrant), depth + 1, element, rect, may_split) { return false }
         }
         return true
     }
     link: i32 = linkTake(tree)
     if link < 0 { return false }
-    tree.links[link] = {next = tree.nodes[node].first, element = handle}
+    tree.links[link] = {next = tree.nodes[node].first, element = element}
     tree.nodes[node].first = link
     tree.nodes[node].count += 1
     if may_split && tree.nodes[node].count > tree.max_elements && depth < tree.max_depth {
@@ -294,28 +252,27 @@ leafSplit :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, depth: i32
     tree.nodes[node] = {first = group, count = -1}
     for link != -1 {
         next: i32 = tree.links[link].next
-        handle: Handle = tree.links[link].element
+        element: i32 = tree.links[link].element
         linkGive(tree, link)
-        element: ^Element = hm.get(&tree.elements, handle) or_else nil
-        if element != nil { nodeAdd(tree, node, area, depth, handle, element.rect, false) }
+        nodeAdd(tree, node, area, depth, element, tree.elements[element].rect, false)
         link = next
     }
 }
 
-// Take the element out of the leaves its rectangle overlaps. Leaves that do not hold it (a failed add) are skipped
+// Take the element out of the leaves its rectangle overlaps, only to undo a failed insert. Leaves that do not hold it are skipped
 @(private)
-nodeRemove :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, handle: Handle, rect: Rect) {
+nodeRemove :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, element: i32, rect: Rect) {
     if tree.nodes[node].count < 0 {
         first: i32 = tree.nodes[node].first
         hit: [4]bool = quadrants(area, rect)
         for quadrant in 0 ..< 4 {
-            if hit[quadrant] { nodeRemove(tree, first + i32(quadrant), areaChild(area, quadrant), handle, rect) }
+            if hit[quadrant] { nodeRemove(tree, first + i32(quadrant), areaChild(area, quadrant), element, rect) }
         }
         return
     }
     previous: i32 = -1
     for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
-        if tree.links[link].element == handle {
+        if tree.links[link].element == element {
             if previous == -1 { tree.nodes[node].first = tree.links[link].next } else { tree.links[previous].next = tree.links[link].next }
             linkGive(tree, link)
             tree.nodes[node].count -= 1
@@ -323,16 +280,6 @@ nodeRemove :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, handle: H
         }
         previous = link
     }
-}
-
-@(private)
-stampNext :: proc(tree: ^Quadtree($E, $N, $L)) {
-    tree.stamp += 1
-    if tree.stamp != 0 { return }
-    // wrapped around: forget every old mark, or an element could look reported already
-    it := hm.iterator_make(&tree.elements)
-    for element, _ in hm.iterate(&it) { element.stamp = 0 }
-    tree.stamp = 1
 }
 
 @(private)
@@ -346,32 +293,15 @@ nodeQuery :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, query: ^Qu
         return
     }
     for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
-        handle: Handle = tree.links[link].element
-        element: ^Element = hm.get(&tree.elements, handle) or_continue
-        if element.stamp == tree.stamp || handle == query.omit { continue }
+        element: ^Element = &tree.elements[tree.links[link].element]
+        if element.stamp == tree.stamp || element.item == query.omit { continue }
         element.stamp = tree.stamp
         hit: bool = RectContainsPoint(element.rect, {query.rect.x, query.rect.y}) if query.point else RectOverlaps(element.rect, query.rect)
         if hit && query.count < len(query.out) {
-            query.out[query.count] = handle
+            query.out[query.count] = element.item
             query.count += 1
         }
     }
-}
-
-// Merge a branch whose four children are empty leaves into an empty leaf. Returns true when the node is an empty leaf afterwards
-@(private)
-nodeCleanup :: proc(tree: ^Quadtree($E, $N, $L), node: i32) -> bool {
-    if tree.nodes[node].count >= 0 { return tree.nodes[node].count == 0 }
-    first: i32 = tree.nodes[node].first
-    empty: int
-    for quadrant: i32 = 0; quadrant < 4; quadrant += 1 {
-        if nodeCleanup(tree, first + quadrant) { empty += 1 }
-    }
-    if empty < 4 { return false }
-    tree.nodes[first].first = tree.group_free
-    tree.group_free = first
-    tree.nodes[node] = {first = -1, count = 0}
-    return true
 }
 
 @(private)
