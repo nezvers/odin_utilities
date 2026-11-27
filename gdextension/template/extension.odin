@@ -276,6 +276,28 @@ counter_class: ge.Class = {
             ok := engine.Node2DSetPosition(a[0].object, {a[1].real[0], a[1].real[1]})
             return ge.ValueBool(ok)
         }},
+        // the generated wrappers with the other kinds: a Color in and out, a Rect2 out, an Array of Objects out, a Variant in and out
+        {"tint", {.OBJECT, .COLOR}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return ge.ValueBool(engine.CanvasItemSetModulate(a[0].object, a[1].real))
+        }},
+        {"tint_of", {.OBJECT}, .COLOR, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            color, _ := engine.CanvasItemGetModulate(a[0].object)
+            return {kind = .COLOR, real = color}
+        }},
+        {"rect_of", {.OBJECT}, .RECT2, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            rect, _ := engine.ControlGetRect(a[0].object)
+            return {kind = .RECT2, real = rect}
+        }},
+        {"children_of", {.OBJECT}, .ARRAY, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            children, _ := engine.NodeGetChildren(a[0].object)
+            return ge.ValueArray(children)
+        }},
+        // stores any value as metadata of the object and reads it back
+        {"keep_meta", {.OBJECT, .STRING, .VARIANT}, .VARIANT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            engine.ObjectSetMeta(a[0].object, string(a[1].text), a[2])
+            value, _ := engine.ObjectGetMeta(a[0].object, string(a[1].text), {})
+            return value
+        }},
         // the generated wrappers (tool/bindings): a StringName result comes back as text, and a String goes in
         {"rename", {.OBJECT, .STRING}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             engine.NodeSetName(a[0].object, string(a[1].text))

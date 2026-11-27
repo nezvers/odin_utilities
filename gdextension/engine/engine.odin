@@ -17,9 +17,44 @@ ObjectIsClass :: proc(self: rawptr, class: string) -> (bool, bool) {
     return result.number != 0, ok
 }
 
+ObjectSet :: proc(self: rawptr, property: string, value: ge.Value) -> bool {
+    _, ok := ge.Call(self, "Object", "set", 3776071444, {ge.ValueText(property), value})
+    return ok
+}
+
+ObjectGet :: proc(self: rawptr, property: string) -> (ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "get", 2760726917, {ge.ValueText(property)})
+    return result, ok
+}
+
+ObjectSetIndexed :: proc(self: rawptr, property_path: string, value: ge.Value) -> bool {
+    _, ok := ge.Call(self, "Object", "set_indexed", 3500910842, {ge.ValueText(property_path), value})
+    return ok
+}
+
+ObjectGetIndexed :: proc(self: rawptr, property_path: string) -> (ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "get_indexed", 4006125091, {ge.ValueText(property_path)})
+    return result, ok
+}
+
+ObjectGetPropertyList :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "get_property_list", 3995934104, {})
+    return result.items, ok
+}
+
+ObjectGetMethodList :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "get_method_list", 3995934104, {})
+    return result.items, ok
+}
+
 ObjectPropertyCanRevert :: proc(self: rawptr, property: string) -> (bool, bool) {
     result, ok := ge.Call(self, "Object", "property_can_revert", 2619796661, {ge.ValueText(property)})
     return result.number != 0, ok
+}
+
+ObjectPropertyGetRevert :: proc(self: rawptr, property: string) -> (ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "property_get_revert", 2760726917, {ge.ValueText(property)})
+    return result, ok
 }
 
 ObjectNotification :: proc(self: rawptr, what: i64, reversed: bool = false) -> bool {
@@ -37,14 +72,44 @@ ObjectGetInstanceId :: proc(self: rawptr) -> (i64, bool) {
     return result.number, ok
 }
 
+ObjectSetScript :: proc(self: rawptr, script: ge.Value) -> bool {
+    _, ok := ge.Call(self, "Object", "set_script", 1114965689, {script})
+    return ok
+}
+
+ObjectGetScript :: proc(self: rawptr) -> (ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "get_script", 1214101251, {})
+    return result, ok
+}
+
+ObjectSetMeta :: proc(self: rawptr, name: string, value: ge.Value) -> bool {
+    _, ok := ge.Call(self, "Object", "set_meta", 3776071444, {ge.ValueText(name), value})
+    return ok
+}
+
 ObjectRemoveMeta :: proc(self: rawptr, name: string) -> bool {
     _, ok := ge.Call(self, "Object", "remove_meta", 3304788590, {ge.ValueText(name)})
     return ok
 }
 
+ObjectGetMeta :: proc(self: rawptr, name: string, default: ge.Value) -> (ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "get_meta", 3990617847, {ge.ValueText(name), default})
+    return result, ok
+}
+
 ObjectHasMeta :: proc(self: rawptr, name: string) -> (bool, bool) {
     result, ok := ge.Call(self, "Object", "has_meta", 2619796661, {ge.ValueText(name)})
     return result.number != 0, ok
+}
+
+ObjectGetMetaList :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "get_meta_list", 3995934104, {})
+    return result.items, ok
+}
+
+ObjectAddUserSignal :: proc(self: rawptr, signal: string, arguments: []ge.Value) -> bool {
+    _, ok := ge.Call(self, "Object", "add_user_signal", 85656714, {ge.ValueText(signal), ge.ValueArray(arguments)})
+    return ok
 }
 
 ObjectHasUserSignal :: proc(self: rawptr, signal: string) -> (bool, bool) {
@@ -55,6 +120,16 @@ ObjectHasUserSignal :: proc(self: rawptr, signal: string) -> (bool, bool) {
 ObjectRemoveUserSignal :: proc(self: rawptr, signal: string) -> bool {
     _, ok := ge.Call(self, "Object", "remove_user_signal", 3304788590, {ge.ValueText(signal)})
     return ok
+}
+
+ObjectSetDeferred :: proc(self: rawptr, property: string, value: ge.Value) -> bool {
+    _, ok := ge.Call(self, "Object", "set_deferred", 3776071444, {ge.ValueText(property), value})
+    return ok
+}
+
+ObjectCallv :: proc(self: rawptr, method: string, arg_array: []ge.Value) -> (ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "callv", 1260104456, {ge.ValueText(method), ge.ValueArray(arg_array)})
+    return result, ok
 }
 
 ObjectHasMethod :: proc(self: rawptr, method: string) -> (bool, bool) {
@@ -70,6 +145,21 @@ ObjectGetMethodArgumentCount :: proc(self: rawptr, method: string) -> (i64, bool
 ObjectHasSignal :: proc(self: rawptr, signal: string) -> (bool, bool) {
     result, ok := ge.Call(self, "Object", "has_signal", 2619796661, {ge.ValueText(signal)})
     return result.number != 0, ok
+}
+
+ObjectGetSignalList :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "get_signal_list", 3995934104, {})
+    return result.items, ok
+}
+
+ObjectGetSignalConnectionList :: proc(self: rawptr, signal: string) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "get_signal_connection_list", 3147814860, {ge.ValueText(signal)})
+    return result.items, ok
+}
+
+ObjectGetIncomingConnections :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Object", "get_incoming_connections", 3995934104, {})
+    return result.items, ok
 }
 
 ObjectHasConnections :: proc(self: rawptr, signal: string) -> (bool, bool) {
@@ -169,6 +259,11 @@ NodeGetChildCount :: proc(self: rawptr, include_internal: bool = false) -> (i64,
     return result.number, ok
 }
 
+NodeGetChildren :: proc(self: rawptr, include_internal: bool = false) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Node", "get_children", 873284517, {ge.ValueBool(include_internal)})
+    return result.items, ok
+}
+
 NodeGetChild :: proc(self: rawptr, idx: i64, include_internal: bool = false) -> (rawptr, bool) {
     result, ok := ge.Call(self, "Node", "get_child", 541253412, {ge.ValueInt(idx), ge.ValueBool(include_internal)})
     return result.object, ok
@@ -199,6 +294,11 @@ NodeFindChild :: proc(self: rawptr, pattern: string, recursive: bool = true, own
     return result.object, ok
 }
 
+NodeFindChildren :: proc(self: rawptr, pattern: string, type_: string = "", recursive: bool = true, owned: bool = true) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Node", "find_children", 2560337219, {ge.ValueText(pattern), ge.ValueText(type_), ge.ValueBool(recursive), ge.ValueBool(owned)})
+    return result.items, ok
+}
+
 NodeFindParent :: proc(self: rawptr, pattern: string) -> (rawptr, bool) {
     result, ok := ge.Call(self, "Node", "find_parent", 1140089439, {ge.ValueText(pattern)})
     return result.object, ok
@@ -207,6 +307,11 @@ NodeFindParent :: proc(self: rawptr, pattern: string) -> (rawptr, bool) {
 NodeHasNodeAndResource :: proc(self: rawptr, path: string) -> (bool, bool) {
     result, ok := ge.Call(self, "Node", "has_node_and_resource", 861721659, {ge.ValueText(path)})
     return result.number != 0, ok
+}
+
+NodeGetNodeAndResource :: proc(self: rawptr, path: string) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Node", "get_node_and_resource", 502563882, {ge.ValueText(path)})
+    return result.items, ok
 }
 
 NodeIsInsideTree :: proc(self: rawptr) -> (bool, bool) {
@@ -259,6 +364,11 @@ NodeMoveChild :: proc(self: rawptr, child_node: rawptr, to_index: i64) -> bool {
     return ok
 }
 
+NodeGetGroups :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Node", "get_groups", 3995934104, {})
+    return result.items, ok
+}
+
 NodeSetOwner :: proc(self: rawptr, owner: rawptr) -> bool {
     _, ok := ge.Call(self, "Node", "set_owner", 1078189570, {ge.ValueObject(owner)})
     return ok
@@ -306,6 +416,11 @@ NodeGetSceneFilePath :: proc(self: rawptr) -> (string, bool) {
 
 NodePropagateNotification :: proc(self: rawptr, what: i64) -> bool {
     _, ok := ge.Call(self, "Node", "propagate_notification", 1286410249, {ge.ValueInt(what)})
+    return ok
+}
+
+NodePropagateCall :: proc(self: rawptr, method: string, args: []ge.Value, parent_first: bool = false) -> bool {
+    _, ok := ge.Call(self, "Node", "propagate_call", 1871007965, {ge.ValueText(method), ge.ValueArray(args), ge.ValueBool(parent_first)})
     return ok
 }
 
@@ -614,6 +729,16 @@ NodeGetMultiplayer :: proc(self: rawptr) -> (rawptr, bool) {
     return result.object, ok
 }
 
+NodeRpcConfig :: proc(self: rawptr, method: string, config: ge.Value) -> bool {
+    _, ok := ge.Call(self, "Node", "rpc_config", 3776071444, {ge.ValueText(method), config})
+    return ok
+}
+
+NodeGetNodeRpcConfig :: proc(self: rawptr) -> (ge.Value, bool) {
+    result, ok := ge.Call(self, "Node", "get_node_rpc_config", 1214101251, {})
+    return result, ok
+}
+
 NodeSetEditorDescription :: proc(self: rawptr, editor_description: string) -> bool {
     _, ok := ge.Call(self, "Node", "set_editor_description", 83702148, {ge.ValueText(editor_description)})
     return ok
@@ -649,8 +774,18 @@ NodeUpdateConfigurationWarnings :: proc(self: rawptr) -> bool {
     return ok
 }
 
+NodeSetDeferredThreadGroup :: proc(self: rawptr, property: string, value: ge.Value) -> bool {
+    _, ok := ge.Call(self, "Node", "set_deferred_thread_group", 3776071444, {ge.ValueText(property), value})
+    return ok
+}
+
 NodeNotifyDeferredThreadGroup :: proc(self: rawptr, what: i64) -> bool {
     _, ok := ge.Call(self, "Node", "notify_deferred_thread_group", 1286410249, {ge.ValueInt(what)})
+    return ok
+}
+
+NodeSetThreadSafe :: proc(self: rawptr, property: string, value: ge.Value) -> bool {
+    _, ok := ge.Call(self, "Node", "set_thread_safe", 3776071444, {ge.ValueText(property), value})
     return ok
 }
 
@@ -791,6 +926,16 @@ Node2DGetGlobalScale :: proc(self: rawptr) -> ([2]f64, bool) {
     return [2]f64{result.real[0], result.real[1]}, ok
 }
 
+Node2DSetTransform :: proc(self: rawptr, xform: []f32) -> bool {
+    _, ok := ge.Call(self, "Node2D", "set_transform", 2761652528, {ge.Value{kind = .TRANSFORM2D, floats32 = xform}})
+    return ok
+}
+
+Node2DSetGlobalTransform :: proc(self: rawptr, xform: []f32) -> bool {
+    _, ok := ge.Call(self, "Node2D", "set_global_transform", 2761652528, {ge.Value{kind = .TRANSFORM2D, floats32 = xform}})
+    return ok
+}
+
 Node2DLookAt :: proc(self: rawptr, point: [2]f64) -> bool {
     _, ok := ge.Call(self, "Node2D", "look_at", 743155724, {ge.ValueVector2(point[0], point[1])})
     return ok
@@ -811,7 +956,22 @@ Node2DToGlobal :: proc(self: rawptr, local_point: [2]f64) -> ([2]f64, bool) {
     return [2]f64{result.real[0], result.real[1]}, ok
 }
 
+Node2DGetRelativeTransformToParent :: proc(self: rawptr, parent: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "Node2D", "get_relative_transform_to_parent", 904556875, {ge.ValueObject(parent)})
+    return result.floats32, ok
+}
+
 // ---- Node3D ----
+
+Node3DSetTransform :: proc(self: rawptr, local: []f32) -> bool {
+    _, ok := ge.Call(self, "Node3D", "set_transform", 2952846383, {ge.Value{kind = .TRANSFORM3D, floats32 = local}})
+    return ok
+}
+
+Node3DGetTransform :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "Node3D", "get_transform", 3229777777, {})
+    return result.floats32, ok
+}
 
 Node3DSetPosition :: proc(self: rawptr, position: [3]f64) -> bool {
     _, ok := ge.Call(self, "Node3D", "set_position", 3460891852, {ge.ValueVector3(position[0], position[1], position[2])})
@@ -873,6 +1033,41 @@ Node3DGetScale :: proc(self: rawptr) -> ([3]f64, bool) {
     return [3]f64{result.real[0], result.real[1], result.real[2]}, ok
 }
 
+Node3DSetQuaternion :: proc(self: rawptr, quaternion: [4]f64) -> bool {
+    _, ok := ge.Call(self, "Node3D", "set_quaternion", 1727505552, {ge.Value{kind = .QUATERNION, real = {quaternion[0], quaternion[1], quaternion[2], quaternion[3]}}})
+    return ok
+}
+
+Node3DGetQuaternion :: proc(self: rawptr) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "Node3D", "get_quaternion", 1222331677, {})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
+}
+
+Node3DSetBasis :: proc(self: rawptr, basis: []f32) -> bool {
+    _, ok := ge.Call(self, "Node3D", "set_basis", 1055510324, {ge.Value{kind = .BASIS, floats32 = basis}})
+    return ok
+}
+
+Node3DGetBasis :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "Node3D", "get_basis", 2716978435, {})
+    return result.floats32, ok
+}
+
+Node3DSetGlobalTransform :: proc(self: rawptr, global: []f32) -> bool {
+    _, ok := ge.Call(self, "Node3D", "set_global_transform", 2952846383, {ge.Value{kind = .TRANSFORM3D, floats32 = global}})
+    return ok
+}
+
+Node3DGetGlobalTransform :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "Node3D", "get_global_transform", 3229777777, {})
+    return result.floats32, ok
+}
+
+Node3DGetGlobalTransformInterpolated :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "Node3D", "get_global_transform_interpolated", 4183770049, {})
+    return result.floats32, ok
+}
+
 Node3DSetGlobalPosition :: proc(self: rawptr, position: [3]f64) -> bool {
     _, ok := ge.Call(self, "Node3D", "set_global_position", 3460891852, {ge.ValueVector3(position[0], position[1], position[2])})
     return ok
@@ -881,6 +1076,16 @@ Node3DSetGlobalPosition :: proc(self: rawptr, position: [3]f64) -> bool {
 Node3DGetGlobalPosition :: proc(self: rawptr) -> ([3]f64, bool) {
     result, ok := ge.Call(self, "Node3D", "get_global_position", 3360562783, {})
     return [3]f64{result.real[0], result.real[1], result.real[2]}, ok
+}
+
+Node3DSetGlobalBasis :: proc(self: rawptr, basis: []f32) -> bool {
+    _, ok := ge.Call(self, "Node3D", "set_global_basis", 1055510324, {ge.Value{kind = .BASIS, floats32 = basis}})
+    return ok
+}
+
+Node3DGetGlobalBasis :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "Node3D", "get_global_basis", 2716978435, {})
+    return result.floats32, ok
 }
 
 Node3DSetGlobalRotation :: proc(self: rawptr, euler_radians: [3]f64) -> bool {
@@ -963,8 +1168,18 @@ Node3DAddGizmo :: proc(self: rawptr, gizmo: rawptr) -> bool {
     return ok
 }
 
+Node3DGetGizmos :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Node3D", "get_gizmos", 3995934104, {})
+    return result.items, ok
+}
+
 Node3DClearGizmos :: proc(self: rawptr) -> bool {
     _, ok := ge.Call(self, "Node3D", "clear_gizmos", 3218959716, {})
+    return ok
+}
+
+Node3DSetSubgizmoSelection :: proc(self: rawptr, gizmo: rawptr, id: i64, transform: []f32) -> bool {
+    _, ok := ge.Call(self, "Node3D", "set_subgizmo_selection", 3317607635, {ge.ValueObject(gizmo), ge.ValueInt(id), ge.Value{kind = .TRANSFORM3D, floats32 = transform}})
     return ok
 }
 
@@ -1160,6 +1375,26 @@ CanvasItemGetLightMask :: proc(self: rawptr) -> (i64, bool) {
     return result.number, ok
 }
 
+CanvasItemSetModulate :: proc(self: rawptr, modulate: [4]f64) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "set_modulate", 2920490490, {ge.Value{kind = .COLOR, real = {modulate[0], modulate[1], modulate[2], modulate[3]}}})
+    return ok
+}
+
+CanvasItemGetModulate :: proc(self: rawptr) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "CanvasItem", "get_modulate", 3444240500, {})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
+}
+
+CanvasItemSetSelfModulate :: proc(self: rawptr, self_modulate: [4]f64) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "set_self_modulate", 2920490490, {ge.Value{kind = .COLOR, real = {self_modulate[0], self_modulate[1], self_modulate[2], self_modulate[3]}}})
+    return ok
+}
+
+CanvasItemGetSelfModulate :: proc(self: rawptr) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "CanvasItem", "get_self_modulate", 3444240500, {})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
+}
+
 CanvasItemSetZIndex :: proc(self: rawptr, z_index: i64) -> bool {
     _, ok := ge.Call(self, "CanvasItem", "set_z_index", 1286410249, {ge.ValueInt(z_index)})
     return ok
@@ -1200,6 +1435,91 @@ CanvasItemIsDrawBehindParentEnabled :: proc(self: rawptr) -> (bool, bool) {
     return result.number != 0, ok
 }
 
+CanvasItemDrawLine :: proc(self: rawptr, from: [2]f64, to: [2]f64, color: [4]f64, width: f64 = -1.0, antialiased: bool = false) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_line", 1562330099, {ge.ValueVector2(from[0], from[1]), ge.ValueVector2(to[0], to[1]), ge.Value{kind = .COLOR, real = {color[0], color[1], color[2], color[3]}}, ge.ValueFloat(width), ge.ValueBool(antialiased)})
+    return ok
+}
+
+CanvasItemDrawPolyline :: proc(self: rawptr, points: []f32, color: [4]f64, width: f64 = -1.0, antialiased: bool = false) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_polyline", 3797364428, {ge.Value{kind = .PACKED_VECTOR2S, floats32 = points}, ge.Value{kind = .COLOR, real = {color[0], color[1], color[2], color[3]}}, ge.ValueFloat(width), ge.ValueBool(antialiased)})
+    return ok
+}
+
+CanvasItemDrawPolylineColors :: proc(self: rawptr, points: []f32, colors: []f32, width: f64 = -1.0, antialiased: bool = false) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_polyline_colors", 2311979562, {ge.Value{kind = .PACKED_VECTOR2S, floats32 = points}, ge.Value{kind = .PACKED_COLORS, floats32 = colors}, ge.ValueFloat(width), ge.ValueBool(antialiased)})
+    return ok
+}
+
+CanvasItemDrawMultiline :: proc(self: rawptr, points: []f32, color: [4]f64, width: f64 = -1.0, antialiased: bool = false) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_multiline", 3797364428, {ge.Value{kind = .PACKED_VECTOR2S, floats32 = points}, ge.Value{kind = .COLOR, real = {color[0], color[1], color[2], color[3]}}, ge.ValueFloat(width), ge.ValueBool(antialiased)})
+    return ok
+}
+
+CanvasItemDrawMultilineColors :: proc(self: rawptr, points: []f32, colors: []f32, width: f64 = -1.0, antialiased: bool = false) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_multiline_colors", 2311979562, {ge.Value{kind = .PACKED_VECTOR2S, floats32 = points}, ge.Value{kind = .PACKED_COLORS, floats32 = colors}, ge.ValueFloat(width), ge.ValueBool(antialiased)})
+    return ok
+}
+
+CanvasItemDrawRect :: proc(self: rawptr, rect: [4]f64, color: [4]f64, filled: bool = true, width: f64 = -1.0, antialiased: bool = false) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_rect", 2773573813, {ge.Value{kind = .RECT2, real = {rect[0], rect[1], rect[2], rect[3]}}, ge.Value{kind = .COLOR, real = {color[0], color[1], color[2], color[3]}}, ge.ValueBool(filled), ge.ValueFloat(width), ge.ValueBool(antialiased)})
+    return ok
+}
+
+CanvasItemDrawCircle :: proc(self: rawptr, position: [2]f64, radius: f64, color: [4]f64, filled: bool = true, width: f64 = -1.0, antialiased: bool = false) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_circle", 3153026596, {ge.ValueVector2(position[0], position[1]), ge.ValueFloat(radius), ge.Value{kind = .COLOR, real = {color[0], color[1], color[2], color[3]}}, ge.ValueBool(filled), ge.ValueFloat(width), ge.ValueBool(antialiased)})
+    return ok
+}
+
+CanvasItemDrawTexture :: proc(self: rawptr, texture: rawptr, position: [2]f64, modulate: [4]f64) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_texture", 520200117, {ge.ValueObject(texture), ge.ValueVector2(position[0], position[1]), ge.Value{kind = .COLOR, real = {modulate[0], modulate[1], modulate[2], modulate[3]}}})
+    return ok
+}
+
+CanvasItemDrawTextureRect :: proc(self: rawptr, texture: rawptr, rect: [4]f64, tile: bool, modulate: [4]f64, transpose: bool = false) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_texture_rect", 3832805018, {ge.ValueObject(texture), ge.Value{kind = .RECT2, real = {rect[0], rect[1], rect[2], rect[3]}}, ge.ValueBool(tile), ge.Value{kind = .COLOR, real = {modulate[0], modulate[1], modulate[2], modulate[3]}}, ge.ValueBool(transpose)})
+    return ok
+}
+
+CanvasItemDrawTextureRectRegion :: proc(self: rawptr, texture: rawptr, rect: [4]f64, src_rect: [4]f64, modulate: [4]f64, transpose: bool = false, clip_uv: bool = true) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_texture_rect_region", 3883821411, {ge.ValueObject(texture), ge.Value{kind = .RECT2, real = {rect[0], rect[1], rect[2], rect[3]}}, ge.Value{kind = .RECT2, real = {src_rect[0], src_rect[1], src_rect[2], src_rect[3]}}, ge.Value{kind = .COLOR, real = {modulate[0], modulate[1], modulate[2], modulate[3]}}, ge.ValueBool(transpose), ge.ValueBool(clip_uv)})
+    return ok
+}
+
+CanvasItemDrawLcdTextureRectRegion :: proc(self: rawptr, texture: rawptr, rect: [4]f64, src_rect: [4]f64, modulate: [4]f64) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_lcd_texture_rect_region", 3212350954, {ge.ValueObject(texture), ge.Value{kind = .RECT2, real = {rect[0], rect[1], rect[2], rect[3]}}, ge.Value{kind = .RECT2, real = {src_rect[0], src_rect[1], src_rect[2], src_rect[3]}}, ge.Value{kind = .COLOR, real = {modulate[0], modulate[1], modulate[2], modulate[3]}}})
+    return ok
+}
+
+CanvasItemDrawStyleBox :: proc(self: rawptr, style_box: rawptr, rect: [4]f64) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_style_box", 388176283, {ge.ValueObject(style_box), ge.Value{kind = .RECT2, real = {rect[0], rect[1], rect[2], rect[3]}}})
+    return ok
+}
+
+CanvasItemDrawPrimitive :: proc(self: rawptr, points: []f32, colors: []f32, uvs: []f32, texture: rawptr) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_primitive", 3288481815, {ge.Value{kind = .PACKED_VECTOR2S, floats32 = points}, ge.Value{kind = .PACKED_COLORS, floats32 = colors}, ge.Value{kind = .PACKED_VECTOR2S, floats32 = uvs}, ge.ValueObject(texture)})
+    return ok
+}
+
+CanvasItemDrawPolygon :: proc(self: rawptr, points: []f32, colors: []f32, uvs: []f32, texture: rawptr) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_polygon", 974537912, {ge.Value{kind = .PACKED_VECTOR2S, floats32 = points}, ge.Value{kind = .PACKED_COLORS, floats32 = colors}, ge.Value{kind = .PACKED_VECTOR2S, floats32 = uvs}, ge.ValueObject(texture)})
+    return ok
+}
+
+CanvasItemDrawColoredPolygon :: proc(self: rawptr, points: []f32, color: [4]f64, uvs: []f32, texture: rawptr) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_colored_polygon", 15245644, {ge.Value{kind = .PACKED_VECTOR2S, floats32 = points}, ge.Value{kind = .COLOR, real = {color[0], color[1], color[2], color[3]}}, ge.Value{kind = .PACKED_VECTOR2S, floats32 = uvs}, ge.ValueObject(texture)})
+    return ok
+}
+
+CanvasItemDrawChar :: proc(self: rawptr, font: rawptr, pos: [2]f64, char: string, font_size: i64 = 16, modulate: [4]f64, oversampling: f64 = 0.0) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_char", 1336210142, {ge.ValueObject(font), ge.ValueVector2(pos[0], pos[1]), ge.ValueText(char), ge.ValueInt(font_size), ge.Value{kind = .COLOR, real = {modulate[0], modulate[1], modulate[2], modulate[3]}}, ge.ValueFloat(oversampling)})
+    return ok
+}
+
+CanvasItemDrawMesh :: proc(self: rawptr, mesh: rawptr, texture: rawptr, transform: []f32, modulate: [4]f64) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_mesh", 153818295, {ge.ValueObject(mesh), ge.ValueObject(texture), ge.Value{kind = .TRANSFORM2D, floats32 = transform}, ge.Value{kind = .COLOR, real = {modulate[0], modulate[1], modulate[2], modulate[3]}}})
+    return ok
+}
+
 CanvasItemDrawMultimesh :: proc(self: rawptr, multimesh: rawptr, texture: rawptr) -> bool {
     _, ok := ge.Call(self, "CanvasItem", "draw_multimesh", 937992368, {ge.ValueObject(multimesh), ge.ValueObject(texture)})
     return ok
@@ -1207,6 +1527,11 @@ CanvasItemDrawMultimesh :: proc(self: rawptr, multimesh: rawptr, texture: rawptr
 
 CanvasItemDrawSetTransform :: proc(self: rawptr, position: [2]f64, rotation: f64 = 0.0, scale: [2]f64) -> bool {
     _, ok := ge.Call(self, "CanvasItem", "draw_set_transform", 288975085, {ge.ValueVector2(position[0], position[1]), ge.ValueFloat(rotation), ge.ValueVector2(scale[0], scale[1])})
+    return ok
+}
+
+CanvasItemDrawSetTransformMatrix :: proc(self: rawptr, xform: []f32) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "draw_set_transform_matrix", 2761652528, {ge.Value{kind = .TRANSFORM2D, floats32 = xform}})
     return ok
 }
 
@@ -1218,6 +1543,41 @@ CanvasItemDrawAnimationSlice :: proc(self: rawptr, animation_length: f64, slice_
 CanvasItemDrawEndAnimation :: proc(self: rawptr) -> bool {
     _, ok := ge.Call(self, "CanvasItem", "draw_end_animation", 3218959716, {})
     return ok
+}
+
+CanvasItemGetTransform :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "CanvasItem", "get_transform", 3814499831, {})
+    return result.floats32, ok
+}
+
+CanvasItemGetGlobalTransform :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "CanvasItem", "get_global_transform", 3814499831, {})
+    return result.floats32, ok
+}
+
+CanvasItemGetGlobalTransformWithCanvas :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "CanvasItem", "get_global_transform_with_canvas", 3814499831, {})
+    return result.floats32, ok
+}
+
+CanvasItemGetViewportTransform :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "CanvasItem", "get_viewport_transform", 3814499831, {})
+    return result.floats32, ok
+}
+
+CanvasItemGetViewportRect :: proc(self: rawptr) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "CanvasItem", "get_viewport_rect", 1639390495, {})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
+}
+
+CanvasItemGetCanvasTransform :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "CanvasItem", "get_canvas_transform", 3814499831, {})
+    return result.floats32, ok
+}
+
+CanvasItemGetScreenTransform :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "CanvasItem", "get_screen_transform", 3814499831, {})
+    return result.floats32, ok
 }
 
 CanvasItemGetLocalMousePosition :: proc(self: rawptr) -> ([2]f64, bool) {
@@ -1248,6 +1608,16 @@ CanvasItemSetMaterial :: proc(self: rawptr, material: rawptr) -> bool {
 CanvasItemGetMaterial :: proc(self: rawptr) -> (rawptr, bool) {
     result, ok := ge.Call(self, "CanvasItem", "get_material", 5934680, {})
     return result.object, ok
+}
+
+CanvasItemSetInstanceShaderParameter :: proc(self: rawptr, name: string, value: ge.Value) -> bool {
+    _, ok := ge.Call(self, "CanvasItem", "set_instance_shader_parameter", 3776071444, {ge.ValueText(name), value})
+    return ok
+}
+
+CanvasItemGetInstanceShaderParameter :: proc(self: rawptr, name: string) -> (ge.Value, bool) {
+    result, ok := ge.Call(self, "CanvasItem", "get_instance_shader_parameter", 2760726917, {ge.ValueText(name)})
+    return result, ok
 }
 
 CanvasItemSetUseParentMaterial :: proc(self: rawptr, enable: bool) -> bool {
@@ -1577,6 +1947,16 @@ ControlGetScreenPosition :: proc(self: rawptr) -> ([2]f64, bool) {
     return [2]f64{result.real[0], result.real[1]}, ok
 }
 
+ControlGetRect :: proc(self: rawptr) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "Control", "get_rect", 1639390495, {})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
+}
+
+ControlGetGlobalRect :: proc(self: rawptr) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "Control", "get_global_rect", 1639390495, {})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
+}
+
 ControlSetFocusMode :: proc(self: rawptr, mode: i64) -> bool {
     _, ok := ge.Call(self, "Control", "set_focus_mode", 3232914922, {ge.ValueInt(mode)})
     return ok
@@ -1792,6 +2172,11 @@ ControlAddThemeFontSizeOverride :: proc(self: rawptr, name: string, font_size: i
     return ok
 }
 
+ControlAddThemeColorOverride :: proc(self: rawptr, name: string, color: [4]f64) -> bool {
+    _, ok := ge.Call(self, "Control", "add_theme_color_override", 4260178595, {ge.ValueText(name), ge.Value{kind = .COLOR, real = {color[0], color[1], color[2], color[3]}}})
+    return ok
+}
+
 ControlAddThemeConstantOverride :: proc(self: rawptr, name: string, constant: i64) -> bool {
     _, ok := ge.Call(self, "Control", "add_theme_constant_override", 2415702435, {ge.ValueText(name), ge.ValueInt(constant)})
     return ok
@@ -1845,6 +2230,11 @@ ControlGetThemeFont :: proc(self: rawptr, name: string, theme_type: string) -> (
 ControlGetThemeFontSize :: proc(self: rawptr, name: string, theme_type: string) -> (i64, bool) {
     result, ok := ge.Call(self, "Control", "get_theme_font_size", 1327056374, {ge.ValueText(name), ge.ValueText(theme_type)})
     return result.number, ok
+}
+
+ControlGetThemeColor :: proc(self: rawptr, name: string, theme_type: string) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "Control", "get_theme_color", 2798751242, {ge.ValueText(name), ge.ValueText(theme_type)})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
 }
 
 ControlGetThemeConstant :: proc(self: rawptr, name: string, theme_type: string) -> (i64, bool) {
@@ -2032,6 +2422,11 @@ ControlGetFocusPrevious :: proc(self: rawptr) -> (string, bool) {
     return string(result.text), ok
 }
 
+ControlForceDrag :: proc(self: rawptr, data: ge.Value, preview: rawptr) -> bool {
+    _, ok := ge.Call(self, "Control", "force_drag", 3191844692, {data, ge.ValueObject(preview)})
+    return ok
+}
+
 ControlAccessibilityDrag :: proc(self: rawptr) -> bool {
     _, ok := ge.Call(self, "Control", "accessibility_drag", 3218959716, {})
     return ok
@@ -2070,6 +2465,26 @@ ControlSetAccessibilityLive :: proc(self: rawptr, mode: i64) -> bool {
 ControlGetAccessibilityLive :: proc(self: rawptr) -> (i64, bool) {
     result, ok := ge.Call(self, "Control", "get_accessibility_live", 2858591811, {})
     return result.number, ok
+}
+
+ControlGetAccessibilityControlsNodes :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Control", "get_accessibility_controls_nodes", 3995934104, {})
+    return result.items, ok
+}
+
+ControlGetAccessibilityDescribedByNodes :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Control", "get_accessibility_described_by_nodes", 3995934104, {})
+    return result.items, ok
+}
+
+ControlGetAccessibilityLabeledByNodes :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Control", "get_accessibility_labeled_by_nodes", 3995934104, {})
+    return result.items, ok
+}
+
+ControlGetAccessibilityFlowToNodes :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Control", "get_accessibility_flow_to_nodes", 3995934104, {})
+    return result.items, ok
 }
 
 ControlSetMouseFilter :: proc(self: rawptr, filter: i64) -> bool {
@@ -2304,6 +2719,16 @@ LabelIsClippingText :: proc(self: rawptr) -> (bool, bool) {
     return result.number != 0, ok
 }
 
+LabelSetTabStops :: proc(self: rawptr, tab_stops: []f32) -> bool {
+    _, ok := ge.Call(self, "Label", "set_tab_stops", 2899603908, {ge.Value{kind = .PACKED_FLOAT32S, floats32 = tab_stops}})
+    return ok
+}
+
+LabelGetTabStops :: proc(self: rawptr) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "Label", "get_tab_stops", 675695659, {})
+    return result.floats32, ok
+}
+
 LabelSetTextOverrunBehavior :: proc(self: rawptr, overrun_behavior: i64) -> bool {
     _, ok := ge.Call(self, "Label", "set_text_overrun_behavior", 1008890932, {ge.ValueInt(overrun_behavior)})
     return ok
@@ -2412,6 +2837,21 @@ LabelSetStructuredTextBidiOverride :: proc(self: rawptr, parser: i64) -> bool {
 LabelGetStructuredTextBidiOverride :: proc(self: rawptr) -> (i64, bool) {
     result, ok := ge.Call(self, "Label", "get_structured_text_bidi_override", 3385126229, {})
     return result.number, ok
+}
+
+LabelSetStructuredTextBidiOverrideOptions :: proc(self: rawptr, args: []ge.Value) -> bool {
+    _, ok := ge.Call(self, "Label", "set_structured_text_bidi_override_options", 381264803, {ge.ValueArray(args)})
+    return ok
+}
+
+LabelGetStructuredTextBidiOverrideOptions :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Label", "get_structured_text_bidi_override_options", 3995934104, {})
+    return result.items, ok
+}
+
+LabelGetCharacterBounds :: proc(self: rawptr, pos: i64) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "Label", "get_character_bounds", 3327874267, {ge.ValueInt(pos)})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
 }
 
 // ---- Timer ----

@@ -18,5 +18,6 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (medium) Build tool: try it on Linux and macOS (the file names are written for all three, only Windows was run); cross builds
 - [x] Objects as values (`OBJECT`) and engine calls from Odin (`ge.Call(object, class, method, hash, args)`, binds cached)
 - [x] Typed wrappers for engine classes generated from `extension_api.json` (`tool/bindings`, package `engine`: Object, Node, Node2D, Node3D, CanvasItem, Control, Label, Timer)
-- [ ] (low) Wrappers for methods with Array, Dictionary, Callable, Vector2i, Color, Rect2 ... arguments (needs those value kinds); more classes in `engine/` on demand
+- [x] Wrappers for methods with Array, Dictionary, Variant, Vector2i, Color, Rect2 and the other structs and packed arrays as arguments or results (tool/bindings; typed Arrays only as results); 495 wrappers became 583 for the same classes
+- [ ] (low) Wrappers for methods with Callable, Signal or RID; more classes in `engine/` on demand
 - [ ] (low) Hot reload of the extension (`recreate_instance_func`)

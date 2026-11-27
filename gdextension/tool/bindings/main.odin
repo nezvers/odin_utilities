@@ -7,7 +7,7 @@ package main
 // generated: do not edit it, run the tool again (with the same class list) after a Godot update.
 //
 // Only what `ge.Call` can carry is written: methods of the class itself (inherited ones are in the wrappers of the parent class: pass a Node2D to `NodeGetChildCount`), not static, not virtual, not
-// vararg, up to 6 arguments, and with bool, int (enums and bitfields too), float, String, StringName, NodePath, Vector2, Vector3 and engine class types (a Node, a Resource ...) as arguments and result.
+// vararg, up to 6 arguments, and with bool, int (enums and bitfields too), float, String, StringName, NodePath, the plain structs (Vector2i, Rect2, Color, Transform3D ...), Array, Dictionary, Variant, the packed arrays and engine class types (a Node, a Resource ...) as arguments and result.
 // Strings that come back live in temp memory (copy them when they are needed after the call). A wrapper returns the result and an `ok` that is false when the engine refused the call.
 
 import "core:encoding/json"
@@ -25,6 +25,80 @@ Kind :: enum {
     VECTOR2,
     VECTOR3,
     OBJECT,
+    VECTOR2I,
+    VECTOR3I,
+    VECTOR4,
+    VECTOR4I,
+    RECT2,
+    RECT2I,
+    COLOR,
+    QUATERNION,
+    PLANE,
+    AABB,
+    TRANSFORM2D,
+    BASIS,
+    TRANSFORM3D,
+    PROJECTION,
+    ARRAY,
+    DICTIONARY,
+    VARIANT,
+    BYTES,
+    PACKED_INTS,
+    PACKED_INTS32,
+    PACKED_FLOATS,
+    PACKED_FLOATS32,
+    PACKED_STRINGS,
+    PACKED_VECTOR2S,
+    PACKED_VECTOR3S,
+    PACKED_COLORS,
+}
+
+// The kinds whose numbers are in `Value.real` (up to four): how many, and whether they are 32 bit integers
+@(private)
+smallOf :: proc(kind: Kind) -> (count: int, ints: bool, ok: bool) {
+    #partial switch kind {
+    case .VECTOR2I: return 2, true, true
+    case .VECTOR3I: return 3, true, true
+    case .VECTOR4: return 4, false, true
+    case .VECTOR4I: return 4, true, true
+    case .RECT2: return 4, false, true
+    case .RECT2I: return 4, true, true
+    case .COLOR: return 4, false, true
+    case .QUATERNION: return 4, false, true
+    case .PLANE: return 4, false, true
+    }
+    return 0, false, false
+}
+
+// The name of the `ge.ValueKind` of a kind (the ones that go with a slice or a struct)
+@(private)
+valueKindName :: proc(kind: Kind) -> string {
+    #partial switch kind {
+    case .VECTOR2I: return ".VECTOR2I"
+    case .VECTOR3I: return ".VECTOR3I"
+    case .VECTOR4: return ".VECTOR4"
+    case .VECTOR4I: return ".VECTOR4I"
+    case .RECT2: return ".RECT2"
+    case .RECT2I: return ".RECT2I"
+    case .COLOR: return ".COLOR"
+    case .QUATERNION: return ".QUATERNION"
+    case .PLANE: return ".PLANE"
+    case .AABB: return ".AABB"
+    case .TRANSFORM2D: return ".TRANSFORM2D"
+    case .BASIS: return ".BASIS"
+    case .TRANSFORM3D: return ".TRANSFORM3D"
+    case .PROJECTION: return ".PROJECTION"
+    case .BYTES: return ".BYTES"
+    case .PACKED_INTS: return ".PACKED_INTS"
+    case .PACKED_INTS32: return ".PACKED_INT32S"
+    case .PACKED_FLOATS: return ".PACKED_FLOATS"
+    case .PACKED_FLOATS32: return ".PACKED_FLOAT32S"
+    case .PACKED_STRINGS: return ".PACKED_STRINGS"
+    case .PACKED_VECTOR2S: return ".PACKED_VECTOR2S"
+    case .PACKED_VECTOR3S: return ".PACKED_VECTOR3S"
+    case .PACKED_COLORS: return ".PACKED_COLORS"
+    }
+    return ""
 }
 
 main :: proc() {
@@ -178,7 +252,8 @@ is_flag :: proc(object: json.Object, key: string) -> bool {
     return bool(value)
 }
 
-// What a type of the dump is for `ge.Call`; NONE when it cannot be carried (an Array, a Callable, a Vector2i ...). A StringName or NodePath is sent as a String, and comes back as one.
+// What a type of the dump is for `ge.Call`; NONE when it cannot be carried (a Callable, a Signal, an RID, a typed Array as an argument ...). A StringName or NodePath is sent as a String, and
+// comes back as one. A typed Array (`typedarray::Node`) is only taken as a result: the engine checks the type of an argument, and an Array made here has none.
 @(private)
 kindOf :: proc(type: string, known: map[string]bool, is_result: bool) -> Kind {
     switch type {
@@ -188,7 +263,34 @@ kindOf :: proc(type: string, known: map[string]bool, is_result: bool) -> Kind {
     case "String", "StringName", "NodePath": return .STRING
     case "Vector2": return .VECTOR2
     case "Vector3": return .VECTOR3
+    case "Vector2i": return .VECTOR2I
+    case "Vector3i": return .VECTOR3I
+    case "Vector4": return .VECTOR4
+    case "Vector4i": return .VECTOR4I
+    case "Rect2": return .RECT2
+    case "Rect2i": return .RECT2I
+    case "Color": return .COLOR
+    case "Quaternion": return .QUATERNION
+    case "Plane": return .PLANE
+    case "AABB": return .AABB
+    case "Transform2D": return .TRANSFORM2D
+    case "Basis": return .BASIS
+    case "Transform3D": return .TRANSFORM3D
+    case "Projection": return .PROJECTION
+    case "Array": return .ARRAY
+    case "Dictionary": return .DICTIONARY
+    case "Variant": return .VARIANT
+    case "PackedByteArray": return .BYTES
+    case "PackedInt64Array": return .PACKED_INTS
+    case "PackedInt32Array": return .PACKED_INTS32
+    case "PackedFloat64Array": return .PACKED_FLOATS
+    case "PackedFloat32Array": return .PACKED_FLOATS32
+    case "PackedStringArray": return .PACKED_STRINGS
+    case "PackedVector2Array": return .PACKED_VECTOR2S
+    case "PackedVector3Array": return .PACKED_VECTOR3S
+    case "PackedColorArray": return .PACKED_COLORS
     }
+    if is_result && strings.has_prefix(type, "typedarray::") { return .ARRAY }
     if strings.has_prefix(type, "enum::") || strings.has_prefix(type, "bitfield::") { return .INT }
     if type in known { return .OBJECT }
     return .NONE
@@ -204,6 +306,16 @@ odinType :: proc(kind: Kind) -> string {
     case .VECTOR2: return "[2]f64"
     case .VECTOR3: return "[3]f64"
     case .OBJECT: return "rawptr"
+    case .ARRAY, .PACKED_STRINGS: return "[]ge.Value"
+    case .DICTIONARY, .VARIANT: return "ge.Value"
+    case .BYTES: return "[]u8"
+    case .PACKED_INTS: return "[]i64"
+    case .PACKED_INTS32: return "[]i32"
+    case .PACKED_FLOATS: return "[]f64"
+    case .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION, .PACKED_FLOATS32, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: return "[]f32"
+    case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE:
+        count, ints, _ := smallOf(kind)
+        return fmt.tprintf("[%d]%s", count, "i64" if ints else "f64")
     case .NONE: return ""
     }
     return ""
@@ -219,6 +331,20 @@ toValue :: proc(kind: Kind, name: string) -> string {
     case .VECTOR2: return fmt.tprintf("ge.ValueVector2(%s[0], %s[1])", name, name)
     case .VECTOR3: return fmt.tprintf("ge.ValueVector3(%s[0], %s[1], %s[2])", name, name, name)
     case .OBJECT: return fmt.tprintf("ge.ValueObject(%s)", name)
+    case .ARRAY: return fmt.tprintf("ge.ValueArray(%s)", name)
+    case .DICTIONARY, .VARIANT: return name
+    case .PACKED_STRINGS: return fmt.tprintf("ge.Value{{kind = .PACKED_STRINGS, items = %s}}", name)
+    case .BYTES: return fmt.tprintf("ge.Value{{kind = .BYTES, text = %s}}", name)
+    case .PACKED_INTS: return fmt.tprintf("ge.Value{{kind = .PACKED_INTS, ints = %s}}", name)
+    case .PACKED_INTS32: return fmt.tprintf("ge.Value{{kind = .PACKED_INT32S, ints32 = %s}}", name)
+    case .PACKED_FLOATS: return fmt.tprintf("ge.Value{{kind = .PACKED_FLOATS, floats = %s}}", name)
+    case .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION, .PACKED_FLOATS32, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS:
+        return fmt.tprintf("ge.Value{{kind = %s, floats32 = %s}}", valueKindName(kind), name)
+    case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE:
+        count, ints, _ := smallOf(kind)
+        parts: [4]string
+        for i in 0 ..< count { parts[i] = fmt.tprintf("f64(%s[%d])", name, i) if ints else fmt.tprintf("%s[%d]", name, i) }
+        return fmt.tprintf("ge.Value{{kind = %s, real = {{%s}}}}", valueKindName(kind), strings.join(parts[:count], ", ", context.temp_allocator))
     case .NONE: return ""
     }
     return ""
@@ -234,6 +360,18 @@ fromValue :: proc(kind: Kind) -> string {
     case .VECTOR2: return "[2]f64{result.real[0], result.real[1]}"
     case .VECTOR3: return "[3]f64{result.real[0], result.real[1], result.real[2]}"
     case .OBJECT: return "result.object"
+    case .ARRAY, .PACKED_STRINGS: return "result.items"
+    case .DICTIONARY, .VARIANT: return "result"
+    case .BYTES: return "result.text"
+    case .PACKED_INTS: return "result.ints"
+    case .PACKED_INTS32: return "result.ints32"
+    case .PACKED_FLOATS: return "result.floats"
+    case .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION, .PACKED_FLOATS32, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: return "result.floats32"
+    case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE:
+        count, ints, _ := smallOf(kind)
+        parts: [4]string
+        for i in 0 ..< count { parts[i] = fmt.tprintf("i64(result.real[%d])", i) if ints else fmt.tprintf("result.real[%d]", i) }
+        return fmt.tprintf("%s{{%s}}", odinType(kind), strings.join(parts[:count], ", ", context.temp_allocator))
     case .NONE: return ""
     }
     return ""
@@ -258,6 +396,8 @@ defaultOf :: proc(kind: Kind, text: string) -> string {
         return text if strings.contains(text, ".") else fmt.tprintf("%s.0", text)
     case .STRING: if text == `""` { return text }
     case .VECTOR2, .VECTOR3, .OBJECT, .NONE:
+    case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION:
+    case .ARRAY, .DICTIONARY, .VARIANT, .BYTES, .PACKED_INTS, .PACKED_INTS32, .PACKED_FLOATS, .PACKED_FLOATS32, .PACKED_STRINGS, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS:
     }
     return ""
 }
@@ -303,7 +443,14 @@ test_wrappers_are_generated_from_the_dump :: proc(t: ^testing.T) {
     testing.expect(t, strings.contains(text, `ge.Call(self, "Node", "get_child_count", 894402480, {ge.ValueBool(include_internal)})`))
     testing.expect(t, strings.contains(text, "Node2DSetPosition :: proc(self: rawptr, position: [2]f64) -> bool {"))
     testing.expect(t, strings.contains(text, "NodeGetParent :: proc(self: rawptr) -> (rawptr, bool) {"))
-    testing.expect(t, !strings.contains(text, "NodeGetChildren"), "a method with an Array result is left out")
+    testing.expect(t, strings.contains(text, "NodeGetChildren :: proc(self: rawptr, include_internal: bool = false) -> ([]ge.Value, bool) {"), "a typed Array result is an Array of Values")
+    colored, colored_ok := Generate(api, {"CanvasItem", "Control", "Object"}, "engine", "..")
+    testing.expect(t, colored_ok)
+    testing.expect(t, strings.contains(colored, "CanvasItemSetModulate :: proc(self: rawptr, modulate: [4]f64) -> bool {"))
+    testing.expect(t, strings.contains(colored, "ge.Value{kind = .COLOR, real = {modulate[0], modulate[1], modulate[2], modulate[3]}}"))
+    testing.expect(t, strings.contains(colored, "ControlGetRect :: proc(self: rawptr) -> ([4]f64, bool) {"))
+    testing.expect(t, strings.contains(colored, "ObjectSetMeta :: proc(self: rawptr, name: string, value: ge.Value) -> bool {"), "a Variant argument is a Value")
+    testing.expect(t, strings.contains(colored, "ObjectGetMeta :: proc(self: rawptr, name: string, default: ge.Value) -> (ge.Value, bool) {"))
     _, missing := Generate(api, {"NoSuchClass"}, "engine", "..")
     testing.expect(t, !missing)
 }
