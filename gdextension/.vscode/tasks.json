@@ -20,6 +20,12 @@
             "group": "build"
         },
         {
+            "label": "Generate Engine Wrappers",
+            "type": "shell",
+            "command": "odin run tool/bindings -- --classes Object,Node,Node2D,Node3D,CanvasItem,Control,Label,Timer --out engine/engine.odin",
+            "group": "build"
+        },
+        {
             "label": "Dump Godot Interface",
             "type": "shell",
             "command": "cd godot_api && godot --headless --dump-extension-api --dump-gdextension-interface",

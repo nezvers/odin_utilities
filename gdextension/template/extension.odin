@@ -5,6 +5,7 @@ package gdextension_template
 
 import "core:strings"
 import ge "../../gdextension"
+import "../../gdextension/engine"
 
 // The state of one Counter object: what `create` returns is what every method receives as `instance`
 Counter :: struct {
@@ -145,16 +146,24 @@ counter_class: ge.Class = {
         }},
         // Objects and calls into the engine: the child count of a Node, its parent, and the position of a Node2D
         {"child_count", {.OBJECT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            count, _ := ge.Call(a[0].object, "Node", "get_child_count", 894402480, {})
-            return count
+            count, _ := engine.NodeGetChildCount(a[0].object)
+            return ge.ValueInt(count)
         }},
         {"parent_of", {.OBJECT}, .OBJECT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            parent, _ := ge.Call(a[0].object, "Node", "get_parent", 3160264692, {})
-            return parent
+            parent, _ := engine.NodeGetParent(a[0].object)
+            return ge.ValueObject(parent)
         }},
         {"place", {.OBJECT, .VECTOR2}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            _, ok := ge.Call(a[0].object, "Node2D", "set_position", 743155724, {a[1]})
+            ok := engine.Node2DSetPosition(a[0].object, {a[1].real[0], a[1].real[1]})
             return ge.ValueBool(ok)
+        }},
+        // the generated wrappers (tool/bindings): a StringName result comes back as text, and a String goes in
+        {"rename", {.OBJECT, .STRING}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            engine.NodeSetName(a[0].object, string(a[1].text))
+            name, _ := engine.NodeGetName(a[0].object)
+            counter: ^Counter = cast(^Counter)instance
+            count: int = copy(counter.greeting[:], name)
+            return ge.ValueText(string(counter.greeting[:count]))
         }},
         // several arguments
         {"mix", {.INT, .STRING, .BOOL}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {

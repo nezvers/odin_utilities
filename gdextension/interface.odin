@@ -27,6 +27,7 @@ GdVariantType :: enum u32 {
     VECTOR2 = 5,
     VECTOR3 = 9,
     STRING_NAME = 21,
+    NODE_PATH = 22,
     OBJECT = 24,
     DICTIONARY = 27,
     ARRAY = 28,
@@ -192,6 +193,7 @@ Interface :: struct {
     from_string_name: proc "c" (variant: ^GdVariant, value: rawptr),
     destroy_string_name: proc "c" (value: rawptr),
     variant_destroy: proc "c" (variant: ^GdVariant),
+    stringify: proc "c" (variant: ^GdVariant, result: ^GdString),
     register_property: proc "c" (library: GdLibrary, class_name: ^GdStringName, info: ^GdPropertyInfo, setter: ^GdStringName, getter: ^GdStringName),
     register_signal: proc "c" (library: GdLibrary, class_name: ^GdStringName, signal_name: ^GdStringName, arguments: [^]GdPropertyInfo, count: GdInt),
     get_method_bind: proc "c" (class_name: ^GdStringName, method_name: ^GdStringName, hash: GdInt) -> rawptr,
@@ -228,6 +230,7 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.unregister_class = auto_cast lookup(get, "classdb_unregister_extension_class", &ok)
     gd.variant_destroy = auto_cast lookup(get, "variant_destroy", &ok)
     gd.register_property = auto_cast lookup(get, "classdb_register_extension_class_property", &ok)
+    gd.stringify = auto_cast lookup(get, "variant_stringify", &ok)
     gd.register_signal = auto_cast lookup(get, "classdb_register_extension_class_signal", &ok)
     gd.get_method_bind = auto_cast lookup(get, "classdb_get_method_bind", &ok)
     gd.method_bind_call = auto_cast lookup(get, "object_method_bind_call", &ok)
@@ -384,6 +387,15 @@ variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator) -
         number: f64
         gd.to_float(&number, variant)
         return {kind = .FLOAT, real = {number, 0, 0, 0}}
+    case .STRING_NAME, .NODE_PATH:
+        // a StringName and a NodePath come back as the String of their text
+        text: GdString
+        gd.stringify(variant, &text)
+        length: int = int(gd.string_to_utf8(&text, nil, 0))
+        buffer: []u8 = make([]u8, length, allocator)
+        if length > 0 { gd.string_to_utf8(&text, raw_data(buffer), GdInt(length)) }
+        gd.destroy_string(&text)
+        return {kind = .STRING, text = buffer}
     case .STRING:
         text: GdString
         gd.to_string(&text, variant)
@@ -404,7 +416,7 @@ variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator) -
         object: rawptr
         gd.to_object(&object, variant)
         return {kind = .OBJECT, object = object}
-    case .NIL, .STRING_NAME, .DICTIONARY, .ARRAY, .PACKED_BYTE_ARRAY, .PACKED_INT64_ARRAY, .PACKED_FLOAT64_ARRAY, .PACKED_STRING_ARRAY:
+    case .NIL, .DICTIONARY, .ARRAY, .PACKED_BYTE_ARRAY, .PACKED_INT64_ARRAY, .PACKED_FLOAT64_ARRAY, .PACKED_STRING_ARRAY:
     }
     return {}
 }

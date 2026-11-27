@@ -54,6 +54,7 @@ func _init() -> void:
 	_check(failures, counter.parent_of(child) == holder, "an Object as a result: Node.get_parent")
 	_check(failures, counter.parent_of(holder) == null, "a null Object result")
 	_check(failures, counter.place(holder, Vector2(3, 4)) and holder.position == Vector2(3, 4), "an engine call with a Vector2: Node2D.set_position")
+	_check(failures, counter.rename(child, "Kid") == "Kid" and child.name == "Kid", "generated wrappers: Node.set_name and the StringName result of Node.get_name")
 	holder.free()
 	_check(failures, counter.is_even(4) and not counter.is_even(7), "is_even")
 	_check(failures, counter.greet("Godot") == "Hello, Godot!", "greet")
