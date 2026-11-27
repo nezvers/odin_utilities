@@ -2,12 +2,13 @@
 
 Next steps, most valuable first. A task starts with `(high)`, `(medium)` or `(low)`.
 
-- [x] Thread-safe queries: `QuerySession` (caller provided stamps, one per thread) on every query of the three trees
+- [x] Thread-safe queries: first with a `QuerySession`, now no query writes into a tree at all (ownership for rectangles, circles and segments), so the session and the stamps are gone
 - [x] Circle and segment queries and `SegmentFirst` (ray cast) on the immediate, retained and chunked trees
 - [x] Demo `ray cast and nearest` (demo_rays.odin) with a scripted brute force check
 - [x] Faster build and queries: loop descent, no marks for rectangle queries, rect copy in links, on the immediate and the retained tree (build 5.9 to 2.1 ms at 50k, grid 1.1; rectangle pass 17.9 to 13.3, grid 10.5)
 - [x] Circle queries without marks (ownership of the nearest point, descent like a rectangle): 34 to 24 ms at 50k; segments test the rectangle copy in the link first. Circle iterators on the immediate and retained tree
-- [ ] (low) Segment queries are still marked and 1.8x a rectangle pass: a descent that follows the segment through the nodes in order (a DDA like walk) would also make `SegmentFirst` stop early; ownership needs a robust point of the segment
+- [x] Segment queries without marks (owner = entry point rounded and clamped into the element, padded descent), session API removed
+- [ ] (low) Segment queries are 1.8x a rectangle pass (the slab test per link): a descent that follows the segment through the nodes in order (a DDA like walk) would also make `SegmentFirst` stop early; a segment iterator needs the padded box descent
 - [x] Nearest and k-nearest on the three trees (`QuadtreeNearest`, `QuadtreeRetainedNearest`, `QuadtreeChunksNearest`)
 - [x] Benchmarks against a uniform grid, `grid_collision_map` and brute force (`tool/bench`, findings in README): leaf 8 and depth 8 confirmed as the default
 - [x] Iterator queries without a result slice for rectangles and points on the three trees (`QueryIterator`, `QuadtreeChunksIterator`)

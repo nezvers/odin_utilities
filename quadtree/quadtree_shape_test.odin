@@ -2,6 +2,7 @@
 package quadtree
 
 import "core:math"
+import "core:mem"
 import "core:math/rand"
 import "core:slice"
 import "core:testing"
@@ -155,30 +156,27 @@ test_segment_edge_cases :: proc(t: ^testing.T) {
     testing.expect_value(t, QuadtreeQueryCircle(tree, {305, 45}, 8, out[:]), 1)
 }
 
-// One thread per session reads the same tree while nothing writes to it: the results equal the single thread ones and the tree itself (marks included) is untouched
-SessionJob :: struct {
+// Threads read the same tree while nothing writes to it: the results equal the single thread ones (segment queries included, they write no marks)
+ThreadJob :: struct {
     tree: ^ShapeTree,
-    stamps: [512]u32,
     centers: [64]Vec2,
     expected: [64]int,
     wrong: int,
 }
 
 @(private = "file")
-sessionWork :: proc(data: rawptr) {
-    job: ^SessionJob = cast(^SessionJob)data
-    session: QuerySession
-    QuerySessionInit(&session, job.stamps[:])
+threadWork :: proc(data: rawptr) {
+    job: ^ThreadJob = cast(^ThreadJob)data
     out: [512]Item
     for _ in 0 ..< 200 {
         for center, i in job.centers {
-            if QuadtreeQuerySegment(job.tree, center, center + {120, 70}, out[:], session = &session) != job.expected[i] { job.wrong += 1 }
+            if QuadtreeQuerySegment(job.tree, center, center + {120, 70}, out[:]) != job.expected[i] { job.wrong += 1 }
         }
     }
 }
 
 @(test)
-test_sessions_let_threads_query_one_tree :: proc(t: ^testing.T) {
+test_threads_query_one_tree_without_sessions :: proc(t: ^testing.T) {
     tree: ^ShapeTree = new(ShapeTree)
     defer free(tree)
     area: Rect = {0, 0, 1000, 800}
@@ -187,14 +185,10 @@ test_sessions_let_threads_query_one_tree :: proc(t: ^testing.T) {
     state: rand.Generator = rand.default_random_generator(&seed)
     rects: [400]Rect
     fillTree(tree, rects[:], state, area, 0)
-    stamps_before: [512]u32
-    for i in 0 ..< len(rects) { stamps_before[i] = tree.elements[i].stamp }
-    tree_stamp: u32 = tree.stamp
-
-    jobs: [4]^SessionJob
+    jobs: [4]^ThreadJob
     threads: [4]^thread.Thread
     for i in 0 ..< 4 {
-        jobs[i] = new(SessionJob)
+        jobs[i] = new(ThreadJob)
         jobs[i].tree = tree
         for k in 0 ..< 64 {
             jobs[i].centers[k] = {rand.float32(state) * 1000, rand.float32(state) * 800}
@@ -202,21 +196,17 @@ test_sessions_let_threads_query_one_tree :: proc(t: ^testing.T) {
             jobs[i].expected[k] = QuadtreeQuerySegment(tree, jobs[i].centers[k], jobs[i].centers[k] + {120, 70}, out[:])      // the single thread answer, with marks in the tree
         }
     }
-    tree_stamp = tree.stamp
-    for i in 0 ..< len(rects) { stamps_before[i] = tree.elements[i].stamp }
-    for i in 0 ..< 4 { threads[i] = thread.create_and_start_with_data(jobs[i], sessionWork) }
+    for i in 0 ..< 4 { threads[i] = thread.create_and_start_with_data(jobs[i], threadWork) }
     for i in 0 ..< 4 {
         thread.join(threads[i])
         thread.destroy(threads[i])
         testing.expect_value(t, jobs[i].wrong, 0)
         free(jobs[i])
     }
-    testing.expect_value(t, tree.stamp, tree_stamp)
-    for i in 0 ..< len(rects) { testing.expect_value(t, tree.elements[i].stamp, stamps_before[i]) }
 }
 
 @(test)
-test_a_session_gives_the_same_answers_as_the_marks_in_the_tree_and_survives_its_wrap_around :: proc(t: ^testing.T) {
+test_a_segment_reports_each_item_once_even_for_an_element_in_every_leaf :: proc(t: ^testing.T) {
     tree: ^ShapeTree = new(ShapeTree)
     defer free(tree)
     area: Rect = {0, 0, 1000, 800}
@@ -226,33 +216,25 @@ test_a_session_gives_the_same_answers_as_the_marks_in_the_tree_and_survives_its_
     rects: [200]Rect
     fillTree(tree, rects[:], state, area, 0)
     QuadtreeInsert(tree, {0, 0, 1000, 800}, 999)            // in every leaf: the dedupe matters
-    stamps: [512]u32
-    session: QuerySession
-    QuerySessionInit(&session, stamps[:])
-    session.stamp = max(u32) - 2                            // three queries later the number wraps around
-    out_a, out_b: [512]Item
-    for _ in 0 ..< 6 {
+    out: [512]Item
+    for _ in 0 ..< 200 {
         rect: Rect = randomShapeRect(state, area, 400)
         center: Vec2 = {rect.x + rect.w * 0.5, rect.y + rect.h * 0.5}
-        count_a: int = QuadtreeQuerySegment(tree, center, center + {rect.w, rect.h}, out_a[:])
-        count_b: int = QuadtreeQuerySegment(tree, center, center + {rect.w, rect.h}, out_b[:], session = &session)
-        count_c: int = QuadtreeQuery(tree, rect, out_a[:])
-        testing.expect_value(t, QuadtreeQuery(tree, rect, out_b[:], session = &session), count_c)
-        testing.expect_value(t, count_b, count_a)
-        testing.expect(t, count_a > 0)
+        count: int = QuadtreeQuerySegment(tree, center, center + {rect.w, rect.h}, out[:])
+        testing.expect(t, count > 0)
         seen: map[Item]bool
         seen.allocator = context.temp_allocator
-        for i in 0 ..< count_c {
-            testing.expect(t, out_b[i] not_in seen, "each item once")
-            seen[out_b[i]] = true
+        for i in 0 ..< count {
+            testing.expect(t, out[i] not_in seen, "each item once")
+            seen[out[i]] = true
         }
-        testing.expect_value(t, QuadtreeQueryPoint(tree, {rect.x, rect.y}, out_b[:], &session), QuadtreeQueryPoint(tree, {rect.x, rect.y}, out_a[:]))
+        testing.expect(t, 999 in seen, "the element that covers the tree is found")
     }
 }
 
-// The retained tree: the same shapes after adds, removals and moves (slots are reused: a session is indexed by the slot of the handle)
+// The retained tree: the same shapes after adds, removals and moves
 @(test)
-test_retained_circle_segment_and_session_queries_match_a_brute_force_search :: proc(t: ^testing.T) {
+test_retained_circle_and_segment_queries_match_a_brute_force_search :: proc(t: ^testing.T) {
     tree: ^RetainedTestTree = new(RetainedTestTree)
     defer free(tree)
     area: Rect = {0, 0, 1000, 800}
@@ -276,17 +258,13 @@ test_retained_circle_segment_and_session_queries_match_a_brute_force_search :: p
     far, _ := QuadtreeRetainedAdd(tree, {1500, 100, 30, 30})
     append(&handles, far)
 
-    stamps: [512]u32
-    session: QuerySession
-    QuerySessionInit(&session, stamps[:])
-    out, out_session: [512]Handle
+    out: [512]Handle
     for _ in 0 ..< 150 {
         center: Vec2 = {rand.float32(state) * 1700 - 100, rand.float32(state) * 800}
         radius: f32 = rand.float32(state) * 200
         a: Vec2 = {rand.float32(state) * 1700 - 100, rand.float32(state) * 900 - 50}
         b: Vec2 = {rand.float32(state) * 1700 - 100, rand.float32(state) * 900 - 50}
         circle: int = QuadtreeRetainedQueryCircle(tree, center, radius, out[:])
-        circle_session: int = QuadtreeRetainedQueryCircle(tree, center, radius, out_session[:], session = &session)
         segment: int = QuadtreeRetainedQuerySegment(tree, a, b, out[256:])
         expected_circle, expected_segment: int
         best: f32 = 2
@@ -300,7 +278,6 @@ test_retained_circle_segment_and_session_queries_match_a_brute_force_search :: p
             }
         }
         testing.expect_value(t, circle, expected_circle)
-        testing.expect_value(t, circle_session, expected_circle)
         testing.expect_value(t, segment, expected_segment)
         _, at, hit := QuadtreeRetainedSegmentFirst(tree, a, b)
         testing.expect_value(t, hit, best <= 1)
@@ -310,9 +287,9 @@ test_retained_circle_segment_and_session_queries_match_a_brute_force_search :: p
 
 ShapeWorld :: QuadtreeChunks(5, 5, 256, 200, 2048)
 
-// The chunked world far from the origin (a million units): circles, segments and sessions over several chunks, against a brute force search on offsets from that place
+// The chunked world far from the origin (a million units): circles and segments over several chunks, against a brute force search on offsets from that place
 @(test)
-test_chunked_circle_segment_and_session_queries_match_a_brute_force_search :: proc(t: ^testing.T) {
+test_chunked_circle_and_segment_queries_match_a_brute_force_search :: proc(t: ^testing.T) {
     world: ^ShapeWorld = new(ShapeWorld)
     defer free(world)
     BASE :: 1_000_000.0
@@ -332,17 +309,13 @@ test_chunked_circle_segment_and_session_queries_match_a_brute_force_search :: pr
     }
     testing.expect(t, inserted > 300)
 
-    stamps: [256]u32
-    session: QuerySession
-    QuerySessionInit(&session, stamps[:])
-    out, out_session: [512]Item
+    out: [512]Item
     for _ in 0 ..< 200 {
         c: Vec2 = {rand.float32(state) * 400 - 150, rand.float32(state) * 400 - 150}
         radius: f32 = rand.float32(state) * 150
         a: Vec2 = {rand.float32(state) * 400 - 150, rand.float32(state) * 400 - 150}
         b: Vec2 = {rand.float32(state) * 400 - 150, rand.float32(state) * 400 - 150}
         circle: int = QuadtreeChunksQueryCircle(world, {BASE + f64(c.x), BASE + f64(c.y)}, f64(radius), out[:])
-        circle_session: int = QuadtreeChunksQueryCircle(world, {BASE + f64(c.x), BASE + f64(c.y)}, f64(radius), out_session[:], session = &session)
         segment: int = QuadtreeChunksQuerySegment(world, {BASE + f64(a.x), BASE + f64(a.y)}, {BASE + f64(b.x), BASE + f64(b.y)}, out[256:])
         expected_circle, expected_segment: int
         best: f32 = 2
@@ -356,7 +329,6 @@ test_chunked_circle_segment_and_session_queries_match_a_brute_force_search :: pr
             }
         }
         testing.expect_value(t, circle, expected_circle)
-        testing.expect_value(t, circle_session, expected_circle)
         testing.expect_value(t, segment, expected_segment)
         _, at, hit := QuadtreeChunksSegmentFirst(world, {BASE + f64(a.x), BASE + f64(a.y)}, {BASE + f64(b.x), BASE + f64(b.y)})
         testing.expect_value(t, hit, best <= 1)
@@ -732,9 +704,9 @@ test_chunked_compaction_keeps_queries :: proc(t: ^testing.T) {
     }
 }
 
-// Rectangle, point and circle queries write nothing into the tree (no marks, no session needed): the marks and the counter stay as they were, and threads may run them side by side
+// No query writes into the tree: its bytes stay as they were after rectangle, point, circle and segment queries, so threads may run them side by side
 @(test)
-test_rectangle_point_and_circle_queries_leave_the_tree_untouched :: proc(t: ^testing.T) {
+test_queries_leave_the_tree_untouched :: proc(t: ^testing.T) {
     tree: ^ShapeTree = new(ShapeTree)
     defer free(tree)
     area: Rect = {0, 0, 1000, 800}
@@ -743,18 +715,18 @@ test_rectangle_point_and_circle_queries_leave_the_tree_untouched :: proc(t: ^tes
     state: rand.Generator = rand.default_random_generator(&seed)
     rects: [300]Rect
     fillTree(tree, rects[:], state, area, 10)
-    before: [300]u32
-    for i in 0 ..< len(rects) { before[i] = tree.elements[i].stamp }
-    stamp: u32 = tree.stamp
+    before: ^ShapeTree = new(ShapeTree)
+    defer free(before)
+    before^ = tree^
     out: [512]Item
     for _ in 0 ..< 100 {
         point: Vec2 = {rand.float32(state) * 1000, rand.float32(state) * 800}
         QuadtreeQuery(tree, randomShapeRect(state, area, 200), out[:])
         QuadtreeQueryPoint(tree, point, out[:])
         QuadtreeQueryCircle(tree, point, 60, out[:])
+        QuadtreeQuerySegment(tree, point, point + {90, 50}, out[:])
     }
-    testing.expect_value(t, tree.stamp, stamp)
-    for i in 0 ..< len(rects) { testing.expect_value(t, tree.elements[i].stamp, before[i]) }
+    testing.expect(t, mem.compare_ptrs(tree, before, size_of(ShapeTree)) == 0, "the tree is byte for byte the same")
 }
 
 @(test)
@@ -790,5 +762,40 @@ test_circle_iterators_give_the_same_hits_as_the_circle_query :: proc(t: ^testing
         QuadtreeRetainedQueryCircleBegin(&it, retained, center, radius)
         for _ in QuadtreeRetainedQueryNext(retained, &it) { count += 1 }
         testing.expect_value(t, count, QuadtreeRetainedQueryCircle(retained, center, radius, out_retained[:]))
+    }
+}
+
+// Rounding stress for the owner point of a segment: axis aligned segments, segments through the exact corners of a grid of rectangles and a tree far from the origin, where one unit in the last place is large
+@(test)
+test_segments_through_corners_and_far_from_the_origin_are_found_exactly_once :: proc(t: ^testing.T) {
+    tree: ^ShapeTree = new(ShapeTree)
+    defer free(tree)
+    bases: []f32 = {0, 4096, 100000, -100000}
+    for base in bases {
+        QuadtreeClear(tree)
+        QuadtreeInit(tree, {base, base, 512, 512}, 4, 6)
+        rects: [64]Rect
+        for i in 0 ..< 64 { rects[i] = {base + f32(i % 8) * 64, base + f32(i / 8) * 64, 64, 64} }       // edges and corners shared by neighbours
+        for rect, i in rects { QuadtreeInsert(tree, rect, i) }
+        out: [128]Item
+        for step in 0 ..< 600 {
+            a: Vec2 = {base + f32(step % 9) * 64, base + f32(step / 9 % 9) * 64}                 // exact corners
+            b: Vec2 = {base + f32((step * 7) % 9) * 64, base + f32((step * 5 + 3) % 9) * 64}
+            if step % 4 == 1 { b.y = a.y }
+            if step % 4 == 2 { b.x = a.x }
+            if step % 4 == 3 { a += {0.1, 0.07}; b += {0.13, 0.03} }
+            count: int = QuadtreeQuerySegment(tree, a, b, out[:])
+            expected: int
+            probe: Probe = probeSegment(a, b)
+            for rect in rects {
+                if probeHitsRect(&probe, rect) { expected += 1 }       // the contract: the same test as the element test, so a hit on a corner or an edge is judged like the query does
+            }
+            testing.expect_value(t, count, expected)
+            seen: [64]bool
+            for i in 0 ..< count {
+                testing.expect(t, !seen[out[i]], "each item once")
+                seen[out[i]] = true
+            }
+        }
     }
 }

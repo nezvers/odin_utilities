@@ -7,7 +7,7 @@ package main
 //   build    clear and insert everything (an immediate tree, a uniform grid, grid_collision_map rebuilt) or just the insert
 //   rects    one query per element, with its rectangle grown by 8 (the neighbour pass of a collision loop)
 //   circles  one circle query (radius 24) per element, on the structures that have one
-// then the leaf capacity and depth sweep of the quadtree, marked queries against sessions and threads, and the cost of moving 1%, 10% and 100% of the elements per frame (retained tree and
+// then the leaf capacity and depth sweep of the quadtree, shape queries and threads, and the cost of moving 1%, 10% and 100% of the elements per frame (retained tree and
 // grid_collision_map move them, the immediate tree and the grid rebuild).
 // All structures must report the same number of neighbours: a MISMATCH line means a bug in one of them (or in the benchmark). Run with `-o:speed`: a debug build says nothing.
 
@@ -158,7 +158,7 @@ runScene :: proc(scene: ^Scene) {
         if row.neighbours != reference { fmt.printfln("MISMATCH: %s found %d neighbours, others %d", row.name, row.neighbours, reference) }
     }
 
-    benchSessions(scene, tree)
+    benchShapes(scene, tree)
     benchMoves(scene, tree, retained)
 }
 
@@ -385,7 +385,7 @@ benchRetained :: proc(scene: ^Scene, tree: ^Retained, max_elements: int, max_dep
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
-// Sessions and threads: the segment pass marked in the tree against a session, the rectangle pass split over threads (it writes nothing, so it needs no session)
+// Shape queries and threads: segment, circle and rectangle passes, the rectangle pass split over threads (no query writes into the tree, so no session is needed)
 
 QueryJob :: struct {
     tree: ^Tree,
@@ -398,12 +398,11 @@ queryWork :: proc(data: rawptr) {
     job: ^QueryJob = cast(^QueryJob)data
     out: [512]qt.Item
     total: int
-    // rectangle queries write nothing into the tree: no session
     for i in job.from ..< job.to { total += qt.QuadtreeQuery(job.tree, job.scene.probes[i], out[:], omit = i) }
     job.total = total
 }
 
-benchSessions :: proc(scene: ^Scene, tree: ^Tree) {
+benchShapes :: proc(scene: ^Scene, tree: ^Tree) {
     count: int = len(scene.rects)
     qt.QuadtreeInit(tree, {0, 0, WORLD, WORLD}, 8, 8)
     for rect, i in scene.rects { qt.QuadtreeInsert(tree, rect, i) }
@@ -418,25 +417,21 @@ benchSessions :: proc(scene: ^Scene, tree: ^Tree) {
         append(&marked, elapsed(start))
         expected = total
     }
-    // segment queries still mark the elements: the cost of a session against the marks in the tree
-    segment_marked, segment_session: [dynamic]f64
-    segment_marked.allocator = context.temp_allocator
-    segment_session.allocator = context.temp_allocator
-    stamps: []u32 = make([]u32, len(tree.elements), context.temp_allocator)
-    session: qt.QuerySession
-    qt.QuerySessionInit(&session, stamps)
+    segment_pass, circle_pass: [dynamic]f64
+    segment_pass.allocator = context.temp_allocator
+    circle_pass.allocator = context.temp_allocator
     for _ in 0 ..< FRAMES {
         start: time.Tick = now()
         for center in scene.centers { qt.QuadtreeQuerySegment(tree, center, center + {40, 25}, out[:]) }
-        append(&segment_marked, elapsed(start))
+        append(&segment_pass, elapsed(start))
         start = now()
-        for center in scene.centers { qt.QuadtreeQuerySegment(tree, center, center + {40, 25}, out[:], session = &session) }
-        append(&segment_session, elapsed(start))
+        for center in scene.centers { qt.QuadtreeQueryCircle(tree, center, CIRCLE_RADIUS, out[:]) }
+        append(&circle_pass, elapsed(start))
     }
     fmt.printfln("\nqueries on the tree (leaf 8, depth 8):")
-    fmt.printfln("  segment pass, marks in the tree     %8.3f", median(segment_marked[:]))
-    fmt.printfln("  segment pass, with a session        %8.3f", median(segment_session[:]))
-    fmt.printfln("  rectangle pass, 1 thread (no marks) %8.3f", median(marked[:]))
+    fmt.printfln("  segment pass (no marks)             %8.3f", median(segment_pass[:]))
+    fmt.printfln("  circle pass (no marks)              %8.3f", median(circle_pass[:]))
+    fmt.printfln("  rectangle pass (no marks)           %8.3f", median(marked[:]))
     for threads in ([]int{1, 2, 4, 8}) {
         samples: [dynamic]f64
         samples.allocator = context.temp_allocator
