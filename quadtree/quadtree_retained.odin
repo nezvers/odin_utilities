@@ -446,22 +446,22 @@ retainedNodeQueryShape :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, a
 retainedNodeFirst :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Area, low: Vec2, high: Vec2, probe: ^Probe, first: ^RetainedFirst) {
     if tree.nodes[node].count < 0 {
         children: i32 = tree.nodes[node].first
-        for quadrant in 0 ..< 4 {
-            child_low, child_high := extentChild(low, high, area, quadrant)
-            enter, _, hit := segmentBox(probe.a, probe.d, child_low, child_high)
-            if hit && enter <= first.t { retainedNodeFirst(tree, children + i32(quadrant), areaChild(area, quadrant), child_low, child_high, probe, first) }
+        lows, highs, enters, order, count := segmentChildren(probe, area, low, high)
+        for i in 0 ..< count {
+            quadrant: int = order[i]
+            if enters[quadrant] > first.t { break }
+            retainedNodeFirst(tree, children + i32(quadrant), areaChild(area, quadrant), lows[quadrant], highs[quadrant], probe, first)
         }
         return
     }
     for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        rect: Rect = tree.links[link].rect
+        enter, _, hit := segmentBox(probe.a, probe.d, {rect.x, rect.y}, {rect.x + rect.w, rect.y + rect.h})
+        if !hit || enter >= first.t { continue }
         handle: Handle = tree.links[link].element
-        element: ^RetainedElement = hm.get(&tree.elements, handle) or_continue
         if handle == first.omit { continue }
-        enter, _, hit := segmentBox(probe.a, probe.d, {element.rect.x, element.rect.y}, {element.rect.x + element.rect.w, element.rect.y + element.rect.h})
-        if hit && enter < first.t {
-            first.t = enter
-            first.handle = handle
-        }
+        first.t = enter
+        first.handle = handle
     }
 }
 

@@ -8,7 +8,8 @@ Next steps, most valuable first. A task starts with `(high)`, `(medium)` or `(lo
 - [x] Faster build and queries: loop descent, no marks for rectangle queries, rect copy in links, on the immediate and the retained tree (build 5.9 to 2.1 ms at 50k, grid 1.1; rectangle pass 17.9 to 13.3, grid 10.5)
 - [x] Circle queries without marks (ownership of the nearest point, descent like a rectangle): 34 to 24 ms at 50k; segments test the rectangle copy in the link first. Circle iterators on the immediate and retained tree
 - [x] Segment queries without marks (owner = entry point rounded and clamped into the element, padded descent), session API removed
-- [ ] (low) Segment queries are 1.8x a rectangle pass (the slab test per link): a descent that follows the segment through the nodes in order (a DDA like walk) would also make `SegmentFirst` stop early; a segment iterator needs the padded box descent
+- [x] `SegmentFirst` walks the children in the order along the segment (5 to 19% on long rays, scene dependent)
+- [ ] (low) Segment slice queries are 1.8x a rectangle pass (the slab test per link): a cheaper per link test (the segment's quadrant pattern or a DDA over the leaves) and a segment iterator that needs the padded box descent
 - [x] Nearest and k-nearest on the three trees (`QuadtreeNearest`, `QuadtreeRetainedNearest`, `QuadtreeChunksNearest`)
 - [x] Benchmarks against a uniform grid, `grid_collision_map` and brute force (`tool/bench`, findings in README): leaf 8 and depth 8 confirmed as the default
 - [x] Iterator queries without a result slice for rectangles and points on the three trees (`QueryIterator`, `QuadtreeChunksIterator`)

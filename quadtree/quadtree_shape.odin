@@ -69,6 +69,26 @@ segmentBox :: proc(a: Vec2, d: Vec2, low: Vec2, high: Vec2) -> (enter: f32, exit
     return enter, exit, true
 }
 
+// The children of a node that the segment reaches, in the order along the segment (by the parameter where it enters the child box). Visiting in this order lets `SegmentFirst` stop descending as soon as
+// a hit is nearer than the entry into the next box: the walk along the segment. Four boxes, a tiny insertion sort, no memory.
+@(private)
+segmentChildren :: proc(probe: ^Probe, area: Area, low: Vec2, high: Vec2) -> (lows: [4]Vec2, highs: [4]Vec2, enters: [4]f32, order: [4]int, count: int) {
+    for quadrant in 0 ..< 4 {
+        child_low, child_high := extentChild(low, high, area, quadrant)
+        enter, _, hit := segmentBox(probe.a, probe.d, child_low, child_high)
+        if !hit { continue }
+        lows[quadrant], highs[quadrant], enters[quadrant] = child_low, child_high, enter
+        j: int = count
+        for j > 0 && enters[order[j - 1]] > enter {
+            order[j] = order[j - 1]
+            j -= 1
+        }
+        order[j] = quadrant
+        count += 1
+    }
+    return
+}
+
 // Squared distance from a point to a box (0 inside)
 @(private)
 distanceSquaredToBox :: proc(point: Vec2, low: Vec2, high: Vec2) -> f32 {

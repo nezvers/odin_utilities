@@ -28,7 +28,7 @@ for i in 0 ..< count { other := &things[buffer[i]] }
 ```
 
 ## Circles, segments and threads (`quadtree_shape.odin`)
-Circle and segment queries exist in all three trees (`QuadtreeQueryCircle`, `QuadtreeRetainedQuerySegment`, `QuadtreeChunksSegmentFirst` ...): nodes the shape cannot reach are skipped, so a long diagonal ray visits only the leaves it crosses. The rectangle of an element is what is tested (a circle that only touches an edge does not hit; a segment that touches or runs along an edge does, and one inside a rectangle does). Results come in no order; `SegmentFirst` finds the nearest one without sorting.
+Circle and segment queries exist in all three trees (`QuadtreeQueryCircle`, `QuadtreeRetainedQuerySegment`, `QuadtreeChunksSegmentFirst` ...): nodes the shape cannot reach are skipped, so a long diagonal ray visits only the leaves it crosses. The rectangle of an element is what is tested (a circle that only touches an edge does not hit; a segment that touches or runs along an edge does, and one inside a rectangle does). Results come in no order; `SegmentFirst` finds the nearest one without sorting: it walks the nodes in the order along the segment and stops at the first node that starts behind the best hit.
 
 No query writes into a tree. An element sits in several leaves, so it is reported by the one leaf that owns a point of it that does not depend on the leaf: the corner of its overlap with a rectangle, its point nearest to the center of a circle, the point where a segment enters it. Any number of threads may therefore query one tree at once while nobody changes it, with no marks, no session and no per thread memory (`QuadtreeNearest`, `SegmentFirst` and the iterators read only too).
 

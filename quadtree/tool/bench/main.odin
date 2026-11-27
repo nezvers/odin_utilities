@@ -417,8 +417,9 @@ benchShapes :: proc(scene: ^Scene, tree: ^Tree) {
         append(&marked, elapsed(start))
         expected = total
     }
-    segment_pass, circle_pass: [dynamic]f64
+    segment_pass, circle_pass, ray_pass: [dynamic]f64
     segment_pass.allocator = context.temp_allocator
+    ray_pass.allocator = context.temp_allocator
     circle_pass.allocator = context.temp_allocator
     for _ in 0 ..< FRAMES {
         start: time.Tick = now()
@@ -427,10 +428,14 @@ benchShapes :: proc(scene: ^Scene, tree: ^Tree) {
         start = now()
         for center in scene.centers { qt.QuadtreeQueryCircle(tree, center, CIRCLE_RADIUS, out[:]) }
         append(&circle_pass, elapsed(start))
+        start = now()
+        for center in scene.centers { qt.QuadtreeSegmentFirst(tree, center, center + {4000, 2500}) }
+        append(&ray_pass, elapsed(start))
     }
     fmt.printfln("\nqueries on the tree (leaf 8, depth 8):")
     fmt.printfln("  segment pass (no marks)             %8.3f", median(segment_pass[:]))
     fmt.printfln("  circle pass (no marks)              %8.3f", median(circle_pass[:]))
+    fmt.printfln("  first hit of a long ray (length 4700)%8.3f", median(ray_pass[:]))
     fmt.printfln("  rectangle pass (no marks)           %8.3f", median(marked[:]))
     for threads in ([]int{1, 2, 4, 8}) {
         samples: [dynamic]f64
