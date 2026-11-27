@@ -67,6 +67,11 @@ ClipDraw :: struct {
     length: f64,
     flags: Flags,               // SELECTED, HOVERED, PRESSED: it is being dragged or resized, DISABLED: its track is muted
     body: ^ClipBody,            // the content to draw inside (kind NONE: nothing); alive for the frame
+    muted: bool,                // the clip does not play: drawn dim, its "M" lit
+    gain_db: f32,               // the knob of the header
+    header: bool,               // the clip is big enough for the header buttons below (TimelineClipHeader)
+    header_mute, header_knob: Rect,
+    hover_zone: TimelineZone,   // when HOVERED: MUTE or GAIN while the pointer is on that button
     user: rawptr,
 }
 

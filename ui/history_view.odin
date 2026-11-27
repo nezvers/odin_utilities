@@ -28,6 +28,8 @@ TimelineEventLabel :: proc(kind: TimelineEventKind) -> string {
     case .CLIP_REMOVED: return "Remove clip"
     case .CLIP_MOVED: return "Move clip"
     case .CLIP_RESIZED: return "Resize clip"
+    case .CLIP_MUTED: return "Mute clip"
+    case .CLIP_GAIN: return "Clip volume"
     case .PLAYHEAD: return "Move playhead"
     case .LOOP_CHANGED: return "Change loop"
     case .EMPTY_DOUBLE_CLICK, .RULER_DOUBLE_CLICK: return "Edit"

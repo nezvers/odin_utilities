@@ -42,6 +42,7 @@ TimelineGesture :: enum u8 {
     STRETCH,
     BEND,
     STRETCH_CLIPS,
+    CLIP_GAIN,          // a drag on the knob of the clip header
 }
 
 // What a drag on an empty lane does (Ctrl makes it a box whatever the tool is).
@@ -92,6 +93,9 @@ TimelineView :: struct {
     // gesture state
     gesture: TimelineGesture,
     gesture_clip: ClipHandle,
+    hover_zone: TimelineZone,   // the part of the hovered clip under the pointer
+    gain_start: f32,            // CLIP_GAIN gesture: the gain when the knob was grabbed and where the pointer was
+    gain_mouse: f32,
     link_pending: bool,         // Shift on the body of a clip: a drag leaves linked copies behind (the clips that move are the originals)
     link_toggle: bool,          // ... and a click without a drag takes the clip out of the selection (Shift click toggles)
     grab_time: f64,
@@ -170,7 +174,7 @@ timelineLinkedCopies :: proc(timeline: ^Timeline) {
     for i in 0 ..< count {
         source: ^TimelineClip = TimelineClipGet(timeline, sources[i])
         owner: ^TimelineTrack = TimelineTrackGet(timeline, source.track)
-        copy: TimelineClip = {track = source.track, start = source.drag_start, length = source.drag_length, user = source.user, color = source.color}
+        copy: TimelineClip = {track = source.track, start = source.drag_start, length = source.drag_length, user = source.user, color = source.color, muted = source.muted, gain_db = source.gain_db}
         copy.name, copy.name_length = source.name, source.name_length
         handle, ok := hm.add(&timeline.clips, copy)
         if !ok { return }
@@ -339,6 +343,35 @@ TimelineZone :: enum u8 {
     BODY,
     LEFT_EDGE,
     RIGHT_EDGE,
+    MUTE,               // the "M" button of the clip header
+    GAIN,               // the knob of the clip header
+}
+
+CLIP_GAIN_MIN_DB :: -60     // the bottom of the knob: silence
+CLIP_GAIN_MAX_DB :: 6
+CLIP_HEADER_BUTTON :: 14
+CLIP_HEADER_MIN_WIDTH :: 72      // a narrower clip has no header: the name and the edges come first
+CLIP_HEADER_MIN_HEIGHT :: 30
+
+// The header buttons of a clip on the screen: the mute button and the knob, at the right end of the top row, inside of the resize edge. Pure, so the pointer and the style agree. `ok` is false when the clip is too small.
+TimelineClipHeader :: proc(rect: Rect, edge: f32) -> (mute: Rect, knob: Rect, ok: bool) {
+    if rect.z < CLIP_HEADER_MIN_WIDTH || rect.w < CLIP_HEADER_MIN_HEIGHT { return }
+    size: f32 = CLIP_HEADER_BUTTON
+    knob = {rect.x + rect.z - edge - 3 - size, rect.y + 3, size, size}
+    mute = {knob.x - 3 - size, rect.y + 3, size, size}
+    return mute, knob, true
+}
+
+// The linear gain of a knob position in dB: 0 at the bottom (silence)
+TimelineClipGainLinear :: proc(gain_db: f32) -> f32 {
+    if gain_db <= CLIP_GAIN_MIN_DB { return 0 }
+    return math.pow(10, gain_db / 20)
+}
+
+// The knob position in dB of a linear gain (0 and less: silence)
+TimelineClipGainDb :: proc(gain: f32) -> f32 {
+    if gain <= 0 { return CLIP_GAIN_MIN_DB }
+    return clamp(20 * math.log10(gain), CLIP_GAIN_MIN_DB, CLIP_GAIN_MAX_DB)
 }
 
 // The clip under a point of the screen and which part of it (a selected clip is above the others). None for a point that is on no clip.
@@ -356,6 +389,10 @@ timelinePick :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^TimelineS
         if rect.z >= style.edge * 3 {
             if point.x - rect.x <= style.edge { zone = .LEFT_EDGE }
             if rect.x + rect.z - point.x <= style.edge { zone = .RIGHT_EDGE }
+        }
+        if mute, knob, has := TimelineClipHeader(rect, style.edge); has {
+            if RectContains(mute, point) { zone = .MUTE }
+            if RectContains(knob, point) { zone = .GAIN }
         }
     }
     return
@@ -416,6 +453,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
     zone: TimelineZone
     if hovering && mouse.y >= lanes_top {
         view.hover_clip, zone = timelinePick(timeline, view, &style, mouse)
+        view.hover_zone = zone
         view.hover_track = row
     }
     min_length: f64 = max(timeline.rules.min_length, 4 / f64(zoom))
@@ -519,6 +557,23 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 TimelineSelectClear(timeline)
                 TimelinePointGet(timeline, added).selected = true
             }
+        case view.hover_clip != {} && (zone == .MUTE || zone == .GAIN):
+            // the header of a clip: the buttons do not select it or move it
+            clip: ^TimelineClip = TimelineClipGet(timeline, view.hover_clip)
+            locked: bool = TimelineTrackGet(timeline, clip.track).flags >= {.LOCKED}
+            if locked { break }
+            if zone == .MUTE {
+                clip.muted = !clip.muted
+                timelineEmit(timeline, {kind = .CLIP_MUTED, clip = view.hover_clip, track = clip.track, value = 1 if clip.muted else 0, previous_value = 0 if clip.muted else 1})
+            } else if interaction.double_clicked {
+                if clip.gain_db != 0 {
+                    timelineEmit(timeline, {kind = .CLIP_GAIN, clip = view.hover_clip, track = clip.track, value = 0, previous_value = clip.gain_db})
+                    clip.gain_db = 0
+                }
+            } else {
+                view.gesture, view.gesture_clip = .CLIP_GAIN, view.hover_clip
+                view.gain_start, view.gain_mouse = clip.gain_db, mouse.y
+            }
         case view.hover_clip != {}:
             clip: ^TimelineClip = TimelineClipGet(timeline, view.hover_clip)
             locked: bool = TimelineTrackGet(timeline, clip.track).flags >= {.LOCKED}
@@ -538,6 +593,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 case .BODY: view.gesture = .MOVE
                 case .LEFT_EDGE: view.gesture = .RESIZE_LEFT
                 case .RIGHT_EDGE: view.gesture = .RESIZE_RIGHT
+                case .MUTE, .GAIN:      // taken by the header case above
                 }
                 it := hm.iterator_make(&timeline.clips)
                 for other, _ in hm.iterate(&it) {
@@ -759,10 +815,21 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                     start: f64 = clamp(timelineSnapTime(timeline, view, time, true), 0, end - min_length)
                     if TimelineClipPlace(timeline, view.gesture_clip, clip.track, start, end - start) { ClipBodyTrimLeft(clip, start) }
                 }
+            case .CLIP_GAIN:
+                if clip != nil {
+                    // two pixels a dB, and a stop at 0 dB so unity is easy to find again
+                    db: f32 = clamp(view.gain_start + (view.gain_mouse - mouse.y) * 0.5, CLIP_GAIN_MIN_DB, CLIP_GAIN_MAX_DB)
+                    clip.gain_db = 0 if abs(db) < 1.5 else db
+                }
             case .NONE:
             }
         }
         if ctx.input.mouse_released || !ctx.input.mouse_down {
+            if view.gesture == .CLIP_GAIN {
+                if clip := TimelineClipGet(timeline, view.gesture_clip); clip != nil && clip.gain_db != view.gain_start {
+                    timelineEmit(timeline, {kind = .CLIP_GAIN, clip = view.gesture_clip, track = clip.track, value = clip.gain_db, previous_value = view.gain_start})
+                }
+            }
             view.link_pending, view.link_toggle = false, false
             view.gesture, view.gesture_clip, view.gesture_marker, view.gesture_point, view.gesture_handle, view.gesture_bend = .NONE, {}, {}, {}, {}, {}
         }
@@ -944,6 +1011,9 @@ TimelineDraw :: proc(ctx: ^Context, info: ^DrawInfo) {
                 if view.hover_clip == handle { draw.flags += {.HOVERED} }
                 if view.gesture_clip == handle && view.gesture != .NONE { draw.flags += {.PRESSED} }
                 if .MUTED in track.flags { draw.flags += {.DISABLED} }
+                draw.muted, draw.gain_db = clip.muted, clip.gain_db
+                draw.header_mute, draw.header_knob, draw.header = TimelineClipHeader(rect, style.edge)
+                if view.hover_clip == handle { draw.hover_zone = view.hover_zone }
                 style.draw_clip(ctx, &draw)
             }
         }

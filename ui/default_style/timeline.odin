@@ -42,12 +42,13 @@ DrawClip :: proc(ctx: ^ui.Context, clip: ^ui.ClipDraw) {
     base: ui.Color = clip.color if clip.color.a > 0 else GraphTypeColor(u32(clip.track_index))
     body: ui.Color = ui.ColorLerp(theme.track, base, 0.55)
     if .HOVERED in clip.flags || .PRESSED in clip.flags { body = ui.ColorLerp(body, ui.Color{255, 255, 255, 255}, 0.12) }
-    if .DISABLED in clip.flags { body = ui.ColorLerp(body, theme.track, 0.6) }
+    if .DISABLED in clip.flags || clip.muted { body = ui.ColorLerp(body, theme.track, 0.6) }
     border: ui.Color = theme.accent if .SELECTED in clip.flags else ui.ColorLerp(body, ui.Color{0, 0, 0, 255}, 0.4)
     FillRoundedBorder(painter, clip.rect, 0.12, body, border, 2 if .SELECTED in clip.flags else 1, 5)
     size: f32 = ctx.style.metrics.font_size * 0.9
     text_x: f32 = max(clip.rect.x, clip.visible.x) + 6
     room: f32 = min(clip.rect.x + clip.rect.z, clip.visible.x + clip.visible.z) - text_x - 4
+    if clip.header { room = min(room, clip.header_mute.x - text_x - 4) }
     shown: string = clip.name
     for len(shown) > 0 && painter.measure_text(painter, shown, size).x > room {
         _, width := utf8.decode_last_rune_in_string(shown)
@@ -57,6 +58,7 @@ DrawClip :: proc(ctx: ^ui.Context, clip: ^ui.ClipDraw) {
         painter.draw_text(painter, shown, {text_x, clip.rect.y + 3}, size, theme.text)
     }
     clipBody(ctx, painter, clip, base)
+    if clip.header { clipHeader(ctx, painter, clip, size) }
     if .HOVERED in clip.flags || .PRESSED in clip.flags {
         grip: ui.Color = {255, 255, 255, 90}
         if clip.rect.z > 24 {
@@ -218,4 +220,26 @@ barsRuler :: proc(ctx: ^ui.Context, painter: ^Painter, ruler: ^ui.RulerDraw, siz
             }
         }
     }
+}
+
+// The buttons of a clip header: "M" (lit while the clip is muted) and the volume knob, from silence at the lower left to the boost at the lower right
+clipHeader :: proc(ctx: ^ui.Context, painter: ^Painter, clip: ^ui.ClipDraw, size: f32) {
+    theme: ^Theme = &painter.theme
+    mute: ui.Rect = clip.header_mute
+    lit: ui.Color = theme.warning if clip.muted else ui.ColorLerp(theme.control, theme.track, 0.3)
+    if clip.hover_zone == .MUTE && .HOVERED in clip.flags { lit = ui.ColorLerp(lit, ui.Color{255, 255, 255, 255}, 0.2) }
+    FillRoundedBorder(painter, mute, 0.2, lit, theme.border, 1, 3)
+    glyph: ui.Color = theme.background if clip.muted else theme.text
+    width: f32 = painter.measure_text(painter, "M", size * 0.9).x
+    painter.draw_text(painter, "M", {mute.x + (mute.z - width) * 0.5, mute.y + 1}, size * 0.9, glyph)
+
+    knob: ui.Rect = clip.header_knob
+    face: ui.Color = ui.ColorLerp(theme.control, theme.track, 0.3)
+    if clip.hover_zone == .GAIN && .HOVERED in clip.flags { face = ui.ColorLerp(face, ui.Color{255, 255, 255, 255}, 0.2) }
+    FillRoundedBorder(painter, knob, 0.5, face, theme.border, 1, knob.z)
+    fraction: f32 = clamp((clip.gain_db - ui.CLIP_GAIN_MIN_DB) / (ui.CLIP_GAIN_MAX_DB - ui.CLIP_GAIN_MIN_DB), 0, 1)
+    angle: f32 = (-0.75 + 1.5 * fraction) * math.PI              // 0 points up
+    center: ui.Vec2 = {knob.x + knob.z * 0.5, knob.y + knob.w * 0.5}
+    reach: f32 = knob.z * 0.38
+    Line(painter, center, center + ui.Vec2{math.sin(angle), -math.cos(angle)} * reach, 1.5, theme.accent if clip.gain_db > ui.CLIP_GAIN_MIN_DB else theme.text_dim)
 }

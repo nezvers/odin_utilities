@@ -76,6 +76,8 @@ TimelineClip :: struct {
     drag_offset: f64,           // `body.offset` when the drag began
     drag_track: int,
     body: ClipBody,             // what the clip shows inside of itself (clip_body.odin)
+    muted: bool,                // the header button "M": the program does not play the clip
+    gain_db: f32,               // the header knob, CLIP_GAIN_MIN_DB (silence) .. CLIP_GAIN_MAX_DB; 0 is the clip as it is (a zero filled clip is at unity)
 }
 
 // A named point of time: a flag on the ruler with a line down through the tracks.
@@ -115,6 +117,8 @@ TimelineEventKind :: enum u8 {
     CLIP_REMOVED,
     CLIP_MOVED,         // another track or another start, the same length
     CLIP_RESIZED,       // another length (and start, when the left edge was dragged)
+    CLIP_MUTED,         // the header button: `value` is 1 for muted, 0 for not
+    CLIP_GAIN,          // the header knob let go (or reset by a double click): `value` is the new gain in dB, `previous_value` the old one
     PLAYHEAD,           // the person put the playhead somewhere (`time`)
     LOOP_CHANGED,       // the person made or changed the loop range (`start`, `length`)
     EMPTY_DOUBLE_CLICK, // a double click on an empty place of a track (`track`, `time`): a program may make a clip there
@@ -183,6 +187,8 @@ TimelineCopyEntry :: struct {
     name_length: int,
     color: Color,
     user: rawptr,
+    muted: bool,
+    gain_db: f32,
 }
 
 // One point of the copy: where it was, relative to the earliest time and the top lane of the copied points.
@@ -530,7 +536,7 @@ TimelineCopy :: proc(timeline: ^Timeline) -> int {
     for clip, handle in hm.iterate(&it) {
         if !clip.selected || timeline.copy_count >= len(timeline.copies) { continue }
         entry: ^TimelineCopyEntry = &timeline.copies[timeline.copy_count]
-        entry^ = {source = handle, track_offset = TimelineTrackIndex(timeline, clip.track) - top, start_offset = clip.start - earliest, length = clip.length, color = clip.color, user = clip.user}
+        entry^ = {source = handle, track_offset = TimelineTrackIndex(timeline, clip.track) - top, start_offset = clip.start - earliest, length = clip.length, color = clip.color, user = clip.user, muted = clip.muted, gain_db = clip.gain_db}
         entry.name, entry.name_length = clip.name, clip.name_length
         timeline.copy_count += 1
     }
@@ -554,7 +560,7 @@ TimelinePaste :: proc(timeline: ^Timeline, time: f64, track: int = -1, linked: b
         owner: ^TimelineTrack = TimelineTrackGet(timeline, target)
         if owner == nil || owner.kind != .CLIPS || entry.length < timeline.rules.min_length { continue }
         if timeline.rules.can_place != nil && !timeline.rules.can_place(timeline, nil, target, start, entry.length, timeline.rules.user) { continue }
-        clip: TimelineClip = {track = target, start = start, length = entry.length, user = entry.user, color = entry.color}
+        clip: TimelineClip = {track = target, start = start, length = entry.length, user = entry.user, color = entry.color, muted = entry.muted, gain_db = entry.gain_db}
         clip.name, clip.name_length = entry.name, entry.name_length
         handle, ok := hm.add(&timeline.clips, clip)
         if !ok { break }

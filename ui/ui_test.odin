@@ -7309,3 +7309,49 @@ test_paste_with_shift_and_a_shift_drag_make_linked_copies :: proc(t: ^testing.T)
     timelineDrag(harness, timeline, view, {200, 40}, {250, 40})
     testing.expect_value(t, TimelineClipCount(timeline), count)
 }
+
+@(test)
+test_the_clip_header_has_a_mute_button_and_a_gain_knob :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, _, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    style: TimelineStyle = TimelineStyleResolved(&harness.style)
+    style.track_scale = TimelineViewTrackZoom(view)
+    rect: Rect = TimelineClipRect(timeline, view, &style, TimelineClipGet(timeline, clip))
+    mute, knob, ok := TimelineClipHeader(rect, style.edge)
+    testing.expect(t, ok, "a clip of this size has a header")
+    centre :: proc(r: Rect) -> Vec2 { return {r.x + r.z * 0.5, r.y + r.w * 0.5} }
+    timelineDrain(timeline)
+
+    // M: toggles, one event, does not select the clip
+    timelineClick(harness, timeline, view, centre(mute), {})
+    testing.expect(t, TimelineClipGet(timeline, clip).muted)
+    testing.expect(t, !TimelineClipGet(timeline, clip).selected)
+    event, has := TimelinePollEvent(timeline)
+    testing.expect(t, has && event.kind == .CLIP_MUTED && event.value == 1)
+    timelineClick(harness, timeline, view, centre(mute), {})
+    testing.expect(t, !TimelineClipGet(timeline, clip).muted)
+    timelineDrain(timeline)
+
+    // the knob: a drag up raises the gain, one event at the release; the clip does not move
+    for _ in 0 ..< 40 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }       // longer than a double click
+    start: f64 = TimelineClipGet(timeline, clip).start
+    timelineDrag(harness, timeline, view, centre(knob), centre(knob) + {0, -20})
+    gain: f32 = TimelineClipGet(timeline, clip).gain_db
+    testing.expect(t, gain > 5 && gain <= CLIP_GAIN_MAX_DB, "20 pixels up is about 10 dB, the top is 6")
+    testing.expect_value(t, TimelineClipGet(timeline, clip).start, start)
+    changes: int
+    for {
+        e, more := TimelinePollEvent(timeline)
+        if !more { break }
+        if e.kind == .CLIP_GAIN { changes += 1 }
+    }
+    testing.expect_value(t, changes, 1)
+    // down to the bottom: silence
+    for _ in 0 ..< 40 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }
+    timelineDrag(harness, timeline, view, centre(knob), centre(knob) + {0, 200})
+    testing.expect_value(t, TimelineClipGet(timeline, clip).gain_db, f32(CLIP_GAIN_MIN_DB))
+    testing.expect_value(t, TimelineClipGainLinear(CLIP_GAIN_MIN_DB), f32(0))
+    testing.expect(t, abs(TimelineClipGainLinear(0) - 1) < 0.0001)
+    testing.expect(t, abs(TimelineClipGainDb(TimelineClipGainLinear(-12)) + 12) < 0.001)
+}
