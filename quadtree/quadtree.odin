@@ -206,10 +206,10 @@ First :: struct {
 treeQuery :: proc(tree: ^Quadtree($E, $N, $L), probe: Probe, out: []Item, omit: Item, session: ^QuerySession) -> int {
     query: Query = {probe = probe, out = out, omit = omit, session = session}
     switch probe.kind {
-    case .RECT, .POINT:
-        // no marks: see leafQuery
+    case .RECT, .POINT, .CIRCLE:
+        // no marks: see probeOwns. A circle descends like its bounding rectangle
         nodeQuery(tree, 0, rootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
-    case .CIRCLE, .SEGMENT:
+    case .SEGMENT:
         if session != nil {
             sessionBegin(session, int(E))
         } else {
@@ -396,12 +396,23 @@ nodeQuery :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, low: Vec2,
     leafQueryOwned(tree, node, low, high, query)
 }
 
-// Rectangles and points without marks, so no write to the tree and no session. An element sits in every leaf it overlaps, so it is reported only by the leaf that holds the top left corner of the
-// overlap with the query: that corner lies in exactly one leaf (the same centre compare as the descent: left and top when <=), and this leaf holds the element (it overlaps the element) and is visited
-// (it overlaps the query). A point is in one leaf only, so it needs nothing.
+// Rectangles, points and circles without marks, so no write to the tree and no session: the leaf reports the elements it owns (see probeOwns)
 @(private)
 leafQueryOwned :: proc(tree: ^Quadtree($E, $N, $L), node: i32, low: Vec2, high: Vec2, query: ^Query) {
     rect: Rect = query.probe.rect
+    // the kind is tested outside of the loops: the rectangle loop is the hot one of a collision pass and measured 12% slower with the general test of probeOwns in it
+    if query.probe.kind == .CIRCLE {
+        for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+            if !probeOwns(&query.probe, tree.links[link].rect, low, high) { continue }
+            element: ^Element = &tree.elements[tree.links[link].element]
+            if element.item == query.omit { continue }
+            if query.count < len(query.out) {
+                query.out[query.count] = element.item
+                query.count += 1
+            }
+        }
+        return
+    }
     point: bool = query.probe.kind == .POINT
     for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
         other: Rect = tree.links[link].rect
@@ -441,6 +452,8 @@ nodeQueryShape :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, low: 
 @(private)
 leafQuery :: proc(tree: ^Quadtree($E, $N, $L), node: i32, query: ^Query) {
     for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        // the copy of the rectangle in the link first: only a real hit looks at the element and marks it
+        if !probeHitsRect(&query.probe, tree.links[link].rect) { continue }
         index: i32 = tree.links[link].element
         element: ^Element = &tree.elements[index]
         if element.item == query.omit { continue }
@@ -450,7 +463,7 @@ leafQuery :: proc(tree: ^Quadtree($E, $N, $L), node: i32, query: ^Query) {
             if element.stamp == query.stamp { continue }
             element.stamp = query.stamp
         }
-        if probeHitsRect(&query.probe, element.rect) && query.count < len(query.out) {
+        if query.count < len(query.out) {
             query.out[query.count] = element.item
             query.count += 1
         }

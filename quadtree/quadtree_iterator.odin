@@ -1,5 +1,5 @@
-// Queries without a result slice and without a callback: ask for the next hit, stop whenever you have what you need. Rectangle and point queries of the three trees (circle and segment queries mark the
-// elements they report, which an iterator that may be abandoned cannot clean up: use their slice versions).
+// Queries without a result slice and without a callback: ask for the next hit, stop whenever you have what you need. Rectangle and point queries of the three trees, circle queries of the immediate and the
+// retained tree (segment queries mark the elements they report, which an iterator that may be abandoned cannot clean up: use their slice version).
 //
 //     it: quadtree.QueryIterator
 //     quadtree.QuadtreeQueryBegin(&it, &tree, rect, omit = me)
@@ -43,6 +43,12 @@ QuadtreeQueryPointBegin :: proc(it: ^QueryIterator, tree: ^Quadtree($E, $N, $L),
     iteratorBegin(it, rootArea(tree), probePoint(point))
 }
 
+// Start a circle query: the elements whose rectangle the circle overlaps (a rectangle that only touches it does not count)
+QuadtreeQueryCircleBegin :: proc(it: ^QueryIterator, tree: ^Quadtree($E, $N, $L), center: Vec2, radius: f32, omit: Item = ITEM_NONE) {
+    iteratorBegin(it, rootArea(tree), probeCircle(center, radius))
+    it.omit = omit
+}
+
 // The next item, `ok` is false when there are no more. Each element comes once
 QuadtreeQueryNext :: proc(tree: ^Quadtree($E, $N, $L), it: ^QueryIterator) -> (item: Item, ok: bool) {
     for {
@@ -54,6 +60,11 @@ QuadtreeQueryNext :: proc(tree: ^Quadtree($E, $N, $L), it: ^QueryIterator) -> (i
 
 QuadtreeRetainedQueryBegin :: proc(it: ^QueryIterator, tree: ^QuadtreeRetained($E, $N, $L), rect: Rect, omit: Handle = HandleNone) {
     iteratorBegin(it, retainedRootArea(tree), probeRect(rect))
+    it.omit_handle = omit
+}
+
+QuadtreeRetainedQueryCircleBegin :: proc(it: ^QueryIterator, tree: ^QuadtreeRetained($E, $N, $L), center: Vec2, radius: f32, omit: Handle = HandleNone) {
+    iteratorBegin(it, retainedRootArea(tree), probeCircle(center, radius))
     it.omit_handle = omit
 }
 
@@ -126,21 +137,12 @@ iteratorBegin :: proc(it: ^QueryIterator, root: Area, probe: Probe) {
 @(private)
 iteratorNext :: proc(tree: ^$T, it: ^QueryIterator) -> (link: i32, ok: bool) {
     rect: Rect = it.probe.rect
-    point: bool = it.probe.kind == .POINT
     for {
         if it.link != -1 {
             link = it.link
             it.link = tree.links[link].next
-            other: Rect = tree.links[link].rect
-            if point {
-                if RectContainsPoint(other, {rect.x, rect.y}) { return link, true }
-                continue
-            }
-            if !RectOverlaps(other, rect) { continue }
-            corner_x: f32 = max(other.x, rect.x)
-            corner_y: f32 = max(other.y, rect.y)
-            if corner_x <= it.leaf_low.x || corner_x > it.leaf_high.x || corner_y <= it.leaf_low.y || corner_y > it.leaf_high.y { continue }
-            return link, true
+            if probeOwns(&it.probe, tree.links[link].rect, it.leaf_low, it.leaf_high) { return link, true }
+            continue
         }
         if it.depth == 0 { return -1, false }
         frame: ^IteratorFrame = &it.stack[it.depth - 1]

@@ -6,7 +6,8 @@ Next steps, most valuable first. A task starts with `(high)`, `(medium)` or `(lo
 - [x] Circle and segment queries and `SegmentFirst` (ray cast) on the immediate, retained and chunked trees
 - [x] Demo `ray cast and nearest` (demo_rays.odin) with a scripted brute force check
 - [x] Faster build and queries: loop descent, no marks for rectangle queries, rect copy in links, on the immediate and the retained tree (build 5.9 to 2.1 ms at 50k, grid 1.1; rectangle pass 17.9 to 13.3, grid 10.5)
-- [ ] (low) Circle and segment queries are 2.5x a rectangle pass (34 against 13 ms at 50k): the same loop descent for nodes the shape fits in one quadrant, and ownership instead of marks (needs a reference point of the shape, check that it is worth it)
+- [x] Circle queries without marks (ownership of the nearest point, descent like a rectangle): 34 to 24 ms at 50k; segments test the rectangle copy in the link first. Circle iterators on the immediate and retained tree
+- [ ] (low) Segment queries are still marked and 1.8x a rectangle pass: a descent that follows the segment through the nodes in order (a DDA like walk) would also make `SegmentFirst` stop early; ownership needs a robust point of the segment
 - [x] Nearest and k-nearest on the three trees (`QuadtreeNearest`, `QuadtreeRetainedNearest`, `QuadtreeChunksNearest`)
 - [x] Benchmarks against a uniform grid, `grid_collision_map` and brute force (`tool/bench`, findings in README): leaf 8 and depth 8 confirmed as the default
 - [x] Iterator queries without a result slice for rectangles and points on the three trees (`QueryIterator`, `QuadtreeChunksIterator`)

@@ -385,7 +385,7 @@ benchRetained :: proc(scene: ^Scene, tree: ^Retained, max_elements: int, max_dep
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
-// Sessions and threads: the circle pass marked in the tree against a session, the rectangle pass split over threads (it writes nothing, so it needs no session)
+// Sessions and threads: the segment pass marked in the tree against a session, the rectangle pass split over threads (it writes nothing, so it needs no session)
 
 QueryJob :: struct {
     tree: ^Tree,
@@ -418,24 +418,24 @@ benchSessions :: proc(scene: ^Scene, tree: ^Tree) {
         append(&marked, elapsed(start))
         expected = total
     }
-    // circle queries still mark the elements: the cost of a session against the marks in the tree
-    circle_marked, circle_session: [dynamic]f64
-    circle_marked.allocator = context.temp_allocator
-    circle_session.allocator = context.temp_allocator
+    // segment queries still mark the elements: the cost of a session against the marks in the tree
+    segment_marked, segment_session: [dynamic]f64
+    segment_marked.allocator = context.temp_allocator
+    segment_session.allocator = context.temp_allocator
     stamps: []u32 = make([]u32, len(tree.elements), context.temp_allocator)
     session: qt.QuerySession
     qt.QuerySessionInit(&session, stamps)
     for _ in 0 ..< FRAMES {
         start: time.Tick = now()
-        for center in scene.centers { qt.QuadtreeQueryCircle(tree, center, CIRCLE_RADIUS, out[:]) }
-        append(&circle_marked, elapsed(start))
+        for center in scene.centers { qt.QuadtreeQuerySegment(tree, center, center + {40, 25}, out[:]) }
+        append(&segment_marked, elapsed(start))
         start = now()
-        for center in scene.centers { qt.QuadtreeQueryCircle(tree, center, CIRCLE_RADIUS, out[:], session = &session) }
-        append(&circle_session, elapsed(start))
+        for center in scene.centers { qt.QuadtreeQuerySegment(tree, center, center + {40, 25}, out[:], session = &session) }
+        append(&segment_session, elapsed(start))
     }
     fmt.printfln("\nqueries on the tree (leaf 8, depth 8):")
-    fmt.printfln("  circle pass, marks in the tree      %8.3f", median(circle_marked[:]))
-    fmt.printfln("  circle pass, with a session         %8.3f", median(circle_session[:]))
+    fmt.printfln("  segment pass, marks in the tree     %8.3f", median(segment_marked[:]))
+    fmt.printfln("  segment pass, with a session        %8.3f", median(segment_session[:]))
     fmt.printfln("  rectangle pass, 1 thread (no marks) %8.3f", median(marked[:]))
     for threads in ([]int{1, 2, 4, 8}) {
         samples: [dynamic]f64

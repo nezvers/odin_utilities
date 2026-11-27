@@ -138,6 +138,29 @@ probeHitsRect :: proc(probe: ^Probe, rect: Rect) -> bool {
     return false
 }
 
+// Does the leaf with the box (low, high] own the hit of this element? The test of a rectangle, a point or a circle query without marks. An element sits in every leaf it overlaps, so it is reported only by
+// the leaf that holds ONE point of the element that does not depend on the leaf: for a rectangle the top left corner of the overlap with the query, for a circle the point of the element nearest to the
+// center. That point lies in exactly one leaf (the same centre compare as the descent: left and top when <=, the outermost boxes reach to +-max(f32)), the leaf holds the element (the point is in the element)
+// and the leaf is visited (the point is inside of the query: strictly inside for a circle, since the circle test is `<`). A point query is in one leaf only and needs nothing.
+// Not for segments: the entry point of a segment is rounded and might fall outside of the leaves that hold the element, so segment queries keep their marks.
+@(private)
+probeOwns :: #force_inline proc(probe: ^Probe, rect: Rect, low: Vec2, high: Vec2) -> bool {
+    corner: Vec2
+    switch probe.kind {
+    case .POINT: return RectContainsPoint(rect, {probe.rect.x, probe.rect.y})
+    case .RECT:
+        if !RectOverlaps(rect, probe.rect) { return false }
+        corner = {max(rect.x, probe.rect.x), max(rect.y, probe.rect.y)}
+    case .CIRCLE:
+        corner = {clamp(probe.center.x, rect.x, rect.x + rect.w), clamp(probe.center.y, rect.y, rect.y + rect.h)}
+        dx: f32 = corner.x - probe.center.x
+        dy: f32 = corner.y - probe.center.y
+        if dx * dx + dy * dy >= probe.radius * probe.radius { return false }
+    case .SEGMENT: return false
+    }
+    return corner.x > low.x && corner.x <= high.x && corner.y > low.y && corner.y <= high.y
+}
+
 // The box of a child node: the quadrant of the parent's box split at the centre of its area. The outermost nodes keep reaching to +-max(f32), so a shape outside of the bounds still finds the
 // elements that sit in the border leaves.
 @(private)

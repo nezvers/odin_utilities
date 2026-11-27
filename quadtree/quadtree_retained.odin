@@ -205,8 +205,8 @@ RetainedFirst :: struct {
 retainedTreeQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), probe: Probe, out: []Handle, omit: Handle, session: ^QuerySession) -> int {
     query: RetainedQuery = {probe = probe, out = out, omit = omit, session = session}
     switch probe.kind {
-    case .RECT, .POINT: retainedNodeQuery(tree, 0, retainedRootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
-    case .CIRCLE, .SEGMENT:
+    case .RECT, .POINT, .CIRCLE: retainedNodeQuery(tree, 0, retainedRootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
+    case .SEGMENT:
         if session != nil { sessionBegin(session, int(E)) } else { retainedStampNext(tree) }
         retainedNodeQueryShape(tree, 0, retainedRootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
     }
@@ -404,10 +404,22 @@ retainedNodeQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: 
     retainedLeafQueryOwned(tree, node, low, high, query)
 }
 
-// Rectangles and points without marks, like leafQueryOwned in quadtree.odin: the one leaf that holds the top left corner of the overlap reports the element
+// Rectangles, points and circles without marks, like leafQueryOwned in quadtree.odin (see probeOwns)
 @(private)
 retainedLeafQueryOwned :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, low: Vec2, high: Vec2, query: ^RetainedQuery) {
     rect: Rect = query.probe.rect
+    if query.probe.kind == .CIRCLE {
+        for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+            if !probeOwns(&query.probe, tree.links[link].rect, low, high) { continue }
+            handle: Handle = tree.links[link].element
+            if handle == query.omit { continue }
+            if query.count < len(query.out) {
+                query.out[query.count] = handle
+                query.count += 1
+            }
+        }
+        return
+    }
     point: bool = query.probe.kind == .POINT
     for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
         other: Rect = tree.links[link].rect
@@ -447,6 +459,7 @@ retainedNodeQueryShape :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, a
 @(private)
 retainedLeafQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, query: ^RetainedQuery) {
     for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        if !probeHitsRect(&query.probe, tree.links[link].rect) { continue }
         handle: Handle = tree.links[link].element
         element: ^RetainedElement = hm.get(&tree.elements, handle) or_continue
         if handle == query.omit { continue }
@@ -456,7 +469,7 @@ retainedLeafQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, query:
             if element.stamp == tree.stamp { continue }
             element.stamp = tree.stamp
         }
-        if probeHitsRect(&query.probe, element.rect) && query.count < len(query.out) {
+        if query.count < len(query.out) {
             query.out[query.count] = handle
             query.count += 1
         }

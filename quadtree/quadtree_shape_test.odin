@@ -172,7 +172,7 @@ sessionWork :: proc(data: rawptr) {
     out: [512]Item
     for _ in 0 ..< 200 {
         for center, i in job.centers {
-            if QuadtreeQueryCircle(job.tree, center, 120, out[:], session = &session) != job.expected[i] { job.wrong += 1 }
+            if QuadtreeQuerySegment(job.tree, center, center + {120, 70}, out[:], session = &session) != job.expected[i] { job.wrong += 1 }
         }
     }
 }
@@ -199,7 +199,7 @@ test_sessions_let_threads_query_one_tree :: proc(t: ^testing.T) {
         for k in 0 ..< 64 {
             jobs[i].centers[k] = {rand.float32(state) * 1000, rand.float32(state) * 800}
             out: [512]Item
-            jobs[i].expected[k] = QuadtreeQueryCircle(tree, jobs[i].centers[k], 120, out[:])      // the single thread answer, with marks in the tree
+            jobs[i].expected[k] = QuadtreeQuerySegment(tree, jobs[i].centers[k], jobs[i].centers[k] + {120, 70}, out[:])      // the single thread answer, with marks in the tree
         }
     }
     tree_stamp = tree.stamp
@@ -234,8 +234,8 @@ test_a_session_gives_the_same_answers_as_the_marks_in_the_tree_and_survives_its_
     for _ in 0 ..< 6 {
         rect: Rect = randomShapeRect(state, area, 400)
         center: Vec2 = {rect.x + rect.w * 0.5, rect.y + rect.h * 0.5}
-        count_a: int = QuadtreeQueryCircle(tree, center, rect.w * 0.5, out_a[:])
-        count_b: int = QuadtreeQueryCircle(tree, center, rect.w * 0.5, out_b[:], session = &session)
+        count_a: int = QuadtreeQuerySegment(tree, center, center + {rect.w, rect.h}, out_a[:])
+        count_b: int = QuadtreeQuerySegment(tree, center, center + {rect.w, rect.h}, out_b[:], session = &session)
         count_c: int = QuadtreeQuery(tree, rect, out_a[:])
         testing.expect_value(t, QuadtreeQuery(tree, rect, out_b[:], session = &session), count_c)
         testing.expect_value(t, count_b, count_a)
@@ -729,5 +729,66 @@ test_chunked_compaction_keeps_queries :: proc(t: ^testing.T) {
         before: int = QuadtreeChunksQuery(world, rect, out_before[:])
         QuadtreeChunksCompact(world, scratch)
         testing.expect_value(t, QuadtreeChunksQuery(world, rect, out_after[:]), before)
+    }
+}
+
+// Rectangle, point and circle queries write nothing into the tree (no marks, no session needed): the marks and the counter stay as they were, and threads may run them side by side
+@(test)
+test_rectangle_point_and_circle_queries_leave_the_tree_untouched :: proc(t: ^testing.T) {
+    tree: ^ShapeTree = new(ShapeTree)
+    defer free(tree)
+    area: Rect = {0, 0, 1000, 800}
+    QuadtreeInit(tree, area, 4, 6)
+    seed: rand.Default_Random_State = rand.create(91)
+    state: rand.Generator = rand.default_random_generator(&seed)
+    rects: [300]Rect
+    fillTree(tree, rects[:], state, area, 10)
+    before: [300]u32
+    for i in 0 ..< len(rects) { before[i] = tree.elements[i].stamp }
+    stamp: u32 = tree.stamp
+    out: [512]Item
+    for _ in 0 ..< 100 {
+        point: Vec2 = {rand.float32(state) * 1000, rand.float32(state) * 800}
+        QuadtreeQuery(tree, randomShapeRect(state, area, 200), out[:])
+        QuadtreeQueryPoint(tree, point, out[:])
+        QuadtreeQueryCircle(tree, point, 60, out[:])
+    }
+    testing.expect_value(t, tree.stamp, stamp)
+    for i in 0 ..< len(rects) { testing.expect_value(t, tree.elements[i].stamp, before[i]) }
+}
+
+@(test)
+test_circle_iterators_give_the_same_hits_as_the_circle_query :: proc(t: ^testing.T) {
+    tree: ^ShapeTree = new(ShapeTree)
+    defer free(tree)
+    area: Rect = {0, 0, 1000, 800}
+    QuadtreeInit(tree, area, 4, 6)
+    seed: rand.Default_Random_State = rand.create(92)
+    state: rand.Generator = rand.default_random_generator(&seed)
+    rects: [300]Rect
+    fillTree(tree, rects[:], state, area, 15)
+    retained: ^RetainedTestTree = new(RetainedTestTree)
+    defer free(retained)
+    QuadtreeRetainedInit(retained, area, 4, 6)
+    for rect in rects { QuadtreeRetainedAdd(retained, rect) }
+    out: [512]Item
+    out_retained: [512]Handle
+    for _ in 0 ..< 200 {
+        center: Vec2 = {rand.float32(state) * 1500 - 250, rand.float32(state) * 1000 - 100}
+        radius: f32 = rand.float32(state) * 250
+        seen: [300]bool
+        count: int
+        it: QueryIterator
+        QuadtreeQueryCircleBegin(&it, tree, center, radius)
+        for item in QuadtreeQueryNext(tree, &it) {
+            testing.expect(t, !seen[item], "an item comes once")
+            seen[item] = true
+            count += 1
+        }
+        testing.expect_value(t, count, QuadtreeQueryCircle(tree, center, radius, out[:]))
+        count = 0
+        QuadtreeRetainedQueryCircleBegin(&it, retained, center, radius)
+        for _ in QuadtreeRetainedQueryNext(retained, &it) { count += 1 }
+        testing.expect_value(t, count, QuadtreeRetainedQueryCircle(retained, center, radius, out_retained[:]))
     }
 }
