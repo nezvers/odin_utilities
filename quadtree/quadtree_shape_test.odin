@@ -231,13 +231,16 @@ test_a_session_gives_the_same_answers_as_the_marks_in_the_tree_and_survives_its_
     out_a, out_b: [512]Item
     for _ in 0 ..< 6 {
         rect: Rect = randomShapeRect(state, area, 400)
-        count_a: int = QuadtreeQuery(tree, rect, out_a[:])
-        count_b: int = QuadtreeQuery(tree, rect, out_b[:], session = &session)
+        center: Vec2 = {rect.x + rect.w * 0.5, rect.y + rect.h * 0.5}
+        count_a: int = QuadtreeQueryCircle(tree, center, rect.w * 0.5, out_a[:])
+        count_b: int = QuadtreeQueryCircle(tree, center, rect.w * 0.5, out_b[:], session = &session)
+        count_c: int = QuadtreeQuery(tree, rect, out_a[:])
+        testing.expect_value(t, QuadtreeQuery(tree, rect, out_b[:], session = &session), count_c)
         testing.expect_value(t, count_b, count_a)
         testing.expect(t, count_a > 0)
         seen: map[Item]bool
         seen.allocator = context.temp_allocator
-        for i in 0 ..< count_b {
+        for i in 0 ..< count_c {
             testing.expect(t, out_b[i] not_in seen, "each item once")
             seen[out_b[i]] = true
         }

@@ -39,6 +39,7 @@ Node :: struct {
 Link :: struct {
     next: i32,
     element: i32,
+    rect: Rect,         // a copy of the rectangle of the element: a leaf is tested without touching the (scattered) elements
 }
 
 // E = elements, N = nodes (the root and groups of four), L = links (an element takes one for every leaf it overlaps). Size them with QuadtreeUsage.
@@ -181,15 +182,18 @@ First :: struct {
 @(private)
 treeQuery :: proc(tree: ^Quadtree($E, $N, $L), probe: Probe, out: []Item, omit: Item, session: ^QuerySession) -> int {
     query: Query = {probe = probe, out = out, omit = omit, session = session}
-    if session != nil {
-        sessionBegin(session, int(E))
-    } else {
-        tree.stamp += 1
-        query.stamp = tree.stamp
-    }
     switch probe.kind {
-    case .RECT, .POINT: nodeQuery(tree, 0, rootArea(tree), &query)
-    case .CIRCLE, .SEGMENT: nodeQueryShape(tree, 0, rootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
+    case .RECT, .POINT:
+        // no marks: see leafQuery
+        nodeQuery(tree, 0, rootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
+    case .CIRCLE, .SEGMENT:
+        if session != nil {
+            sessionBegin(session, int(E))
+        } else {
+            tree.stamp += 1
+            query.stamp = tree.stamp
+        }
+        nodeQueryShape(tree, 0, rootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
     }
     return query.count
 }
@@ -271,7 +275,7 @@ nodeAdd :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, depth: i32, 
     }
     link: i32 = linkTake(tree)
     if link < 0 { return false }
-    tree.links[link] = {next = tree.nodes[node].first, element = element}
+    tree.links[link] = {next = tree.nodes[node].first, element = element, rect = rect}
     tree.nodes[node].first = link
     tree.nodes[node].count += 1
     if may_split && tree.nodes[node].count > tree.max_elements && depth < tree.max_depth {
@@ -323,16 +327,44 @@ nodeRemove :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, element: 
 
 // Rectangles and points: the nodes are picked by the bounding rectangle
 @(private)
-nodeQuery :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, query: ^Query) {
+nodeQuery :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, low: Vec2, high: Vec2, query: ^Query) {
     if tree.nodes[node].count < 0 {
         first: i32 = tree.nodes[node].first
         hit: [4]bool = quadrants(area, query.probe.rect)
         for quadrant in 0 ..< 4 {
-            if hit[quadrant] { nodeQuery(tree, first + i32(quadrant), areaChild(area, quadrant), query) }
+            if !hit[quadrant] { continue }
+            child_low, child_high := extentChild(low, high, area, quadrant)
+            nodeQuery(tree, first + i32(quadrant), areaChild(area, quadrant), child_low, child_high, query)
         }
         return
     }
-    leafQuery(tree, node, query)
+    leafQueryOwned(tree, node, low, high, query)
+}
+
+// Rectangles and points without marks, so no write to the tree and no session. An element sits in every leaf it overlaps, so it is reported only by the leaf that holds the top left corner of the
+// overlap with the query: that corner lies in exactly one leaf (the same centre compare as the descent: left and top when <=), and this leaf holds the element (it overlaps the element) and is visited
+// (it overlaps the query). A point is in one leaf only, so it needs nothing.
+@(private)
+leafQueryOwned :: proc(tree: ^Quadtree($E, $N, $L), node: i32, low: Vec2, high: Vec2, query: ^Query) {
+    rect: Rect = query.probe.rect
+    point: bool = query.probe.kind == .POINT
+    for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        other: Rect = tree.links[link].rect
+        if point {
+            if !RectContainsPoint(other, {rect.x, rect.y}) { continue }
+        } else {
+            if !RectOverlaps(other, rect) { continue }
+            corner_x: f32 = max(other.x, rect.x)
+            corner_y: f32 = max(other.y, rect.y)
+            if corner_x <= low.x || corner_x > high.x || corner_y <= low.y || corner_y > high.y { continue }
+        }
+        element: ^Element = &tree.elements[tree.links[link].element]
+        if element.item == query.omit { continue }
+        if query.count < len(query.out) {
+            query.out[query.count] = element.item
+            query.count += 1
+        }
+    }
 }
 
 // Circles and segments: the nodes are picked by their box (which reaches outward at the border of the tree)
