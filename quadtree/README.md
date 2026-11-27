@@ -3,7 +3,7 @@ Immediate mode broad phase for 2D rectangles, without allocations: the tree is r
 The size of the tree is given by compile time parameters, all memory is inside of the `Quadtree` value (put it in a global or in your own struct). Functions fail (return false) instead of growing.
 
 `odin run demo_raylib` / `odin run demo_karl2d` / `odin test .`
-Demos (the menu of the demo kit switches between them): `retained crates` (the retained tree, see below), `collision` (the demo of grid_collision_map on a quadtree: paint walls, a box slides along them), `hover circles` (random circles, the mouse asks the tree which one it is over), `bouncing balls` (balls bounce off the window and each other, hold the left button to spawn more at the mouse). `G` shows the tree.
+Demos (the menu of the demo kit switches between them): `chunked world` (an endless world streamed in chunks, see below), `retained crates` (the retained tree, see below), `collision` (the demo of grid_collision_map on a quadtree: paint walls, a box slides along them), `hover circles` (random circles, the mouse asks the tree which one it is over), `bouncing balls` (balls bounce off the window and each other, hold the left button to spawn more at the mouse). `G` shows the tree.
 
 ```odin
 import qt "quadtree"
@@ -22,6 +22,20 @@ count := qt.QuadtreeQuery(&tree, rect, buffer[:], omit = index)   // overlapping
 count  = qt.QuadtreeQueryPoint(&tree, mouse, buffer[:])           // elements whose rectangle holds the point
 for i in 0 ..< count { other := &things[buffer[i]] }
 ```
+
+## Chunked world (`quadtree_chunks.odin`)
+For a big or endless world: `QuadtreeChunks(W, H, E, N, L)` is a W x H ring of chunks, every chunk has its own immediate tree in local coordinates, positions are `f64` (`WorldRect`, `WorldVec`). Memory follows the loaded window, and a world millions of units from the origin keeps the same precision, because a tree only sees small offsets.
+```odin
+world: qt.QuadtreeChunks(9, 9, 128, 500, 3000)    // 9 x 9 chunks, each tree: 128 items, 500 nodes, 3000 links
+qt.QuadtreeChunksInit(&world, chunk_size = 256, max_item_size = 40)
+
+// every frame: keep the square of 4 chunks around the player loaded, `fill` inserts the items of a new chunk
+qt.QuadtreeChunksStream(&world, player_center, 4, user, fill)                // fill :: proc(user: rawptr, cx, cy: int) { ... qt.QuadtreeChunksInsert(&world, rect, item) }
+count := qt.QuadtreeChunksQuery(&world, view_rect, buffer[:])                // items from all loaded chunks, each once
+```
+- An item lives in ONE chunk, the one with its top left corner, and may stick out of it by up to `max_item_size` (a loose grid): no copies per chunk, no duplicates in results. A query looks at the chunks that can reach into it. A bigger item is refused: keep terrain and huge triggers in a separate list.
+- `Load` / `Unload` / `IsLoaded` / `Stream` (loads and unloads around a center, `fill` / `drop` callbacks), `Clear` (empties every loaded chunk but keeps it loaded: a second world of moving things, refilled each frame), `Query` / `QueryPoint`, `Visit` (nodes in world coordinates), `Usage` (also the largest chunk, to size E, N, L), `Coord`, `Bounds`.
+- The ring needs 2 * radius + 1 <= W and <= H; two loaded chunks may not share a slot (`Load` says no, `Stream` unloads first).
 
 ## Retained mode (`quadtree_retained.odin`)
 The same tree that lives between frames: `QuadtreeRetained(E, N, L)` with `QuadtreeRetainedInit / Add / Remove / Get / Move / Query / QueryPoint / Cleanup / Visit / Usage / Len / Clear`. `Add` gives a stable `Handle` (`core:container/handle_map`, generation checked: a removed handle is stale), `ptr` carries your data, `Move` and `Remove` change one element without a rebuild. Use it when most of the scene stays put and few things move (the `retained crates` demo moves 10 wanderers among 300 crates); when most things move every frame, the immediate tree above is simpler.
