@@ -129,8 +129,11 @@ test_a_module_lets_in_the_players_of_the_provider_it_trusts :: proc(t: ^testing.
     defer { delete(player_receive); delete(player_message) }
     testing.expect(t, ConnectionOpen(player, {endpoint = server.endpoint, database = "auth", token = AuthToken(session), refresh = AuthRefresh, refresh_user = session}, player_receive, player_message), player.error)
     defer ConnectionClose(player)
-    _, player_greeted := ConnectionWait(player, isInitial, nil, allocator)
+    player_initial, player_greeted := ConnectionWait(player, isInitial, nil, allocator)
     testing.expect(t, player_greeted, "the player of the trusted provider is let in")
+    // the identity that the real server gave is the one computed from issuer and subject, without a connection
+    greeting, is_greeting := player_initial.(InitialConnection)
+    testing.expect(t, is_greeting && greeting.identity == IdentityFromClaims(issuer, "user-1"), "the server's identity is blake3(issuer|subject) with the checksum")
     sql: HttpResult = DatabaseSql(server.endpoint, "auth", "SELECT * FROM login", AuthToken(session), response)
     text: string = string(sql.body)
     testing.expectf(t, strings.contains(text, "user-1") && strings.contains(text, issuer) && strings.contains(text, "a@b.c") && strings.contains(text, "game"), "the module recorded the claims: %s", text)

@@ -179,3 +179,11 @@ AuthRefresh :: proc(user: rawptr) -> string {
     }
     return session.tokens.id_token
 }
+
+// The identity the server gives to a login of `issuer` and `subject`, computed here (no connection needed): the wire order of `Identity`, the reverse of the hex text
+IdentityFromClaims :: proc(issuer: string, subject: string) -> Identity {
+    hex_order: [32]u8 = oidc.IdentityBytesFromClaims(issuer, subject)
+    identity: Identity
+    for i in 0 ..< 32 { identity[i] = hex_order[31 - i] }
+    return identity
+}
