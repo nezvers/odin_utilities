@@ -27,6 +27,7 @@ GdVariantType :: enum u32 {
     VECTOR2 = 5,
     VECTOR3 = 9,
     STRING_NAME = 21,
+    OBJECT = 24,
     DICTIONARY = 27,
     ARRAY = 28,
     PACKED_BYTE_ARRAY = 29,
@@ -186,6 +187,8 @@ Interface :: struct {
     array_resize: proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32),
     dictionary_keys: proc "c" (dictionary: rawptr, args: [^]rawptr, result: rawptr, count: i32),
     packed_ints, packed_floats, packed_strings: PackedOps,
+    from_object: proc "c" (variant: ^GdVariant, value: rawptr),
+    to_object: proc "c" (value: rawptr, variant: ^GdVariant),
     from_string_name: proc "c" (variant: ^GdVariant, value: rawptr),
     destroy_string_name: proc "c" (value: rawptr),
     variant_destroy: proc "c" (variant: ^GdVariant),
@@ -265,6 +268,8 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.dictionary_construct = constructor(.DICTIONARY, 0)
     gd.array_destroy = gd.variant_destructor(.ARRAY)
     gd.dictionary_destroy = gd.variant_destructor(.DICTIONARY)
+    gd.from_object = gd.variant_from_type(.OBJECT)
+    gd.to_object = gd.variant_to_type(.OBJECT)
     gd.from_string_name = gd.variant_from_type(.STRING_NAME)
     gd.destroy_string_name = gd.variant_destructor(.STRING_NAME)
     gd.from_bytes = gd.variant_from_type(.PACKED_BYTE_ARRAY)
@@ -387,7 +392,19 @@ variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator) -
         if length > 0 { gd.string_to_utf8(&text, raw_data(buffer), GdInt(length)) }
         gd.destroy_string(&text)
         return {kind = .STRING, text = buffer}
-    case .NIL, .STRING_NAME, .VECTOR2, .VECTOR3, .DICTIONARY, .ARRAY, .PACKED_BYTE_ARRAY, .PACKED_INT64_ARRAY, .PACKED_FLOAT64_ARRAY, .PACKED_STRING_ARRAY:
+    case .VECTOR2:
+        native: [2]f32
+        gd.to_vector2(&native, variant)
+        return {kind = .VECTOR2, real = {f64(native[0]), f64(native[1]), 0, 0}}
+    case .VECTOR3:
+        native: [3]f32
+        gd.to_vector3(&native, variant)
+        return {kind = .VECTOR3, real = {f64(native[0]), f64(native[1]), f64(native[2]), 0}}
+    case .OBJECT:
+        object: rawptr
+        gd.to_object(&object, variant)
+        return {kind = .OBJECT, object = object}
+    case .NIL, .STRING_NAME, .DICTIONARY, .ARRAY, .PACKED_BYTE_ARRAY, .PACKED_INT64_ARRAY, .PACKED_FLOAT64_ARRAY, .PACKED_STRING_ARRAY:
     }
     return {}
 }
@@ -402,6 +419,9 @@ valueToVariant :: proc "c" (variant: ^GdVariant, value: Value) {
     case .VECTOR2: variantVector2(variant, value.real)
     case .VECTOR3: variantVector3(variant, value.real)
     case .BYTES: variantBytes(variant, value.text)
+    case .OBJECT:
+        object: rawptr = value.object
+        gd.from_object(variant, &object)
     case .ARRAY, .DICTIONARY, .PACKED_INTS, .PACKED_FLOATS, .PACKED_STRINGS, .NONE:
     }
 }
@@ -562,6 +582,11 @@ variantPackedStrings :: proc "c" (result: ^GdVariant, items: []Value) {
     writePackedStrings(&array, items)
     gd.packed_strings.from(result, &array)
     gd.packed_strings.destroy(&array)
+}
+
+variantObject :: proc "c" (result: ^GdVariant, object: rawptr) {
+    pointer: rawptr = object
+    gd.from_object(result, &pointer)
 }
 
 variantBool :: proc "c" (result: ^GdVariant, value: bool) {

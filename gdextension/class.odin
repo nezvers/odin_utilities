@@ -31,7 +31,7 @@ package gdextension
 // Virtual methods: `virtuals = {{"_process", proc(instance: rawptr, delta: f64) {...}}}` with a Node as `parent`: the engine calls them (a class that updates itself, no script that polls). A
 // class can be made twice from one table of methods, once under RefCounted and once under Node (see `godot_spacetimedb/lobby.odin`).
 //
-// Properties: `properties = {{"total", .INT, "get", "set_total"}}` over methods of the class (see the template). Argument kinds: bool, int, float, String, PackedByteArray, Vector2, Vector3, PackedInt64Array, PackedFloat64Array, PackedStringArray, Array and Dictionary (flat: their elements are bool, int, float or String; a Dictionary has String keys). Objects are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
+// Objects and the engine: an OBJECT value is the engine's pointer, `Call(object, "Node", "get_child_count", 894402480, {})` calls an engine method (the hash is in extension_api.json). Properties: `properties = {{"total", .INT, "get", "set_total"}}` over methods of the class (see the template). Argument kinds: bool, Object (see Call), int, float, String, PackedByteArray, Vector2, Vector3, PackedInt64Array, PackedFloat64Array, PackedStringArray, Array and Dictionary (flat: their elements are bool, int, float or String; a Dictionary has String keys). Objects are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
 
 import "base:runtime"
 
@@ -49,6 +49,7 @@ ValueKind :: enum u8 {
     VECTOR2,                // `real[0..1]` (32 bit floats in the engine)
     VECTOR3,                // `real[0..2]`
     ARRAY,                  // `items`: bool, int, float and String elements (other elements come as NONE)
+    OBJECT,                 // an Object of the engine (a Node, a Resource ...): `object`, nil for null
     PACKED_INTS,            // a PackedInt64Array: `ints`
     PACKED_FLOATS,          // a PackedFloat64Array: `floats`
     PACKED_STRINGS,         // a PackedStringArray: `items` (kind STRING each)
@@ -63,6 +64,7 @@ Value :: struct {
     real: [4]f64,
     items: []Value,             // an ARRAY, or the values of a DICTIONARY
     keys: []Value,              // the keys of a DICTIONARY (kind STRING)
+    object: rawptr,             // OBJECT: the engine's pointer; it stays the engine's, keep it only as long as the engine keeps the object
     ints: []i64,                // PACKED_INTS
     floats: []f64,              // PACKED_FLOATS
 }
@@ -95,6 +97,10 @@ ValueArray :: proc "contextless" (items: []Value) -> Value {
 ValueDictionary :: proc "contextless" (keys: []Value, items: []Value) -> Value {
     assert_contextless(len(keys) == len(items))
     return {kind = .DICTIONARY, keys = keys, items = items}
+}
+
+ValueObject :: proc "contextless" (object: rawptr) -> Value {
+    return {kind = .OBJECT, object = object}
 }
 
 ValueBool :: proc "contextless" (flag: bool) -> Value {
@@ -174,6 +180,7 @@ variantTypeOf :: proc "contextless" (kind: ValueKind) -> GdVariantType {
     case .VECTOR3: return .VECTOR3
     case .ARRAY: return .ARRAY
     case .DICTIONARY: return .DICTIONARY
+    case .OBJECT: return .OBJECT
     case .PACKED_INTS: return .PACKED_INT64_ARRAY
     case .PACKED_FLOATS: return .PACKED_FLOAT64_ARRAY
     case .PACKED_STRINGS: return .PACKED_STRING_ARRAY
@@ -236,6 +243,8 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
             gd.to_dictionary(&dictionary, variant)
             values[i].keys, values[i].items = readDictionary(&dictionary, context.temp_allocator)
             gd.dictionary_destroy(&dictionary)
+        case .OBJECT:
+            gd.to_object(&values[i].object, variant)
         case .PACKED_INTS:
             array: GdBytes
             gd.packed_ints.to(&array, variant)
@@ -267,6 +276,7 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     case .VECTOR3: variantVector3(result, answer.real)
     case .ARRAY: variantArray(result, answer.items)
     case .DICTIONARY: variantDictionary(result, answer.keys, answer.items)
+    case .OBJECT: variantObject(result, answer.object)
     case .PACKED_INTS: variantPackedInts(result, answer.ints)
     case .PACKED_FLOATS: variantPackedFloats(result, answer.floats)
     case .PACKED_STRINGS: variantPackedStrings(result, answer.items)
@@ -297,6 +307,7 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
             values[i].real = {f64(native[0]), f64(native[1]), f64(native[2]), 0}
         case .ARRAY: values[i].items = readArray(args[i], context.temp_allocator)
         case .DICTIONARY: values[i].keys, values[i].items = readDictionary(args[i], context.temp_allocator)
+        case .OBJECT: values[i].object = (cast(^rawptr)args[i])^
         case .PACKED_INTS: values[i].ints = readPackedInts(args[i], context.temp_allocator)
         case .PACKED_FLOATS: values[i].floats = readPackedFloats(args[i], context.temp_allocator)
         case .PACKED_STRINGS: values[i].items = readPackedStrings(args[i], context.temp_allocator)
@@ -320,6 +331,7 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
     case .DICTIONARY:
         gd.dictionary_construct(result, nil)
         writeDictionary(result, answer.keys, answer.items)
+    case .OBJECT: (cast(^rawptr)result)^ = answer.object
     case .PACKED_INTS:
         gd.packed_ints.construct(result, nil)
         writePackedInts(result, answer.ints)
@@ -412,6 +424,56 @@ registerClass :: proc "c" (class: ^Class) {
     }
 }
 
+// Calls a method of an engine object: `class` is the class that declares the method ("Node"), `hash` the one of extension_api.json for that method. The arguments and the result are Values
+// (a result of another kind than the ones of ValueKind comes back as NONE); the text of a result lives in the temp allocator. Method binds are looked up once and kept (64 of them): the
+// strings `class` and `method` should be literals (the cache compares their addresses). False when the engine refused the call (wrong argument kinds, a freed object).
+Call :: proc(object: rawptr, class: cstring, method: cstring, hash: i64, arguments: []Value) -> (result: Value, ok: bool) {
+    assert(len(arguments) <= MAX_ARGUMENTS)
+    bind: rawptr = methodBind(class, method, hash)
+    if bind == nil { return {}, false }
+    variants: [MAX_ARGUMENTS]GdVariant
+    pointers: [MAX_ARGUMENTS]^GdVariant
+    for value, i in arguments {
+        valueToVariant(&variants[i], value)
+        pointers[i] = &variants[i]
+    }
+    answer: GdVariant
+    error: GdCallError
+    gd.method_bind_call(bind, object, raw_data(pointers[:]), GdInt(len(arguments)), &answer, &error)
+    result = variantToValue(&answer, context.temp_allocator)
+    gd.variant_destroy(&answer)
+    for i in 0 ..< len(arguments) { gd.variant_destroy(&variants[i]) }
+    return result, error.error == .OK
+}
+
+@(private)
+BindEntry :: struct {
+    class, method: cstring,
+    hash: i64,
+    bind: rawptr,
+}
+
+@(private)
+binds: [64]BindEntry
+@(private)
+bind_count: int
+
+@(private)
+methodBind :: proc(class: cstring, method: cstring, hash: i64) -> rawptr {
+    for i in 0 ..< bind_count {
+        entry: ^BindEntry = &binds[i]
+        if entry.class == class && entry.method == method && entry.hash == hash { return entry.bind }
+    }
+    class_name: GdStringName = stringName(class)
+    method_name: GdStringName = stringName(method)
+    bind: rawptr = gd.get_method_bind(&class_name, &method_name, GdInt(hash))
+    if bind != nil && bind_count < len(binds) {
+        binds[bind_count] = {class, method, hash, bind}
+        bind_count += 1
+    }
+    return bind
+}
+
 // Emits a signal of an object (`object` is what `bind` gave): the connected callables run before it returns. False when the engine refused the call.
 Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
     assert(len(arguments) <= MAX_ARGUMENTS)
@@ -432,6 +494,7 @@ Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
         case .VECTOR3: variantVector3(&variants[i + 1], value.real)
         case .ARRAY: variantArray(&variants[i + 1], value.items)
         case .DICTIONARY: variantDictionary(&variants[i + 1], value.keys, value.items)
+        case .OBJECT: variantObject(&variants[i + 1], value.object)
         case .PACKED_INTS: variantPackedInts(&variants[i + 1], value.ints)
         case .PACKED_FLOATS: variantPackedFloats(&variants[i + 1], value.floats)
         case .PACKED_STRINGS: variantPackedStrings(&variants[i + 1], value.items)

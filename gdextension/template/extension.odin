@@ -143,6 +143,19 @@ counter_class: ge.Class = {
             }
             return {kind = .PACKED_STRINGS, items = out}
         }},
+        // Objects and calls into the engine: the child count of a Node, its parent, and the position of a Node2D
+        {"child_count", {.OBJECT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            count, _ := ge.Call(a[0].object, "Node", "get_child_count", 894402480, {})
+            return count
+        }},
+        {"parent_of", {.OBJECT}, .OBJECT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            parent, _ := ge.Call(a[0].object, "Node", "get_parent", 3160264692, {})
+            return parent
+        }},
+        {"place", {.OBJECT, .VECTOR2}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            _, ok := ge.Call(a[0].object, "Node2D", "set_position", 743155724, {a[1]})
+            return ge.ValueBool(ok)
+        }},
         // several arguments
         {"mix", {.INT, .STRING, .BOOL}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             counter: ^Counter = cast(^Counter)instance

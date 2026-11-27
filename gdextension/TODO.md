@@ -7,11 +7,12 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] Value kinds float, Vector2, Vector3 (arguments, results, signal arguments)
 - [x] Array and Dictionary values (flat: bool, int, float, String elements; String keys)
 - [x] PackedInt64Array, PackedFloat64Array, PackedStringArray (`PACKED_INTS`, `PACKED_FLOATS`, `PACKED_STRINGS`)
-- [ ] (medium) More value kinds: nested Arrays and Dictionaries, the other packed arrays (Int32, Float32, Vector2/3, Color), Variant, StringName, objects (a Node as an argument or a result)
+- [ ] (medium) More value kinds: nested Arrays and Dictionaries, the other packed arrays (Int32, Float32, Vector2/3, Color), Variant, StringName
 - [x] Virtual methods `_ready`, `_enter_tree`, `_exit_tree`, `_process`, `_physics_process` (`Class.virtuals`, a Node parent)
 - [x] Properties over getter and setter methods (`Class.properties`)
 - [ ] (low) Exported enums and property hints (ranges, file paths) for the inspector
 - [x] Build tool `odin run gdextension/tool/build -- <package> <project dir>` (builds for this computer, writes the `.gdextension`, `--import`)
 - [ ] (medium) Build tool: try it on Linux and macOS (the file names are written for all three, only Windows was run); cross builds
-- [ ] (medium) Call engine methods from Odin (`classdb_get_method_bind` with the hashes of `extension_api.json`)
+- [x] Objects as values (`OBJECT`) and engine calls from Odin (`ge.Call(object, class, method, hash, args)`, binds cached)
+- [ ] (low) Generate typed wrappers for engine classes from `extension_api.json` (hashes and signatures) so `Call` needs no hash by hand
 - [ ] (low) Hot reload of the extension (`recreate_instance_func`)
