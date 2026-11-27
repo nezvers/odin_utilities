@@ -9,7 +9,7 @@ websocket, *subscribes* to queries and receives the changes of the rows it asked
 | Setup: the references and the server, untracked | done | `setup.odin`, `tool/setup` |
 | A server of your own, started and stopped from a program | done | `server.odin` |
 | REST: identities, publish, delete, SQL, call, logs, schema | done | `rest.odin`, `http.odin` |
-| BSATN and the websocket protocol v2 | done | `bsatn.odin`, `protocol.odin` |
+| BSATN and the websocket protocols v2 and v3 | done | `bsatn.odin`, `protocol.odin` |
 | A client connection a game polls once a frame | done | `connection.odin`, `websocket.odin` |
 | A session that is tested: server, module (Rust and Odin), two clients, rows, updates, an error, the log | done | `spacetimedb_test.odin`, `tool/session` |
 | A client cache (the rows that are subscribed to, by table and key) and typed rows | next | TODO.md |
@@ -102,7 +102,7 @@ Give the endpoint `secure = true` (port 443) to reach a database on maincloud or
   bindings, the cookbook of clockworklabs and spacetime-studio of ElegonCode (a desktop manager that uses the REST side). They are the first place to look for how something is meant to work.
 
 ## Limits
-- `ws://` and `http://` only (a database behind TLS needs a proxy for now); no reconnect; one websocket protocol (v2); no Brotli or Gzip frames; the JSON helper reads strings only.
+- `ws://` and `http://` only (a database behind TLS needs a proxy for now); no reconnect; websocket protocols v2 and v3; no Brotli or Gzip frames; the JSON helper reads strings only.
 - Modules in Odin: primitive column types only (no structs, enums, options or arrays of them in a table yet), no indexes, constraints, scheduled reducers, views or procedures, no automatic increment, a reducer has no return value, only the V9 description is written (TODO.md).
 - On Windows the output of the server is thrown away unless `show_output` is set (a child does not inherit a file handle made by `os.create`); the log of what a module writes is `DatabaseLogs`.
 - The CLI, when run, writes a `cli.toml` to the user's SpacetimeDB folder the first time; the server of the library keeps its own files in the `root` you pass.

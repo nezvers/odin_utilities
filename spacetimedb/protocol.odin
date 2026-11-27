@@ -10,6 +10,8 @@ package spacetimedb
 import "base:runtime"
 
 PROTOCOL_V2 :: "v2.bsatn.spacetimedb"
+// Version 3 has the same messages and lets the server put several of them, one after the other, into one websocket frame (see ServerMessageDecodeNext)
+PROTOCOL_V3 :: "v3.bsatn.spacetimedb"
 
 COMPRESSION_NONE :: u8(0)
 COMPRESSION_BROTLI :: u8(1)
@@ -214,6 +216,12 @@ ServerFrame :: proc(frame: []u8) -> (body: []u8, ok: bool) {
 
 // Decodes one message (the body of a frame, see ServerFrame). `ok` false: the bytes are not a message of this protocol. The arrays are made with `allocator`.
 ServerMessageDecode :: proc(body: []u8, allocator: runtime.Allocator) -> (message: ServerMessage, ok: bool) {
+    message, _, ok = ServerMessageDecodeNext(body, allocator)
+    return
+}
+
+// The same for a frame of protocol v3, which holds one or more messages: decodes the first and gives the bytes that follow it (empty after the last one; a v2 frame has just one message).
+ServerMessageDecodeNext :: proc(body: []u8, allocator: runtime.Allocator) -> (message: ServerMessage, rest: []u8, ok: bool) {
     reader: Reader = ReaderMake(body)
     tag: u8 = ReadTag(&reader)
     switch tag {
@@ -286,9 +294,9 @@ ServerMessageDecode :: proc(body: []u8, allocator: runtime.Allocator) -> (messag
         }
         message = batch
     case:
-        return nil, false
+        return nil, nil, false
     }
-    return message, !ReaderFailed(&reader)
+    return message, body[reader.at:], !ReaderFailed(&reader)
 }
 
 @(private)

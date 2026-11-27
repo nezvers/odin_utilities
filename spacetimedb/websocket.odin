@@ -47,6 +47,8 @@ WebSocket :: struct {
     message_opcode: WebSocketOpcode,
     close_code: u16,
     error: string,
+    protocol: [32]u8,               // the sub protocol the server chose (empty when it chose none)
+    protocol_length: u8,
     consumed: int,                  // the bytes of `receive` that the last returned message used: dropped at the next poll
     send_buffer: [WEBSOCKET_SEND_BUFFER]u8,
 }
@@ -113,12 +115,18 @@ WebSocketOpen :: proc(ws: ^WebSocket, endpoint: Endpoint, path: string, protocol
         ws.error = "the accept key is wrong"
         return false
     }
+    ws.protocol_length = u8(copy(ws.protocol[:], headerValue(answer, "Sec-WebSocket-Protocol")))
     leftover: int = length - (end + 4)
     copy(receive[:leftover], receive[end + 4:length])
     ws.received = leftover
     ws.open = true
     streamNonBlocking(&ws.stream)
     return true
+}
+
+// The sub protocol that the server chose at the upgrade, for example "v3.bsatn.spacetimedb"
+WebSocketProtocol :: proc(ws: ^WebSocket) -> string {
+    return string(ws.protocol[:ws.protocol_length])
 }
 
 WebSocketClose :: proc(ws: ^WebSocket, code: u16 = 1000) {

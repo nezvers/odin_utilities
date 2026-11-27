@@ -61,6 +61,8 @@ Connection :: struct {
     subscription_count: int,
     attempts: int,                                  // failed reconnects in a row (the backoff)
     next_attempt: time.Tick,
+    coalesced: int,                                 // frames that held more than one message (protocol v3), for tests and statistics
+    pending: []u8,                                  // the rest of a v3 frame: more messages, decoded by the next polls (it points into the socket's buffer, which is not touched before it is used up)
     dropped: bool,                                  // the socket closed after it was open: `ConnectionMaintain` reconnects
 }
 
@@ -104,7 +106,8 @@ connectSocket :: proc(connection: ^Connection) -> bool {
     token: string = ConnectionToken(connection)
     path: string = fmt.tprintf("/v1/database/%s/subscribe?compression=None%s", config.database, "&confirmed=true" if config.confirmed else "")
     headers: [1]HttpHeader = {{"Authorization", fmt.tprintf("Bearer %s", token)}}
-    protocols: [1]string = {PROTOCOL_V2}
+    // v3 first: the server may then put several messages into one frame; a server without v3 answers v2, which has one message per frame
+    protocols: [2]string = {PROTOCOL_V3, PROTOCOL_V2}
     if !WebSocketOpen(&connection.socket, config.endpoint, path, protocols[:], headers[:], connection.receive_buffer, connection.message_buffer) {
         connection.error = connection.socket.error
         return false
@@ -114,6 +117,7 @@ connectSocket :: proc(connection: ^Connection) -> bool {
 
 ConnectionClose :: proc(connection: ^Connection) {
     WebSocketClose(&connection.socket)
+    connection.pending = nil
     connection.connected = false
 }
 
@@ -215,6 +219,12 @@ ConnectionSubscribeBatch :: proc(connection: ^Connection, query_set_ids: []u32, 
 // next call. `got` false: nothing new (or the socket closed: see `ConnectionOpenState` and `connection.error`).
 ConnectionPoll :: proc(connection: ^Connection, allocator: runtime.Allocator) -> (message: ServerMessage, got: bool) {
     for {
+        if len(connection.pending) > 0 {
+            decoded, rest, decoded_ok := ServerMessageDecodeNext(connection.pending, allocator)
+            connection.pending = rest if decoded_ok else nil     // what cannot be read ends the frame: the position of the next message is not known
+            if !decoded_ok { continue }
+            return decoded, true
+        }
         event, payload := WebSocketPoll(&connection.socket)
         switch event {
         case .NONE:
@@ -229,8 +239,10 @@ ConnectionPoll :: proc(connection: ^Connection, allocator: runtime.Allocator) ->
         case .BINARY:
             body, ok := ServerFrame(payload)
             if !ok { continue }
-            decoded, decoded_ok := ServerMessageDecode(body, allocator)
+            decoded, rest, decoded_ok := ServerMessageDecodeNext(body, allocator)
             if !decoded_ok { continue }
+            connection.pending = rest
+            if len(rest) > 0 { connection.coalesced += 1 }
             if initial, is_initial := decoded.(InitialConnection); is_initial {
                 connection.identity, connection.connection_id, connection.connected = initial.identity, initial.connection_id, true
             }
@@ -259,6 +271,7 @@ ConnectionWait :: proc(connection: ^Connection, wanted: proc(message: ServerMess
 ConnectionReconnect :: proc(connection: ^Connection) -> bool {
     WebSocketClose(&connection.socket)
     connection.connected = false
+    connection.pending = nil
     if !connectSocket(connection) { return false }
     connection.dropped = false
     for i in 0 ..< connection.subscription_count {

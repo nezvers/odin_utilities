@@ -16,7 +16,8 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] `gdextension/godot_spacetimedb` (a sub library of the generic `gdextension` library): a GDExtension in Odin, class `SpacetimeDBClient` polled from GDScript, tested in headless Godot against a real server. What comes next is in its TODO.md (typed API from the generator, PackedByteArray, signals, cache)
 - [x] TLS (`Endpoint.secure`: https and wss through `stream.odin` over p2p/tls13.odin, certificate checked against the host; live checks with `SPACETIMEDB_LIVE=1`)
 - [x] Reconnect (`ConnectionReconnect`, `ConnectionMaintain` with backoff): same token, subscriptions again; `confirmed` reads (`ConnectionConfig.confirmed`). Open: the session id parameter
-- [ ] (medium) Websocket protocol v3 (several messages in one frame) and compressed frames (Gzip is in core:compress, Brotli is not).
+- [x] Websocket protocol v3 (several messages in one frame): offered first, the server's choice is `WebSocketProtocol`, `ConnectionPoll` hands out every message of a frame (`ServerMessageDecodeNext`); tested with a burst of 60 calls against a real server
+- [ ] (medium) Compressed frames (Gzip is in core:compress, Brotli is not); now the connection asks for `compression=None`
 - [x] `ConnectionCallProcedure`, `ConnectionSubscribeBatch` (the cache applies `SubscribeBatchApplied`), event tables in the cache. Open: views and procedures in the generator (schema v10)
 - [x] Authentication with OIDC: `oidc` library, `auth.odin`, module claims (`module/jwt.odin`), tested against a real server; open: a real provider (SpacetimeAuth), the identity from `iss|sub` is done (`blake3`)
 - [ ] (low) The test module of the library in more shapes (a table with a primary key and an index, a scheduled reducer, an event table, a view): the references have them under modules/ (sdk-test).

@@ -173,6 +173,49 @@ test_server_messages_are_decoded_from_frames :: proc(t: ^testing.T) {
     testing.expect(t, !unknown)
 }
 
+// Protocol v3: one frame holds several messages one after the other. They come out in order, the bytes after the last are empty, and a frame of v2 (one message) is the same case.
+@(test)
+test_a_frame_of_protocol_v3_holds_several_messages :: proc(t: ^testing.T) {
+    arena: runtime.Arena
+    allocator: runtime.Allocator = runtime.arena_allocator(&arena)
+    defer runtime.arena_destroy(&arena)
+    buffer: [512]u8
+    writer: Writer = WriterMake(buffer[:])
+    WriteTag(&writer, 6)                    // ReducerResult, failed
+    WriteU32(&writer, 5)
+    WriteI64(&writer, 1)
+    WriteTag(&writer, 3)
+    WriteString(&writer, "first")
+    WriteTag(&writer, 1)                    // SubscribeApplied without tables
+    WriteU32(&writer, 7)
+    WriteU32(&writer, 8)
+    WriteLength(&writer, 0)
+    WriteTag(&writer, 6)                    // another ReducerResult
+    WriteU32(&writer, 6)
+    WriteI64(&writer, 2)
+    WriteTag(&writer, 3)
+    WriteString(&writer, "third")
+
+    rest: []u8 = WriterBytes(&writer)
+    first, first_rest, first_ok := ServerMessageDecodeNext(rest, allocator)
+    result, is_result := first.(ReducerResult)
+    testing.expect(t, first_ok && is_result && result.request_id == 5 && result.message == "first")
+    second, second_rest, second_ok := ServerMessageDecodeNext(first_rest, allocator)
+    applied, is_applied := second.(SubscribeApplied)
+    testing.expect(t, second_ok && is_applied && applied.request_id == 7 && applied.query_set_id == 8)
+    third, third_rest, third_ok := ServerMessageDecodeNext(second_rest, allocator)
+    last, is_last := third.(ReducerResult)
+    testing.expect(t, third_ok && is_last && last.request_id == 6 && last.message == "third")
+    testing.expect_value(t, len(third_rest), 0)
+
+    // the old call decodes the first message of a frame, a cut second message is not read as a whole frame
+    again, again_ok := ServerMessageDecode(WriterBytes(&writer), allocator)
+    _, is_again := again.(ReducerResult)
+    testing.expect(t, again_ok && is_again)
+    _, _, cut_ok := ServerMessageDecodeNext(second_rest[:6], allocator)
+    testing.expect(t, !cut_ok)
+}
+
 @(test)
 test_a_json_string_is_found_by_its_key :: proc(t: ^testing.T) {
     json: string = `{"identity": "abc", "token":"x.y.z", "n": 3}`
@@ -258,6 +301,7 @@ runSession :: proc(t: ^testing.T, module_path: string, port: int) {
     receive_a, message_a, receive_b, message_b: [1 << 16]u8
     first, second: Connection
     testing.expect(t, ConnectionOpen(&first, {endpoint = server.endpoint, database = "odin-session"}, receive_a[:], message_a[:]), "the first client connects")
+    testing.expect_value(t, WebSocketProtocol(&first.socket), PROTOCOL_V3)       // this server speaks v3 and the client asked for it first
     testing.expect(t, ConnectionOpen(&second, {endpoint = server.endpoint, database = "odin-session"}, receive_b[:], message_b[:]), "the second client connects")
     defer ConnectionClose(&first)
     defer ConnectionClose(&second)
@@ -362,6 +406,31 @@ runSession :: proc(t: ^testing.T, module_path: string, port: int) {
     testing.expect(t, applied_again, "the subscription is applied again")
     CacheApply(&cache, again)
     testing.expect(t, CacheCount(&cache, person) >= 1, "the rows are back in the cache")
+
+    // a burst: many calls one after the other, nothing read in between. The server answers a busy client with frames that hold several messages (protocol v3), all come out one by one
+    BURST :: 60
+    for i in 0 ..< BURST {
+        name: [24]u8
+        burst_args: Writer = WriterMake(name[:])
+        WriteString(&burst_args, fmt.tprintf("Burst%d", i))
+        testing.expect(t, ConnectionCallReducer(&first, "add", WriterBytes(&burst_args)) != 0)
+    }
+    results, inserts: int
+    for results < BURST {
+        message, got := ConnectionWait(&first, isUpdateOrResult, nil, allocator)
+        if !got { break }
+        if _, is_result := message.(ReducerResult); is_result { results += 1 }
+    }
+    for inserts < BURST {
+        message, got := ConnectionWait(&second, isUpdateOrResult, nil, allocator)
+        if !got { break }
+        if update, is_update := message.(TransactionUpdate); is_update {
+            for set in update.query_sets { for table in set.tables { inserts += RowListCount(table.inserts) } }
+        }
+    }
+    testing.expect_value(t, results, BURST)
+    testing.expect_value(t, inserts, BURST)
+    testing.expectf(t, first.coalesced + second.coalesced > 0, "the server put several messages into one frame (v3): %d and %d", first.coalesced, second.coalesced)
 
     // the same row by SQL over HTTP, then the database is deleted
     sql: HttpResult = DatabaseSql(server.endpoint, "odin-session", "SELECT * FROM person", token, response[:])
