@@ -47,3 +47,31 @@ test_godot_script_uses_the_extension_against_a_server :: proc(t: ^testing.T) {
     text: string = strings.concatenate({string(output), string(errors)}, context.temp_allocator)
     testing.expectf(t, run_error == nil && state.success && strings.contains(text, "PASS"), "the script passes:\n%s", text)
 }
+
+ARENA_PROJECT :: #directory + "../arena_project"
+
+// The arena in Godot: `ArenaClient` hosts (a server with the arena module and a p2p invite over loopback), a second `ArenaClient` joins with the invite code and the reply, both play on the host's
+// database (the guest through the tunnel), the guest walks and the host sees it, the guest leaves. test_arena.gd does it in headless Godot, one process playing both sides.
+@(test)
+test_godot_arena_host_and_join :: proc(t: ^testing.T) {
+    godot_check, _, _, godot_error := os.process_exec({command = {"godot", "--version"}}, context.temp_allocator)
+    if godot_error != nil || !godot_check.success || spacetimedb.FixturePath("arena-odin") == "" || !os.exists(spacetimedb.ServerCliPath()) {
+        fmt.println("[godot_spacetimedb] no godot or no arena module: the arena test is skipped")
+        return
+    }
+
+    os.make_directory_all(ARENA_PROJECT + "/bin")
+    dll: string = ARENA_PROJECT + "/bin/godot_spacetimedb.dll" when ODIN_OS == .Windows else ARENA_PROJECT + "/bin/libgodot_spacetimedb.so"
+    build, _, build_errors, build_error := os.process_exec({command = {"odin", "build", #directory + "..", "-build-mode:dll", "-strict-style", "-vet", fmt.tprintf("-out:%s", dll)}}, context.temp_allocator)
+    testing.expectf(t, build_error == nil && build.success, "the extension builds: %s", string(build_errors))
+
+    // absolute: the Godot process runs in the folder of its project
+    cwd, _ := os.get_working_directory(context.temp_allocator)
+    root: string = fmt.tprintf("%s/godot_arena_test_server", cwd)
+    spacetimedb.ServerRemove(root)
+    defer spacetimedb.ServerRemove(root)
+    _, _, _, _ = os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--import"}}, context.temp_allocator)
+    state, output, errors, run_error := os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--script", "test_arena.gd", "--", "3198", root}}, context.temp_allocator)
+    text: string = strings.concatenate({string(output), string(errors)}, context.temp_allocator)
+    testing.expectf(t, run_error == nil && state.success && strings.contains(text, "PASS"), "the arena script passes:\n%s", text)
+}

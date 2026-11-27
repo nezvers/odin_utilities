@@ -10,7 +10,7 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (medium) The host's p2p stepping when the window is minimised or the host joins late guests: more guests than one are served (the tunnel supports it) but this has only been tested with one
 - [ ] (medium) Game: obstacles, a round timer and a winner, a second reducer with a cost (a dash), more than coins; shows more of the database (tables with indexes, a scheduled round)
 - [ ] (medium) Client side prediction for the own player (the 50 ms step and the round trip make the own circle feel slightly late)
-- [ ] (low) The same game from Godot (`gdextension/godot_spacetimedb` and a scene)
+- [x] The same game from Godot (`gdextension/godot_spacetimedb`: the class `ArenaClient` with host and join, the project `arena_project/`; tested headless with a host and a guest)
 - [ ] (low) A dedicated server mode (`host --no-window`) for a machine that only hosts
 - [x] Join by a room name through the relay (no code to paste)
 - [x] Sign in with an account in the game (`oidc`, `ui`): the name from the claims and the identity of the person in the database (tested with a provider of our own and real servers)

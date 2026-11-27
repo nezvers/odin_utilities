@@ -1,0 +1,11 @@
+[configuration]
+entry_symbol = "spacetimedb_entry"
+compatibility_minimum = "4.4"
+
+[libraries]
+windows.debug.x86_64 = "res://bin/godot_spacetimedb.dll"
+windows.release.x86_64 = "res://bin/godot_spacetimedb.dll"
+linux.debug.x86_64 = "res://bin/libgodot_spacetimedb.so"
+linux.release.x86_64 = "res://bin/libgodot_spacetimedb.so"
+macos.debug = "res://bin/libgodot_spacetimedb.dylib"
+macos.release = "res://bin/libgodot_spacetimedb.dylib"

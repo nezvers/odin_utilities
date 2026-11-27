@@ -4,3 +4,4 @@ test_project/.godot/
 *.lib
 *.exp
 *.pdb
+arena_project/.godot/
