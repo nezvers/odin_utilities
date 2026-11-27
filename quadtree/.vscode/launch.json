@@ -80,6 +80,23 @@
                 "type": "lldb",
                 "program": "${workspaceFolder}/${config:project_name}.bin"
             }
+        },
+        {
+            "name": "Run Bench",
+            "request": "launch",
+            "preLaunchTask": "Build Bench",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "type": "cppvsdbg",
+            "program": "${workspaceFolder}/bench.exe",
+            "linux": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/bench.bin"
+            },
+            "osx": {
+                "type": "lldb",
+                "program": "${workspaceFolder}/bench.bin"
+            }
         }
     ]
 }

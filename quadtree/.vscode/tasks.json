@@ -50,6 +50,18 @@
             "osx": {
                 "command": "odin build demo_karl2d -strict-style -vet -no-bounds-check -o:speed -out:${config:project_name}.bin"
             }
+        },
+        {
+            "label": "Build Bench",
+            "type": "shell",
+            "command": "odin build tool/bench -strict-style -vet -o:speed -out:bench.exe",
+            "group": "build",
+            "linux": {
+                "command": "odin build tool/bench -strict-style -vet -o:speed -out:bench.bin"
+            },
+            "osx": {
+                "command": "odin build tool/bench -strict-style -vet -o:speed -out:bench.bin"
+            }
         }
     ]
 }
