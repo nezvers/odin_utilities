@@ -46,6 +46,9 @@ Arena :: struct {
     name: string,                       // heap copy
     snapshot: [SNAPSHOT_MAX]u8,
     picked_up: int,
+    object: rawptr,                     // the engine object, for the signals of the Node flavour
+    told_phase: ArenaPhase,
+    told_guests: int,
 }
 
 @(private = "file")
@@ -193,15 +196,24 @@ arenaSnapshot :: proc(arena: ^Arena) -> []u8 {
     return buffer[:at]
 }
 
-arena_class: ge.Class = {
-    name = "ArenaClient",
-    parent = "RefCounted",
-    create = proc() -> rawptr { return new(Arena) },
-    destroy = proc(instance: rawptr) {
-        arenaLeave(arenaOf(instance))
-        free(instance)
-    },
-    methods = {
+@(private = "file")
+arenaCreate :: proc() -> rawptr {
+    return new(Arena)
+}
+
+@(private = "file")
+arenaBind :: proc(instance: rawptr, object: rawptr) {
+    arenaOf(instance).object = object
+}
+
+@(private = "file")
+arenaDestroy :: proc(instance: rawptr) {
+    arenaLeave(arenaOf(instance))
+    free(instance)
+}
+
+// One table of methods for both flavours: a RefCounted that a script updates, and a Node that updates itself
+arena_methods := [?]ge.Method{
         // host(name, root, port, flags, module): `root` is the folder of the server (OS.get_user_data_dir() + "/arena_server"), `port` 0 is 3000, `module` "" is the built module of the library
         {"host", {.STRING, .STRING, .INT, .INT, .STRING}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             return ge.ValueBool(arenaHost(arenaOf(instance), string(a[0].text), string(a[1].text), int(a[2].number), int(a[3].number), string(a[4].text)))
@@ -261,5 +273,49 @@ arena_class: ge.Class = {
         {"snapshot", {}, .BYTES, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             return {kind = .BYTES, text = arenaSnapshot(arenaOf(instance))}
         }},
+}
+
+arena_class: ge.Class = {
+    name = "ArenaClient",
+    parent = "RefCounted",
+    create = arenaCreate,
+    destroy = arenaDestroy,
+    bind = arenaBind,
+    methods = arena_methods[:],
+}
+
+arena_signals := [?]ge.Signal{
+    {"phase_changed", {.INT}},          // the new `phase()`: 1 connecting, 2 playing, 3 failed, 0 back to idle
+    {"guest_count_changed", {.INT}},    // a host: friends whose connection is made
+    {"failed", {.STRING}},              // the text of `error()`
+}
+
+// The Node flavour: add it to the tree and it updates every frame by itself (the delta comes from the engine) and leaves when it leaves the tree. Same methods as ArenaClient, `update` is not needed.
+arena_node_class: ge.Class = {
+    name = "ArenaClientNode",
+    parent = "Node",
+    create = arenaCreate,
+    destroy = arenaDestroy,
+    bind = arenaBind,
+    signals = arena_signals[:],
+    methods = arena_methods[:],
+    virtuals = {
+        {"_process", proc(instance: rawptr, delta: f64) { arenaNodeUpdate(arenaOf(instance), delta) }},
+        {"_exit_tree", proc(instance: rawptr, delta: f64) { arenaLeave(arenaOf(instance)) }},
     },
+}
+
+@(private = "file")
+arenaNodeUpdate :: proc(arena: ^Arena, delta: f64) {
+    arenaUpdate(arena, int(delta * 1000))
+    if arena.phase != arena.told_phase {
+        arena.told_phase = arena.phase
+        ge.Emit(arena.object, "phase_changed", {ge.ValueInt(i64(arena.phase))})
+        if arena.phase == .FAILED { ge.Emit(arena.object, "failed", {ge.ValueText(session.LobbyError(&arena.lobby))}) }
+    }
+    guests: int = session.LobbyGuests(&arena.lobby)
+    if guests != arena.told_guests {
+        arena.told_guests = guests
+        ge.Emit(arena.object, "guest_count_changed", {ge.ValueInt(i64(guests))})
+    }
 }

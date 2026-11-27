@@ -146,7 +146,7 @@ clientEmitEvents :: proc(client: ^Client) {
     }
 }
 
-classes: [5]^ge.Class = {&client_class, &client_node_class, &lobby_class, &lobby_node_class, &arena_example.arena_class}
+classes: [6]^ge.Class = {&client_class, &client_node_class, &lobby_class, &lobby_node_class, &arena_example.arena_class, &arena_example.arena_node_class}
 
 // `entry_symbol` of the .gdextension file
 @(export)

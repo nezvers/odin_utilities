@@ -87,6 +87,8 @@ func _process(delta):
     arena.set_input(dx, dy)                  # -1, 0 or 1
     var snapshot := arena.snapshot()         # PackedByteArray: players (smoothed) and coins, layout at the top of arena_example/arena.odin
 ```
+`ArenaClientNode` is the same class as a Node (it updates itself, no `update` call) with the signals `phase_changed(phase)`, `guest_count_changed(count)` and `failed(error)`; `arena_project/test_arena_node.gd` uses it.
+
 `ArenaClient` has the lobby methods above (`phase()` 0 idle, 1 connecting, 2 playing, 3 failed; `game_phase()` 0 closed ... 3 playing, 4 lost; `waiting_ms()`).
 
 Two windows on one computer or two computers: `godot --path gdextension/godot_spacetimedb/arena_project -- host` prints the invite, `... -- join <code>` joins (and prints the reply when the host used no relay: paste it in the host window); `--relay`, `--internet`, `--port=N`. `solo` plays alone. The project needs the built library in `arena_project/bin` (`odin build gdextension/godot_spacetimedb -build-mode:dll -out:gdextension/godot_spacetimedb/arena_project/bin/godot_spacetimedb.dll`) and `odin run spacetimedb/tool/setup` for the server and the modules. The tests (`godot_test`) play host and guest in one headless process, once with the arena and once with the `basic` module through the generic classes.

@@ -86,6 +86,14 @@ test_godot_arena_host_and_join :: proc(t: ^testing.T) {
     state, output, errors, run_error := os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--script", "test_arena.gd", "--", "3198", root}}, context.temp_allocator)
     text: string = strings.concatenate({string(output), string(errors)}, context.temp_allocator)
     testing.expectf(t, run_error == nil && state.success && strings.contains(text, "PASS"), "the arena script passes:\n%s", text)
+
+    // the Node flavour of the arena updates itself: the script reacts to signals
+    node_root: string = fmt.tprintf("%s/godot_arena_node_server", cwd)
+    spacetimedb.ServerRemove(node_root)
+    defer spacetimedb.ServerRemove(node_root)
+    node_state, node_output, node_errors, node_error := os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--script", "test_arena_node.gd", "--", "3196", node_root}}, context.temp_allocator)
+    node_text: string = strings.concatenate({string(node_output), string(node_errors)}, context.temp_allocator)
+    testing.expectf(t, node_error == nil && node_state.success && strings.contains(node_text, "PASS"), "the arena node script passes:\n%s", node_text)
 }
 
 // Host and join for any game: the generic classes `SpacetimeDBLobby` and `SpacetimeDBClient` with the `basic` module (nothing of the arena), host and guest in one headless process;
