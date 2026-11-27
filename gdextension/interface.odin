@@ -23,6 +23,8 @@ GdVariantType :: enum u32 {
     INT = 2,
     FLOAT = 3,
     STRING = 4,
+    VECTOR2 = 5,
+    VECTOR3 = 9,
     STRING_NAME = 21,
     PACKED_BYTE_ARRAY = 29,
 }
@@ -143,6 +145,12 @@ Interface :: struct {
     bytes_destroy: proc "c" (array: rawptr),
     from_bytes: proc "c" (variant: ^GdVariant, value: rawptr),
     to_bytes: proc "c" (value: rawptr, variant: ^GdVariant),
+    from_float: proc "c" (variant: ^GdVariant, value: rawptr),
+    to_float: proc "c" (value: rawptr, variant: ^GdVariant),
+    from_vector2: proc "c" (variant: ^GdVariant, value: rawptr),
+    to_vector2: proc "c" (value: rawptr, variant: ^GdVariant),
+    from_vector3: proc "c" (variant: ^GdVariant, value: rawptr),
+    to_vector3: proc "c" (value: rawptr, variant: ^GdVariant),
     from_string_name: proc "c" (variant: ^GdVariant, value: rawptr),
     destroy_string_name: proc "c" (value: rawptr),
     variant_destroy: proc "c" (variant: ^GdVariant),
@@ -197,6 +205,12 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.to_string = gd.variant_to_type(.STRING)
     gd.destroy_string = gd.variant_destructor(.STRING)
     gd.bytes_destroy = gd.variant_destructor(.PACKED_BYTE_ARRAY)
+    gd.from_float = gd.variant_from_type(.FLOAT)
+    gd.to_float = gd.variant_to_type(.FLOAT)
+    gd.from_vector2 = gd.variant_from_type(.VECTOR2)
+    gd.to_vector2 = gd.variant_to_type(.VECTOR2)
+    gd.from_vector3 = gd.variant_from_type(.VECTOR3)
+    gd.to_vector3 = gd.variant_to_type(.VECTOR3)
     gd.from_string_name = gd.variant_from_type(.STRING_NAME)
     gd.destroy_string_name = gd.variant_destructor(.STRING_NAME)
     gd.from_bytes = gd.variant_from_type(.PACKED_BYTE_ARRAY)
@@ -236,6 +250,22 @@ variantString :: proc "c" (result: ^GdVariant, text: []u8) {
 variantInt :: proc "c" (result: ^GdVariant, value: i64) {
     number: i64 = value
     gd.from_int(result, &number)
+}
+
+// Vectors are 32 bit floats in the engine (the usual build); the library hands them out as f64
+variantFloat :: proc "c" (result: ^GdVariant, value: f64) {
+    number: f64 = value
+    gd.from_float(result, &number)
+}
+
+variantVector2 :: proc "c" (result: ^GdVariant, v: [4]f64) {
+    native: [2]f32 = {f32(v[0]), f32(v[1])}
+    gd.from_vector2(result, &native)
+}
+
+variantVector3 :: proc "c" (result: ^GdVariant, v: [4]f64) {
+    native: [3]f32 = {f32(v[0]), f32(v[1]), f32(v[2])}
+    gd.from_vector3(result, &native)
 }
 
 variantBool :: proc "c" (result: ^GdVariant, value: bool) {

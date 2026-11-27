@@ -23,6 +23,7 @@ counter_class: ge.Class = {
     signals = {
         {"changed", {.INT}},                    // the new total
         {"noted", {.STRING, .BOOL, .BYTES}},    // every kind of argument
+        {"moved", {.FLOAT, .VECTOR2}},
     },
     methods = {
         // int -> int
@@ -61,6 +62,25 @@ counter_class: ge.Class = {
         // emits `noted` with a String, a bool and bytes
         {"note", {.STRING}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             ge.Emit((cast(^Counter)instance).object, "noted", {ge.ValueText(string(a[0].text)), ge.ValueBool(true), {kind = .BYTES, text = a[0].text}})
+            return {}
+        }},
+        // float -> float
+        {"half", {.FLOAT}, .FLOAT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return ge.ValueFloat(a[0].real[0] / 2)
+        }},
+        // Vector2 -> Vector2, Vector3 -> float, Vector3 -> Vector3
+        {"flip", {.VECTOR2}, .VECTOR2, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return ge.ValueVector2(a[0].real[1], a[0].real[0])
+        }},
+        {"sum3", {.VECTOR3}, .FLOAT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return ge.ValueFloat(a[0].real[0] + a[0].real[1] + a[0].real[2])
+        }},
+        {"rotate3", {.VECTOR3}, .VECTOR3, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return ge.ValueVector3(a[0].real[2], a[0].real[0], a[0].real[1])
+        }},
+        // emits `moved` with a float and a Vector2
+        {"move", {.FLOAT, .VECTOR2}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            ge.Emit((cast(^Counter)instance).object, "moved", {a[0], a[1]})
             return {}
         }},
         // several arguments

@@ -17,6 +17,16 @@ func _init() -> void:
 	counter.note("héllo")
 	_check(failures, notes == [["héllo", true, 6]], "the noted signal carries a String, a bool and bytes: %s" % [notes])
 	_check(failures, counter.has_signal("changed") and counter.get_signal_list().size() >= 2, "the signals are registered")
+	_check(failures, counter.half(5.0) == 2.5, "half")
+	_check(failures, counter.flip(Vector2(1, 2)) == Vector2(2, 1), "flip a Vector2")
+	_check(failures, counter.sum3(Vector3(1, 2, 3)) == 6.0, "sum3")
+	_check(failures, counter.rotate3(Vector3(1, 2, 3)) == Vector3(3, 1, 2), "a Vector3 result")
+	var moves := []
+	counter.moved.connect(func(distance: float, direction: Vector2) -> void: moves.append([distance, direction]))
+	counter.move(1.5, Vector2(3, 4))
+	_check(failures, moves == [[1.5, Vector2(3, 4)]], "the moved signal carries a float and a Vector2: %s" % [moves])
+	var untyped: Variant = counter
+	_check(failures, untyped.call("half", 9.0) == 4.5, "half through a Variant call")
 	_check(failures, counter.is_even(4) and not counter.is_even(7), "is_even")
 	_check(failures, counter.greet("Godot") == "Hello, Godot!", "greet")
 	_check(failures, counter.greet("Zoë") == "Hello, Zoë!", "greet with a non ASCII letter")

@@ -1,7 +1,7 @@
 package gdextension
 
 // A GDExtension in a few lines: describe classes (a name, a parent, methods with their argument and result kinds, how an instance is made and freed) and hand them to `Entry` from the
-// `entry_symbol` of the library. GDScript then calls the methods; they are Odin procedures on plain values (an int, a bool, a String as UTF-8 bytes, a PackedByteArray as bytes).
+// `entry_symbol` of the library. GDScript then calls the methods; they are Odin procedures on plain values (an int, a bool, a float, a String as UTF-8 bytes, a PackedByteArray as bytes, Vector2 and Vector3 as f64s).
 //
 //     @(export)
 //     my_entry :: proc "c" (get: gdextension.GetProcAddress, library: gdextension.Library, initialization: ^gdextension.Initialization) -> u8 {
@@ -31,7 +31,7 @@ package gdextension
 // Virtual methods: `virtuals = {{"_process", proc(instance: rawptr, delta: f64) {...}}}` with a Node as `parent`: the engine calls them (a class that updates itself, no script that polls). A
 // class can be made twice from one table of methods, once under RefCounted and once under Node (see `godot_spacetimedb/lobby.odin`).
 //
-// Properties and other argument kinds are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
+// Argument kinds: bool, int, float, String, PackedByteArray, Vector2, Vector3. Array, Dictionary and objects are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
 
 import "base:runtime"
 
@@ -45,6 +45,9 @@ ValueKind :: enum u8 {
     INT,
     STRING,
     BYTES,                  // a PackedByteArray (the bytes are in `text`)
+    FLOAT,                  // a float (`real[0]`, 64 bit)
+    VECTOR2,                // `real[0..1]` (32 bit floats in the engine)
+    VECTOR3,                // `real[0..2]`
 }
 
 // An argument or a result. A string is UTF-8 bytes in `text`; a bool is `number` 0 or 1.
@@ -52,6 +55,7 @@ Value :: struct {
     kind: ValueKind,
     number: i64,
     text: []u8,
+    real: [4]f64,
 }
 
 // The results of a method, one line each: `ValueText` keeps the bytes of the string until the call ends (a string of the instance or temp memory)
@@ -61,6 +65,18 @@ ValueText :: proc "contextless" (text: string) -> Value {
 
 ValueInt :: proc "contextless" (number: i64) -> Value {
     return {kind = .INT, number = number}
+}
+
+ValueFloat :: proc "contextless" (number: f64) -> Value {
+    return {kind = .FLOAT, real = {number, 0, 0, 0}}
+}
+
+ValueVector2 :: proc "contextless" (x, y: f64) -> Value {
+    return {kind = .VECTOR2, real = {x, y, 0, 0}}
+}
+
+ValueVector3 :: proc "contextless" (x, y, z: f64) -> Value {
+    return {kind = .VECTOR3, real = {x, y, z, 0}}
 }
 
 ValueBool :: proc "contextless" (flag: bool) -> Value {
@@ -124,6 +140,9 @@ variantTypeOf :: proc "contextless" (kind: ValueKind) -> GdVariantType {
     case .INT: return .INT
     case .STRING: return .STRING
     case .BYTES: return .PACKED_BYTE_ARRAY
+    case .FLOAT: return .FLOAT
+    case .VECTOR2: return .VECTOR2
+    case .VECTOR3: return .VECTOR3
     case .NONE: return .NIL
     }
     return .NIL
@@ -163,6 +182,16 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
             gd.to_bytes(&array, variant)
             values[i].text = readBytes(&array, context.temp_allocator)
             gd.bytes_destroy(&array)
+        case .FLOAT:
+            gd.to_float(&values[i].real[0], variant)
+        case .VECTOR2:
+            native: [2]f32
+            gd.to_vector2(&native, variant)
+            values[i].real = {f64(native[0]), f64(native[1]), 0, 0}
+        case .VECTOR3:
+            native: [3]f32
+            gd.to_vector3(&native, variant)
+            values[i].real = {f64(native[0]), f64(native[1]), f64(native[2]), 0}
         case .NONE:
         }
         values[i].kind = kind
@@ -174,6 +203,9 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     case .INT: variantInt(result, answer.number)
     case .STRING: variantString(result, answer.text)
     case .BYTES: variantBytes(result, answer.text)
+    case .FLOAT: variantFloat(result, answer.real[0])
+    case .VECTOR2: variantVector2(result, answer.real)
+    case .VECTOR3: variantVector3(result, answer.real)
     }
     free_all(context.temp_allocator)
 }
@@ -192,6 +224,13 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
             buffer: []u8 = make([]u8, ARGUMENT_TEXT, context.temp_allocator)
             values[i].text = buffer[:stringRead(cast(^GdString)args[i], buffer)]
         case .BYTES: values[i].text = readBytes(args[i], context.temp_allocator)
+        case .FLOAT: values[i].real[0] = (cast(^f64)args[i])^
+        case .VECTOR2:
+            native: ^[2]f32 = cast(^[2]f32)args[i]
+            values[i].real = {f64(native[0]), f64(native[1]), 0, 0}
+        case .VECTOR3:
+            native: ^[3]f32 = cast(^[3]f32)args[i]
+            values[i].real = {f64(native[0]), f64(native[1]), f64(native[2]), 0}
         case .NONE:
         }
         values[i].kind = kind
@@ -203,6 +242,9 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
     case .INT: (cast(^i64)result)^ = answer.number
     case .STRING: nativeString(result, answer.text)
     case .BYTES: makeBytes(result, answer.text)
+    case .FLOAT: (cast(^f64)result)^ = answer.real[0]
+    case .VECTOR2: (cast(^[2]f32)result)^ = {f32(answer.real[0]), f32(answer.real[1])}
+    case .VECTOR3: (cast(^[3]f32)result)^ = {f32(answer.real[0]), f32(answer.real[1]), f32(answer.real[2])}
     }
     free_all(context.temp_allocator)
 }
@@ -293,6 +335,9 @@ Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
         case .BOOL: variantBool(&variants[i + 1], value.number != 0)
         case .STRING: variantString(&variants[i + 1], value.text)
         case .BYTES: variantBytes(&variants[i + 1], value.text)
+        case .FLOAT: variantFloat(&variants[i + 1], value.real[0])
+        case .VECTOR2: variantVector2(&variants[i + 1], value.real)
+        case .VECTOR3: variantVector3(&variants[i + 1], value.real)
         case .NONE:
         }
         pointers[i + 1] = &variants[i + 1]
