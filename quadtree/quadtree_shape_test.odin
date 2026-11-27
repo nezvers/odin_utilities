@@ -564,3 +564,47 @@ test_chunked_iterators_give_the_same_hits_as_the_slice_queries :: proc(t: ^testi
         testing.expect_value(t, count, QuadtreeChunksQueryPoint(world, point, out[:]))
     }
 }
+
+// Small steps take the fast path of Move (same leaves: only the rectangle copies change), bigger ones relink: queries must stay exact through a long walk of both
+@(test)
+test_retained_moves_by_small_and_big_steps_keep_every_query_exact :: proc(t: ^testing.T) {
+    tree: ^RetainedTestTree = new(RetainedTestTree)
+    defer free(tree)
+    area: Rect = {0, 0, 1000, 800}
+    QuadtreeRetainedInit(tree, area, 4, 6)
+    seed: rand.Default_Random_State = rand.create(87)
+    state: rand.Generator = rand.default_random_generator(&seed)
+    rects: [300]Rect
+    handles: [300]Handle
+    for i in 0 ..< len(rects) {
+        rects[i] = randomShapeRect(state, area, 60)
+        handles[i], _ = QuadtreeRetainedAdd(tree, rects[i])
+    }
+    links_before: int
+    _, links_before = QuadtreeRetainedUsage(tree)
+    out: [512]Handle
+    for round in 0 ..< 60 {
+        step: f32 = 2 if round % 10 != 9 else 120
+        for i in 0 ..< len(rects) {
+            rects[i].x = clamp(rects[i].x + (rand.float32(state) * 2 - 1) * step, -50, area.w + 20)
+            rects[i].y = clamp(rects[i].y + (rand.float32(state) * 2 - 1) * step, -50, area.h + 20)
+            testing.expect(t, QuadtreeRetainedMove(tree, handles[i], rects[i]), "the move works")
+            element, _ := QuadtreeRetainedGet(tree, handles[i])
+            testing.expect(t, element.rect == rects[i], "the element has the new rectangle")
+        }
+        query: Rect = randomShapeRect(state, area, 300)
+        expected: int
+        for rect in rects { if RectOverlaps(rect, query) { expected += 1 } }
+        testing.expect_value(t, QuadtreeRetainedQuery(tree, query, out[:]), expected)
+        center: Vec2 = {query.x, query.y}
+        expected = 0
+        for rect in rects { if bruteCircleRect(center, 90, rect) { expected += 1 } }
+        testing.expect_value(t, QuadtreeRetainedQueryCircle(tree, center, 90, out[:]), expected)
+        expected = 0
+        for rect in rects { if RectContainsPoint(rect, center) { expected += 1 } }
+        testing.expect_value(t, QuadtreeRetainedQueryPoint(tree, center, out[:]), expected)
+    }
+    // nothing leaked: every element still has links, and the count of links is of the same order as at the start
+    _, links_after := QuadtreeRetainedUsage(tree)
+    testing.expect(t, links_after > 0 && links_after < links_before * 3, "the links are not leaking")
+}

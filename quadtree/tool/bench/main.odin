@@ -456,9 +456,15 @@ benchSessions :: proc(scene: ^Scene, tree: ^Tree) {
 // Moving elements: `percent` of them take a small step each frame, then the rectangle pass runs. The immediate tree and the grid rebuild, the retained tree and grid_collision_map move.
 
 benchMoves :: proc(scene: ^Scene, tree: ^Tree, retained: ^Retained) {
+    benchMovesBy(scene, tree, retained, 1.5)
+    benchMovesBy(scene, tree, retained, 6)
+}
+
+// `step`: how far an element moves in x and y at most (units; elements are 4 to 16 wide, the leaves of the default tree about 16 at the deepest level)
+benchMovesBy :: proc(scene: ^Scene, tree: ^Tree, retained: ^Retained, step: f32) {
     count: int = len(scene.rects)
-    fmt.printfln("\nmoving elements (update + the rectangle pass), per frame:")
-    fmt.printfln("  %-34s %9s %9s %9s", "", "1%", "10%", "100%")
+    fmt.printfln("\nmoving elements by up to %.1f units: update and the rectangle pass | the update alone, per frame:", step)
+    fmt.printfln("  %-34s %9s %9s %9s   | %9s %9s %9s", "", "1%", "10%", "100%", "1%", "10%", "100%")
     handles: []qt.Handle = make([]qt.Handle, count)
     gcm_handles: []gcm.Handle = make([]gcm.Handle, count)
     defer { delete(handles); delete(gcm_handles) }
@@ -466,6 +472,7 @@ benchMoves :: proc(scene: ^Scene, tree: ^Tree, retained: ^Retained) {
     defer free(world)
     names: [3]string = {"immediate quadtree (rebuild)", "retained quadtree (move)", "grid_collision_map (move)"}
     results: [3][3]f64
+    updates: [3][3]f64
     for percent, column in ([]int{1, 10, 100}) {
         // a private copy of the scene so each run starts from the same places
         copy_scene: Scene = scene^
@@ -486,20 +493,23 @@ benchMoves :: proc(scene: ^Scene, tree: ^Tree, retained: ^Retained) {
         out_handles: [512]qt.Handle
         out_gcm: [256]gcm.Handle
         samples: [3][dynamic]f64
+        updated: [3][dynamic]f64
         for &list in samples { list.allocator = context.temp_allocator }
+        for &list in updated { list.allocator = context.temp_allocator }
         for frame in 0 ..< FRAMES {
             // the same steps for every structure of a frame
             first: int = (frame * moving) % count
             for k in 0 ..< moving {
                 i: int = (first + k) % count
                 rect: qt.Rect = copy_scene.rects[i]
-                rect.x = clamp(rect.x + (rand.float32(state) * 2 - 1) * 6, 0, WORLD - rect.w)
-                rect.y = clamp(rect.y + (rand.float32(state) * 2 - 1) * 6, 0, WORLD - rect.h)
+                rect.x = clamp(rect.x + (rand.float32(state) * 2 - 1) * step, 0, WORLD - rect.w)
+                rect.y = clamp(rect.y + (rand.float32(state) * 2 - 1) * step, 0, WORLD - rect.h)
                 setRect(&copy_scene, i, rect)
             }
             start: time.Tick = now()
             qt.QuadtreeClear(tree)
             for rect, i in copy_scene.rects { qt.QuadtreeInsert(tree, rect, i) }
+            append(&updated[0], elapsed(start))
             total: int
             for probe, i in copy_scene.probes { total += qt.QuadtreeQuery(tree, probe, out[:], omit = i) }
             append(&samples[0], elapsed(start))
@@ -510,6 +520,7 @@ benchMoves :: proc(scene: ^Scene, tree: ^Tree, retained: ^Retained) {
                 i: int = (first + k) % count
                 qt.QuadtreeRetainedMove(retained, handles[i], copy_scene.rects[i])
             }
+            append(&updated[1], elapsed(start))
             for probe, i in copy_scene.probes { total += qt.QuadtreeRetainedQuery(retained, probe, out_handles[:], handles[i]) }
             append(&samples[1], elapsed(start))
 
@@ -519,11 +530,17 @@ benchMoves :: proc(scene: ^Scene, tree: ^Tree, retained: ^Retained) {
                 r: qt.Rect = copy_scene.rects[i]
                 gcm.GridMapMove(world, gcm_handles[i], {r.x, r.y, r.w, r.h})
             }
+            append(&updated[2], elapsed(start))
             for probe, i in copy_scene.probes { total += gcm.GridMapQuery(world, {probe.x, probe.y, probe.w, probe.h}, out_gcm[:], gcm_handles[i]) }
             append(&samples[2], elapsed(start))
             if total < 0 { fmt.println(total) }
         }
-        for row in 0 ..< 3 { results[row][column] = median(samples[row][:]) }
+        for row in 0 ..< 3 {
+            results[row][column] = median(samples[row][:])
+            updates[row][column] = median(updated[row][:])
+        }
     }
-    for row in 0 ..< 3 { fmt.printfln("  %-34s %9.3f %9.3f %9.3f", names[row], results[row][0], results[row][1], results[row][2]) }
+    for row in 0 ..< 3 {
+        fmt.printfln("  %-34s %9.3f %9.3f %9.3f   | %9.3f %9.3f %9.3f", names[row], results[row][0], results[row][1], results[row][2], updates[row][0], updates[row][1], updates[row][2])
+    }
 }

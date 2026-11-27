@@ -104,6 +104,11 @@ QuadtreeRetainedGet :: proc(tree: ^QuadtreeRetained($E, $N, $L), handle: Handle)
 QuadtreeRetainedMove :: proc(tree: ^QuadtreeRetained($E, $N, $L), handle: Handle, rect: Rect) -> bool {
     element: ^RetainedElement = hm.get(&tree.elements, handle) or_return
     old: Rect = element.rect
+    // a small step usually reaches the same leaves: then only the copies of the rectangle change, nothing is unlinked, linked or split
+    if retainedNodeResize(tree, 0, retainedRootArea(tree), handle, old, rect) {
+        element.rect = rect
+        return true
+    }
     retainedNodeRemove(tree, 0, retainedRootArea(tree), handle, old)
     element.rect = rect
     if retainedNodeAdd(tree, 0, retainedRootArea(tree), 0, handle, rect, true) { return true }
@@ -300,6 +305,30 @@ retainedLeafSplit :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: 
 }
 
 // Take the element out of the leaves its rectangle overlaps. Leaves that do not hold it (a failed add) are skipped
+// Give the links of the element their new rectangle when the new rectangle reaches exactly the leaves the old one did. False as soon as the leaves differ: some links may already have the new rectangle then,
+// which does no harm, the fallback in QuadtreeRetainedMove unlinks the element by its handle and links it again (or restores the old rectangle)
+@(private)
+retainedNodeResize :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Area, handle: Handle, old: Rect, rect: Rect) -> bool {
+    if tree.nodes[node].count < 0 {
+        first: i32 = tree.nodes[node].first
+        was: [4]bool = quadrants(area, old)
+        now: [4]bool = quadrants(area, rect)
+        if was != now { return false }
+        for quadrant in 0 ..< 4 {
+            if !now[quadrant] { continue }
+            if !retainedNodeResize(tree, first + i32(quadrant), areaChild(area, quadrant), handle, old, rect) { return false }
+        }
+        return true
+    }
+    for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        if tree.links[link].element == handle {
+            tree.links[link].rect = rect
+            return true
+        }
+    }
+    return false
+}
+
 @(private)
 retainedNodeRemove :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Area, handle: Handle, rect: Rect) {
     if tree.nodes[node].count < 0 {
