@@ -56,4 +56,7 @@ script: []kit.Step = {
         before: f32 = osc[0].t
         return before == osc[0].t
     }, "(a stopped oscillator keeps its time)"),
+    kit.Wait(2),
+    kit.Capture("sprite_oscillator_end"),
+    kit.Wait(1),
 }

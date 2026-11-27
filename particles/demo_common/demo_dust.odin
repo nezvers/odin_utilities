@@ -25,6 +25,8 @@ dust_particles: [DUST_COUNT]Particle
 spawned: int            // spawn calls, the first ones fill the pool, the later ones are respawns of particles that ended
 
 init :: proc(ctx: ^kit.Context) {
+    // a window test compares pictures: the dust must be the same every run (a normal run stays random)
+    when kit.DEMO_TEST { rand.reset(4242) }
     ctx.background = kit.BLACK
     particle_texture = kit.TextureLoad(ctx, #load("../../assets/textures/dust_4_strip.png"))
     spawned = 0
@@ -124,4 +126,7 @@ script: []kit.Step = {
         }
         return true
     }, "the pool is full again after the respawns"),
+    kit.Wait(2),
+    kit.Capture("particles_dust_end"),
+    kit.Wait(1),
 }

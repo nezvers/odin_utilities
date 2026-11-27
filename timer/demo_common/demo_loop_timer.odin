@@ -195,4 +195,7 @@ script: []kit.Step = {
     // 70 seconds is not a time: the digits before the minutes are red and enter does nothing
     kit.Tap(.N7), kit.Tap(.N0),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !input_is_valid() || input_value.digits[1] < 7 }, "digits are checked"),
+    kit.Wait(2),
+    kit.Capture("timer_loop_timer_end"),
+    kit.Wait(1),
 }

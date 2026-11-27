@@ -74,4 +74,7 @@ script: []kit.Step = {
         frame := sp.AnimatorFrame(sheets[:], sprite.animator)
         return frame == sp.rectf{80, 0, 16, 16}
     }, "the up clip is the frame at 80,0 of the table"),
+    kit.Wait(2),
+    kit.Capture("sprite_sheet_end"),
+    kit.Wait(1),
 }

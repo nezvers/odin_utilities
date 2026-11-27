@@ -109,4 +109,7 @@ script: []kit.Step = {
     kit.Drag({SLIDER_X + 200, 201}, {SLIDER_X + 400, 201}, 5),     // inside of the bar whatever the width of the label is, then past its right end
     kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return player_sprite.rotation > 100 }, "the rotate slider turns the sprite"),
+    kit.Wait(2),
+    kit.Capture("sprite_sprite_end"),
+    kit.Wait(1),
 }
