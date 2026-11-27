@@ -46,4 +46,7 @@ script: []kit.Step = {
     kit.Wait(2),
     // the first line (100,100) -> (700,250) crosses the second (x = 400, y 100..400) at (400, 175)
     kit.Check(proc(ctx: ^kit.Context) -> bool { return abs(last_point.x - 400) < 1 && abs(last_point.y - 175) < 1 }, "crossing lines: the closest point is the crossing"),
+    kit.Wait(2),
+    kit.Capture("geometry2d_closest_end"),
+    kit.Wait(1),
 }

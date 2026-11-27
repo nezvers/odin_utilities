@@ -53,4 +53,7 @@ script: []kit.Step = {
     kit.MoveTo({100, 650}),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !last_hit }, "moving away from it does not"),
+    kit.Wait(2),
+    kit.Capture("geometry2d_project_end"),
+    kit.Wait(1),
 }

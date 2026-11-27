@@ -102,6 +102,9 @@ script_tilemap: []kit.Step = {
 	kit.Wait(3),
 	kit.Check(proc(ctx: ^kit.Context) -> bool { return tm.TilemapGetTile(&tilemap, {2, 2}) == 1 && tm.TilemapGetTile(&tilemap, {0, 0}) == TILE_EMPTY }, "the hard coded map: tile 1 at 2,2, empty at 0,0"),
 	kit.Check(proc(ctx: ^kit.Context) -> bool { return tm.TilesetGetId(&tileset, 3) == 3 }, "the tileset maps a TileID to its tile"),
+    kit.Wait(2),
+    kit.Capture("tilemap_draw_tilemap_end"),
+    kit.Wait(1),
 }
 
 script_grid: []kit.Step = {
@@ -111,10 +114,16 @@ script_grid: []kit.Step = {
 	kit.MoveTo({20, 20}),
 	kit.Wait(3),
 	kit.Check(proc(ctx: ^kit.Context) -> bool { return hovered_id == TILE_INVALID }, "outside of the map the id is invalid"),
+    kit.Wait(2),
+    kit.Capture("tilemap_draw_grid_end"),
+    kit.Wait(1),
 }
 
 script_region: []kit.Step = {
 	kit.MoveTo({100 + 16 * 8, 100 + 16 * 6}),
 	kit.Wait(5),
 	kit.Check(proc(ctx: ^kit.Context) -> bool { return ctx.backend.stats.draw_calls > 0 }, "the region around the mouse is drawn"),
+    kit.Wait(2),
+    kit.Capture("tilemap_draw_region_end"),
+    kit.Wait(1),
 }

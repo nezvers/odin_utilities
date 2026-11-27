@@ -105,4 +105,7 @@ script: []kit.Step = {
     kit.Click({100 + 16 * 3 + 4, 100 + 16 * 4 + 4}, .RIGHT),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tm.TilemapGetTile(&dualgrid_data, {3, 4}) == TILE_GRASS }, "the right button erases"),
+    kit.Wait(2),
+    kit.Capture("tilemap_dualgrid_end"),
+    kit.Wait(1),
 }

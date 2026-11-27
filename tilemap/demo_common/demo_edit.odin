@@ -63,6 +63,9 @@ script_paint: []kit.Step = {
 	kit.Click({100 + 16 * 2 + 4, 100 + 16 * 2 + 4}, .RIGHT),        // copy the tile at 2,2
 	kit.Wait(2),
 	kit.Check(proc(ctx: ^kit.Context) -> bool { return paint_tile_id == 1 }, "the right button copies the tile under the mouse"),
+    kit.Wait(2),
+    kit.Capture("tilemap_edit_paint_end"),
+    kit.Wait(1),
 }
 
 // ---- drag: select a rectangle with the left button, drag it with the right one (control: remove the source, alt: write empty tiles)
@@ -119,6 +122,9 @@ script_drag: []kit.Step = {
 	kit.KeyUpStep(.LEFT_CTRL),
 	kit.Check(proc(ctx: ^kit.Context) -> bool { return tm.TilemapGetTile(&tilemap, {3, 2}) == TILE_EMPTY }, "dragging with control removed the source tiles"),
 	kit.Check(proc(ctx: ^kit.Context) -> bool { return tm.TilemapGetTile(&tilemap, {7, 3}) != TILE_EMPTY }, "and the tiles are where they were dropped"),
+    kit.Wait(2),
+    kit.Capture("tilemap_edit_drag_end"),
+    kit.Wait(1),
 }
 
 // ---- resize: select with the left button, the tilemap becomes the selection when it is let go
@@ -172,4 +178,7 @@ script_resize: []kit.Step = {
 	// select cells 1,1 .. 5,4 (5 x 4)
 	kit.MoveTo({100 + 16 * 1 + 4, 100 + 16 * 1 + 4}), kit.MouseDownStep(), kit.Wait(1), kit.MoveTo({100 + 16 * 5 + 4, 100 + 16 * 4 + 4}), kit.Wait(1), kit.MouseUpStep(), kit.Wait(3),
 	kit.Check(proc(ctx: ^kit.Context) -> bool { return resized == 1 && tilemap.size == vec2i{5, 4} }, "letting go of the selection resizes the tilemap to it"),
+    kit.Wait(2),
+    kit.Capture("tilemap_edit_resize_end"),
+    kit.Wait(1),
 }

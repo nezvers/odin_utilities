@@ -179,4 +179,7 @@ script: []kit.Step = {
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tm.TilemapGetTile(&group_tilemap, {2, 2}) == solid_id && tm.TilemapGetTile(&group_tilemap, {0, 0}) == TILE_EMPTY }, "the group tilemap is solid where the map had tiles"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return tm.TilemapGetTile(&tilemap, {2, 2}) != TILE_EMPTY }, "the rules wrote tiles into the main tilemap"),
+    kit.Wait(2),
+    kit.Capture("tilemap_ruletile_end"),
+    kit.Wait(1),
 }

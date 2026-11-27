@@ -57,4 +57,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return position.x > 400 && distance_to({800, 500}) > 100 }, "it starts moving toward the new target, it does not jump"),
     kit.Wait(300),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return distance_to({800, 500}) < 30 * 30 }, "and gets to it"),
+    kit.Wait(2),
+    kit.Capture("spring_spring_damper_end"),
+    kit.Wait(1),
 }

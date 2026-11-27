@@ -51,4 +51,7 @@ draw_ray :: proc(ctx: ^kit.Context, ray: gm.Ray, scale: f32, color: kit.Color) {
 script: []kit.Step = {
     kit.Wait(5),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ctx.backend.stats.draw_calls >= 5 * 5 }, "the five shapes are drawn every frame"),
+    kit.Wait(2),
+    kit.Capture("geometry2d_draw_shapes_end"),
+    kit.Wait(1),
 }

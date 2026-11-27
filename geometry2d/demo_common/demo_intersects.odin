@@ -56,4 +56,7 @@ script: []kit.Step = {
     kit.MoveTo({100, 600}),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return point_count == 0 }, "a line that goes away from it does not meet it"),
+    kit.Wait(2),
+    kit.Capture("geometry2d_intersects_end"),
+    kit.Wait(1),
 }

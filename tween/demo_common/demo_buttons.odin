@@ -123,4 +123,7 @@ script: []kit.Step = {
     kit.Tap(.SPACE),
     kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !intro_done && buttons[0].position.x < 0 }, "space plays the intro again"),
+    kit.Wait(2),
+    kit.Capture("tween_buttons_end"),
+    kit.Wait(1),
 }

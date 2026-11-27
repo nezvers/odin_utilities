@@ -84,4 +84,7 @@ script: []kit.Step = {
     kit.Wait(10),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return abs(chain_length() - total_length) < 0.5 && point_list[0] == kit.Vec2{500, 300} }, "pulling puts the first point on the mouse and keeps the lengths"),
     kit.MouseUpStep(.RIGHT),
+    kit.Wait(2),
+    kit.Capture("fabrik_chain_end"),
+    kit.Wait(1),
 }

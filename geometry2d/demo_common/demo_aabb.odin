@@ -64,4 +64,7 @@ script: []kit.Step = {
     kit.Click({300, 300}, .RIGHT),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return pos_b == kit.Vec2{300, 300} }, "right click moves the second rectangle"),
+    kit.Wait(2),
+    kit.Capture("geometry2d_aabb_end"),
+    kit.Wait(1),
 }

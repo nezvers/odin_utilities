@@ -77,4 +77,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ease_x[0] >= 899 }, "then the interval holds it"),
     kit.Wait(240),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return ease_x[0] < 899 }, "and it loops: infinite loops keep going"),
+    kit.Wait(2),
+    kit.Capture("tween_ease_end"),
+    kit.Wait(1),
 }

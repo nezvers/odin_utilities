@@ -189,6 +189,9 @@ script_manhattan: []kit.Step = {
     kit.Click(cell_pixel({3, 0}), .RIGHT),
     kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return target_cell == vec2i{3, 0} }, "the target can be a solid cell, the demo does not move it"),
+    kit.Wait(2),
+    kit.Capture("astar_grid2d_manhattan_end"),
+    kit.Wait(1),
 }
 
 script_euclidian: []kit.Step = {
@@ -197,6 +200,9 @@ script_euclidian: []kit.Step = {
     kit.Click(cell_pixel({6, 5}), .LEFT),
     kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return start_cell == vec2i{6, 5} && path_valid(true) }, "left click moves the start"),
+    kit.Wait(2),
+    kit.Capture("astar_grid2d_euclidian_end"),
+    kit.Wait(1),
 }
 
 // a pixel inside of a cell, for a script (a constant expression: the grid is at 100,100 with 30 pixel cells)
