@@ -178,7 +178,7 @@ timelineLinkedCopies :: proc(timeline: ^Timeline) {
     for i in 0 ..< count {
         source: ^TimelineClip = TimelineClipGet(timeline, sources[i])
         owner: ^TimelineTrack = TimelineTrackGet(timeline, source.track)
-        copy: TimelineClip = {track = source.track, start = source.drag_start, length = source.drag_length, user = source.user, color = source.color, muted = source.muted, gain_db = source.gain_db, fadeable = source.fadeable, fade_in = source.fade_in, fade_out = source.fade_out}
+        copy: TimelineClip = {track = source.track, start = source.drag_start, length = source.drag_length, user = source.user, color = source.color, muted = source.muted, gain_db = source.gain_db, fadeable = source.fadeable, fade_in = source.fade_in, fade_out = source.fade_out, fade_in_shape = source.fade_in_shape, fade_out_shape = source.fade_out_shape}
         copy.name, copy.name_length = source.name, source.name_length
         handle, ok := hm.add(&timeline.clips, copy)
         if !ok { return }
@@ -341,6 +341,28 @@ timelineBoxRect :: proc(view: ^TimelineView, style: ^TimelineStyle) -> Rect {
     top: f32 = view.rect.y + style.ruler_height - view.scroll
     y0, y1: f32 = top + view.box_y, top + view.box_y_to
     return {min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0)}
+}
+
+// The curve of a fade. The gain of a fade in is `TimelineFadeGain(shape, t)` for t from 0 to 1 along the fade; a fade out is the same read backwards (the same curve mirrored in time).
+TimelineFadeShape :: enum u8 {
+    LINEAR,
+    EQUAL_POWER,        // constant power (sin), for material that does not correlate
+    S_CURVE,            // raised cosine
+    EXPONENTIAL,        // slow start, fast finish
+    LOGARITHMIC,        // fast start, slow finish
+}
+
+TimelineFadeGain :: proc(shape: TimelineFadeShape, t: f32) -> f32 {
+    x: f32 = clamp(t, 0, 1)
+    K :: f32(4)
+    switch shape {
+    case .LINEAR: return x
+    case .EQUAL_POWER: return math.sin(x * math.PI * 0.5)
+    case .S_CURVE: return 0.5 - 0.5 * math.cos(x * math.PI)
+    case .EXPONENTIAL: return (math.exp(K * x) - 1) / (math.exp(K) - 1)
+    case .LOGARITHMIC: return math.ln(1 + (math.exp(K) - 1) * x) / K
+    }
+    return x
 }
 
 TimelineZone :: enum u8 {
@@ -597,7 +619,13 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             }
             fade_in: bool = zone == .FADE_IN
             current: f64 = clip.fade_in if fade_in else clip.fade_out
-            if interaction.double_clicked {
+            if .CTRL in ctx.input.modifiers && !interaction.double_clicked {
+                // Ctrl+click: the next curve of the fade (one undo step)
+                shape: ^TimelineFadeShape = &clip.fade_in_shape if fade_in else &clip.fade_out_shape
+                previous: TimelineFadeShape = shape^
+                shape^ = TimelineFadeShape((int(previous) + 1) % len(TimelineFadeShape))
+                timelineEmit(timeline, {kind = .CLIP_FADE_IN_SHAPE if fade_in else .CLIP_FADE_OUT_SHAPE, clip = view.hover_clip, track = clip.track, value = f32(shape^), previous_value = f32(previous)})
+            } else if interaction.double_clicked {
                 // a double click puts the fade back to none
                 if current != 0 {
                     timelineEmit(timeline, {kind = .CLIP_FADE_IN if fade_in else .CLIP_FADE_OUT, clip = view.hover_clip, track = clip.track, value = 0, previous_value = f32(current)})
@@ -1083,6 +1111,7 @@ TimelineDraw :: proc(ctx: ^Context, info: ^DrawInfo) {
                 draw.header_mute, draw.header_knob, draw.header = TimelineClipHeader(rect, style.edge, clip.fadeable)
                 if clip.fadeable {
                     draw.fadeable, draw.fade_in, draw.fade_out = true, clip.fade_in, clip.fade_out
+                    draw.fade_in_shape, draw.fade_out_shape = clip.fade_in_shape, clip.fade_out_shape
                     draw.fade_in_handle, draw.fade_out_handle, draw.fade_handles = TimelineClipFadeHandles(rect, timelineFadePixels(view, clip, clip.fade_in, false), timelineFadePixels(view, clip, clip.fade_out, true))
                 }
                 if view.hover_clip == handle { draw.hover_zone = view.hover_zone }

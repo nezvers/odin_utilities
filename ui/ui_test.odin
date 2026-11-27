@@ -7404,3 +7404,20 @@ test_the_fade_handles_of_an_audio_clip_are_dragged_and_reset :: proc(t: ^testing
     timelineDrag(harness, timeline, view, centre(fade_out) + {1000, 0} * 0 + {0, 0}, centre(fade_out) + {-30, 0})
     testing.expect_value(t, TimelineClipGet(timeline, clip).fade_out, 0)
 }
+
+// Every curve starts silent, ends at unity and never goes down; they differ in the middle
+@(test)
+test_fade_shapes_run_from_silence_to_unity :: proc(t: ^testing.T) {
+    for shape in TimelineFadeShape {
+        testing.expectf(t, abs(TimelineFadeGain(shape, 0)) < 1e-6 && abs(TimelineFadeGain(shape, 1) - 1) < 1e-5, "%v ends", shape)
+        previous: f32
+        for i in 1 ..= 100 {
+            gain: f32 = TimelineFadeGain(shape, f32(i) / 100)
+            if gain < previous { testing.expectf(t, false, "%v goes down at %d", shape, i); break }
+            previous = gain
+        }
+    }
+    testing.expect_value(t, TimelineFadeGain(.LINEAR, 0.5), 0.5)
+    testing.expect(t, TimelineFadeGain(.EQUAL_POWER, 0.5) > 0.7 && TimelineFadeGain(.EXPONENTIAL, 0.5) < 0.2 && TimelineFadeGain(.LOGARITHMIC, 0.5) > 0.8, "the middles differ")
+    testing.expect(t, abs(TimelineFadeGain(.S_CURVE, 0.5) - 0.5) < 1e-6, "the S curve is symmetric")
+}

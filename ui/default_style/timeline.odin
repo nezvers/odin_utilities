@@ -255,16 +255,26 @@ clipFades :: proc(painter: ^Painter, clip: ^ui.ClipDraw) {
     shade: ui.Color = {theme.track.r, theme.track.g, theme.track.b, 150}
     bottom: f32 = rect.y + rect.w
     if painter.fill_polygon != nil {
-        if fade_in >= 1 {
-            points: [3]ui.Vec2 = {{rect.x, rect.y}, {rect.x + fade_in, rect.y}, {rect.x, bottom}}
-            painter.fill_polygon(painter, points[:], shade)
-            Line(painter, {rect.x, bottom}, {rect.x + fade_in, rect.y}, 1, theme.text_dim)
-        }
-        if fade_out >= 1 {
-            end: f32 = rect.x + rect.z
-            points: [3]ui.Vec2 = {{end, rect.y}, {end - fade_out, rect.y}, {end, bottom}}
-            painter.fill_polygon(painter, points[:], shade)
-            Line(painter, {end - fade_out, rect.y}, {end, bottom}, 1, theme.text_dim)
+        // the dimmed part is the area above the curve of the fade, drawn as trapezoids so every polygon is convex
+        STEPS :: 12
+        end: f32 = rect.x + rect.z
+        for side in 0 ..< 2 {
+            width: f32 = fade_in if side == 0 else fade_out
+            if width < 1 { continue }
+            shape: ui.TimelineFadeShape = clip.fade_in_shape if side == 0 else clip.fade_out_shape
+            previous: ui.Vec2
+            for i in 0 ..= STEPS {
+                t: f32 = f32(i) / STEPS                  // along the fade, from its start (where it is silent) to its end
+                gain: f32 = ui.TimelineFadeGain(shape, t)
+                point: ui.Vec2 = {rect.x + t * width, bottom - gain * rect.w} if side == 0 else {end - t * width, bottom - gain * rect.w}
+                if i > 0 {
+                    quad: [4]ui.Vec2 = {{previous.x, rect.y}, {point.x, rect.y}, point, previous}
+                    if side == 1 { quad = {{point.x, rect.y}, {previous.x, rect.y}, previous, point} }
+                    painter.fill_polygon(painter, quad[:], shade)
+                    Line(painter, previous, point, 1, theme.text_dim)
+                }
+                previous = point
+            }
         }
     }
     if .HOVERED in clip.flags || .SELECTED in clip.flags {

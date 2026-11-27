@@ -31,6 +31,7 @@ TimelineEventLabel :: proc(kind: TimelineEventKind) -> string {
     case .CLIP_MUTED: return "Mute clip"
     case .CLIP_FADE_IN: return "Fade in"
     case .CLIP_FADE_OUT: return "Fade out"
+    case .CLIP_FADE_IN_SHAPE, .CLIP_FADE_OUT_SHAPE: return "Fade shape"
     case .CLIP_GAIN: return "Clip volume"
     case .PLAYHEAD: return "Move playhead"
     case .LOOP_CHANGED: return "Change loop"
