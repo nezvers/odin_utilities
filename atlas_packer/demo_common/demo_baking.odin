@@ -240,4 +240,7 @@ script: []kit.Step = {
     }, "the letter H was rendered with an advance"),
     kit.Wait(60),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return player_timer >= 0 && int(player_timer) < len(player_packed) }, "the baked frames animate"),
+    kit.Wait(2),
+    kit.Capture("atlas_packer_baking_end"),
+    kit.Wait(1),
 }

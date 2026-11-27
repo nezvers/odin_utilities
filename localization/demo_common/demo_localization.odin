@@ -104,4 +104,7 @@ script: []kit.Step = {
         languages, ok := local.GetLanguages(&local_data)
         return ok && len(languages) == 10 && len(sorted_keys) > 3
     }, "ten languages, every key listed"),
+    kit.Wait(2),
+    kit.Capture("localization_localization_end"),
+    kit.Wait(1),
 }

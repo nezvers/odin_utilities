@@ -224,4 +224,7 @@ script: []kit.Step = {
     kit.MoveTo({165, 150}), kit.Wait(2), kit.Click({165, 150}),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return presses == 2 }, "a folded header hides its buttons: the click finds nothing"),
+    kit.Wait(2),
+    kit.Capture("microui_microui_end"),
+    kit.Wait(1),
 }

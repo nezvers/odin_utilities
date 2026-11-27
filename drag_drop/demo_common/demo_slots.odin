@@ -107,4 +107,7 @@ script: []kit.Step = {
     kit.Drag({260, 100}, {55, 55}, 10),
     kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return slots[7].item == 0 && slots[0].item == 1 }, "dropped on a taken slot: it goes back too"),
+    kit.Wait(2),
+    kit.Capture("drag_drop_slots_end"),
+    kit.Wait(1),
 }

@@ -208,4 +208,7 @@ script: []kit.Step = {
     kit.Tap(.SPACE),
     kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return current_state == &state_title && changes == 3 }, "space goes back to the title"),
+    kit.Wait(2),
+    kit.Capture("app_state_game_states_end"),
+    kit.Wait(1),
 }

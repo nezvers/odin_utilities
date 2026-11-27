@@ -602,4 +602,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return b2.Body_GetLinearVelocity(player.body).y != 0 }, "space moves the player vertically (a jump)"),
     kit.Wait(120),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return score >= 0 && score <= len(coins) }, "the score counts coins"),
+    kit.Wait(2),
+    kit.Capture("box2d_odin_platformer_end"),
+    kit.Wait(1),
 }

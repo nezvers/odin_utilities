@@ -118,4 +118,7 @@ script: []kit.Step = {
     kit.Wait(240),
     kit.Click({SPINNER_X + 220, 20}),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return jump_impulse > 0 }, "the plus of a spinner changes the value"),
+    kit.Wait(2),
+    kit.Capture("cool_math_jump_height_end"),
+    kit.Wait(1),
 }

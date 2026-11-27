@@ -125,4 +125,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return player_rect.x < 700 }, "D does nothing for Right anymore"),
     kit.Hold(.L, 120),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return player_rect.x > 700 }, "L moves the square to the right now"),
+    kit.Wait(2),
+    kit.Capture("input_action_end"),
+    kit.Wait(1),
 }

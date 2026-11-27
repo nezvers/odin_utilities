@@ -105,4 +105,7 @@ script: []kit.Step = {
     kit.Tap(.R),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return host.ctx.step_count < 10 }, "R restarts the sample: the step counter starts over"),
+    kit.Wait(2),
+    kit.Capture("box2d_odin_samples_end"),
+    kit.Wait(1),
 }

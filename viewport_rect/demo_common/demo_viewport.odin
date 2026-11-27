@@ -93,4 +93,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return scale_index == 4 }, "tab goes through the rules"),
     kit.Tap(.TAB), kit.Tap(.TAB),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return scale_index == 0 }, "and starts over after six"),
+    kit.Wait(2),
+    kit.Capture("viewport_rect_viewport_end"),
+    kit.Wait(1),
 }

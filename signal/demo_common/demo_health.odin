@@ -82,4 +82,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return model.is_down && model.health == 0 }, "the died signal puts the player down"),
     kit.Tap(.R),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return !model.is_down && model.health == HEALTH_MAX }, "revive"),
+    kit.Wait(2),
+    kit.Capture("signal_health_end"),
+    kit.Wait(1),
 }

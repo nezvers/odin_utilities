@@ -66,4 +66,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return items[1].rect.x == 80 && items[1].rect.y == 80 }, "the other item did not move"),
     kit.Click({600, 500}),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return dragged == -1 }, "a click on empty space grabs nothing"),
+    kit.Wait(2),
+    kit.Capture("drag_drop_simple_end"),
+    kit.Wait(1),
 }
