@@ -8,6 +8,7 @@
 package models3d
 
 import "base:runtime"
+import "core:math"
 import "core:math/linalg"
 import "core:strings"
 import gltf2 "glTF2"
@@ -45,6 +46,16 @@ Alpha_Mode :: enum {
     OPAQUE,
     MASK,
     BLEND,
+}
+
+// A glTF color factor is linear. Textures and the screen of the glue packages are sRGB, so a factor that is drawn as a color goes through this first (without it the flat colored
+// materials come out far too dark: the "Black" of the Adventurer is 0.014 linear, which is 0.12 as sRGB). Alpha stays as it is.
+ColorLinearToSrgb :: proc(color: Vec4) -> Vec4 {
+    encode :: proc(value: f32) -> f32 {
+        if value <= 0.0031308 { return value * 12.92 }
+        return 1.055 * math.pow(value, 1.0 / 2.4) - 0.055
+    }
+    return {encode(color.r), encode(color.g), encode(color.b), color.a}
 }
 
 Material :: struct {
@@ -612,17 +623,29 @@ NodeUpdateWorld :: proc(model: ^Model, index: int, parent_world: Mat4) {
     }
 }
 
-// Bounds of all mesh vertices in the current pose, skinned meshes are measured without skinning
+// Bounds of all mesh vertices in the current pose. Skinned meshes are skinned first: their vertices sit in the units of the mesh and the joints scale and move them (the Adventurer is 0.017 wide
+// unskinned and about 2 high skinned), so bounds without skinning would put a camera far too close.
 ModelComputeBounds :: proc(model: ^Model) -> (low: Vec3, high: Vec3) {
     low = {max(f32), max(f32), max(f32)}
     high = {min(f32), min(f32), min(f32)}
     found: bool
+    joints: [MAX_JOINTS]Mat4
     for node in model.nodes {
         if node.mesh == NONE { continue }
-        world: Mat4 = node.world if node.skin == NONE else 1
+        joint_count: int
+        world: Mat4 = node.world
+        if node.skin != NONE {
+            joint_count = ModelSkinMatrices(model, node.skin, joints[:])
+            world = 1
+        }
         for primitive in model.meshes[node.mesh].primitives {
-            for vertex in primitive.vertices {
-                point: Vec3 = (world * Vec4{vertex.position.x, vertex.position.y, vertex.position.z, 1}).xyz
+            for &vertex in primitive.vertices {
+                point: Vec3
+                if node.skin != NONE {
+                    point = VertexSkinPosition(&vertex, joints[:joint_count])
+                } else {
+                    point = (world * Vec4{vertex.position.x, vertex.position.y, vertex.position.z, 1}).xyz
+                }
                 low = linalg.min(low, point)
                 high = linalg.max(high, point)
                 found = true

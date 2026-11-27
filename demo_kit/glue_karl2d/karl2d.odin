@@ -211,6 +211,7 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
         clipboard_get = proc(backend: ^kit.Backend, buffer: []u8) -> int { return systemClipboardGet(buffer) },
         clipboard_set = proc(backend: ^kit.Backend, text: string) { systemClipboardSet(text) },
         mouse_capture = proc(backend: ^kit.Backend, captured: bool) {
+            when kit.DEMO_TEST { return }
             karl2d.set_mouse_locked(captured)
             karl2d.set_cursor_hidden(captured)
         },

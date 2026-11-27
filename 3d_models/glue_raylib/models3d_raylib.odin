@@ -82,7 +82,7 @@ DrawPrimitive :: proc(
     double_sided: bool
     if primitive.material != m3d.NONE {
         material: ^m3d.Material = &model.materials[primitive.material]
-        base_color = material.base_color
+        base_color = m3d.ColorLinearToSrgb(material.base_color)
         double_sided = material.double_sided
         image: int = material.base_color_image
         if image != m3d.NONE && image < len(textures) && textures[image].id != 0 {

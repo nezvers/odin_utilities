@@ -87,7 +87,8 @@ color4 :: proc(color: kit.Color) -> [4]f32 {
 }
 
 renderer_init :: proc() {
-    ensure(karl2d.r3d_init())
+    // a capture run has started the 3D layer already (demo_kit/glue_karl2d)
+    when !kit.DEMO_CAPTURE { ensure(karl2d.r3d_init()) }
     data := karl2d.r3d_mesh_data_plane({demo_common.TILE_SIZE, demo_common.TILE_SIZE})
     renderer.plane, _ = karl2d.r3d_mesh_create_from_data(data)
     karl2d.r3d_mesh_data_destroy(&data)

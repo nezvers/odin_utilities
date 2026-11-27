@@ -205,4 +205,7 @@ script: []kit.Step = {
     kit.Tap(.R),
     kit.Wait(3),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return scene.sphere_count == 0 && player.position.z > -0.5 }, "R resets the world and the player"),
+    kit.Wait(2),
+    kit.Capture("fps_controller_box3d_end"),
+    kit.Wait(1),
 }

@@ -95,4 +95,7 @@ script: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return shots == 1 && scene.box_count == 4 && scene.sphere_count == 1 }, "the left button shoots, the scene has the four towers and the sphere"),
     kit.Hold(.LEFT_CTRL, 30),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return player.head_height < 0.5 }, "control crouches: the head goes down"),
+    kit.Wait(2),
+    kit.Capture("fps_controller_controller_end"),
+    kit.Wait(1),
 }

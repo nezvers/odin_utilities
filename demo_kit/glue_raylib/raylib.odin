@@ -198,6 +198,8 @@ Init :: proc(backend: ^kit.Backend, state: ^State) {
             rl.SetClipboardText(cstring(raw_data(terminated[:])))
         },
         mouse_capture = proc(backend: ^kit.Backend, captured: bool) {
+            // a test plays simulated input: it must not lock, hide or move the real cursor of the person at the computer
+            when kit.DEMO_TEST { return }
             if captured { rl.DisableCursor() } else { rl.EnableCursor() }
         },
         camera_begin = proc(backend: ^kit.Backend, camera: kit.Camera) {

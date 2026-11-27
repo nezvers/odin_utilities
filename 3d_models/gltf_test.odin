@@ -161,3 +161,30 @@ test_load_adventurer :: proc(t: ^testing.T) {
         }
     }
 }
+
+@(test)
+test_a_linear_factor_is_encoded_as_srgb_for_the_screen :: proc(t: ^testing.T) {
+    out: Vec4 = ColorLinearToSrgb({0, 0.0031308, 0.5, 0.25})
+    testing.expect_value(t, out.r, 0)
+    testing.expect(t, abs(out.g - 0.0404) < 0.001, "the linear part of the curve")
+    testing.expect(t, abs(out.b - 0.7354) < 0.001, "linear 0.5 is 0.735 as sRGB")
+    testing.expect_value(t, out.a, 0.25)       // alpha is not a color
+    black: Vec4 = ColorLinearToSrgb({0.014113562, 0.014113562, 0.014113562, 1})
+    testing.expect(t, abs(black.r - 0.1236) < 0.002, "the Black material of the Adventurer is dark grey, not black")
+    white: Vec4 = ColorLinearToSrgb({1, 1, 1, 1})
+    testing.expect(t, abs(white.r - 1) < 0.0001 && abs(white.g - 1) < 0.0001 && abs(white.b - 1) < 0.0001, "white stays white")
+}
+
+@(test)
+test_the_bounds_of_a_skinned_model_are_the_size_of_the_model :: proc(t: ^testing.T) {
+    bytes: []byte = #load("../assets/gltf/Adventurer.glb")
+    buffer: []byte = make([]byte, 32 * mem.Megabyte)
+    defer delete(buffer)
+    arena: mem.Arena
+    mem.arena_init(&arena, buffer)
+    model, ok := ModelLoadGltfBytes(bytes, mem.arena_allocator(&arena))
+    testing.expect(t, ok)
+    size: Vec3 = model.bounds_max - model.bounds_min
+    // a character a few units high; without skinning the box was 0.017 wide and a demo camera sat inside of the model
+    testing.expect(t, size.y > 0.5 && size.y < 10, "a character sized box")
+}

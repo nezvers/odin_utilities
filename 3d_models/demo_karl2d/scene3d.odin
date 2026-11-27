@@ -13,7 +13,8 @@ material: karl2d.R3d_Material
 
 draw_model :: proc(ctx: ^kit.Context, model: ^m3d.Model, view: demo_common.OrbitView) {
     if !ready {
-        ensure(karl2d.r3d_init())
+        // a capture run has started the 3D layer already (demo_kit/glue_karl2d)
+        when !kit.DEMO_CAPTURE { ensure(karl2d.r3d_init()) }
         material = karl2d.r3d_material_default()
         material.outline_width = 1.5
         material.rim_color = {}

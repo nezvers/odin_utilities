@@ -69,7 +69,7 @@ DrawModel :: proc(model: ^m3d.Model, textures: []karl2d.Texture, material: karl2
             primitive_material.albedo = karl2d.TEXTURE_NONE
             if primitive.material != m3d.NONE {
                 source: ^m3d.Material = &model.materials[primitive.material]
-                primitive_material.tint = source.base_color
+                primitive_material.tint = m3d.ColorLinearToSrgb(source.base_color)
                 image: int = source.base_color_image
                 if image != m3d.NONE && image < len(textures) && textures[image] != karl2d.TEXTURE_NONE {
                     primitive_material.albedo = textures[image]
