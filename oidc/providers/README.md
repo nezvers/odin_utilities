@@ -14,6 +14,7 @@ The redirect address is `http://127.0.0.1:48217/callback` (the port is `PRESET_P
 5. `discord.client_id = <that number>`. Discord accepts a public client (no secret) with PKCE for the login (tried live: `odin run oidc/tool/login -- discord`, ID token verified). **Refreshing** the token is different: Discord answers `invalid_client` without the client secret, so a program with no secret asks the person to log in again when the token (7 days) ends, or goes through a broker.
 
 SpacetimeDB accepts the Discord ID token as it is (issuer `https://discord.com`, RS256); the module must still check the audience (`module.RequireClaims`): it is the client id.
+Checked with a person again (2026-11-28, `odin run oidc/tool/login -- discord`): issuer `https://discord.com`, the ID token verifies, it is valid 7 days (604800 s), the refresh token works, and the secret is sent as HTTP Basic at the code exchange (Discord needs `discord.client_secret`, unlike SpacetimeAuth).
 
 ## Google / Gmail (OpenID Connect)
 1. https://console.cloud.google.com > APIs and Services > OAuth consent screen (External, test users: your own addresses while it is in testing).
