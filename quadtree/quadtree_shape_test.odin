@@ -456,3 +456,111 @@ test_chunked_nearest_matches_a_brute_force_search_far_from_the_origin :: proc(t:
         checkNearest(t, rects[:], point, k, -1, max_distance, items[:], distances[:], count)
     }
 }
+
+// Iterators: the same hits as the slice queries, each once, with early exit and two running at the same time
+@(test)
+test_iterators_give_the_same_hits_as_the_slice_queries :: proc(t: ^testing.T) {
+    tree: ^ShapeTree = new(ShapeTree)
+    defer free(tree)
+    area: Rect = {0, 0, 1000, 800}
+    QuadtreeInit(tree, area, 4, 6)
+    seed: rand.Default_Random_State = rand.create(85)
+    state: rand.Generator = rand.default_random_generator(&seed)
+    rects: [300]Rect
+    fillTree(tree, rects[:], state, area, 20)
+    retained: ^RetainedTestTree = new(RetainedTestTree)
+    defer free(retained)
+    QuadtreeRetainedInit(retained, area, 4, 6)
+    handles: [300]Handle
+    for rect, i in rects { handles[i], _ = QuadtreeRetainedAdd(retained, rect) }
+    out: [512]Item
+    out_retained: [512]Handle
+    for round in 0 ..< 300 {
+        rect: Rect = randomShapeRect(state, {-200, -100, 1500, 1000}, 400 if round % 3 != 0 else 40)
+        omit: int = rand.int_max(300, state) if round % 2 == 0 else -1
+        expected: int = QuadtreeQuery(tree, rect, out[:], omit)
+        seen: [300]bool
+        count: int
+        it: QueryIterator
+        QuadtreeQueryBegin(&it, tree, rect, omit)
+        for item in QuadtreeQueryNext(tree, &it) {
+            testing.expect(t, !seen[item], "an item comes once")
+            seen[item] = true
+            count += 1
+        }
+        testing.expect_value(t, count, expected)
+        for i in 0 ..< expected { testing.expect(t, seen[out[i]], "the iterator found what the query found") }
+
+        omit_handle: Handle = handles[omit] if omit >= 0 else HandleNone
+        expected_retained: int = QuadtreeRetainedQuery(retained, rect, out_retained[:], omit_handle)
+        count = 0
+        QuadtreeRetainedQueryBegin(&it, retained, rect, omit_handle)
+        for _ in QuadtreeRetainedQueryNext(retained, &it) { count += 1 }
+        testing.expect_value(t, count, expected_retained)
+
+        point: Vec2 = {rect.x, rect.y}
+        expected = QuadtreeQueryPoint(tree, point, out[:])
+        count = 0
+        QuadtreeQueryPointBegin(&it, tree, point)
+        for _ in QuadtreeQueryNext(tree, &it) { count += 1 }
+        testing.expect_value(t, count, expected)
+        count = 0
+        QuadtreeRetainedQueryPointBegin(&it, retained, point)
+        for _ in QuadtreeRetainedQueryNext(retained, &it) { count += 1 }
+        testing.expect_value(t, count, QuadtreeRetainedQueryPoint(retained, point, out_retained[:]))
+    }
+    // early exit after the first hit, and two iterators of one tree at the same time
+    everything: Rect = {-5000, -5000, 10000, 10000}
+    a, b: QueryIterator
+    QuadtreeQueryBegin(&a, tree, everything)
+    QuadtreeQueryBegin(&b, tree, everything)
+    first, _ := QuadtreeQueryNext(tree, &a)
+    count_b: int
+    for _ in QuadtreeQueryNext(tree, &b) { count_b += 1 }
+    count_a: int = 1
+    for _ in QuadtreeQueryNext(tree, &a) { count_a += 1 }
+    testing.expect(t, first >= 0 && first < 300)
+    testing.expect_value(t, count_a, 300)
+    testing.expect_value(t, count_b, 300)
+    // an empty tree and a miss
+    QuadtreeClear(tree)
+    QuadtreeQueryBegin(&a, tree, everything)
+    _, ok := QuadtreeQueryNext(tree, &a)
+    testing.expect(t, !ok)
+}
+
+@(test)
+test_chunked_iterators_give_the_same_hits_as_the_slice_queries :: proc(t: ^testing.T) {
+    world: ^ShapeWorld = new(ShapeWorld)
+    defer free(world)
+    BASE :: 1_000_000.0
+    QuadtreeChunksInit(world, 100, 30, 4, 5)
+    seed: rand.Default_Random_State = rand.create(86)
+    state: rand.Generator = rand.default_random_generator(&seed)
+    QuadtreeChunksStream(world, {BASE + 50, BASE + 50}, 2, nil, proc(user: rawptr, cx: int, cy: int) {})
+    for i in 0 ..< 400 {
+        QuadtreeChunksInsert(world, {BASE + f64(rand.float32(state) * 480 - 190), BASE + f64(rand.float32(state) * 480 - 190), f64(1 + rand.float32(state) * 29), f64(1 + rand.float32(state) * 29)}, i)
+    }
+    out: [512]Item
+    for round in 0 ..< 200 {
+        // the last rounds are rectangles bigger than the window: the iterator walks the slots instead of the coordinates
+        size: f64 = f64(rand.float32(state) * 200) if round < 180 else 2000
+        rect: WorldRect = {BASE + f64(rand.float32(state) * 500 - 250), BASE + f64(rand.float32(state) * 500 - 250), size, size}
+        expected: int = QuadtreeChunksQuery(world, rect, out[:])
+        seen: map[Item]bool
+        seen.allocator = context.temp_allocator
+        it: QuadtreeChunksIterator
+        QuadtreeChunksQueryBegin(&it, world, rect)
+        for item in QuadtreeChunksQueryNext(world, &it) {
+            testing.expect(t, item not_in seen, "an item comes once")
+            seen[item] = true
+        }
+        testing.expect_value(t, len(seen), expected)
+        for i in 0 ..< expected { testing.expect(t, out[i] in seen, "the iterator found what the query found") }
+        count: int
+        point: WorldVec = {rect.x, rect.y}
+        QuadtreeChunksQueryPointBegin(&it, world, point)
+        for _ in QuadtreeChunksQueryNext(world, &it) { count += 1 }
+        testing.expect_value(t, count, QuadtreeChunksQueryPoint(world, point, out[:]))
+    }
+}

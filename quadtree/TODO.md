@@ -9,7 +9,7 @@ Next steps, most valuable first. A task starts with `(high)`, `(medium)` or `(lo
 - [ ] (low) Circle and segment queries are 2.5x a rectangle pass (34 against 13 ms at 50k): the same loop descent for nodes the shape fits in one quadrant, and ownership instead of marks (needs a reference point of the shape, check that it is worth it)
 - [x] Nearest and k-nearest on the three trees (`QuadtreeNearest`, `QuadtreeRetainedNearest`, `QuadtreeChunksNearest`)
 - [x] Benchmarks against a uniform grid, `grid_collision_map` and brute force (`tool/bench`, findings in README): leaf 8 and depth 8 confirmed as the default
-- [ ] (medium) A query without a callback or a result slice for early exit (an iterator), mostly for the retained and chunked trees
+- [x] Iterator queries without a result slice for rectangles and points on the three trees (`QueryIterator`, `QuadtreeChunksIterator`)
 - [ ] (low) Retained `Move` fast path: nothing to relink when the new rectangle still fits the leaves it is in (check what `QuadtreeRetainedMove` already does, measure first)
 - [ ] (low) Chunked tree: items bigger than `max_item_size` (a fallback list), and a query of many chunks with a limit
 - [ ] (low) Build from a sorted array for static scenes (faster than insert one by one); one shared debug draw proc for the demos instead of each drawing the nodes
