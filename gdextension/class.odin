@@ -31,7 +31,7 @@ package gdextension
 // Virtual methods: `virtuals = {{"_process", proc(instance: rawptr, delta: f64) {...}}}` with a Node as `parent`: the engine calls them (a class that updates itself, no script that polls). A
 // class can be made twice from one table of methods, once under RefCounted and once under Node (see `godot_spacetimedb/lobby.odin`).
 //
-// Argument kinds: bool, int, float, String, PackedByteArray, Vector2, Vector3. Array, Dictionary and objects are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
+// Properties: `properties = {{"total", .INT, "get", "set_total"}}` over methods of the class (see the template). Argument kinds: bool, int, float, String, PackedByteArray, Vector2, Vector3. Array, Dictionary and objects are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
 
 import "base:runtime"
 
@@ -105,11 +105,21 @@ Virtual :: struct {
     call: proc(instance: rawptr, delta: f64),
 }
 
+// A property of the class (the inspector shows it, GDScript reads and writes it as `object.name`): its getter and setter are methods of the class, found by name (`getter` takes no argument and
+// returns `kind`, `setter` takes one argument of `kind`). A property that is read only has no `setter`.
+Property :: struct {
+    name: cstring,
+    kind: ValueKind,
+    getter: cstring,
+    setter: cstring,
+}
+
 Class :: struct {
     name: cstring,
     parent: cstring,
     methods: []Method,
     signals: []Signal,
+    properties: []Property,
     virtuals: []Virtual,
     bind: proc(instance: rawptr, object: rawptr),   // optional: gets the engine object of a new instance, for `Emit`
     create: proc() -> rawptr,       // the instance that goes with a new object (what the methods receive)
@@ -119,6 +129,7 @@ Class :: struct {
     method_names: []GdStringName,
     method_infos: []GdMethodInfo,
     signal_names: []GdStringName,
+    property_names: []GdStringName,    // name, getter, setter of each property: three entries
     virtual_names: []GdStringName,
     signal_infos: [][MAX_ARGUMENTS]GdPropertyInfo,
     property_infos: [][MAX_ARGUMENTS + 1]GdPropertyInfo,
@@ -307,6 +318,14 @@ registerClass :: proc "c" (class: ^Class) {
             arguments_metadata = raw_data(metadata[:]) if len(method.arguments) > 0 else nil,
         }
         gd.register_method(gd.library, &class.name_id, &class.method_infos[i])
+    }
+    class.property_names = make([]GdStringName, len(class.properties) * 3)
+    for property, i in class.properties {
+        class.property_names[i * 3] = stringName(property.name)
+        class.property_names[i * 3 + 1] = stringName(property.getter)
+        class.property_names[i * 3 + 2] = stringName(property.setter if property.setter != nil else "")
+        info: GdPropertyInfo = {type = variantTypeOf(property.kind), name = &class.property_names[i * 3], class_name = &empty_name, hint_string = &empty_string, usage = 6}
+        gd.register_property(gd.library, &class.name_id, &info, &class.property_names[i * 3 + 2], &class.property_names[i * 3 + 1])
     }
     class.signal_names = make([]GdStringName, len(class.signals))
     class.signal_infos = make([][MAX_ARGUMENTS]GdPropertyInfo, len(class.signals))

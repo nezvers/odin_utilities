@@ -31,7 +31,8 @@ Build the package as a DLL (`odin build <pkg> -build-mode:dll -out:<project>/bin
 - Signals: a class lists `signals` (name, argument kinds), keeps the engine object that `bind` gives it, and calls `Emit(object, "name", {values})`; GDScript connects as usual (the template's `Counter.changed` and `noted`). Emit runs the connected callables at once on the calling thread.
 - Virtual methods: `virtuals = {{"_process", proc(instance, delta)}}` with `parent = "Node"`: the class updates itself, no script polls it (`_ready`, `_enter_tree`, `_exit_tree`, `_process`, `_physics_process` only).
 - Kinds: bool, int, float, String, PackedByteArray, Vector2, Vector3 (`Value.real`, 32 bit floats in the engine).
-- Not here yet: properties, Array, Dictionary and object values. See TODO.md.
+- Properties: `properties = {{"total", .INT, "get", "set_total"}}` names a getter and a setter method; GDScript and the inspector then use `counter.total`.
+- Not here yet: property hints, enums, Array, Dictionary and object values. See TODO.md.
 
 ## Template and testing ground
 `template/` is a copyable project (an extension with a `Counter` class, a Godot project, a headless test): start a new extension from it, and try a new feature of this library there first.

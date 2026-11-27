@@ -154,6 +154,7 @@ Interface :: struct {
     from_string_name: proc "c" (variant: ^GdVariant, value: rawptr),
     destroy_string_name: proc "c" (value: rawptr),
     variant_destroy: proc "c" (variant: ^GdVariant),
+    register_property: proc "c" (library: GdLibrary, class_name: ^GdStringName, info: ^GdPropertyInfo, setter: ^GdStringName, getter: ^GdStringName),
     register_signal: proc "c" (library: GdLibrary, class_name: ^GdStringName, signal_name: ^GdStringName, arguments: [^]GdPropertyInfo, count: GdInt),
     get_method_bind: proc "c" (class_name: ^GdStringName, method_name: ^GdStringName, hash: GdInt) -> rawptr,
     method_bind_call: proc "c" (bind: rawptr, object: GdObject, args: [^]^GdVariant, count: GdInt, result: ^GdVariant, error: ^GdCallError),
@@ -188,6 +189,7 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.register_method = auto_cast lookup(get, "classdb_register_extension_class_method", &ok)
     gd.unregister_class = auto_cast lookup(get, "classdb_unregister_extension_class", &ok)
     gd.variant_destroy = auto_cast lookup(get, "variant_destroy", &ok)
+    gd.register_property = auto_cast lookup(get, "classdb_register_extension_class_property", &ok)
     gd.register_signal = auto_cast lookup(get, "classdb_register_extension_class_signal", &ok)
     gd.get_method_bind = auto_cast lookup(get, "classdb_get_method_bind", &ok)
     gd.method_bind_call = auto_cast lookup(get, "object_method_bind_call", &ok)

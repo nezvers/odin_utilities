@@ -20,6 +20,10 @@ counter_class: ge.Class = {
     destroy = proc(instance: rawptr) { free(instance) },
     bind = proc(instance: rawptr, object: rawptr) { (cast(^Counter)instance).object = object },
     // signals: connect from GDScript with `counter.changed.connect(callable)`
+    // a property is a name that GDScript reads and writes (`counter.total = 5`): it calls the methods `get` and `set_total`
+    properties = {
+        {"total", .INT, "get", "set_total"},
+    },
     signals = {
         {"changed", {.INT}},                    // the new total
         {"noted", {.STRING, .BOOL, .BYTES}},    // every kind of argument
@@ -36,6 +40,11 @@ counter_class: ge.Class = {
         // nothing -> int
         {"get", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             return {kind = .INT, number = i64((cast(^Counter)instance).total)}
+        }},
+        // int -> nothing: the setter of the property `total`
+        {"set_total", {.INT}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            (cast(^Counter)instance).total = int(a[0].number)
+            return {}
         }},
         // nothing -> nothing
         {"reset", {}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {

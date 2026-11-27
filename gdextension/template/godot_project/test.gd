@@ -27,6 +27,10 @@ func _init() -> void:
 	_check(failures, moves == [[1.5, Vector2(3, 4)]], "the moved signal carries a float and a Vector2: %s" % [moves])
 	var untyped: Variant = counter
 	_check(failures, untyped.call("half", 9.0) == 4.5, "half through a Variant call")
+	counter.total = 40
+	_check(failures, counter.total == 40 and counter.get() == 40, "the property total writes and reads")
+	_check(failures, counter.get_property_list().any(func(p: Dictionary) -> bool: return p.name == "total"), "the property is listed")
+	counter.reset()
 	_check(failures, counter.is_even(4) and not counter.is_even(7), "is_even")
 	_check(failures, counter.greet("Godot") == "Hello, Godot!", "greet")
 	_check(failures, counter.greet("Zoë") == "Hello, Zoë!", "greet with a non ASCII letter")
