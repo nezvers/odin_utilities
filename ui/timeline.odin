@@ -154,6 +154,7 @@ TimelineEvent :: struct {
     tangent_out: f32,
     previous_tangent_in: f32,
     previous_tangent_out: f32,
+    linked: bool,               // CLIP_ADDED with `copied_from`: the copy is meant to share the content of the original (Shift paste, Shift drag), not to be a unique clip
     copied_from: ClipHandle,    // CLIP_ADDED by a paste: the clip it is a copy of (the handle may be gone when it was cut): a program that keeps data for a clip makes its own copy of it now
     clip_user: rawptr,
     track_user: rawptr,
@@ -538,7 +539,8 @@ TimelineCopy :: proc(timeline: ^Timeline) -> int {
 
 // Puts the copied clips back: the earliest one at `time`, the top one on the track at `track` (an index from the top; -1: where it was), the others around them as they were. The pasted clips
 // are selected, the others are not. The rules decide for each one (a clip that may not be there is left out; a track that is not there takes none). How many were made.
-TimelinePaste :: proc(timeline: ^Timeline, time: f64, track: int = -1) -> int {
+// `linked` only marks the CLIP_ADDED events: what a copy shares with the original is the program's data.
+TimelinePaste :: proc(timeline: ^Timeline, time: f64, track: int = -1, linked: bool = false) -> int {
     if timeline.copy_count == 0 { return 0 }
     base: int = timeline.copy_top_track if track < 0 else track
     pasted: [TIMELINE_COPIES]ClipHandle
@@ -559,7 +561,7 @@ TimelinePaste :: proc(timeline: ^Timeline, time: f64, track: int = -1) -> int {
         owner.clip_count += 1
         pasted[count] = handle
         count += 1
-        timelineEmit(timeline, {kind = .CLIP_ADDED, clip = handle, track = target, start = start, length = entry.length, copied_from = entry.source})
+        timelineEmit(timeline, {kind = .CLIP_ADDED, clip = handle, track = target, start = start, length = entry.length, copied_from = entry.source, linked = linked})
     }
     if count > 0 {
         TimelineSelectClear(timeline)

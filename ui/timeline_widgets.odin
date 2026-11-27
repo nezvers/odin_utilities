@@ -92,6 +92,8 @@ TimelineView :: struct {
     // gesture state
     gesture: TimelineGesture,
     gesture_clip: ClipHandle,
+    link_pending: bool,         // Shift on the body of a clip: a drag leaves linked copies behind (the clips that move are the originals)
+    link_toggle: bool,          // ... and a click without a drag takes the clip out of the selection (Shift click toggles)
     grab_time: f64,
     grab_track: int,
     loop_anchor: f64,
@@ -152,6 +154,29 @@ timelineSnapValue :: proc(view: ^TimelineView, value: f32) -> f32 {
 timelineSnap :: proc(view: ^TimelineView, time: f64) -> f64 {
     if view.snap <= 0 { return time }
     return math.round(time / view.snap) * view.snap
+}
+
+// Shift drag of clips: a linked copy stays where each selected clip was, the selected ones (the originals) move on. Handles are collected first: adding while iterating would move the iterator.
+timelineLinkedCopies :: proc(timeline: ^Timeline) {
+    sources: [TIMELINE_COPIES]ClipHandle
+    count: int
+    it := hm.iterator_make(&timeline.clips)
+    for other, handle in hm.iterate(&it) {
+        if other.selected && count < len(sources) {
+            sources[count] = handle
+            count += 1
+        }
+    }
+    for i in 0 ..< count {
+        source: ^TimelineClip = TimelineClipGet(timeline, sources[i])
+        owner: ^TimelineTrack = TimelineTrackGet(timeline, source.track)
+        copy: TimelineClip = {track = source.track, start = source.drag_start, length = source.drag_length, user = source.user, color = source.color}
+        copy.name, copy.name_length = source.name, source.name_length
+        handle, ok := hm.add(&timeline.clips, copy)
+        if !ok { return }
+        owner.clip_count += 1
+        timelineEmit(timeline, {kind = .CLIP_ADDED, clip = handle, track = source.track, start = copy.start, length = copy.length, copied_from = sources[i], linked = true})
+    }
 }
 
 // The nearest edge (a clip start or end, a marker, the playhead) to a time, when it is within the snap distance. Selected clips and markers are skipped when they are the ones being moved.
@@ -497,8 +522,11 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
         case view.hover_clip != {}:
             clip: ^TimelineClip = TimelineClipGet(timeline, view.hover_clip)
             locked: bool = TimelineTrackGet(timeline, clip.track).flags >= {.LOCKED}
-            if shift {
+            if shift && zone == .BODY && clip.selected && !locked {
+                view.link_pending, view.link_toggle = true, true    // decided at the release or at the first move
+            } else if shift {
                 clip.selected = !clip.selected
+                view.link_pending = clip.selected && zone == .BODY
             } else if !clip.selected {
                 TimelineSelectClear(timeline)
                 clip.selected = true
@@ -684,6 +712,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 view.scroll = clamp(view.scroll - delta.y, 0, max(timelineTotalHeight(timeline, &style) - visible_height, 0))
             case .MOVE:
                 if clip != nil {
+                    defer if view.link_pending && ctx.input.mouse_released && view.link_toggle { clip.selected = false }
                     raw: f64 = clip.drag_start + (time - view.grab_time)
                     target_start: f64 = timelineSnap(view, raw)
                     if view.snap_to_edges {
@@ -706,6 +735,10 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                     }
                     shift_time = max(shift_time, -earliest)
                     track_shift: int = (row - view.grab_track) if row >= 0 else 0
+                    if view.link_pending && (shift_time != 0 || track_shift != 0) {
+                        timelineLinkedCopies(timeline)
+                        view.link_pending, view.link_toggle = false, false
+                    }
                     it = hm.iterator_make(&timeline.clips)
                     for other, handle in hm.iterate(&it) {
                         if !other.selected { continue }
@@ -730,6 +763,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             }
         }
         if ctx.input.mouse_released || !ctx.input.mouse_down {
+            view.link_pending, view.link_toggle = false, false
             view.gesture, view.gesture_clip, view.gesture_marker, view.gesture_point, view.gesture_handle, view.gesture_bend = .NONE, {}, {}, {}, {}, {}
         }
     }
@@ -835,7 +869,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
             TimelinePastePoints(timeline, max(timelineSnapTime(timeline, view, view.playhead, false), 0), lane)
         } else if .PASTE in actions {
             lane: int = row if mouse.y >= lanes_top && row >= 0 && ctx.hover == id else -1
-            TimelinePaste(timeline, max(timelineSnapTime(timeline, view, view.playhead, false), 0), lane)
+            TimelinePaste(timeline, max(timelineSnapTime(timeline, view, view.playhead, false), 0), lane, .SHIFT in ctx.input.modifiers)
         }
     }
 

@@ -7243,3 +7243,69 @@ test_sections_are_marked_with_shift_drag_and_removed_with_ctrl_click :: proc(t: 
     shift(harness, &plain, x(rect, 21), x(rect, 58), {.SHIFT})
     testing.expect_value(t, plain.section_count, 0)
 }
+
+@(test)
+test_paste_with_shift_and_a_shift_drag_make_linked_copies :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, first, _, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    linkedEvents :: proc(timeline: ^Timeline) -> (added: int, linked: int, from: ClipHandle) {
+        for {
+            e, has := TimelinePollEvent(timeline)
+            if !has { break }
+            if e.kind == .CLIP_ADDED {
+                added += 1
+                if e.linked { linked += 1 }
+                from = e.copied_from
+            }
+        }
+        return
+    }
+    timelineClick(harness, timeline, view, {200, 40}, {})
+    timelineActions(harness, timeline, view, {200, 40}, {.COPY})
+    timelineDrain(timeline)
+    // an ordinary paste is not linked
+    view.playhead = 4
+    timelineActions(harness, timeline, view, {390, 10}, {.PASTE})
+    added, linked, _ := linkedEvents(timeline)
+    testing.expect_value(t, added, 1)
+    testing.expect_value(t, linked, 0)
+    // with Shift it is
+    shifted: Input = pointerAt({390, 10})
+    shifted.actions = {.PASTE}
+    shifted.modifiers = {.SHIFT}
+    view.playhead = 8
+    timelineFrame(harness, timeline, view, shifted)
+    added, linked, _ = linkedEvents(timeline)
+    testing.expect_value(t, added, 1)
+    testing.expect_value(t, linked, 1)
+
+    // Shift drag: the original moves, a linked copy stays
+    TimelineSelectClear(timeline)
+    TimelineClipSelect(timeline, clip)
+    count: int = TimelineClipCount(timeline)
+    timelineDrain(timeline)
+    timelineDrag(harness, timeline, view, {200, 40}, {300, 40}, {.SHIFT})
+    testing.expect_value(t, TimelineClipCount(timeline), count + 1)
+    from: ClipHandle
+    added, linked, from = linkedEvents(timeline)
+    testing.expect_value(t, added, 1)
+    testing.expect_value(t, linked, 1)
+    testing.expect_value(t, from, clip)
+    testing.expect(t, TimelineClipGet(timeline, clip).start > 1, "the original moved")
+    stayed: ClipHandle = TimelineClipAt(timeline, first, 1.5)
+    testing.expect(t, stayed != {} && stayed != clip, "the copy is where it was")
+
+    // Shift click without a drag: no copy, the clip leaves the selection
+    TimelineSelectClear(timeline)
+    TimelineClipSelect(timeline, stayed)
+    count = TimelineClipCount(timeline)
+    timelineClick(harness, timeline, view, {200, 40}, {.SHIFT})
+    testing.expect_value(t, TimelineClipCount(timeline), count)
+    testing.expect(t, !TimelineClipGet(timeline, stayed).selected)
+
+    // no Shift: a drag moves without copies
+    timelineDrain(timeline)
+    timelineDrag(harness, timeline, view, {200, 40}, {250, 40})
+    testing.expect_value(t, TimelineClipCount(timeline), count)
+}
