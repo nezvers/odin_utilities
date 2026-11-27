@@ -7355,3 +7355,52 @@ test_the_clip_header_has_a_mute_button_and_a_gain_knob :: proc(t: ^testing.T) {
     testing.expect(t, abs(TimelineClipGainLinear(0) - 1) < 0.0001)
     testing.expect(t, abs(TimelineClipGainDb(TimelineClipGainLinear(-12)) + 12) < 0.001)
 }
+
+@(test)
+test_the_fade_handles_of_an_audio_clip_are_dragged_and_reset :: proc(t: ^testing.T) {
+    harness: ^Harness = new(Harness)
+    timeline, view, _, _, clip := timelineSetup(harness)
+    defer { free(timeline); free(view); free(harness) }
+    TimelineClipGet(timeline, clip).fadeable = true
+    style: TimelineStyle = TimelineStyleResolved(&harness.style)
+    style.track_scale = TimelineViewTrackZoom(view)
+    rect: Rect = TimelineClipRect(timeline, view, &style, TimelineClipGet(timeline, clip))
+    fade_in, fade_out, ok := TimelineClipFadeHandles(rect, 0, 0)
+    testing.expect(t, ok)
+    centre :: proc(r: Rect) -> Vec2 { return {r.x + r.z * 0.5, r.y + r.w * 0.5} }
+    idle :: proc(harness: ^Harness, timeline: ^Timeline, view: ^TimelineView) {
+        for _ in 0 ..< 40 { timelineFrame(harness, timeline, view, pointerAt({-10, -10})) }       // longer than a double click
+    }
+    timelineDrain(timeline)
+
+    // a drag of the left handle 50 pixels right is a fade of half a unit at 100 pixels a unit; the clip does not move or get another length
+    start, length: f64 = TimelineClipGet(timeline, clip).start, TimelineClipGet(timeline, clip).length
+    timelineDrag(harness, timeline, view, centre(fade_in), centre(fade_in) + {50, 0})
+    testing.expect(t, abs(TimelineClipGet(timeline, clip).fade_in - 0.5) < 0.001)
+    testing.expect_value(t, TimelineClipGet(timeline, clip).start, start)
+    testing.expect_value(t, TimelineClipGet(timeline, clip).length, length)
+    event, has := TimelinePollEvent(timeline)
+    testing.expect(t, has && event.kind == .CLIP_FADE_IN && abs(event.value - 0.5) < 0.001)
+
+    // the right handle: a drag to the left is a fade out; the two never add up to more than the clip (2 units)
+    idle(harness, timeline, view)
+    _, fade_out, _ = TimelineClipFadeHandles(rect, 0, 0)
+    timelineDrag(harness, timeline, view, centre(fade_out), centre(fade_out) + {-1000, 0})
+    testing.expect(t, abs(TimelineClipGet(timeline, clip).fade_out - 1.5) < 0.001)
+    testing.expect(t, abs(TimelineClipGet(timeline, clip).fade_in + TimelineClipGet(timeline, clip).fade_out - length) < 0.001)
+
+    // a double click on the handle puts the fade back to none
+    idle(harness, timeline, view)
+    timelineDrain(timeline)
+    fade_in, _, _ = TimelineClipFadeHandles(rect, f32(0.5 * 100), 0)
+    timelineClick(harness, timeline, view, centre(fade_in), {})
+    timelineClick(harness, timeline, view, centre(fade_in), {})
+    testing.expect_value(t, TimelineClipGet(timeline, clip).fade_in, 0)
+
+    // a clip that is not fadeable has no handles
+    idle(harness, timeline, view)
+    TimelineClipGet(timeline, clip).fadeable = false
+    TimelineClipGet(timeline, clip).fade_out = 0
+    timelineDrag(harness, timeline, view, centre(fade_out) + {1000, 0} * 0 + {0, 0}, centre(fade_out) + {-30, 0})
+    testing.expect_value(t, TimelineClipGet(timeline, clip).fade_out, 0)
+}

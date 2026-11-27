@@ -43,6 +43,8 @@ TimelineGesture :: enum u8 {
     BEND,
     STRETCH_CLIPS,
     CLIP_GAIN,          // a drag on the knob of the clip header
+    CLIP_FADE_IN,       // a drag on a fade handle at a top corner of the clip
+    CLIP_FADE_OUT,
 }
 
 // What a drag on an empty lane does (Ctrl makes it a box whatever the tool is).
@@ -94,6 +96,8 @@ TimelineView :: struct {
     gesture: TimelineGesture,
     gesture_clip: ClipHandle,
     hover_zone: TimelineZone,   // the part of the hovered clip under the pointer
+    fade_start: f64,            // CLIP_FADE_IN / OUT gesture: the fade when the handle was grabbed and where the pointer was
+    fade_mouse: f32,
     gain_start: f32,            // CLIP_GAIN gesture: the gain when the knob was grabbed and where the pointer was
     gain_mouse: f32,
     link_pending: bool,         // Shift on the body of a clip: a drag leaves linked copies behind (the clips that move are the originals)
@@ -174,7 +178,7 @@ timelineLinkedCopies :: proc(timeline: ^Timeline) {
     for i in 0 ..< count {
         source: ^TimelineClip = TimelineClipGet(timeline, sources[i])
         owner: ^TimelineTrack = TimelineTrackGet(timeline, source.track)
-        copy: TimelineClip = {track = source.track, start = source.drag_start, length = source.drag_length, user = source.user, color = source.color, muted = source.muted, gain_db = source.gain_db}
+        copy: TimelineClip = {track = source.track, start = source.drag_start, length = source.drag_length, user = source.user, color = source.color, muted = source.muted, gain_db = source.gain_db, fadeable = source.fadeable, fade_in = source.fade_in, fade_out = source.fade_out}
         copy.name, copy.name_length = source.name, source.name_length
         handle, ok := hm.add(&timeline.clips, copy)
         if !ok { return }
@@ -345,21 +349,41 @@ TimelineZone :: enum u8 {
     RIGHT_EDGE,
     MUTE,               // the "M" button of the clip header
     GAIN,               // the knob of the clip header
+    FADE_IN,            // the handle at the top left corner (it moves right with the fade)
+    FADE_OUT,
 }
 
 CLIP_GAIN_MIN_DB :: -60     // the bottom of the knob: silence
 CLIP_GAIN_MAX_DB :: 6
 CLIP_HEADER_BUTTON :: 14
+CLIP_FADE_HANDLE :: 8
 CLIP_HEADER_MIN_WIDTH :: 72      // a narrower clip has no header: the name and the edges come first
 CLIP_HEADER_MIN_HEIGHT :: 30
 
 // The header buttons of a clip on the screen: the mute button and the knob, at the right end of the top row, inside of the resize edge. Pure, so the pointer and the style agree. `ok` is false when the clip is too small.
-TimelineClipHeader :: proc(rect: Rect, edge: f32) -> (mute: Rect, knob: Rect, ok: bool) {
+TimelineClipHeader :: proc(rect: Rect, edge: f32, fadeable: bool = false) -> (mute: Rect, knob: Rect, ok: bool) {
     if rect.z < CLIP_HEADER_MIN_WIDTH || rect.w < CLIP_HEADER_MIN_HEIGHT { return }
     size: f32 = CLIP_HEADER_BUTTON
-    knob = {rect.x + rect.z - edge - 3 - size, rect.y + 3, size, size}
+    corner: f32 = CLIP_FADE_HANDLE + 2 if fadeable else 0       // the top right corner is the fade out handle's
+    knob = {rect.x + rect.z - edge - 3 - corner - size, rect.y + 3, size, size}
     mute = {knob.x - 3 - size, rect.y + 3, size, size}
     return mute, knob, true
+}
+
+// The fade handles of a clip on the screen, squares at the top corners: the fade in one is `fade_in_px` from the left edge, the fade out one `fade_out_px` from the right edge. `ok` is false when the clip is too small.
+TimelineClipFadeHandles :: proc(rect: Rect, fade_in_px: f32, fade_out_px: f32) -> (fade_in: Rect, fade_out: Rect, ok: bool) {
+    if rect.z < 40 || rect.w < 24 { return }
+    size: f32 = CLIP_FADE_HANDLE
+    fade_in = {rect.x + fade_in_px, rect.y + 1, size, size}
+    fade_out = {rect.x + rect.z - fade_out_px - size, rect.y + 1, size, size}
+    return fade_in, fade_out, true
+}
+
+// How long a fade is on the screen
+@(private)
+timelineFadePixels :: proc(view: ^TimelineView, clip: ^TimelineClip, fade: f64, from_end: bool) -> f32 {
+    if from_end { return TimelineX(view, clip.start + clip.length) - TimelineX(view, clip.start + clip.length - fade) }
+    return TimelineX(view, clip.start + fade) - TimelineX(view, clip.start)
 }
 
 // The linear gain of a knob position in dB: 0 at the bottom (silence)
@@ -390,9 +414,16 @@ timelinePick :: proc(timeline: ^Timeline, view: ^TimelineView, style: ^TimelineS
             if point.x - rect.x <= style.edge { zone = .LEFT_EDGE }
             if rect.x + rect.z - point.x <= style.edge { zone = .RIGHT_EDGE }
         }
-        if mute, knob, has := TimelineClipHeader(rect, style.edge); has {
+        if mute, knob, has := TimelineClipHeader(rect, style.edge, clip.fadeable); has {
             if RectContains(mute, point) { zone = .MUTE }
             if RectContains(knob, point) { zone = .GAIN }
+        }
+        if clip.fadeable {
+            // the corners belong to the fades before the edges do (as in Nota); a little room around the small squares
+            if fade_in, fade_out, has := TimelineClipFadeHandles(rect, timelineFadePixels(view, clip, clip.fade_in, false), timelineFadePixels(view, clip, clip.fade_out, true)); has {
+                if RectContains({fade_in.x - 2, fade_in.y - 2, fade_in.z + 4, fade_in.w + 4}, point) { zone = .FADE_IN }
+                if RectContains({fade_out.x - 2, fade_out.y - 2, fade_out.z + 4, fade_out.w + 4}, point) { zone = .FADE_OUT }
+            }
         }
     }
     return
@@ -557,6 +588,25 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 TimelineSelectClear(timeline)
                 TimelinePointGet(timeline, added).selected = true
             }
+        case view.hover_clip != {} && (zone == .FADE_IN || zone == .FADE_OUT):
+            clip: ^TimelineClip = TimelineClipGet(timeline, view.hover_clip)
+            if TimelineTrackGet(timeline, clip.track).flags >= {.LOCKED} { break }
+            if !clip.selected {
+                TimelineSelectClear(timeline)
+                clip.selected = true
+            }
+            fade_in: bool = zone == .FADE_IN
+            current: f64 = clip.fade_in if fade_in else clip.fade_out
+            if interaction.double_clicked {
+                // a double click puts the fade back to none
+                if current != 0 {
+                    timelineEmit(timeline, {kind = .CLIP_FADE_IN if fade_in else .CLIP_FADE_OUT, clip = view.hover_clip, track = clip.track, value = 0, previous_value = f32(current)})
+                    if fade_in { clip.fade_in = 0 } else { clip.fade_out = 0 }
+                }
+            } else {
+                view.gesture, view.gesture_clip = .CLIP_FADE_IN if fade_in else .CLIP_FADE_OUT, view.hover_clip
+                view.fade_start, view.fade_mouse = current, mouse.x
+            }
         case view.hover_clip != {} && (zone == .MUTE || zone == .GAIN):
             // the header of a clip: the buttons do not select it or move it
             clip: ^TimelineClip = TimelineClipGet(timeline, view.hover_clip)
@@ -593,7 +643,7 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                 case .BODY: view.gesture = .MOVE
                 case .LEFT_EDGE: view.gesture = .RESIZE_LEFT
                 case .RIGHT_EDGE: view.gesture = .RESIZE_RIGHT
-                case .MUTE, .GAIN:      // taken by the header case above
+                case .MUTE, .GAIN, .FADE_IN, .FADE_OUT:      // taken by the header and fade cases above
                 }
                 it := hm.iterator_make(&timeline.clips)
                 for other, _ in hm.iterate(&it) {
@@ -821,10 +871,28 @@ UiTimeline :: proc(ctx: ^Context, name: string, timeline: ^Timeline, view: ^Time
                     db: f32 = clamp(view.gain_start + (view.gain_mouse - mouse.y) * 0.5, CLIP_GAIN_MIN_DB, CLIP_GAIN_MAX_DB)
                     clip.gain_db = 0 if abs(db) < 1.5 else db
                 }
+            case .CLIP_FADE_IN, .CLIP_FADE_OUT:
+                if clip != nil {
+                    // the handle follows the pointer; the two fades never add up to more than the clip
+                    moved: f64 = f64(mouse.x - view.fade_mouse) / f64(zoom)
+                    if view.gesture == .CLIP_FADE_IN {
+                        clip.fade_in = clamp(view.fade_start + moved, 0, max(clip.length - clip.fade_out, 0))
+                    } else {
+                        clip.fade_out = clamp(view.fade_start - moved, 0, max(clip.length - clip.fade_in, 0))
+                    }
+                }
             case .NONE:
             }
         }
         if ctx.input.mouse_released || !ctx.input.mouse_down {
+            if view.gesture == .CLIP_FADE_IN || view.gesture == .CLIP_FADE_OUT {
+                if clip := TimelineClipGet(timeline, view.gesture_clip); clip != nil {
+                    now: f64 = clip.fade_in if view.gesture == .CLIP_FADE_IN else clip.fade_out
+                    if now != view.fade_start {
+                        timelineEmit(timeline, {kind = .CLIP_FADE_IN if view.gesture == .CLIP_FADE_IN else .CLIP_FADE_OUT, clip = view.gesture_clip, track = clip.track, value = f32(now), previous_value = f32(view.fade_start)})
+                    }
+                }
+            }
             if view.gesture == .CLIP_GAIN {
                 if clip := TimelineClipGet(timeline, view.gesture_clip); clip != nil && clip.gain_db != view.gain_start {
                     timelineEmit(timeline, {kind = .CLIP_GAIN, clip = view.gesture_clip, track = clip.track, value = clip.gain_db, previous_value = view.gain_start})
@@ -1012,7 +1080,11 @@ TimelineDraw :: proc(ctx: ^Context, info: ^DrawInfo) {
                 if view.gesture_clip == handle && view.gesture != .NONE { draw.flags += {.PRESSED} }
                 if .MUTED in track.flags { draw.flags += {.DISABLED} }
                 draw.muted, draw.gain_db = clip.muted, clip.gain_db
-                draw.header_mute, draw.header_knob, draw.header = TimelineClipHeader(rect, style.edge)
+                draw.header_mute, draw.header_knob, draw.header = TimelineClipHeader(rect, style.edge, clip.fadeable)
+                if clip.fadeable {
+                    draw.fadeable, draw.fade_in, draw.fade_out = true, clip.fade_in, clip.fade_out
+                    draw.fade_in_handle, draw.fade_out_handle, draw.fade_handles = TimelineClipFadeHandles(rect, timelineFadePixels(view, clip, clip.fade_in, false), timelineFadePixels(view, clip, clip.fade_out, true))
+                }
                 if view.hover_clip == handle { draw.hover_zone = view.hover_zone }
                 style.draw_clip(ctx, &draw)
             }

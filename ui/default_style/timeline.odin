@@ -58,6 +58,7 @@ DrawClip :: proc(ctx: ^ui.Context, clip: ^ui.ClipDraw) {
         painter.draw_text(painter, shown, {text_x, clip.rect.y + 3}, size, theme.text)
     }
     clipBody(ctx, painter, clip, base)
+    if clip.fadeable { clipFades(painter, clip) }
     if clip.header { clipHeader(ctx, painter, clip, size) }
     if .HOVERED in clip.flags || .PRESSED in clip.flags {
         grip: ui.Color = {255, 255, 255, 90}
@@ -242,4 +243,34 @@ clipHeader :: proc(ctx: ^ui.Context, painter: ^Painter, clip: ^ui.ClipDraw, size
     center: ui.Vec2 = {knob.x + knob.z * 0.5, knob.y + knob.w * 0.5}
     reach: f32 = knob.z * 0.38
     Line(painter, center, center + ui.Vec2{math.sin(angle), -math.cos(angle)} * reach, 1.5, theme.accent if clip.gain_db > ui.CLIP_GAIN_MIN_DB else theme.text_dim)
+}
+
+// The fades of an audio clip: the part of the wave that is faded is dimmed (a triangle above the line of the fade), and while the clip is hovered or selected the handles show at the top corners
+clipFades :: proc(painter: ^Painter, clip: ^ui.ClipDraw) {
+    theme: ^Theme = &painter.theme
+    if !clip.fade_handles { return }
+    rect: ui.Rect = clip.rect
+    fade_in: f32 = clip.fade_in_handle.x - rect.x
+    fade_out: f32 = rect.x + rect.z - (clip.fade_out_handle.x + clip.fade_out_handle.z)
+    shade: ui.Color = {theme.track.r, theme.track.g, theme.track.b, 150}
+    bottom: f32 = rect.y + rect.w
+    if painter.fill_polygon != nil {
+        if fade_in >= 1 {
+            points: [3]ui.Vec2 = {{rect.x, rect.y}, {rect.x + fade_in, rect.y}, {rect.x, bottom}}
+            painter.fill_polygon(painter, points[:], shade)
+            Line(painter, {rect.x, bottom}, {rect.x + fade_in, rect.y}, 1, theme.text_dim)
+        }
+        if fade_out >= 1 {
+            end: f32 = rect.x + rect.z
+            points: [3]ui.Vec2 = {{end, rect.y}, {end - fade_out, rect.y}, {end, bottom}}
+            painter.fill_polygon(painter, points[:], shade)
+            Line(painter, {end - fade_out, rect.y}, {end, bottom}, 1, theme.text_dim)
+        }
+    }
+    if .HOVERED in clip.flags || .SELECTED in clip.flags {
+        for handle, i in ([2]ui.Rect{clip.fade_in_handle, clip.fade_out_handle}) {
+            lit: bool = clip.hover_zone == (ui.TimelineZone.FADE_IN if i == 0 else ui.TimelineZone.FADE_OUT) && .HOVERED in clip.flags
+            FillRoundedBorder(painter, handle, 0.2, theme.accent if lit else theme.text, theme.border, 1, 2)
+        }
+    }
 }

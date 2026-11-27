@@ -71,6 +71,10 @@ ClipDraw :: struct {
     gain_db: f32,               // the knob of the header
     header: bool,               // the clip is big enough for the header buttons below (TimelineClipHeader)
     header_mute, header_knob: Rect,
+    fadeable: bool,             // an audio clip: draw its fades
+    fade_in, fade_out: f64,     // in the units of the timeline
+    fade_handles: bool,         // the clip is big enough for the handles below (TimelineClipFadeHandles)
+    fade_in_handle, fade_out_handle: Rect,
     hover_zone: TimelineZone,   // when HOVERED: MUTE or GAIN while the pointer is on that button
     user: rawptr,
 }
