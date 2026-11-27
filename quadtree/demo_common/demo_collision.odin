@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:math"
 import qt ".."
 import kit "../../demo_kit"
+import qtkit "../kit"
 
 @(private = "package")
 demo_collision: kit.Demo = {
@@ -129,7 +130,7 @@ collisionEdit :: proc(ctx: ^kit.Context) {
 }
 
 collisionDraw :: proc(ctx: ^kit.Context) {
-    if collision_show_tree { qt.QuadtreeVisit(&collision_tree, ctx, drawNode) }
+    if collision_show_tree { qtkit.DrawQuadtree(ctx, &collision_tree) }
     for wall, index in collision_walls {
         if wall { kit.DrawRect(ctx, transmute(kit.Rect)cellRect(index), WALL_COLOR) }
     }

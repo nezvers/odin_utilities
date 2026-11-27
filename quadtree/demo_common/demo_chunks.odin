@@ -6,6 +6,7 @@ import "core:math"
 import "core:math/rand"
 import qt ".."
 import kit "../../demo_kit"
+import qtkit "../kit"
 
 @(private = "package")
 demo_chunks: kit.Demo = {
@@ -148,26 +149,8 @@ chunksUpdate :: proc(ctx: ^kit.Context) {
     for i in 0 ..< count { chunks_hovered = max(chunks_hovered, buffer[i]) }
 }
 
-chunksDrawNode :: proc(user: rawptr, rect: qt.WorldRect, depth: int, leaf: bool, count: int) {
-    if !leaf { return }
-    ctx: ^kit.Context = cast(^kit.Context)user
-    shade: u8 = u8(min(200 - depth * 18, 200))
-    kit.DrawRectOutline(ctx, chunksScreenRect(rect), 1, kit.Color{shade, shade, shade, 255})
-}
-
 chunksDraw :: proc(ctx: ^kit.Context) {
-    if chunks_show_tree {
-        qt.QuadtreeChunksVisit(&chunks_world, ctx, chunksDrawNode)
-        // chunk borders
-        center: qt.WorldVec = chunksCenter()
-        first_x: int = qt.QuadtreeChunksCoord(&chunks_world, center.x) - RADIUS
-        first_y: int = qt.QuadtreeChunksCoord(&chunks_world, center.y) - RADIUS
-        for cy in first_y ..= first_y + 2 * RADIUS {
-            for cx in first_x ..= first_x + 2 * RADIUS {
-                kit.DrawRectOutline(ctx, chunksScreenRect(qt.QuadtreeChunksBounds(&chunks_world, cx, cy)), 2, kit.Color{80, 120, 220, 255})
-            }
-        }
-    }
+    if chunks_show_tree { qtkit.DrawQuadtreeChunks(ctx, &chunks_world, chunksCenter(), {VIEW_WIDTH * 0.5, VIEW_HEIGHT * 0.5}) }
     for i in 0 ..< chunks_view_count {
         item: qt.Item = chunks_view_items[i]
         object: ^Object = &chunks_objects[item]

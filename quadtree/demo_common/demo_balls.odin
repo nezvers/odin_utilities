@@ -6,6 +6,7 @@ import "core:math"
 import "core:math/rand"
 import qt ".."
 import kit "../../demo_kit"
+import qtkit "../kit"
 
 @(private = "package")
 demo_balls: kit.Demo = {
@@ -134,7 +135,7 @@ ballsCollide :: proc(a: ^Ball, b: ^Ball) {
 }
 
 ballsDraw :: proc(ctx: ^kit.Context) {
-    if balls_show_tree { qt.QuadtreeVisit(&balls_tree, ctx, drawNode) }
+    if balls_show_tree { qtkit.DrawQuadtree(ctx, &balls_tree) }
     for &ball in balls[:balls_count] { kit.DrawCircle(ctx, ball.position, ball.radius, ball.color) }
     nodes, links := qt.QuadtreeUsage(&balls_tree)
     kit.DrawText(ctx, "bouncing balls: hold LMB to spawn at the mouse, R reset, G tree", {10, 10}, 20, kit.BLACK)

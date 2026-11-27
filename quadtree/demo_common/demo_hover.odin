@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:math/rand"
 import qt ".."
 import kit "../../demo_kit"
+import qtkit "../kit"
 
 @(private = "package")
 demo_hover: kit.Demo = {
@@ -155,7 +156,7 @@ hoverUpdate :: proc(ctx: ^kit.Context) {
 }
 
 hoverDraw :: proc(ctx: ^kit.Context) {
-    if hover_show_tree { qt.QuadtreeVisit(&hover_tree, ctx, drawNode) }
+    if hover_show_tree { qtkit.DrawQuadtree(ctx, &hover_tree) }
     for &circle in hover_circles[:hover_used] {
         if !circle.alive { continue }
         kit.DrawCircle(ctx, circle.center, circle.radius, circle.color)

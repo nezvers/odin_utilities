@@ -6,6 +6,7 @@ import "core:math"
 import "core:math/rand"
 import qt ".."
 import kit "../../demo_kit"
+import qtkit "../kit"
 
 @(private = "package")
 demo_retained: kit.Demo = {
@@ -177,7 +178,7 @@ retainedUpdate :: proc(ctx: ^kit.Context) {
 }
 
 retainedDraw :: proc(ctx: ^kit.Context) {
-    if retained_show_tree { qt.QuadtreeRetainedVisit(&retained_tree, ctx, drawNode) }
+    if retained_show_tree { qtkit.DrawQuadtreeRetained(ctx, &retained_tree) }
     for &thing in retained_things[WANDERERS:retained_used] {
         if !thing.alive { continue }
         kit.DrawRect(ctx, transmute(kit.Rect)thing.rect, kit.ORANGE if thing.lit else kit.Color{130, 130, 130, 255})

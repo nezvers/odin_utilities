@@ -6,6 +6,7 @@ import "core:math"
 import "core:math/rand"
 import qt ".."
 import kit "../../demo_kit"
+import qtkit "../kit"
 
 @(private = "package")
 demo_rays: kit.Demo = {
@@ -80,7 +81,7 @@ raysUpdate :: proc(ctx: ^kit.Context) {
 }
 
 raysDraw :: proc(ctx: ^kit.Context) {
-    qt.QuadtreeVisit(&rays_tree, ctx, drawNode)
+    qtkit.DrawQuadtree(ctx, &rays_tree)
     for box in rays_boxes { kit.DrawRect(ctx, transmute(kit.Rect)box, kit.Color{200, 200, 205, 255}) }
     // within the radius: blue, crossed by the ray: orange outline, the first one hit: red, the nearest to the mouse: green outline with the distance
     for i in 0 ..< rays_inside_count { kit.DrawRect(ctx, transmute(kit.Rect)rays_boxes[rays_inside[i]], kit.Color{90, 140, 230, 255}) }
