@@ -105,6 +105,13 @@ QuadtreeChunksClear :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L)) {
     }
 }
 
+// Optional, after the inserts of a frame: compact the tree of every loaded chunk (see QuadtreeCompact). One `scratch` serves all the chunks, at least `most_links` of `QuadtreeChunksUsage` long
+QuadtreeChunksCompact :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), scratch: []Link) {
+    for &chunk in world.chunks {
+        if chunk.loaded { QuadtreeCompact(&chunk.tree, scratch) }
+    }
+}
+
 // Put an item into the chunk that holds the top left corner of `rect`. Fails (nothing changes) when that chunk is not loaded, the rectangle is bigger than `max_item_size`, or the chunk's tree is full
 QuadtreeChunksInsert :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), rect: WorldRect, item: Item) -> bool {
     if rect.w > world.max_item_size || rect.h > world.max_item_size { return false }

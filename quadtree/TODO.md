@@ -11,6 +11,7 @@ Next steps, most valuable first. A task starts with `(high)`, `(medium)` or `(lo
 - [x] Benchmarks against a uniform grid, `grid_collision_map` and brute force (`tool/bench`, findings in README): leaf 8 and depth 8 confirmed as the default
 - [x] Iterator queries without a result slice for rectangles and points on the three trees (`QueryIterator`, `QuadtreeChunksIterator`)
 - [x] Retained `Move` fast path (same leaves: only the rect copies change), 26% faster for small steps; the rest is cache misses in the link lists (bench: update alone, 165 ns a move against 20 for grid_collision_map)
-- [ ] (low) Contiguous leaf layout (links of a leaf next to each other, built by a compaction step or at split time): would cut the cache misses of queries (13 against 10.5 ms for the grid) and of `Move`; measure on the bench before and after
+- [x] Contiguous leaves as an optional compaction step (`QuadtreeCompact` and the retained and chunked versions): queries 10 to 20% faster for 0.7 ms at 50k; a leaf storage redesign (buckets) was not needed
+- [ ] (low) Compaction at the end of a split or a Move that changes leaves, so a retained tree stays compact without calling it (measure what it costs `Move` first)
 - [ ] (low) Chunked tree: items bigger than `max_item_size` (a fallback list), and a query of many chunks with a limit
 - [ ] (low) Build from a sorted array for static scenes (faster than insert one by one); one shared debug draw proc for the demos instead of each drawing the nodes

@@ -142,9 +142,11 @@ runScene :: proc(scene: ^Scene) {
         append(&rows, row)
         if row.build + row.rects < best.build + best.rects { best = row }
     }
+    append(&rows, benchTree(scene, tree, 8, 8, true))
     retained: ^Retained = new(Retained)
     defer free(retained)
     append(&rows, benchRetained(scene, retained, 8, 8))
+    append(&rows, benchRetained(scene, retained, 8, 8, true))
     for row in rows { printRow(row) }
     fmt.printfln("best quadtree configuration here: %s", best.name)
 
@@ -305,18 +307,22 @@ benchGridMap :: proc(scene: ^Scene) -> Row {
     return row
 }
 
-benchTree :: proc(scene: ^Scene, tree: ^Tree, max_elements: int, max_depth: int) -> Row {
+benchTree :: proc(scene: ^Scene, tree: ^Tree, max_elements: int, max_depth: int, compact: bool = false) -> Row {
     qt.QuadtreeInit(tree, {0, 0, WORLD, WORLD}, max_elements, max_depth)
-    row: Row = {name = fmt.tprintf("quadtree, leaf %d, depth %d", max_elements, max_depth)}
+    row: Row = {name = fmt.tprintf("quadtree, leaf %d, depth %d%s", max_elements, max_depth, ", compacted" if compact else "")}
     build, queries, circles: [dynamic]f64
     build.allocator = context.temp_allocator
     queries.allocator = context.temp_allocator
     circles.allocator = context.temp_allocator
+    scratch: []qt.Link
+    if compact { scratch = make([]qt.Link, len(tree.links)) }
+    defer delete(scratch)
     for _ in 0 ..< FRAMES {
         start: time.Tick = now()
         qt.QuadtreeClear(tree)
         dropped: int
         for rect, i in scene.rects { if !qt.QuadtreeInsert(tree, rect, i) { dropped += 1 } }
+        if compact { qt.QuadtreeCompact(tree, scratch) }
         append(&build, elapsed(start))
         row.dropped = dropped
     }
@@ -341,11 +347,14 @@ benchTree :: proc(scene: ^Scene, tree: ^Tree, max_elements: int, max_depth: int)
     return row
 }
 
-benchRetained :: proc(scene: ^Scene, tree: ^Retained, max_elements: int, max_depth: int) -> Row {
+benchRetained :: proc(scene: ^Scene, tree: ^Retained, max_elements: int, max_depth: int, compact: bool = false) -> Row {
     qt.QuadtreeRetainedInit(tree, {0, 0, WORLD, WORLD}, max_elements, max_depth)
-    row: Row = {name = fmt.tprintf("retained quadtree, leaf %d, depth %d", max_elements, max_depth), circles = -1}
+    row: Row = {name = fmt.tprintf("retained quadtree, leaf %d, depth %d%s", max_elements, max_depth, ", compacted" if compact else ""), circles = -1}
     handles: []qt.Handle = make([]qt.Handle, len(scene.rects))
     defer delete(handles)
+    scratch: []qt.RetainedLink
+    if compact { scratch = make([]qt.RetainedLink, len(tree.links)) }
+    defer delete(scratch)
     build, queries: [dynamic]f64
     build.allocator = context.temp_allocator
     queries.allocator = context.temp_allocator
@@ -358,6 +367,7 @@ benchRetained :: proc(scene: ^Scene, tree: ^Retained, max_elements: int, max_dep
             handles[i], ok = qt.QuadtreeRetainedAdd(tree, rect)
             if !ok { dropped += 1 }
         }
+        if compact { qt.QuadtreeRetainedCompact(tree, scratch) }
         append(&build, elapsed(start))
         row.dropped = dropped
     }

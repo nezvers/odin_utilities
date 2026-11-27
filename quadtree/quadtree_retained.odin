@@ -17,7 +17,7 @@ RetainedElement :: struct {
     stamp: u32,         // Runtime: the query that already reported this element (an element sits in several leaves)
 }
 
-@(private)
+// One element in one leaf. Public only so that the caller can size the scratch memory of QuadtreeRetainedCompact
 RetainedLink :: struct {
     next: i32,
     element: Handle,
@@ -159,6 +159,18 @@ QuadtreeRetainedNearest :: proc(tree: ^QuadtreeRetained($E, $N, $L), point: Vec2
     nearest: Nearest(Handle) = {items = out[:k], distances = distances[:k], limit = max_distance * max_distance, omit = omit}
     retainedNodeNearest(tree, 0, retainedRootArea(tree), EXTENT_LOW, EXTENT_HIGH, point, &nearest)
     return nearestFinish(nearest.distances, nearest.count)
+}
+
+// Optional: put the links of every leaf next to each other in memory (see QuadtreeCompact), for faster queries and moves after a lot of adds, removes and moves scattered them. `scratch` is at least
+// `QuadtreeRetainedUsage` links long. Handles stay valid, nothing else changes
+QuadtreeRetainedCompact :: proc(tree: ^QuadtreeRetained($E, $N, $L), scratch: []RetainedLink) {
+    assert(len(scratch) >= int(tree.links_in_use), "the scratch of QuadtreeRetainedCompact is smaller than the links in use")
+    used: i32
+    retainedCompactNode(tree, 0, scratch, &used)
+    assert(used == tree.links_in_use)
+    copy(tree.links[:used], scratch[:used])
+    tree.link_used = used
+    tree.link_free = -1
 }
 
 // Merge four empty leaves into their parent, so the nodes can be used again. Call it now and then (once a frame is fine), after elements moved or were removed
@@ -521,5 +533,24 @@ retainedNodeNearest :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area
         rect: Rect = element.rect
         squared: f32 = distanceSquaredToBox(point, {rect.x, rect.y}, {rect.x + rect.w, rect.y + rect.h})
         if nearestWants(nearest, squared) && handle != nearest.omit { nearestAdd(nearest, handle, squared) }
+    }
+}
+
+@(private)
+retainedCompactNode :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, scratch: []RetainedLink, used: ^i32) {
+    if tree.nodes[node].count < 0 {
+        first: i32 = tree.nodes[node].first
+        for quadrant in 0 ..< 4 { retainedCompactNode(tree, first + i32(quadrant), scratch, used) }
+        return
+    }
+    start: i32 = used^
+    for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        scratch[used^] = tree.links[link]
+        scratch[used^].next = used^ + 1
+        used^ += 1
+    }
+    if used^ > start {
+        scratch[used^ - 1].next = -1
+        tree.nodes[node].first = start
     }
 }

@@ -608,3 +608,126 @@ test_retained_moves_by_small_and_big_steps_keep_every_query_exact :: proc(t: ^te
     _, links_after := QuadtreeRetainedUsage(tree)
     testing.expect(t, links_after > 0 && links_after < links_before * 3, "the links are not leaking")
 }
+
+// Compaction moves the links of every leaf next to each other: queries answer the same, and the tree keeps working (inserts, removes, moves, cleanup) afterwards
+@(test)
+test_compaction_keeps_every_query_and_the_tree_usable :: proc(t: ^testing.T) {
+    tree: ^ShapeTree = new(ShapeTree)
+    defer free(tree)
+    area: Rect = {0, 0, 1000, 800}
+    QuadtreeInit(tree, area, 4, 6)
+    seed: rand.Default_Random_State = rand.create(88)
+    state: rand.Generator = rand.default_random_generator(&seed)
+    rects: [400]Rect
+    fillTree(tree, rects[:200], state, area, 10)
+    scratch: [4096]Link
+    _, links_before := QuadtreeUsage(tree)
+    out_before, out_after: [512]Item
+    queries: [20]Rect
+    for &query in queries { query = randomShapeRect(state, {-100, -100, 1300, 1000}, 300) }
+    counts: [20]int
+    for query, i in queries { counts[i] = QuadtreeQuery(tree, query, out_before[:]) }
+    QuadtreeCompact(tree, scratch[:])
+    _, links_after := QuadtreeUsage(tree)
+    testing.expect_value(t, links_after, links_before)
+    for query, i in queries { testing.expect_value(t, QuadtreeQuery(tree, query, out_after[:]), counts[i]) }
+    // more elements after the compaction, then everything against a brute force search
+    for i in 200 ..< 400 {
+        rects[i] = randomShapeRect(state, area, 90)
+        testing.expect(t, QuadtreeInsert(tree, rects[i], i))
+    }
+    for query in queries {
+        expected: int
+        for rect in rects { if RectOverlaps(rect, query) { expected += 1 } }
+        testing.expect_value(t, QuadtreeQuery(tree, query, out_after[:]), expected)
+    }
+    // a second compaction of a tree that grew since
+    QuadtreeCompact(tree, scratch[:])
+    for query in queries {
+        expected: int
+        for rect in rects { if RectOverlaps(rect, query) { expected += 1 } }
+        testing.expect_value(t, QuadtreeQuery(tree, query, out_after[:]), expected)
+    }
+}
+
+@(test)
+test_retained_compaction_after_churn_keeps_handles_and_queries :: proc(t: ^testing.T) {
+    tree: ^RetainedTestTree = new(RetainedTestTree)
+    defer free(tree)
+    area: Rect = {0, 0, 1000, 800}
+    QuadtreeRetainedInit(tree, area, 4, 6)
+    seed: rand.Default_Random_State = rand.create(89)
+    state: rand.Generator = rand.default_random_generator(&seed)
+    rects: [300]Rect
+    alive: [300]bool
+    handles: [300]Handle
+    for i in 0 ..< len(rects) {
+        rects[i] = randomShapeRect(state, area, 80)
+        handles[i], _ = QuadtreeRetainedAdd(tree, rects[i])
+        alive[i] = true
+    }
+    scratch: [4096]RetainedLink
+    out: [512]Handle
+    check :: proc(t: ^testing.T, tree: ^RetainedTestTree, rects: []Rect, alive: []bool, state: rand.Generator, out: []Handle) {
+        for _ in 0 ..< 20 {
+            query: Rect = randomShapeRect(state, {-100, -100, 1300, 1000}, 300)
+            expected: int
+            for rect, i in rects { if alive[i] && RectOverlaps(rect, query) { expected += 1 } }
+            testing.expect_value(t, QuadtreeRetainedQuery(tree, query, out), expected)
+        }
+    }
+    for round in 0 ..< 4 {
+        // churn: removes, adds into the freed slots and moves scatter the links, then compact
+        for i in 0 ..< len(rects) {
+            switch (i + round) % 5 {
+            case 0:
+                if alive[i] { QuadtreeRetainedRemove(tree, handles[i]); alive[i] = false }
+            case 1:
+                if !alive[i] {
+                    rects[i] = randomShapeRect(state, area, 80)
+                    handles[i], _ = QuadtreeRetainedAdd(tree, rects[i])
+                    alive[i] = true
+                }
+            case 2:
+                if alive[i] {
+                    rects[i] = randomShapeRect(state, area, 80)
+                    QuadtreeRetainedMove(tree, handles[i], rects[i])
+                }
+            }
+        }
+        check(t, tree, rects[:], alive[:], state, out[:])
+        QuadtreeRetainedCompact(tree, scratch[:])
+        check(t, tree, rects[:], alive[:], state, out[:])
+        QuadtreeRetainedCleanup(tree)
+        check(t, tree, rects[:], alive[:], state, out[:])
+        for i in 0 ..< len(rects) {
+            if !alive[i] { continue }
+            element, ok := QuadtreeRetainedGet(tree, handles[i])
+            testing.expect(t, ok && element.rect == rects[i], "the handle still names its element")
+        }
+    }
+}
+
+@(test)
+test_chunked_compaction_keeps_queries :: proc(t: ^testing.T) {
+    world: ^ShapeWorld = new(ShapeWorld)
+    defer free(world)
+    BASE :: 1_000_000.0
+    QuadtreeChunksInit(world, 100, 30, 4, 5)
+    seed: rand.Default_Random_State = rand.create(90)
+    state: rand.Generator = rand.default_random_generator(&seed)
+    QuadtreeChunksStream(world, {BASE + 50, BASE + 50}, 2, nil, proc(user: rawptr, cx: int, cy: int) {})
+    for i in 0 ..< 400 {
+        QuadtreeChunksInsert(world, {BASE + f64(rand.float32(state) * 480 - 190), BASE + f64(rand.float32(state) * 480 - 190), f64(1 + rand.float32(state) * 29), f64(1 + rand.float32(state) * 29)}, i)
+    }
+    _, _, _, most_links := QuadtreeChunksUsage(world)
+    scratch: []Link = make([]Link, most_links)
+    defer delete(scratch)
+    out_before, out_after: [512]Item
+    for _ in 0 ..< 30 {
+        rect: WorldRect = {BASE + f64(rand.float32(state) * 500 - 250), BASE + f64(rand.float32(state) * 500 - 250), f64(rand.float32(state) * 200), f64(rand.float32(state) * 200)}
+        before: int = QuadtreeChunksQuery(world, rect, out_before[:])
+        QuadtreeChunksCompact(world, scratch)
+        testing.expect_value(t, QuadtreeChunksQuery(world, rect, out_after[:]), before)
+    }
+}
