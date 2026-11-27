@@ -3,7 +3,7 @@ Immediate mode broad phase for 2D rectangles, without allocations: the tree is r
 The size of the tree is given by compile time parameters, all memory is inside of the `Quadtree` value (put it in a global or in your own struct). Functions fail (return false) instead of growing.
 
 `odin run demo_raylib` / `odin run demo_karl2d` / `odin test .`
-Demos (the menu of the demo kit switches between them): `chunked world` (an endless world streamed in chunks, see below), `retained crates` (the retained tree, see below), `collision` (the demo of grid_collision_map on a quadtree: paint walls, a box slides along them), `hover circles` (random circles, the mouse asks the tree which one it is over), `bouncing balls` (balls bounce off the window and each other, hold the left button to spawn more at the mouse). `G` shows the tree.
+Demos (the menu of the demo kit switches between them): `chunked world` (an endless world streamed in chunks, see below), `retained crates` (the retained tree, see below), `collision` (the demo of grid_collision_map on a quadtree: paint walls, a box slides along them), `hover circles` (random circles, the mouse asks the tree which one it is over), `ray cast and nearest` (the mouse ends a ray from a point set with the left button: the first hit is red, the crossed boxes orange, a radius around the mouse blue, the three nearest green), `bouncing balls` (balls bounce off the window and each other, hold the left button to spawn more at the mouse). `G` shows the tree.
 
 ```odin
 import qt "quadtree"
