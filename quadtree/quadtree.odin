@@ -111,20 +111,35 @@ QuadtreeInsert :: proc(tree: ^Quadtree($E, $N, $L), rect: Rect, item: Item) -> b
     return false
 }
 
-// Items of the elements whose rectangle overlaps `rect` (each once, `omit` left out). Returns how many were written: results are limited by the size of `out`
-QuadtreeQuery :: proc(tree: ^Quadtree($E, $N, $L), rect: Rect, out: []Item, omit: Item = ITEM_NONE) -> int {
-    query: Query = {rect = rect, out = out, omit = omit}
-    tree.stamp += 1
-    nodeQuery(tree, 0, rootArea(tree), &query)
-    return query.count
+// Items of the elements whose rectangle overlaps `rect` (each once, `omit` left out). Returns how many were written: results are limited by the size of `out`.
+// Every query below takes an optional `session`: without it the elements are marked in the tree (one thread at a time), with it the tree is only read (see QuerySession).
+QuadtreeQuery :: proc(tree: ^Quadtree($E, $N, $L), rect: Rect, out: []Item, omit: Item = ITEM_NONE, session: ^QuerySession = nil) -> int {
+    return treeQuery(tree, probeRect(rect), out, omit, session)
 }
 
 // Items of the elements whose rectangle contains the point
-QuadtreeQueryPoint :: proc(tree: ^Quadtree($E, $N, $L), point: Vec2, out: []Item) -> int {
-    query: Query = {rect = {point.x, point.y, 0, 0}, out = out, omit = ITEM_NONE, point = true}
-    tree.stamp += 1
-    nodeQuery(tree, 0, rootArea(tree), &query)
-    return query.count
+QuadtreeQueryPoint :: proc(tree: ^Quadtree($E, $N, $L), point: Vec2, out: []Item, session: ^QuerySession = nil) -> int {
+    return treeQuery(tree, probePoint(point), out, ITEM_NONE, session)
+}
+
+// Items of the elements whose rectangle overlaps the circle (a rectangle that only touches it does not count). Nodes that the circle cannot reach are not visited
+QuadtreeQueryCircle :: proc(tree: ^Quadtree($E, $N, $L), center: Vec2, radius: f32, out: []Item, omit: Item = ITEM_NONE, session: ^QuerySession = nil) -> int {
+    return treeQuery(tree, probeCircle(center, radius), out, omit, session)
+}
+
+// Items of the elements whose rectangle the segment from `a` to `b` crosses (touching an edge counts, a segment inside a rectangle too). Not in the order along the segment: see QuadtreeSegmentFirst
+QuadtreeQuerySegment :: proc(tree: ^Quadtree($E, $N, $L), a: Vec2, b: Vec2, out: []Item, omit: Item = ITEM_NONE, session: ^QuerySession = nil) -> int {
+    return treeQuery(tree, probeSegment(a, b), out, omit, session)
+}
+
+// The first element along the segment from `a` to `b`: its item and `t` in [0, 1] (the hit is at a + t * (b - a); 0 when `a` is inside the rectangle). Nodes behind a nearer hit are skipped.
+// Reads the tree only (no marks are needed to find a minimum), so it is thread safe without a session.
+QuadtreeSegmentFirst :: proc(tree: ^Quadtree($E, $N, $L), a: Vec2, b: Vec2, omit: Item = ITEM_NONE) -> (item: Item, t: f32, hit: bool) {
+    probe: Probe = probeSegment(a, b)
+    first: First = {omit = omit, t = 2, item = ITEM_NONE}
+    nodeFirst(tree, 0, rootArea(tree), EXTENT_LOW, EXTENT_HIGH, &probe, &first)
+    if first.item == ITEM_NONE { return ITEM_NONE, 0, false }
+    return first.item, first.t, true
 }
 
 // Called for every node by QuadtreeVisit. `count` is the number of elements of a leaf (0 for a branch)
@@ -148,11 +163,35 @@ RectContainsPoint :: proc(rect: Rect, point: Vec2) -> bool {
 
 @(private)
 Query :: struct {
-    rect: Rect,
+    probe: Probe,
     out: []Item,
     omit: Item,
-    point: bool,
+    session: ^QuerySession,
+    stamp: u32,                 // the number of this query when the marks are in the tree
     count: int,
+}
+
+@(private)
+First :: struct {
+    omit: Item,
+    item: Item,
+    t: f32,
+}
+
+@(private)
+treeQuery :: proc(tree: ^Quadtree($E, $N, $L), probe: Probe, out: []Item, omit: Item, session: ^QuerySession) -> int {
+    query: Query = {probe = probe, out = out, omit = omit, session = session}
+    if session != nil {
+        sessionBegin(session, int(E))
+    } else {
+        tree.stamp += 1
+        query.stamp = tree.stamp
+    }
+    switch probe.kind {
+    case .RECT, .POINT: nodeQuery(tree, 0, rootArea(tree), &query)
+    case .CIRCLE, .SEGMENT: nodeQueryShape(tree, 0, rootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
+    }
+    return query.count
 }
 
 @(private)
@@ -282,24 +321,74 @@ nodeRemove :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, element: 
     }
 }
 
+// Rectangles and points: the nodes are picked by the bounding rectangle
 @(private)
 nodeQuery :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, query: ^Query) {
     if tree.nodes[node].count < 0 {
         first: i32 = tree.nodes[node].first
-        hit: [4]bool = quadrants(area, query.rect)
+        hit: [4]bool = quadrants(area, query.probe.rect)
         for quadrant in 0 ..< 4 {
             if hit[quadrant] { nodeQuery(tree, first + i32(quadrant), areaChild(area, quadrant), query) }
         }
         return
     }
+    leafQuery(tree, node, query)
+}
+
+// Circles and segments: the nodes are picked by their box (which reaches outward at the border of the tree)
+@(private)
+nodeQueryShape :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, low: Vec2, high: Vec2, query: ^Query) {
+    if tree.nodes[node].count < 0 {
+        first: i32 = tree.nodes[node].first
+        for quadrant in 0 ..< 4 {
+            child_low, child_high := extentChild(low, high, area, quadrant)
+            if probeHitsExtent(&query.probe, child_low, child_high) {
+                nodeQueryShape(tree, first + i32(quadrant), areaChild(area, quadrant), child_low, child_high, query)
+            }
+        }
+        return
+    }
+    leafQuery(tree, node, query)
+}
+
+@(private)
+leafQuery :: proc(tree: ^Quadtree($E, $N, $L), node: i32, query: ^Query) {
     for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
-        element: ^Element = &tree.elements[tree.links[link].element]
-        if element.stamp == tree.stamp || element.item == query.omit { continue }
-        element.stamp = tree.stamp
-        hit: bool = RectContainsPoint(element.rect, {query.rect.x, query.rect.y}) if query.point else RectOverlaps(element.rect, query.rect)
-        if hit && query.count < len(query.out) {
+        index: i32 = tree.links[link].element
+        element: ^Element = &tree.elements[index]
+        if element.item == query.omit { continue }
+        if query.session != nil {
+            if sessionSeen(query.session, int(index)) { continue }
+        } else {
+            if element.stamp == query.stamp { continue }
+            element.stamp = query.stamp
+        }
+        if probeHitsRect(&query.probe, element.rect) && query.count < len(query.out) {
             query.out[query.count] = element.item
             query.count += 1
+        }
+    }
+}
+
+// The nearest hit along a segment. An element in several leaves is looked at several times: harmless for a minimum
+@(private)
+nodeFirst :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, low: Vec2, high: Vec2, probe: ^Probe, first: ^First) {
+    if tree.nodes[node].count < 0 {
+        children: i32 = tree.nodes[node].first
+        for quadrant in 0 ..< 4 {
+            child_low, child_high := extentChild(low, high, area, quadrant)
+            enter, _, hit := segmentBox(probe.a, probe.d, child_low, child_high)
+            if hit && enter <= first.t { nodeFirst(tree, children + i32(quadrant), areaChild(area, quadrant), child_low, child_high, probe, first) }
+        }
+        return
+    }
+    for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        element: ^Element = &tree.elements[tree.links[link].element]
+        if element.item == first.omit { continue }
+        enter, _, hit := segmentBox(probe.a, probe.d, {element.rect.x, element.rect.y}, {element.rect.x + element.rect.w, element.rect.y + element.rect.h})
+        if hit && enter < first.t {
+            first.t = enter
+            first.item = element.item
         }
     }
 }

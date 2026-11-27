@@ -20,7 +20,21 @@ for thing, index in things { qt.QuadtreeInsert(&tree, thing.rect, index) }
 
 count := qt.QuadtreeQuery(&tree, rect, buffer[:], omit = index)   // overlapping elements, each once
 count  = qt.QuadtreeQueryPoint(&tree, mouse, buffer[:])           // elements whose rectangle holds the point
+count  = qt.QuadtreeQueryCircle(&tree, center, radius, buffer[:]) // elements whose rectangle the circle overlaps
+count  = qt.QuadtreeQuerySegment(&tree, a, b, buffer[:])          // elements whose rectangle the segment crosses
+item, t, hit := qt.QuadtreeSegmentFirst(&tree, a, b)              // the nearest along the segment (a ray cast): the hit is at a + t * (b - a)
 for i in 0 ..< count { other := &things[buffer[i]] }
+```
+
+## Circles, segments and threads (`quadtree_shape.odin`)
+Circle and segment queries exist in all three trees (`QuadtreeQueryCircle`, `QuadtreeRetainedQuerySegment`, `QuadtreeChunksSegmentFirst` ...): nodes the shape cannot reach are skipped, so a long diagonal ray visits only the leaves it crosses. The rectangle of an element is what is tested (a circle that only touches an edge does not hit; a segment that touches or runs along an edge does, and one inside a rectangle does). Results come in no order; `SegmentFirst` finds the nearest one without sorting.
+
+A query normally writes a mark into each element it reports (an element sits in several leaves), so two threads must not query one tree. Give each thread a `QuerySession` (its own `[]u32` with one entry per element: `E`, or the handle slots of a retained tree) and pass it as `session = &session`: the tree is then only read, any number of threads may query it while nobody changes it. `SegmentFirst` needs no session (a minimum does not need marks).
+```odin
+stamps: [CAPACITY]u32                       // per thread
+session: qt.QuerySession
+qt.QuerySessionInit(&session, stamps[:])
+count := qt.QuadtreeQueryCircle(&tree, center, 5, buffer[:], session = &session)
 ```
 
 ## Chunked world (`quadtree_chunks.odin`)
@@ -34,11 +48,11 @@ qt.QuadtreeChunksStream(&world, player_center, 4, user, fill)                // 
 count := qt.QuadtreeChunksQuery(&world, view_rect, buffer[:])                // items from all loaded chunks, each once
 ```
 - An item lives in ONE chunk, the one with its top left corner, and may stick out of it by up to `max_item_size` (a loose grid): no copies per chunk, no duplicates in results. A query looks at the chunks that can reach into it. A bigger item is refused: keep terrain and huge triggers in a separate list.
-- `Load` / `Unload` / `IsLoaded` / `Stream` (loads and unloads around a center, `fill` / `drop` callbacks), `Clear` (empties every loaded chunk but keeps it loaded: a second world of moving things, refilled each frame), `Query` / `QueryPoint`, `Visit` (nodes in world coordinates), `Usage` (also the largest chunk, to size E, N, L), `Coord`, `Bounds`.
+- `Load` / `Unload` / `IsLoaded` / `Stream` (loads and unloads around a center, `fill` / `drop` callbacks), `Clear` (empties every loaded chunk but keeps it loaded: a second world of moving things, refilled each frame), `Query` / `QueryPoint` / `QueryCircle` / `QuerySegment` / `SegmentFirst`, `Visit` (nodes in world coordinates), `Usage` (also the largest chunk, to size E, N, L), `Coord`, `Bounds`.
 - The ring needs 2 * radius + 1 <= W and <= H; two loaded chunks may not share a slot (`Load` says no, `Stream` unloads first).
 
 ## Retained mode (`quadtree_retained.odin`)
-The same tree that lives between frames: `QuadtreeRetained(E, N, L)` with `QuadtreeRetainedInit / Add / Remove / Get / Move / Query / QueryPoint / Cleanup / Visit / Usage / Len / Clear`. `Add` gives a stable `Handle` (`core:container/handle_map`, generation checked: a removed handle is stale), `ptr` carries your data, `Move` and `Remove` change one element without a rebuild. Use it when most of the scene stays put and few things move (the `retained crates` demo moves 10 wanderers among 300 crates); when most things move every frame, the immediate tree above is simpler.
+The same tree that lives between frames: `QuadtreeRetained(E, N, L)` with `QuadtreeRetainedInit / Add / Remove / Get / Move / Query / QueryPoint / QueryCircle / QuerySegment / SegmentFirst / Cleanup / Visit / Usage / Len / Clear`. `Add` gives a stable `Handle` (`core:container/handle_map`, generation checked: a removed handle is stale), `ptr` carries your data, `Move` and `Remove` change one element without a rebuild. Use it when most of the scene stays put and few things move (the `retained crates` demo moves 10 wanderers among 300 crates); when most things move every frame, the immediate tree above is simpler.
 `QuadtreeRetainedMove` that runs out of links does not move and keeps the element where it was; only when it cannot even be put back it is removed (the handle is then stale). Both trees share `Rect`, `Vec2`, `RectOverlaps`, `RectContainsPoint` and `QuadtreeNodeProc`.
 
 ## Parts
@@ -51,7 +65,7 @@ The same tree that lives between frames: `QuadtreeRetained(E, N, L)` with `Quadt
 
 ## Notes
 - Elements outside of `bounds` work: they sit in the border leaves.
-- This is a broad phase: the rectangle is what the tree knows, a circle or a polygon is tested by you on the results (see `hover circles`).
+- This is a broad phase: the rectangle is what the tree knows. A circle or segment query tests the rectangles of the elements; if your objects are circles or polygons, test them yourself on the results (see `hover circles`).
 - The tree answers for the rectangles of the moment it was built. Insert again after things moved if a later query must see the new places (the demos build once per frame, between moving and colliding).
 - Sizing: a leaf at `max_depth` is `bounds / 2^max_depth` wide; `QuadtreeUsage` tells how much of `N` and `L` a scene needs.
 

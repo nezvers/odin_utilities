@@ -112,14 +112,55 @@ QuadtreeChunksInsert :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), rect: W
     return QuadtreeInsert(&chunk.tree, chunksLocal(world, chunk, rect), item)
 }
 
-// Items whose rectangle overlaps `rect` (each once, `omit` left out), from the loaded chunks. Returns how many were written: results are limited by the size of `out`
-QuadtreeChunksQuery :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), rect: WorldRect, out: []Item, omit: Item = ITEM_NONE) -> int {
-    return chunksQuery(world, rect, false, out, omit)
+// Items whose rectangle overlaps `rect` (each once, `omit` left out), from the loaded chunks. Returns how many were written: results are limited by the size of `out`.
+// Every query takes an optional `session` (see QuerySession): without it the elements are marked in the trees (one thread at a time), with it the world is only read. One session serves all
+// the chunks (its stamps need `E` entries).
+QuadtreeChunksQuery :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), rect: WorldRect, out: []Item, omit: Item = ITEM_NONE, session: ^QuerySession = nil) -> int {
+    return chunksQuery(world, {kind = .RECT, rect = rect}, out, omit, session)
 }
 
 // Items whose rectangle contains the point
-QuadtreeChunksQueryPoint :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), point: WorldVec, out: []Item) -> int {
-    return chunksQuery(world, {point.x, point.y, 0, 0}, true, out, ITEM_NONE)
+QuadtreeChunksQueryPoint :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), point: WorldVec, out: []Item, session: ^QuerySession = nil) -> int {
+    return chunksQuery(world, {kind = .POINT, rect = {point.x, point.y, 0, 0}}, out, ITEM_NONE, session)
+}
+
+// Items whose rectangle overlaps the circle (a rectangle that only touches it does not count)
+QuadtreeChunksQueryCircle :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), center: WorldVec, radius: f64, out: []Item, omit: Item = ITEM_NONE, session: ^QuerySession = nil) -> int {
+    probe: ChunkProbe = {kind = .CIRCLE, rect = {center.x - radius, center.y - radius, radius * 2, radius * 2}, center = center, radius = radius}
+    return chunksQuery(world, probe, out, omit, session)
+}
+
+// Items whose rectangle the segment from `a` to `b` crosses (touching an edge counts, a segment inside a rectangle too), in no particular order. Chunks that the segment does not reach are skipped
+QuadtreeChunksQuerySegment :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), a: WorldVec, b: WorldVec, out: []Item, omit: Item = ITEM_NONE, session: ^QuerySession = nil) -> int {
+    return chunksQuery(world, chunksSegment(a, b), out, omit, session)
+}
+
+// The first item along the segment from `a` to `b` and `t` in [0, 1] (the hit is at a + t * (b - a)). Reads the world only, so it is thread safe without a session. The geometry is done in f32 relative to
+// each chunk corner: a segment many chunks long gets a coarser `t` than a short one.
+QuadtreeChunksSegmentFirst :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), a: WorldVec, b: WorldVec, omit: Item = ITEM_NONE) -> (item: Item, t: f32, hit: bool) {
+    probe: ChunkProbe = chunksSegment(a, b)
+    found: [W * H]^QuadtreeChunk(E, N, L)
+    candidates: int = chunksCandidates(world, &probe, found[:])
+    best: f32 = 2
+    item = ITEM_NONE
+    for i in 0 ..< candidates {
+        local: Probe = chunksProbeLocal(world, found[i], &probe)
+        reach: f32 = f32(world.chunk_size + world.max_item_size)
+        enter, _, reached := segmentBox(local.a, local.d, {0, 0}, {reach, reach})
+        if !reached || enter > best { continue }
+        found_item, found_t, found_hit := QuadtreeSegmentFirst(&found[i].tree, local.a, local.a + local.d, omit)
+        if found_hit && found_t < best {
+            best = found_t
+            item = found_item
+        }
+    }
+    if item == ITEM_NONE { return ITEM_NONE, 0, false }
+    return item, best, true
+}
+
+@(private)
+chunksSegment :: proc(a: WorldVec, b: WorldVec) -> ChunkProbe {
+    return {kind = .SEGMENT, rect = {min(a.x, b.x), min(a.y, b.y), abs(b.x - a.x), abs(b.y - a.y)}, a = a, b = b}
 }
 
 // Keep the square of chunks around `center` loaded: unload the chunks farther than `radius` chunks (`drop` is called before each), then load the missing ones (`fill` is called after each, to insert its items).
@@ -221,8 +262,35 @@ chunksLocal :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), chunk: ^Quadtree
     return {f32(rect.x - f64(chunk.cx) * world.chunk_size), f32(rect.y - f64(chunk.cy) * world.chunk_size), f32(rect.w), f32(rect.h)}
 }
 
+// A query shape in world units (f64). The trees get it back as a local f32 `Probe` for each chunk: the subtraction of the corner of the chunk is done in f64, the result is small
 @(private)
-chunksQuery :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), rect: WorldRect, point: bool, out: []Item, omit: Item) -> int {
+ChunkProbe :: struct {
+    kind: ShapeKind,
+    rect: WorldRect,            // the bounding rectangle: the chunks to look at are picked with it
+    center: WorldVec,
+    radius: f64,
+    a, b: WorldVec,
+}
+
+@(private)
+chunksProbeLocal :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), chunk: ^QuadtreeChunk(E, N, L), probe: ^ChunkProbe) -> Probe {
+    origin_x: f64 = f64(chunk.cx) * world.chunk_size
+    origin_y: f64 = f64(chunk.cy) * world.chunk_size
+    switch probe.kind {
+    case .RECT: return probeRect(chunksLocal(world, chunk, probe.rect))
+    case .POINT:
+        local: Rect = chunksLocal(world, chunk, probe.rect)
+        return probePoint({local.x, local.y})
+    case .CIRCLE: return probeCircle({f32(probe.center.x - origin_x), f32(probe.center.y - origin_y)}, f32(probe.radius))
+    case .SEGMENT: return probeSegment({f32(probe.a.x - origin_x), f32(probe.a.y - origin_y)}, {f32(probe.b.x - origin_x), f32(probe.b.y - origin_y)})
+    }
+    return {}
+}
+
+// The chunks whose items can reach into the bounding rectangle of the probe (and for circles and segments, whose area the shape can really reach)
+@(private)
+chunksCandidates :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), probe: ^ChunkProbe, found: []^QuadtreeChunk(E, N, L)) -> int {
+    rect: WorldRect = probe.rect
     // the items that can reach into the rectangle have their top left corner up to `max_item_size` before it
     first_x: int = QuadtreeChunksCoord(world, rect.x - world.max_item_size)
     last_x: int = QuadtreeChunksCoord(world, rect.x + rect.w)
@@ -233,23 +301,45 @@ chunksQuery :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), rect: WorldRect,
         // a huge rectangle: asking every slot is cheaper than every coordinate
         for &chunk in world.chunks {
             if !chunk.loaded || chunk.cx < first_x || chunk.cx > last_x || chunk.cy < first_y || chunk.cy > last_y { continue }
-            count += chunkQuery(world, &chunk, rect, point, out[count:], omit)
+            if chunkReachable(world, &chunk, probe) {
+                found[count] = &chunk
+                count += 1
+            }
         }
         return count
     }
     for cy in first_y ..= last_y {
         for cx in first_x ..= last_x {
             chunk: ^QuadtreeChunk(E, N, L) = chunksFind(world, cx, cy) or_continue
-            count += chunkQuery(world, chunk, rect, point, out[count:], omit)
+            if chunkReachable(world, chunk, probe) {
+                found[count] = chunk
+                count += 1
+            }
         }
     }
     return count
 }
 
+// The items of a chunk lie in its square and stick out by up to `max_item_size`: a circle or a segment that misses that box finds nothing in the chunk (a long diagonal segment skips most of the
+// chunks of its bounding rectangle)
 @(private)
-chunkQuery :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), chunk: ^QuadtreeChunk(E, N, L), rect: WorldRect, point: bool, out: []Item, omit: Item) -> int {
-    if len(out) == 0 { return 0 }
-    local: Rect = chunksLocal(world, chunk, rect)
-    if point { return QuadtreeQueryPoint(&chunk.tree, {local.x, local.y}, out) }
-    return QuadtreeQuery(&chunk.tree, local, out, omit)
+chunkReachable :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), chunk: ^QuadtreeChunk(E, N, L), probe: ^ChunkProbe) -> bool {
+    if probe.kind == .RECT || probe.kind == .POINT { return true }
+    local: Probe = chunksProbeLocal(world, chunk, probe)
+    reach: f32 = f32(world.chunk_size + world.max_item_size)
+    return probeHitsExtent(&local, {0, 0}, {reach, reach})
+}
+
+@(private)
+chunksQuery :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), probe: ChunkProbe, out: []Item, omit: Item, session: ^QuerySession) -> int {
+    probe := probe
+    found: [W * H]^QuadtreeChunk(E, N, L)
+    candidates: int = chunksCandidates(world, &probe, found[:])
+    count: int
+    for i in 0 ..< candidates {
+        if count >= len(out) { break }
+        local: Probe = chunksProbeLocal(world, found[i], &probe)
+        count += treeQuery(&found[i].tree, local, out[count:], omit, session)
+    }
+    return count
 }

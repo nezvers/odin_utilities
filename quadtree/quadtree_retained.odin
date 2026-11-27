@@ -115,20 +115,35 @@ QuadtreeRetainedMove :: proc(tree: ^QuadtreeRetained($E, $N, $L), handle: Handle
     return false
 }
 
-// Handles of the elements whose rectangle overlaps `rect` (each once, `omit` left out). Returns how many were written: results are limited by the size of `out`
-QuadtreeRetainedQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), rect: Rect, out: []Handle, omit: Handle = HandleNone) -> int {
-    query: RetainedQuery = {rect = rect, out = out, omit = omit}
-    retainedStampNext(tree)
-    retainedNodeQuery(tree, 0, retainedRootArea(tree), &query)
-    return query.count
+// Handles of the elements whose rectangle overlaps `rect` (each once, `omit` left out). Returns how many were written: results are limited by the size of `out`.
+// Every query takes an optional `session`: without it the elements are marked in the tree (one thread at a time), with it the tree is only read (see QuerySession; its stamps need `E` entries,
+// they are indexed by the slot of the handle).
+QuadtreeRetainedQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), rect: Rect, out: []Handle, omit: Handle = HandleNone, session: ^QuerySession = nil) -> int {
+    return retainedTreeQuery(tree, probeRect(rect), out, omit, session)
 }
 
 // Handles of the elements whose rectangle contains the point
-QuadtreeRetainedQueryPoint :: proc(tree: ^QuadtreeRetained($E, $N, $L), point: Vec2, out: []Handle) -> int {
-    query: RetainedQuery = {rect = {point.x, point.y, 0, 0}, out = out, point = true}
-    retainedStampNext(tree)
-    retainedNodeQuery(tree, 0, retainedRootArea(tree), &query)
-    return query.count
+QuadtreeRetainedQueryPoint :: proc(tree: ^QuadtreeRetained($E, $N, $L), point: Vec2, out: []Handle, session: ^QuerySession = nil) -> int {
+    return retainedTreeQuery(tree, probePoint(point), out, HandleNone, session)
+}
+
+// Handles of the elements whose rectangle overlaps the circle (a rectangle that only touches it does not count)
+QuadtreeRetainedQueryCircle :: proc(tree: ^QuadtreeRetained($E, $N, $L), center: Vec2, radius: f32, out: []Handle, omit: Handle = HandleNone, session: ^QuerySession = nil) -> int {
+    return retainedTreeQuery(tree, probeCircle(center, radius), out, omit, session)
+}
+
+// Handles of the elements whose rectangle the segment from `a` to `b` crosses (touching an edge counts, a segment inside a rectangle too), in no particular order
+QuadtreeRetainedQuerySegment :: proc(tree: ^QuadtreeRetained($E, $N, $L), a: Vec2, b: Vec2, out: []Handle, omit: Handle = HandleNone, session: ^QuerySession = nil) -> int {
+    return retainedTreeQuery(tree, probeSegment(a, b), out, omit, session)
+}
+
+// The first element along the segment from `a` to `b`: its handle and `t` in [0, 1] (the hit is at a + t * (b - a)). Reads the tree only, so it is thread safe without a session.
+QuadtreeRetainedSegmentFirst :: proc(tree: ^QuadtreeRetained($E, $N, $L), a: Vec2, b: Vec2, omit: Handle = HandleNone) -> (handle: Handle, t: f32, hit: bool) {
+    probe: Probe = probeSegment(a, b)
+    first: RetainedFirst = {omit = omit, t = 2}
+    retainedNodeFirst(tree, 0, retainedRootArea(tree), EXTENT_LOW, EXTENT_HIGH, &probe, &first)
+    if first.handle == HandleNone { return HandleNone, 0, false }
+    return first.handle, first.t, true
 }
 
 // Merge four empty leaves into their parent, so the nodes can be used again. Call it now and then (once a frame is fine), after elements moved or were removed
@@ -145,11 +160,29 @@ QuadtreeRetainedVisit :: proc(tree: ^QuadtreeRetained($E, $N, $L), user: rawptr,
 
 @(private)
 RetainedQuery :: struct {
-    rect: Rect,
+    probe: Probe,
     out: []Handle,
     omit: Handle,
-    point: bool,
+    session: ^QuerySession,
     count: int,
+}
+
+@(private)
+RetainedFirst :: struct {
+    omit: Handle,
+    handle: Handle,
+    t: f32,
+}
+
+@(private)
+retainedTreeQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), probe: Probe, out: []Handle, omit: Handle, session: ^QuerySession) -> int {
+    query: RetainedQuery = {probe = probe, out = out, omit = omit, session = session}
+    if session != nil { sessionBegin(session, int(E)) } else { retainedStampNext(tree) }
+    switch probe.kind {
+    case .RECT, .POINT: retainedNodeQuery(tree, 0, retainedRootArea(tree), &query)
+    case .CIRCLE, .SEGMENT: retainedNodeQueryShape(tree, 0, retainedRootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
+    }
+    return query.count
 }
 
 @(private)
@@ -277,21 +310,70 @@ retainedStampNext :: proc(tree: ^QuadtreeRetained($E, $N, $L)) {
 retainedNodeQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Area, query: ^RetainedQuery) {
     if tree.nodes[node].count < 0 {
         first: i32 = tree.nodes[node].first
-        hit: [4]bool = quadrants(area, query.rect)
+        hit: [4]bool = quadrants(area, query.probe.rect)
         for quadrant in 0 ..< 4 {
             if hit[quadrant] { retainedNodeQuery(tree, first + i32(quadrant), areaChild(area, quadrant), query) }
+        }
+        return
+    }
+    retainedLeafQuery(tree, node, query)
+}
+
+// Circles and segments: the nodes are picked by their box (which reaches outward at the border of the tree)
+@(private)
+retainedNodeQueryShape :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Area, low: Vec2, high: Vec2, query: ^RetainedQuery) {
+    if tree.nodes[node].count < 0 {
+        first: i32 = tree.nodes[node].first
+        for quadrant in 0 ..< 4 {
+            child_low, child_high := extentChild(low, high, area, quadrant)
+            if probeHitsExtent(&query.probe, child_low, child_high) {
+                retainedNodeQueryShape(tree, first + i32(quadrant), areaChild(area, quadrant), child_low, child_high, query)
+            }
+        }
+        return
+    }
+    retainedLeafQuery(tree, node, query)
+}
+
+@(private)
+retainedLeafQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, query: ^RetainedQuery) {
+    for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        handle: Handle = tree.links[link].element
+        element: ^RetainedElement = hm.get(&tree.elements, handle) or_continue
+        if handle == query.omit { continue }
+        if query.session != nil {
+            if sessionSeen(query.session, int(handle.idx)) { continue }
+        } else {
+            if element.stamp == tree.stamp { continue }
+            element.stamp = tree.stamp
+        }
+        if probeHitsRect(&query.probe, element.rect) && query.count < len(query.out) {
+            query.out[query.count] = handle
+            query.count += 1
+        }
+    }
+}
+
+// The nearest hit along a segment. An element in several leaves is looked at several times: harmless for a minimum
+@(private)
+retainedNodeFirst :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Area, low: Vec2, high: Vec2, probe: ^Probe, first: ^RetainedFirst) {
+    if tree.nodes[node].count < 0 {
+        children: i32 = tree.nodes[node].first
+        for quadrant in 0 ..< 4 {
+            child_low, child_high := extentChild(low, high, area, quadrant)
+            enter, _, hit := segmentBox(probe.a, probe.d, child_low, child_high)
+            if hit && enter <= first.t { retainedNodeFirst(tree, children + i32(quadrant), areaChild(area, quadrant), child_low, child_high, probe, first) }
         }
         return
     }
     for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
         handle: Handle = tree.links[link].element
         element: ^RetainedElement = hm.get(&tree.elements, handle) or_continue
-        if element.stamp == tree.stamp || handle == query.omit { continue }
-        element.stamp = tree.stamp
-        hit: bool = RectContainsPoint(element.rect, {query.rect.x, query.rect.y}) if query.point else RectOverlaps(element.rect, query.rect)
-        if hit && query.count < len(query.out) {
-            query.out[query.count] = handle
-            query.count += 1
+        if handle == first.omit { continue }
+        enter, _, hit := segmentBox(probe.a, probe.d, {element.rect.x, element.rect.y}, {element.rect.x + element.rect.w, element.rect.y + element.rect.h})
+        if hit && enter < first.t {
+            first.t = enter
+            first.handle = handle
         }
     }
 }
