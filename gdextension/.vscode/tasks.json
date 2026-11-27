@@ -2,11 +2,21 @@
     "version": "2.0.0",
     "command": "",
     "args": [],
+    "inputs": [
+        {"id": "package", "type": "promptString", "description": "package folder of the extension", "default": "template"},
+        {"id": "project", "type": "promptString", "description": "Godot project folder", "default": "template/godot_project"}
+    ],
     "tasks": [
         {
             "label": "Check",
             "type": "shell",
             "command": "odin check . -no-entry-point -strict-style -vet",
+            "group": "build"
+        },
+        {
+            "label": "Build Extension Into Project",
+            "type": "shell",
+            "command": "odin run tool/build -- ${input:package} ${input:project} --import",
             "group": "build"
         },
         {

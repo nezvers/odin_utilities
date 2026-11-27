@@ -8,6 +8,7 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (high) More value kinds: Array, Dictionary, StringName, objects (a Node as an argument or a result)
 - [x] Virtual methods `_ready`, `_enter_tree`, `_exit_tree`, `_process`, `_physics_process` (`Class.virtuals`, a Node parent)
 - [ ] (medium) Properties (registered properties with getters and setters) and exported enums
-- [ ] (medium) Build tool: `odin run gdextension/tool/build -- <package> <project dir>` that builds for the host platform and writes the `.gdextension` file; Linux and macOS checks
+- [x] Build tool `odin run gdextension/tool/build -- <package> <project dir>` (builds for this computer, writes the `.gdextension`, `--import`)
+- [ ] (medium) Build tool: try it on Linux and macOS (the file names are written for all three, only Windows was run); cross builds
 - [ ] (medium) Call engine methods from Odin (`classdb_get_method_bind` with the hashes of `extension_api.json`)
 - [ ] (low) Hot reload of the extension (`recreate_instance_func`)

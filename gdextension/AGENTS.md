@@ -5,6 +5,7 @@ What is not obvious from the code of this library. The rules that hold for every
 ## Files
 - `interface.odin`: the used part of `gdextension_interface.h` (structs as the header lays them out, the functions looked up once from `get_proc_address` into `gd`, Variant and PackedByteArray helpers). Godot 4.7.2 was the reference; the class is registered with `classdb_register_extension_class4` (kept since 4.4).
 - `class.odin`: the public API: `Class`, `Method`, `Value`, `Entry`. `registerClass` builds the property infos and method infos (heap, once), `callMethod` and `ptrCallMethod` are the two ways Godot calls a method.
+- `tool/build`: the build tool (package main with tests): it calls `odin build -build-mode:dll` and writes the `.gdextension`; the entry symbol is the first line with `:: proc "c"` and `GetProcAddress` in the package's `.odin` files. Godot copies the loaded DLL as `~name.dll` into `bin/` (git ignore `bin/`).
 - `template/`: the template and testing ground (see its AGENTS.md): every new feature of the library appears there first.
 - `godot_spacetimedb/`: the example and first user (own AGENTS.md). `godot_api/`: dumps of the interface of Godot (git ignored).
 
