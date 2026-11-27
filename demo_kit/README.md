@@ -48,7 +48,7 @@ The constructors are `contextless`, so a script can be a global.
 Keep the positions a script clicks fixed numbers (not relative to the window size or to the width of a text): the same script runs on a headless 1280 x 720 screen and in real windows. A widget that has a label is found by the rectangle you gave it, aim at the inner part of its bar.
 
 - `odin test <lib>/demo_common` : the scripts run headless (`kit.TestDemo`), a failed check fails the test with its message and frame.
-- `odin run <lib>/demo_raylib -define:DEMO_TEST=true` : the same scripts in the window, you see the simulated input, the exit code is 1 on a failure.
+- `odin run <lib>/demo_raylib -define:DEMO_TEST=true` : the same scripts in the window, you see the simulated input, the exit code is 1 on a failure. On Windows the test window takes neither the focus nor clicks (the focus goes back to the window you had), so you can keep working while it runs.
 - A demo without a script is a smoke test: it runs 60 frames (init, update, draw, finit).
 - The `Report` says how many checks ran and failed, the frames and the draw calls.
 

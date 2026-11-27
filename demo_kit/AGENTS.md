@@ -13,6 +13,7 @@ What is not obvious from the code of this library. The rules that hold for every
 ## Screen capture tests
 - Step `kit.Capture("name")` compares the frame with `captures/<backend>/<name>.png` next to the script; only in a window with `-define:DEMO_CAPTURE=true` (missing goldens are written, `DEMO_CAPTURE_UPDATE=true` replaces them). Headless skips it.
 - `odin run demo_kit/tool/captures` (from odin_utilities; `-- ui reports`, `-- --karl2d`, `-- --update ui`, `-- --allow-new`, `-- --monitor <name>`) runs every library with Capture steps; exit 1 = changed picture, 2 = new one. Run it before committing a change to drawing, text layout or a style and look at every `.actual.png` it leaves.
+- A test window is passive on Windows (`passive_windows.odin`, called by both glues under `DEMO_TEST`): `PassiveWindowBegin` remembers the focused window before the window opens, `PassiveWindowEnd` sets NOACTIVATE + LAYERED + TRANSPARENT (clicks pass through) and gives the focus back, so a run does not steal the keyboard or mouse of whoever works meanwhile. Input of a test is simulated (the Player clears the real one every frame). Checked by sampling the foreground window during a run: it never changed. Do not remove it; never run window tests in a way that skips it.
 - Windows go to the display named by `--monitor`, `DEMO_MONITOR` or the git ignored `demo_kit/monitor.txt`, sized independent of display scaling (Karl2D `disable_auto_scale_hint`, raylib resized after move): goldens are 1280 x 720 on every display.
 
 ## Log of a scripted run

@@ -51,8 +51,12 @@ FIRA_CODE :: #load("../../assets/fonts/FiraCode-Regular.ttf")
 
 // Open a window and run. Escape closes it.
 Run :: proc(title: string, demos: []kit.Demo, width: i32 = 1280, height: i32 = 720) {
+    // a test window does not keep the focus and does not take clicks (see passive_windows.odin)
+    previous_focus: rawptr
+    when kit.DEMO_TEST { previous_focus = kit.PassiveWindowBegin() } else { _ = previous_focus }
     rl.SetConfigFlags({.WINDOW_RESIZABLE, .VSYNC_HINT})
     rl.InitWindow(width, height, strings.clone_to_cstring(title, context.temp_allocator))
+    when kit.DEMO_TEST { kit.PassiveWindowEnd(previous_focus) }
     // DEMO_MONITOR names the display the window goes to; a test run also makes sure that the size of the picture is the wanted one
     when kit.DEMO_TEST {
         if !placeOnDisplay(width, height) {
