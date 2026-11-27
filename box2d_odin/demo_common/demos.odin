@@ -5,4 +5,5 @@ package demo_common
 
 import kit "../../demo_kit"
 
-demos: []kit.Demo = {demo_samples, demo_platformer}
+// Filled by buildScript (demo_samples.odin): the script of the samples browser is made at start, so the list cannot be a constant
+demos: [2]kit.Demo

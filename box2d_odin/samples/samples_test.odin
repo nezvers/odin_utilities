@@ -67,3 +67,21 @@ test_all_samples_run :: proc(t: ^testing.T) {
     }
     b2o.HostShutdown(&host)
 }
+
+// An arrow key selects another sample in the middle of a frame: the rest of that frame has to belong to the new sample. Before, the draw proc of the old one (Pivot reads the velocity of its
+// body) ran against the world of the next one (Kinematic) and crashed on a body that did not exist. Every neighbouring pair is walked with the key.
+@(test)
+test_an_arrow_key_between_samples_does_not_mix_them :: proc(t: ^testing.T) {
+    host: b2o.SampleHost
+    b2o.HostInit(&host, null_backend, {1280, 720})
+    InitNullDebugDraw(&host.debug_draw)
+    b2o.HostSelect(&host, 0)
+    for _ in 0..<b2o.SampleCount() {
+        for _ in 0..<5 { b2o.HostFrame(&host, 1.0 / 60) }
+        host.input.key_pressed[.RIGHT] = true
+        b2o.HostFrame(&host, 1.0 / 60)
+        host.input.key_pressed[.RIGHT] = false
+    }
+    testing.expect_value(t, host.selected, 0)       // went all the way round
+    b2o.HostShutdown(&host)
+}

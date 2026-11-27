@@ -4,6 +4,9 @@ package demo_common
 // The Box2D samples (box2d_odin/samples, ports of box2d/samples) in the sample browser of the library: its own small ui, camera and
 // mouse joint. The library draws through a Backend and Box2D debug draw, both are made over the demo kit here.
 
+import "base:runtime"
+import "core:fmt"
+import "core:strings"
 import b2 "vendor:box2d"
 import b2_odin ".."
 import b2_kit "../kit"
@@ -17,7 +20,7 @@ demo_samples: kit.Demo = {
     finit = finit,
     update = update,
     draw = draw,
-    script = script,
+    script = nil,           // built by buildScript: one picture for every sample the library has
 }
 
 host: b2_odin.SampleHost
@@ -86,7 +89,7 @@ draw :: proc(ctx: ^kit.Context) {
     b2_odin.HostFrame(&host, ctx.delta_time)
 }
 
-script: []kit.Step = {
+script_head: []kit.Step = {
     kit.Wait(5),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return b2.World_IsValid(host.ctx.world) && b2_odin.SampleCount() > 1 }, "a sample world is running and the library has samples"),
     kit.Wait(60),
@@ -108,24 +111,46 @@ script: []kit.Step = {
     kit.Wait(2),
     kit.Capture("box2d_odin_samples_end"),
     kit.Wait(1),
-    kit.Tap(.RIGHT),
-    kit.Wait(90),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return host.selected == 1 && host.ctx.step_count > 60 }, "sample 1 runs for a while"),
-    kit.Capture("box2d_odin_sample_1"),
-    kit.Wait(1),
-    kit.Tap(.RIGHT),
-    kit.Wait(90),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return host.selected == 2 && host.ctx.step_count > 60 }, "sample 2 runs for a while"),
-    kit.Capture("box2d_odin_sample_2"),
-    kit.Wait(1),
-    kit.Tap(.RIGHT),
-    kit.Wait(90),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return host.selected == 3 && host.ctx.step_count > 60 }, "sample 3 runs for a while"),
-    kit.Capture("box2d_odin_sample_3"),
-    kit.Wait(1),
-    kit.Tap(.RIGHT),
-    kit.Wait(90),
-    kit.Check(proc(ctx: ^kit.Context) -> bool { return host.selected == 4 && host.ctx.step_count > 60 }, "sample 4 runs for a while"),
-    kit.Capture("box2d_odin_sample_4"),
-    kit.Wait(1),
+}
+
+// The head above is the check of the browser itself. After it the script visits every sample of the library: the next one, a fixed number of frames of simulation, a picture named after the
+// sample (so a new sample adds a picture and a reordering renames none). Steps are plain data and a Check cannot carry a number, so the steps are made once at start, when the samples have
+// registered themselves (their @(init) procs run before the ones of this package, it imports them).
+SAMPLE_FRAMES :: 90
+STEPS_PER_SAMPLE :: 5
+script_buffer: [64 + STEPS_PER_SAMPLE * b2_odin.MAX_SAMPLES]kit.Step
+
+@(init)
+buildScript :: proc "contextless" () {
+    context = runtime.default_context()
+    count: int
+    for step in script_head {
+        script_buffer[count] = step
+        count += 1
+    }
+    for index in 1 ..< b2_odin.SampleCount() {
+        sample: ^b2_odin.Sample = b2_odin.GetSample(index)
+        name: string = fmt.aprintf("box2d_odin_%s_%s", pictureName(sample.category), pictureName(sample.name))
+        script_buffer[count] = kit.Tap(.RIGHT)
+        script_buffer[count + 1] = kit.Wait(SAMPLE_FRAMES)
+        script_buffer[count + 2] = kit.Check(proc(ctx: ^kit.Context) -> bool { return host.ctx.step_count > SAMPLE_FRAMES / 2 }, "the next sample runs")
+        script_buffer[count + 3] = kit.Capture(name)
+        script_buffer[count + 4] = kit.Wait(1)
+        count += STEPS_PER_SAMPLE
+    }
+    demo_samples.script = script_buffer[:count]
+    demos = {demo_samples, demo_platformer}
+}
+
+// "Single Circle Restitution" -> "single_circle_restitution": a file name
+pictureName :: proc(text: string) -> string {
+    builder: strings.Builder
+    for character in text {
+        switch {
+        case character >= 'a' && character <= 'z', character >= '0' && character <= '9': strings.write_rune(&builder, character)
+        case character >= 'A' && character <= 'Z': strings.write_rune(&builder, character + 32)
+        case: if strings.builder_len(builder) > 0 && builder.buf[len(builder.buf) - 1] != '_' { strings.write_byte(&builder, '_') }
+        }
+    }
+    return strings.to_string(builder)
 }

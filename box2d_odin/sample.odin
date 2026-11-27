@@ -232,6 +232,8 @@ HostFrame :: proc(host: ^SampleHost, dt: f32) {
     over_ui: bool = host.show_ui && (input.mouse.x < BROWSER_WIDTH || input.mouse.x > host.screen.x - CONTROLS_WIDTH)
 
     HostInput(host, sample, over_ui)
+    // the input may have selected another sample (an arrow key): the rest of the frame is for the new one, or its step and draw would run against the world of the old one
+    sample = GetSample(host.selected)
 
     // Simulation
     time_step: f32 = 0
