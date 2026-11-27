@@ -23,6 +23,7 @@ count  = qt.QuadtreeQueryPoint(&tree, mouse, buffer[:])           // elements wh
 count  = qt.QuadtreeQueryCircle(&tree, center, radius, buffer[:]) // elements whose rectangle the circle overlaps
 count  = qt.QuadtreeQuerySegment(&tree, a, b, buffer[:])          // elements whose rectangle the segment crosses
 item, t, hit := qt.QuadtreeSegmentFirst(&tree, a, b)              // the nearest along the segment (a ray cast): the hit is at a + t * (b - a)
+count  = qt.QuadtreeNearest(&tree, point, items[:], distances[:])  // the k nearest (k = the shorter slice), nearest first, with their distances
 for i in 0 ..< count { other := &things[buffer[i]] }
 ```
 
@@ -54,6 +55,9 @@ count := qt.QuadtreeChunksQuery(&world, view_rect, buffer[:])                // 
 ## Retained mode (`quadtree_retained.odin`)
 The same tree that lives between frames: `QuadtreeRetained(E, N, L)` with `QuadtreeRetainedInit / Add / Remove / Get / Move / Query / QueryPoint / QueryCircle / QuerySegment / SegmentFirst / Cleanup / Visit / Usage / Len / Clear`. `Add` gives a stable `Handle` (`core:container/handle_map`, generation checked: a removed handle is stale), `ptr` carries your data, `Move` and `Remove` change one element without a rebuild. Use it when most of the scene stays put and few things move (the `retained crates` demo moves 10 wanderers among 300 crates); when most things move every frame, the immediate tree above is simpler.
 `QuadtreeRetainedMove` that runs out of links does not move and keeps the element where it was; only when it cannot even be put back it is removed (the handle is then stale). Both trees share `Rect`, `Vec2`, `RectOverlaps`, `RectContainsPoint` and `QuadtreeNodeProc`.
+
+## Nearest and k-nearest
+`QuadtreeNearest(&tree, point, items[:], distances[:], omit = me, max_distance = 200)` (also `QuadtreeRetainedNearest` with handles and `QuadtreeChunksNearest` with world `f64` positions) gives the `k` closest elements, `k` being the length of the shorter slice (one element each for the closest one), nearest first, with the distance to their rectangle (0 when the point is inside). The walk visits the nearest child first and skips nodes that cannot beat the k-th best: no heap, no allocation, no marks, so it only reads the tree and is thread safe. A `max_distance` makes it cheaper when nothing far away matters (the chunked world then skips whole chunks). Ties: of equal distances either one may come.
 
 ## Benchmark (`tool/bench`)
 `odin run tool/bench -o:speed` (add `-- --quick` for the small scenes) compares the trees with a uniform grid, `grid_collision_map` and brute force on uniform and clustered scenes of 1k, 10k and 50k rectangles (4 to 16 units in a 4096 world), checks that every structure reports the same neighbours, and measures sessions with threads and moving elements. Findings on the development PC (ms per frame, one neighbour query per element):

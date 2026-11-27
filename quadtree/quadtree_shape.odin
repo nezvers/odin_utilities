@@ -1,5 +1,7 @@
 package quadtree
 
+import "core:math"
+
 // What the trees are asked about besides rectangles and points: a circle and a segment (a ray with an end). The trees prune nodes with `probeHitsExtent` and test the elements with `probeHitsRect`;
 // both only read the probe, so the shapes cost the same in the immediate, the retained and the chunked tree.
 //
@@ -150,3 +152,64 @@ extentChild :: proc(low: Vec2, high: Vec2, area: Area, quadrant: int) -> (child_
 EXTENT_LOW :: Vec2{-max(f32), -max(f32)}
 @(private)
 EXTENT_HIGH :: Vec2{max(f32), max(f32)}
+
+// ------------------------------------------------------------------------------------------------------------------------
+// Nearest and k-nearest: the k best so far live in the memory of the caller (`items` and `distances`, sorted, nearest first). A walk visits the nearest child first and skips every node that cannot
+// beat the k-th best, so it needs no heap, no allocation and no marks (an element seen in two leaves is found in the short result list instead): it only reads the tree, which makes it thread safe.
+
+@(private)
+Nearest :: struct($T: typeid) {
+    items: []T,
+    distances: []f32,           // squared while searching
+    count: int,
+    limit: f32,                 // squared `max_distance`
+    omit: T,
+}
+
+// Could something at this squared distance still enter the result? (the limit is inclusive; a tie with the k-th best does not replace it)
+@(private)
+nearestWants :: proc(nearest: ^Nearest($T), squared: f32) -> bool {
+    if nearest.count < len(nearest.items) { return squared <= nearest.limit }
+    return nearest.count > 0 && squared < nearest.distances[nearest.count - 1]
+}
+
+@(private)
+nearestAdd :: proc(nearest: ^Nearest($T), item: T, squared: f32) {
+    for i in 0 ..< nearest.count { if nearest.items[i] == item { return } }
+    slot: int = min(nearest.count, len(nearest.items) - 1)
+    for slot > 0 && nearest.distances[slot - 1] > squared {
+        nearest.items[slot] = nearest.items[slot - 1]
+        nearest.distances[slot] = nearest.distances[slot - 1]
+        slot -= 1
+    }
+    nearest.items[slot] = item
+    nearest.distances[slot] = squared
+    if nearest.count < len(nearest.items) { nearest.count += 1 }
+}
+
+// Squared distances to real ones, the count for the caller
+@(private)
+nearestFinish :: proc(distances: []f32, count: int) -> int {
+    for i in 0 ..< count { distances[i] = math.sqrt(distances[i]) }
+    return count
+}
+
+// The four children of a branch, nearest first: boxes, squared distances and the order
+@(private)
+nearestChildren :: proc(area: Area, low: Vec2, high: Vec2, point: Vec2) -> (lows: [4]Vec2, highs: [4]Vec2, distances: [4]f32, order: [4]int) {
+    order = {0, 1, 2, 3}
+    for quadrant in 0 ..< 4 {
+        lows[quadrant], highs[quadrant] = extentChild(low, high, area, quadrant)
+        distances[quadrant] = distanceSquaredToBox(point, lows[quadrant], highs[quadrant])
+    }
+    for i in 1 ..< 4 {
+        key: int = order[i]
+        j: int = i
+        for j > 0 && distances[order[j - 1]] > distances[key] {
+            order[j] = order[j - 1]
+            j -= 1
+        }
+        order[j] = key
+    }
+    return
+}

@@ -1,7 +1,9 @@
 #+build !js
 package quadtree
 
+import "core:math"
 import "core:math/rand"
+import "core:slice"
 import "core:testing"
 import "core:thread"
 
@@ -359,5 +361,98 @@ test_chunked_circle_segment_and_session_queries_match_a_brute_force_search :: pr
         _, at, hit := QuadtreeChunksSegmentFirst(world, {BASE + f64(a.x), BASE + f64(a.y)}, {BASE + f64(b.x), BASE + f64(b.y)})
         testing.expect_value(t, hit, best <= 1)
         if hit { testing.expect(t, abs(at - best) < 0.001, "the first hit is the nearest along the segment") }
+    }
+}
+
+// Nearest and k-nearest against a brute force search. The distances are compared (not the items: equal distances may come in either order), each returned item must have the distance it is reported with
+@(private = "file")
+bruteDistance :: proc(point: Vec2, rect: Rect) -> f32 {
+    return math.sqrt(distanceSquaredToBox(point, {rect.x, rect.y}, {rect.x + rect.w, rect.y + rect.h}))
+}
+
+@(private = "file")
+checkNearest :: proc(t: ^testing.T, rects: []Rect, point: Vec2, k: int, omit: int, max_distance: f32, items: []int, distances: []f32, count: int) {
+    expected: [dynamic]f32
+    expected.allocator = context.temp_allocator
+    for rect, index in rects {
+        if rect.x < -1e8 || index == omit { continue }
+        distance: f32 = bruteDistance(point, rect)
+        if distance <= max_distance { append(&expected, distance) }
+    }
+    slice.sort(expected[:])
+    want: int = min(k, len(expected))
+    testing.expect_value(t, count, want)
+    for i in 0 ..< min(count, want) {
+        testing.expect(t, abs(distances[i] - expected[i]) <= 0.001 * max(1, expected[i]), "the i-th nearest distance")
+        testing.expect(t, abs(bruteDistance(point, rects[items[i]]) - distances[i]) <= 0.001 * max(1, distances[i]), "the item has the reported distance")
+        testing.expect(t, items[i] != omit, "the omitted item is left out")
+        for j in 0 ..< i { testing.expect(t, items[j] != items[i], "no item twice") }
+    }
+}
+
+@(test)
+test_nearest_queries_match_a_brute_force_search :: proc(t: ^testing.T) {
+    tree: ^ShapeTree = new(ShapeTree)
+    defer free(tree)
+    area: Rect = {0, 0, 1000, 800}
+    QuadtreeInit(tree, area, 4, 6)
+    seed: rand.Default_Random_State = rand.create(83)
+    state: rand.Generator = rand.default_random_generator(&seed)
+    rects: [300]Rect
+    fillTree(tree, rects[:], state, area, 20)
+    retained: ^RetainedTestTree = new(RetainedTestTree)
+    defer free(retained)
+    QuadtreeRetainedInit(retained, area, 4, 6)
+    handles: [300]Handle
+    for rect, i in rects { handles[i], _ = QuadtreeRetainedAdd(retained, rect) }
+    items: [16]Item
+    found: [16]Handle
+    distances: [16]f32
+    mapped: [16]int
+    for _ in 0 ..< 300 {
+        point: Vec2 = {rand.float32(state) * 1500 - 250, rand.float32(state) * 1000 - 100}
+        k: int = 1 + rand.int_max(12, state)
+        omit: int = rand.int_max(300, state) if rand.int_max(2, state) == 0 else -1
+        max_distance: f32 = max(f32) if rand.int_max(3, state) != 0 else rand.float32(state) * 300
+        count: int = QuadtreeNearest(tree, point, items[:k], distances[:], omit, max_distance)
+        checkNearest(t, rects[:], point, k, omit, max_distance, items[:], distances[:], count)
+
+        omit_handle: Handle = handles[omit] if omit >= 0 else HandleNone
+        retained_distances: [16]f32
+        count = QuadtreeRetainedNearest(retained, point, found[:k], retained_distances[:], omit_handle, max_distance)
+        for i in 0 ..< count { for handle, index in handles { if handle == found[i] { mapped[i] = index } } }
+        checkNearest(t, rects[:], point, k, omit, max_distance, mapped[:], retained_distances[:], count)
+    }
+    // nothing to find, no room to answer
+    QuadtreeClear(tree)
+    testing.expect_value(t, QuadtreeNearest(tree, {1, 1}, items[:], distances[:]), 0)
+    QuadtreeInsert(tree, {10, 10, 5, 5}, 1)
+    testing.expect_value(t, QuadtreeNearest(tree, {1, 1}, items[:0], distances[:]), 0)
+    testing.expect_value(t, QuadtreeNearest(tree, {12, 12}, items[:], distances[:]), 1)
+    testing.expect_value(t, distances[0], 0)
+}
+
+@(test)
+test_chunked_nearest_matches_a_brute_force_search_far_from_the_origin :: proc(t: ^testing.T) {
+    world: ^ShapeWorld = new(ShapeWorld)
+    defer free(world)
+    BASE :: 1_000_000.0
+    QuadtreeChunksInit(world, 100, 30, 4, 5)
+    seed: rand.Default_Random_State = rand.create(84)
+    state: rand.Generator = rand.default_random_generator(&seed)
+    QuadtreeChunksStream(world, {BASE + 50, BASE + 50}, 2, nil, proc(user: rawptr, cx: int, cy: int) {})
+    rects: [300]Rect
+    for i in 0 ..< len(rects) {
+        rects[i] = {rand.float32(state) * 480 - 190, rand.float32(state) * 480 - 190, 1 + rand.float32(state) * 29, 1 + rand.float32(state) * 29}
+        if !QuadtreeChunksInsert(world, {BASE + f64(rects[i].x), BASE + f64(rects[i].y), f64(rects[i].w), f64(rects[i].h)}, i) { rects[i].x = -1e9 }
+    }
+    items: [16]Item
+    distances: [16]f32
+    for _ in 0 ..< 200 {
+        point: Vec2 = {rand.float32(state) * 600 - 250, rand.float32(state) * 600 - 250}
+        k: int = 1 + rand.int_max(10, state)
+        max_distance: f32 = max(f32) if rand.int_max(3, state) != 0 else rand.float32(state) * 200
+        count: int = QuadtreeChunksNearest(world, {BASE + f64(point.x), BASE + f64(point.y)}, items[:k], distances[:], ITEM_NONE, f64(max_distance))
+        checkNearest(t, rects[:], point, k, -1, max_distance, items[:], distances[:], count)
     }
 }

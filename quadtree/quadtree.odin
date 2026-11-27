@@ -143,6 +143,16 @@ QuadtreeSegmentFirst :: proc(tree: ^Quadtree($E, $N, $L), a: Vec2, b: Vec2, omit
     return first.item, first.t, true
 }
 
+// The `out` / `distances` (as long as the shorter one, `k`) nearest elements to `point`, nearest first, with their distances (0 when the point is inside of a rectangle). `omit` is left out, elements
+// farther than `max_distance` are not looked for. Returns how many were found. Reads the tree only, so it is thread safe without a session; one call with k = 1 finds the closest element.
+QuadtreeNearest :: proc(tree: ^Quadtree($E, $N, $L), point: Vec2, out: []Item, distances: []f32, omit: Item = ITEM_NONE, max_distance: f32 = max(f32)) -> int {
+    k: int = min(len(out), len(distances))
+    if k == 0 { return 0 }
+    nearest: Nearest(Item) = {items = out[:k], distances = distances[:k], limit = max_distance * max_distance, omit = omit}
+    nodeNearest(tree, 0, rootArea(tree), EXTENT_LOW, EXTENT_HIGH, point, &nearest)
+    return nearestFinish(nearest.distances, nearest.count)
+}
+
 // Called for every node by QuadtreeVisit. `count` is the number of elements of a leaf (0 for a branch)
 QuadtreeNodeProc :: proc(user: rawptr, rect: Rect, depth: int, leaf: bool, count: int)
 
@@ -435,4 +445,25 @@ nodeVisit :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, depth: int
         return
     }
     visit(user, rect, depth, true, int(tree.nodes[node].count))
+}
+
+@(private)
+nodeNearest :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, low: Vec2, high: Vec2, point: Vec2, nearest: ^Nearest(Item)) {
+    if tree.nodes[node].count < 0 {
+        first: i32 = tree.nodes[node].first
+        lows, highs, distances, order := nearestChildren(area, low, high, point)
+        for quadrant in order {
+            if nearestWants(nearest, distances[quadrant]) {
+                nodeNearest(tree, first + i32(quadrant), areaChild(area, quadrant), lows[quadrant], highs[quadrant], point, nearest)
+            }
+        }
+        return
+    }
+    for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        rect: Rect = tree.links[link].rect
+        squared: f32 = distanceSquaredToBox(point, {rect.x, rect.y}, {rect.x + rect.w, rect.y + rect.h})
+        if !nearestWants(nearest, squared) { continue }
+        item: Item = tree.elements[tree.links[link].element].item
+        if item != nearest.omit { nearestAdd(nearest, item, squared) }
+    }
 }

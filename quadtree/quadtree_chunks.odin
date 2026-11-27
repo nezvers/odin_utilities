@@ -158,6 +158,44 @@ QuadtreeChunksSegmentFirst :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), a
     return item, best, true
 }
 
+// The nearest items to `point` over all loaded chunks, nearest first, with their distances (see QuadtreeNearest). The chunks are visited nearest first and skipped when they cannot beat the k-th best,
+// so give a `max_distance` when the world is big and the answer is expected to be near. Reads the world only: thread safe
+QuadtreeChunksNearest :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), point: WorldVec, out: []Item, distances: []f32, omit: Item = ITEM_NONE, max_distance: f64 = max(f64)) -> int {
+    k: int = min(len(out), len(distances))
+    if k == 0 { return 0 }
+    limit: f32 = f32(min(max_distance, f64(max(f32))))
+    nearest: Nearest(Item) = {items = out[:k], distances = distances[:k], limit = limit * limit, omit = omit}
+    found: [W * H]^QuadtreeChunk(E, N, L)
+    box: [W * H]f64
+    count: int
+    for &chunk in world.chunks {
+        if !chunk.loaded { continue }
+        // the items of a chunk have their top left corner inside, and stick out to the right and down by up to `max_item_size`
+        x0: f64 = f64(chunk.cx) * world.chunk_size
+        y0: f64 = f64(chunk.cy) * world.chunk_size
+        dx: f64 = point.x - clamp(point.x, x0, x0 + world.chunk_size + world.max_item_size)
+        dy: f64 = point.y - clamp(point.y, y0, y0 + world.chunk_size + world.max_item_size)
+        squared: f64 = dx * dx + dy * dy
+        if squared > max_distance * max_distance { continue }
+        j: int = count
+        for j > 0 && box[j - 1] > squared {
+            found[j] = found[j - 1]
+            box[j] = box[j - 1]
+            j -= 1
+        }
+        found[j] = &chunk
+        box[j] = squared
+        count += 1
+    }
+    for i in 0 ..< count {
+        if nearest.count == k && box[i] >= f64(nearest.distances[k - 1]) { break }
+        chunk: ^QuadtreeChunk(E, N, L) = found[i]
+        local: Vec2 = {f32(point.x - f64(chunk.cx) * world.chunk_size), f32(point.y - f64(chunk.cy) * world.chunk_size)}
+        nodeNearest(&chunk.tree, 0, rootArea(&chunk.tree), EXTENT_LOW, EXTENT_HIGH, local, &nearest)
+    }
+    return nearestFinish(nearest.distances, nearest.count)
+}
+
 @(private)
 chunksSegment :: proc(a: WorldVec, b: WorldVec) -> ChunkProbe {
     return {kind = .SEGMENT, rect = {min(a.x, b.x), min(a.y, b.y), abs(b.x - a.x), abs(b.y - a.y)}, a = a, b = b}

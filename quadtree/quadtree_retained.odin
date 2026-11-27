@@ -146,6 +146,15 @@ QuadtreeRetainedSegmentFirst :: proc(tree: ^QuadtreeRetained($E, $N, $L), a: Vec
     return first.handle, first.t, true
 }
 
+// The `out` / `distances` (as long as the shorter one) nearest elements to `point`, nearest first, with their distances. See QuadtreeNearest. Reads the tree only: thread safe
+QuadtreeRetainedNearest :: proc(tree: ^QuadtreeRetained($E, $N, $L), point: Vec2, out: []Handle, distances: []f32, omit: Handle = HandleNone, max_distance: f32 = max(f32)) -> int {
+    k: int = min(len(out), len(distances))
+    if k == 0 { return 0 }
+    nearest: Nearest(Handle) = {items = out[:k], distances = distances[:k], limit = max_distance * max_distance, omit = omit}
+    retainedNodeNearest(tree, 0, retainedRootArea(tree), EXTENT_LOW, EXTENT_HIGH, point, &nearest)
+    return nearestFinish(nearest.distances, nearest.count)
+}
+
 // Merge four empty leaves into their parent, so the nodes can be used again. Call it now and then (once a frame is fine), after elements moved or were removed
 QuadtreeRetainedCleanup :: proc(tree: ^QuadtreeRetained($E, $N, $L)) {
     retainedNodeCleanup(tree, 0)
@@ -404,4 +413,25 @@ retainedNodeVisit :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: 
         return
     }
     visit(user, rect, depth, true, int(tree.nodes[node].count))
+}
+
+@(private)
+retainedNodeNearest :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Area, low: Vec2, high: Vec2, point: Vec2, nearest: ^Nearest(Handle)) {
+    if tree.nodes[node].count < 0 {
+        first: i32 = tree.nodes[node].first
+        lows, highs, distances, order := nearestChildren(area, low, high, point)
+        for quadrant in order {
+            if nearestWants(nearest, distances[quadrant]) {
+                retainedNodeNearest(tree, first + i32(quadrant), areaChild(area, quadrant), lows[quadrant], highs[quadrant], point, nearest)
+            }
+        }
+        return
+    }
+    for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        handle: Handle = tree.links[link].element
+        element: ^RetainedElement = hm.get(&tree.elements, handle) or_continue
+        rect: Rect = element.rect
+        squared: f32 = distanceSquaredToBox(point, {rect.x, rect.y}, {rect.x + rect.w, rect.y + rect.h})
+        if nearestWants(nearest, squared) && handle != nearest.omit { nearestAdd(nearest, handle, squared) }
+    }
 }
