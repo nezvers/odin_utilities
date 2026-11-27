@@ -31,6 +31,9 @@ GitHub has no discovery document and no ID token for logins (`token.actions.gith
 4. `github.client_id = <Client ID>` (`Ov23...`).
 5. Code: `PresetMetadataGithub`, `DeviceStart`, `DevicePoll`, then `Userinfo` (id, login, avatar).
 
+## SpacetimeAuth (OpenID Connect, the provider SpacetimeDB itself offers)
+Checked with a person (2026-11-28, `odin run oidc/tool/login -- spacetimeauth`): issuer `https://auth.spacetimedb.com/oidc`, scope `openid profile email offline_access` (without `offline_access` there is no refresh token), PKCE, a random loopback port with the path `/callback` registered at the project. The client is **public**: the provider accepts the code exchange without a secret and refuses one, so keep only `spacetimeauth.client_id` (and `redirect_port`) in the settings file, no `client_secret`. Result: the ID token verifies, the refresh token works, the ID token lives 900 s (renew with `AuthRefresh` before it ends), a new account is named "Anonymous User" and has no email until it is set in the project.
+
 To play on a SpacetimeDB server with a GitHub identity use a broker: SpacetimeAuth (or Keycloak, Auth0) has "log in with GitHub / Google / Discord" and hands out one standard ID token. Then only the broker's client id is needed (`spacetimeauth.client_id`), and the three providers are settings in the broker's dashboard.
 
 ## Checks
