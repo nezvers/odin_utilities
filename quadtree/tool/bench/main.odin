@@ -375,23 +375,21 @@ benchRetained :: proc(scene: ^Scene, tree: ^Retained, max_elements: int, max_dep
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
-// Sessions and threads: the rectangle pass of the immediate tree, marked in the tree against a session, then split over threads (each with its own session)
+// Sessions and threads: the circle pass marked in the tree against a session, the rectangle pass split over threads (it writes nothing, so it needs no session)
 
 QueryJob :: struct {
     tree: ^Tree,
     scene: ^Scene,
     from, to: int,
-    stamps: []u32,
     total: int,
 }
 
 queryWork :: proc(data: rawptr) {
     job: ^QueryJob = cast(^QueryJob)data
-    session: qt.QuerySession
-    qt.QuerySessionInit(&session, job.stamps)
     out: [512]qt.Item
     total: int
-    for i in job.from ..< job.to { total += qt.QuadtreeQuery(job.tree, job.scene.probes[i], out[:], omit = i, session = &session) }
+    // rectangle queries write nothing into the tree: no session
+    for i in job.from ..< job.to { total += qt.QuadtreeQuery(job.tree, job.scene.probes[i], out[:], omit = i) }
     job.total = total
 }
 
@@ -400,9 +398,8 @@ benchSessions :: proc(scene: ^Scene, tree: ^Tree) {
     qt.QuadtreeInit(tree, {0, 0, WORLD, WORLD}, 8, 8)
     for rect, i in scene.rects { qt.QuadtreeInsert(tree, rect, i) }
     out: [512]qt.Item
-    marked, sessioned: [dynamic]f64
+    marked: [dynamic]f64
     marked.allocator = context.temp_allocator
-    sessioned.allocator = context.temp_allocator
     expected: int
     for _ in 0 ..< FRAMES {
         start: time.Tick = now()
@@ -411,8 +408,25 @@ benchSessions :: proc(scene: ^Scene, tree: ^Tree) {
         append(&marked, elapsed(start))
         expected = total
     }
-    fmt.printfln("\nqueries on the tree (leaf 8, depth 8), the rectangle pass:")
-    fmt.printfln("  marks in the tree (1 thread)       %9.3f", median(marked[:]))
+    // circle queries still mark the elements: the cost of a session against the marks in the tree
+    circle_marked, circle_session: [dynamic]f64
+    circle_marked.allocator = context.temp_allocator
+    circle_session.allocator = context.temp_allocator
+    stamps: []u32 = make([]u32, len(tree.elements), context.temp_allocator)
+    session: qt.QuerySession
+    qt.QuerySessionInit(&session, stamps)
+    for _ in 0 ..< FRAMES {
+        start: time.Tick = now()
+        for center in scene.centers { qt.QuadtreeQueryCircle(tree, center, CIRCLE_RADIUS, out[:]) }
+        append(&circle_marked, elapsed(start))
+        start = now()
+        for center in scene.centers { qt.QuadtreeQueryCircle(tree, center, CIRCLE_RADIUS, out[:], session = &session) }
+        append(&circle_session, elapsed(start))
+    }
+    fmt.printfln("\nqueries on the tree (leaf 8, depth 8):")
+    fmt.printfln("  circle pass, marks in the tree      %8.3f", median(circle_marked[:]))
+    fmt.printfln("  circle pass, with a session         %8.3f", median(circle_session[:]))
+    fmt.printfln("  rectangle pass, 1 thread (no marks) %8.3f", median(marked[:]))
     for threads in ([]int{1, 2, 4, 8}) {
         samples: [dynamic]f64
         samples.allocator = context.temp_allocator
@@ -422,7 +436,7 @@ benchSessions :: proc(scene: ^Scene, tree: ^Tree) {
             handles: []^thread.Thread = make([]^thread.Thread, threads, context.temp_allocator)
             start: time.Tick = now()
             for t in 0 ..< threads {
-                jobs[t] = {tree = tree, scene = scene, from = count * t / threads, to = count * (t + 1) / threads, stamps = make([]u32, int(len(tree.elements)), context.temp_allocator)}
+                jobs[t] = {tree = tree, scene = scene, from = count * t / threads, to = count * (t + 1) / threads}
                 handles[t] = thread.create_and_start_with_data(&jobs[t], queryWork)
             }
             total: int
@@ -434,9 +448,8 @@ benchSessions :: proc(scene: ^Scene, tree: ^Tree) {
             append(&samples, elapsed(start))
             if total != expected { ok = false }
         }
-        fmt.printfln("  sessions, %d thread%s%s %9.3f%s", threads, "" if threads == 1 else "s", " (wall time)" if threads > 1 else "            ", median(samples[:]), "" if ok else "   MISMATCH")
+        fmt.printfln("  rectangle pass, %d thread%s%s %8.3f%s", threads, "" if threads == 1 else "s", " (wall time)" if threads > 1 else "            ", median(samples[:]), "" if ok else "   MISMATCH")
     }
-    _ = sessioned
 }
 
 // ------------------------------------------------------------------------------------------------------------------------

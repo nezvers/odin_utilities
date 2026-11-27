@@ -274,9 +274,24 @@ groupTake :: proc(tree: ^Quadtree($E, $N, $L)) -> i32 {
 // Put the element into every leaf its rectangle overlaps. A leaf that gets too full splits, only from the outermost call: the elements of a split are put into the new children without splitting those again
 @(private)
 nodeAdd :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, depth: i32, element: i32, rect: Rect, may_split: bool) -> bool {
-    if tree.nodes[node].count < 0 {
+    node: i32 = node
+    area: Area = area
+    depth: i32 = depth
+    // most rectangles fit one quadrant at most levels: follow that path in a loop and recurse only where the rectangle is in several
+    for tree.nodes[node].count < 0 {
         first: i32 = tree.nodes[node].first
-        hit: [4]bool = quadrants(area, rect)
+        left: bool = rect.x <= area.cx
+        right: bool = rect.x + rect.w > area.cx
+        top: bool = rect.y <= area.cy
+        bottom: bool = rect.y + rect.h > area.cy
+        if left != right && top != bottom {
+            quadrant: int = (1 if right else 0) + (2 if bottom else 0)
+            node = first + i32(quadrant)
+            area = areaChild(area, quadrant)
+            depth += 1
+            continue
+        }
+        hit: [4]bool = {left && top, right && top, left && bottom, right && bottom}
         for quadrant in 0 ..< 4 {
             if !hit[quadrant] { continue }
             if !nodeAdd(tree, first + i32(quadrant), areaChild(area, quadrant), depth + 1, element, rect, may_split) { return false }
@@ -338,9 +353,26 @@ nodeRemove :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, element: 
 // Rectangles and points: the nodes are picked by the bounding rectangle
 @(private)
 nodeQuery :: proc(tree: ^Quadtree($E, $N, $L), node: i32, area: Area, low: Vec2, high: Vec2, query: ^Query) {
-    if tree.nodes[node].count < 0 {
+    node: i32 = node
+    area: Area = area
+    low: Vec2 = low
+    high: Vec2 = high
+    rect: Rect = query.probe.rect
+    // a query inside one quadrant follows its path in a loop, the recursion is only for the nodes where it reaches several
+    for tree.nodes[node].count < 0 {
         first: i32 = tree.nodes[node].first
-        hit: [4]bool = quadrants(area, query.probe.rect)
+        left: bool = rect.x <= area.cx
+        right: bool = rect.x + rect.w > area.cx
+        top: bool = rect.y <= area.cy
+        bottom: bool = rect.y + rect.h > area.cy
+        if left != right && top != bottom {
+            quadrant: int = (1 if right else 0) + (2 if bottom else 0)
+            low, high = extentChild(low, high, area, quadrant)
+            node = first + i32(quadrant)
+            area = areaChild(area, quadrant)
+            continue
+        }
+        hit: [4]bool = {left && top, right && top, left && bottom, right && bottom}
         for quadrant in 0 ..< 4 {
             if !hit[quadrant] { continue }
             child_low, child_high := extentChild(low, high, area, quadrant)

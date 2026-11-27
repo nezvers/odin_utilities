@@ -21,6 +21,7 @@ RetainedElement :: struct {
 RetainedLink :: struct {
     next: i32,
     element: Handle,
+    rect: Rect,         // a copy of the rectangle of the element, see Link in quadtree.odin: queries test it without looking the element up
 }
 
 // E = elements (usable capacity is E - 1, the handle map keeps slot 0 as "no handle"), N = nodes (the root and groups of four), L = links (an element takes one for every leaf it overlaps).
@@ -186,10 +187,11 @@ RetainedFirst :: struct {
 @(private)
 retainedTreeQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), probe: Probe, out: []Handle, omit: Handle, session: ^QuerySession) -> int {
     query: RetainedQuery = {probe = probe, out = out, omit = omit, session = session}
-    if session != nil { sessionBegin(session, int(E)) } else { retainedStampNext(tree) }
     switch probe.kind {
-    case .RECT, .POINT: retainedNodeQuery(tree, 0, retainedRootArea(tree), &query)
-    case .CIRCLE, .SEGMENT: retainedNodeQueryShape(tree, 0, retainedRootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
+    case .RECT, .POINT: retainedNodeQuery(tree, 0, retainedRootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
+    case .CIRCLE, .SEGMENT:
+        if session != nil { sessionBegin(session, int(E)) } else { retainedStampNext(tree) }
+        retainedNodeQueryShape(tree, 0, retainedRootArea(tree), EXTENT_LOW, EXTENT_HIGH, &query)
     }
     return query.count
 }
@@ -243,9 +245,24 @@ retainedGroupTake :: proc(tree: ^QuadtreeRetained($E, $N, $L)) -> i32 {
 // Put the element into every leaf its rectangle overlaps. A leaf that gets too full splits, only from the outermost call: the elements of a split are put into the new children without splitting those again
 @(private)
 retainedNodeAdd :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Area, depth: i32, handle: Handle, rect: Rect, may_split: bool) -> bool {
-    if tree.nodes[node].count < 0 {
+    node: i32 = node
+    area: Area = area
+    depth: i32 = depth
+    // most rectangles fit one quadrant at most levels: follow that path in a loop and recurse only where the rectangle is in several
+    for tree.nodes[node].count < 0 {
         first: i32 = tree.nodes[node].first
-        hit: [4]bool = quadrants(area, rect)
+        left: bool = rect.x <= area.cx
+        right: bool = rect.x + rect.w > area.cx
+        top: bool = rect.y <= area.cy
+        bottom: bool = rect.y + rect.h > area.cy
+        if left != right && top != bottom {
+            quadrant: int = (1 if right else 0) + (2 if bottom else 0)
+            node = first + i32(quadrant)
+            area = areaChild(area, quadrant)
+            depth += 1
+            continue
+        }
+        hit: [4]bool = {left && top, right && top, left && bottom, right && bottom}
         for quadrant in 0 ..< 4 {
             if !hit[quadrant] { continue }
             if !retainedNodeAdd(tree, first + i32(quadrant), areaChild(area, quadrant), depth + 1, handle, rect, may_split) { return false }
@@ -254,7 +271,7 @@ retainedNodeAdd :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Ar
     }
     link: i32 = retainedLinkTake(tree)
     if link < 0 { return false }
-    tree.links[link] = {next = tree.nodes[node].first, element = handle}
+    tree.links[link] = {next = tree.nodes[node].first, element = handle, rect = rect}
     tree.nodes[node].first = link
     tree.nodes[node].count += 1
     if may_split && tree.nodes[node].count > tree.max_elements && depth < tree.max_depth {
@@ -316,16 +333,58 @@ retainedStampNext :: proc(tree: ^QuadtreeRetained($E, $N, $L)) {
 }
 
 @(private)
-retainedNodeQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Area, query: ^RetainedQuery) {
-    if tree.nodes[node].count < 0 {
+retainedNodeQuery :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, area: Area, low: Vec2, high: Vec2, query: ^RetainedQuery) {
+    node: i32 = node
+    area: Area = area
+    low: Vec2 = low
+    high: Vec2 = high
+    rect: Rect = query.probe.rect
+    for tree.nodes[node].count < 0 {
         first: i32 = tree.nodes[node].first
-        hit: [4]bool = quadrants(area, query.probe.rect)
+        left: bool = rect.x <= area.cx
+        right: bool = rect.x + rect.w > area.cx
+        top: bool = rect.y <= area.cy
+        bottom: bool = rect.y + rect.h > area.cy
+        if left != right && top != bottom {
+            quadrant: int = (1 if right else 0) + (2 if bottom else 0)
+            low, high = extentChild(low, high, area, quadrant)
+            node = first + i32(quadrant)
+            area = areaChild(area, quadrant)
+            continue
+        }
+        hit: [4]bool = {left && top, right && top, left && bottom, right && bottom}
         for quadrant in 0 ..< 4 {
-            if hit[quadrant] { retainedNodeQuery(tree, first + i32(quadrant), areaChild(area, quadrant), query) }
+            if !hit[quadrant] { continue }
+            child_low, child_high := extentChild(low, high, area, quadrant)
+            retainedNodeQuery(tree, first + i32(quadrant), areaChild(area, quadrant), child_low, child_high, query)
         }
         return
     }
-    retainedLeafQuery(tree, node, query)
+    retainedLeafQueryOwned(tree, node, low, high, query)
+}
+
+// Rectangles and points without marks, like leafQueryOwned in quadtree.odin: the one leaf that holds the top left corner of the overlap reports the element
+@(private)
+retainedLeafQueryOwned :: proc(tree: ^QuadtreeRetained($E, $N, $L), node: i32, low: Vec2, high: Vec2, query: ^RetainedQuery) {
+    rect: Rect = query.probe.rect
+    point: bool = query.probe.kind == .POINT
+    for link := tree.nodes[node].first; link != -1; link = tree.links[link].next {
+        other: Rect = tree.links[link].rect
+        if point {
+            if !RectContainsPoint(other, {rect.x, rect.y}) { continue }
+        } else {
+            if !RectOverlaps(other, rect) { continue }
+            corner_x: f32 = max(other.x, rect.x)
+            corner_y: f32 = max(other.y, rect.y)
+            if corner_x <= low.x || corner_x > high.x || corner_y <= low.y || corner_y > high.y { continue }
+        }
+        handle: Handle = tree.links[link].element
+        if handle == query.omit { continue }
+        if query.count < len(query.out) {
+            query.out[query.count] = handle
+            query.count += 1
+        }
+    }
 }
 
 // Circles and segments: the nodes are picked by their box (which reaches outward at the border of the tree)

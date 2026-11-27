@@ -5,7 +5,8 @@ Next steps, most valuable first. A task starts with `(high)`, `(medium)` or `(lo
 - [x] Thread-safe queries: `QuerySession` (caller provided stamps, one per thread) on every query of the three trees
 - [x] Circle and segment queries and `SegmentFirst` (ray cast) on the immediate, retained and chunked trees
 - [x] Demo `ray cast and nearest` (demo_rays.odin) with a scripted brute force check
-- [ ] (medium) Faster immediate build and queries (the benchmark shows a plain grid 3 to 5x faster to build and 1.5x faster to query on dense small items): done so far: no marks for rectangle queries, rect copy in the links (about 10%); next: a compact build step (links of a leaf contiguous), cheaper insert (build is 5x the grid), the same for the retained tree
+- [x] Faster build and queries: loop descent, no marks for rectangle queries, rect copy in links, on the immediate and the retained tree (build 5.9 to 2.1 ms at 50k, grid 1.1; rectangle pass 17.9 to 13.3, grid 10.5)
+- [ ] (low) Circle and segment queries are 2.5x a rectangle pass (34 against 13 ms at 50k): the same loop descent for nodes the shape fits in one quadrant, and ownership instead of marks (needs a reference point of the shape, check that it is worth it)
 - [x] Nearest and k-nearest on the three trees (`QuadtreeNearest`, `QuadtreeRetainedNearest`, `QuadtreeChunksNearest`)
 - [x] Benchmarks against a uniform grid, `grid_collision_map` and brute force (`tool/bench`, findings in README): leaf 8 and depth 8 confirmed as the default
 - [ ] (medium) A query without a callback or a result slice for early exit (an iterator), mostly for the retained and chunked trees
