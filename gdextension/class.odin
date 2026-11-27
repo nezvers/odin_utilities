@@ -59,6 +59,7 @@ ValueKind :: enum u8 {
     PACKED_VECTOR2S,        // a PackedVector2Array: `floats32`, x and y of every element one after the other
     PACKED_VECTOR3S,        // a PackedVector3Array: `floats32`, x, y, z
     PACKED_COLORS,          // a PackedColorArray: `floats32`, r, g, b, a
+    VARIANT,                // an argument or result of any type: the Value comes with the kind of what really arrived (BOOL, INT, ..., ARRAY with nested items, NONE for a nil or a type that has no kind)
 }
 
 // An argument or a result. A string is UTF-8 bytes in `text`; a bool is `number` 0 or 1.
@@ -196,9 +197,16 @@ variantTypeOf :: proc "contextless" (kind: ValueKind) -> GdVariantType {
     case .PACKED_VECTOR2S: return .PACKED_VECTOR2_ARRAY
     case .PACKED_VECTOR3S: return .PACKED_VECTOR3_ARRAY
     case .PACKED_COLORS: return .PACKED_COLOR_ARRAY
+    case .VARIANT: return .NIL
     case .NONE: return .NIL
     }
     return .NIL
+}
+
+// What the engine is told about an argument or a result: stored and editable; a VARIANT is the type NIL with the flag that says "this nil is any type" (PROPERTY_USAGE_NIL_IS_VARIANT)
+@(private)
+usageOf :: proc "contextless" (kind: ValueKind) -> u32 {
+    return 6 | (1 << 17 if kind == .VARIANT else 0)
 }
 
 // The Variant call: the arguments are Variants, converted to values; the result goes back into a Variant
@@ -213,7 +221,7 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     values: [MAX_ARGUMENTS]Value
     for kind, i in method.arguments {
         variant: ^GdVariant = cast(^GdVariant)args[i]
-        if gd.variant_get_type(variant) != variantTypeOf(kind) {
+        if kind != .VARIANT && gd.variant_get_type(variant) != variantTypeOf(kind) {
             error.error, error.argument, error.expected = .INVALID_ARGUMENT, i32(i), i32(variantTypeOf(kind))
             return
         }
@@ -278,9 +286,11 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
             ops.to(&array, variant)
             values[i] = readPackedNumeric(kind, &array, context.temp_allocator)
             ops.destroy(&array)
+        case .VARIANT:
+            values[i] = variantToValue(variant, context.temp_allocator)
         case .NONE:
         }
-        values[i].kind = kind
+        if kind != .VARIANT { values[i].kind = kind }
     }
     answer: Value = method.call(instance, values[:len(method.arguments)])
     switch method.result {
@@ -299,6 +309,7 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     case .PACKED_FLOATS: variantPackedFloats(result, answer.floats)
     case .PACKED_STRINGS: variantPackedStrings(result, answer.items)
     case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: variantPackedNumeric(result, method.result, answer)
+    case .VARIANT: valueToVariant(result, answer)
     }
     free_all(context.temp_allocator)
 }
@@ -331,9 +342,10 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
         case .PACKED_FLOATS: values[i].floats = readPackedFloats(args[i], context.temp_allocator)
         case .PACKED_STRINGS: values[i].items = readPackedStrings(args[i], context.temp_allocator)
         case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: values[i] = readPackedNumeric(kind, args[i], context.temp_allocator)
+        case .VARIANT: values[i] = variantToValue(cast(^GdVariant)args[i], context.temp_allocator)
         case .NONE:
         }
-        values[i].kind = kind
+        if kind != .VARIANT { values[i].kind = kind }
     }
     answer: Value = method.call(instance, values[:len(method.arguments)])
     switch method.result {
@@ -365,6 +377,9 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
         ops, _ := packedOpsOf(method.result)
         ops.construct(result, nil)
         writePackedNumeric(method.result, result, answer)
+    case .VARIANT:
+        (cast(^GdVariant)result)^ = {}                       // a nil Variant is all zero: what is not a value stays nil
+        valueToVariant(cast(^GdVariant)result, answer)
     }
     free_all(context.temp_allocator)
 }
@@ -411,9 +426,9 @@ registerClass :: proc "c" (class: ^Class) {
         assert(len(method.arguments) <= MAX_ARGUMENTS)
         class.method_names[i] = stringName(method.name)
         for kind, a in method.arguments {
-            class.property_infos[i][a + 1] = {type = variantTypeOf(kind), name = &empty_name, class_name = &empty_name, hint_string = &empty_string, usage = 6}
+            class.property_infos[i][a + 1] = {type = variantTypeOf(kind), name = &empty_name, class_name = &empty_name, hint_string = &empty_string, usage = usageOf(kind)}
         }
-        class.property_infos[i][0] = {type = variantTypeOf(method.result), name = &empty_name, class_name = &empty_name, hint_string = &empty_string, usage = 6}
+        class.property_infos[i][0] = {type = variantTypeOf(method.result), name = &empty_name, class_name = &empty_name, hint_string = &empty_string, usage = usageOf(method.result)}
         class.method_infos[i] = {
             name = &class.method_names[i],
             method_userdata = &method,
@@ -433,7 +448,7 @@ registerClass :: proc "c" (class: ^Class) {
         class.property_names[i * 3] = stringName(property.name)
         class.property_names[i * 3 + 1] = stringName(property.getter)
         class.property_names[i * 3 + 2] = stringName(property.setter if property.setter != nil else "")
-        info: GdPropertyInfo = {type = variantTypeOf(property.kind), name = &class.property_names[i * 3], class_name = &empty_name, hint_string = &empty_string, usage = 6}
+        info: GdPropertyInfo = {type = variantTypeOf(property.kind), name = &class.property_names[i * 3], class_name = &empty_name, hint_string = &empty_string, usage = usageOf(property.kind)}
         gd.register_property(gd.library, &class.name_id, &info, &class.property_names[i * 3 + 2], &class.property_names[i * 3 + 1])
     }
     class.signal_names = make([]GdStringName, len(class.signals))
@@ -442,7 +457,7 @@ registerClass :: proc "c" (class: ^Class) {
         assert(len(signal.arguments) <= MAX_ARGUMENTS)
         class.signal_names[i] = stringName(signal.name)
         for kind, a in signal.arguments {
-            class.signal_infos[i][a] = {type = variantTypeOf(kind), name = &empty_name, class_name = &empty_name, hint_string = &empty_string, usage = 6}
+            class.signal_infos[i][a] = {type = variantTypeOf(kind), name = &empty_name, class_name = &empty_name, hint_string = &empty_string, usage = usageOf(kind)}
         }
         gd.register_signal(gd.library, &class.name_id, &class.signal_names[i], raw_data(class.signal_infos[i][:]), GdInt(len(signal.arguments)))
     }
@@ -523,7 +538,7 @@ Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
         case .PACKED_FLOATS: variantPackedFloats(&variants[i + 1], value.floats)
         case .PACKED_STRINGS: variantPackedStrings(&variants[i + 1], value.items)
         case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: variantPackedNumeric(&variants[i + 1], value.kind, value)
-        case .NONE:
+        case .VARIANT, .NONE:
         }
         pointers[i + 1] = &variants[i + 1]
     }

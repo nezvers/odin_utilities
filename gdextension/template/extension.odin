@@ -144,6 +144,26 @@ counter_class: ge.Class = {
             }
             return {kind = .PACKED_STRINGS, items = out}
         }},
+        // Nested Arrays and Dictionaries come in with their elements, a Variant argument takes any type and `echo` gives it back unchanged (nil stays nil)
+        {"nest_depth", {.ARRAY}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            depth :: proc(items: []ge.Value) -> i64 {
+                deepest: i64
+                for item in items {
+                    #partial switch item.kind {
+                    case .ARRAY: deepest = max(deepest, depth(item.items))
+                    case .DICTIONARY: deepest = max(deepest, depth(item.items))
+                    }
+                }
+                return deepest + 1
+            }
+            return ge.ValueInt(depth(a[0].items))
+        }},
+        {"echo", {.VARIANT}, .VARIANT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return a[0]
+        }},
+        {"kind_of", {.VARIANT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return ge.ValueInt(i64(a[0].kind))
+        }},
         // The numeric packed arrays of the engine (32 bit): ints, floats, points, 3D points, colors
         {"double_ints32", {.PACKED_INT32S}, .PACKED_INT32S, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             out: []i32 = make([]i32, len(a[0].ints32), context.temp_allocator)

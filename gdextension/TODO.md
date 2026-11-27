@@ -8,7 +8,8 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] Array and Dictionary values (flat: bool, int, float, String elements; String keys)
 - [x] PackedInt64Array, PackedFloat64Array, PackedStringArray (`PACKED_INTS`, `PACKED_FLOATS`, `PACKED_STRINGS`)
 - [x] The other numeric packed arrays: `PACKED_INT32S` (`ints32`), `PACKED_FLOAT32S`, `PACKED_VECTOR2S`, `PACKED_VECTOR3S`, `PACKED_COLORS` (`floats32`), both call paths, in the template
-- [ ] (medium) More value kinds: nested Arrays and Dictionaries, Variant, StringName
+- [x] Nested Arrays and Dictionaries (read down to `MAX_NESTING` = 8 levels, an Array that holds itself stops there), packed arrays inside them, and the `VARIANT` kind: an argument or result of any type (`echo`, `kind_of` in the template); a StringName or NodePath inside a Variant arrives as its text (`STRING`)
+- [ ] (low) A StringName as its own argument and result kind (today a STRING argument refuses a StringName Variant); Rect2, Color, Vector2i and the other scalars as kinds
 - [x] Virtual methods `_ready`, `_enter_tree`, `_exit_tree`, `_process`, `_physics_process` (`Class.virtuals`, a Node parent)
 - [x] Properties over getter and setter methods (`Class.properties`)
 - [ ] (low) Exported enums and property hints (ranges, file paths) for the inspector

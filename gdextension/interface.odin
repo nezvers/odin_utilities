@@ -382,8 +382,12 @@ variantVector3 :: proc "c" (result: ^GdVariant, v: [4]f64) {
     gd.from_vector3(result, &native)
 }
 
-// A scalar Variant (bool, int, float, String) as a Value; anything else is NONE. The text lives in `allocator`.
-variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator) -> Value {
+// Arrays and Dictionaries inside each other are read down to this depth; deeper (or an Array that holds itself) comes as NONE, so no cycle can run away
+MAX_NESTING :: 8
+
+// A Variant as a Value: bool, int, float, String (also StringName and NodePath, as their text), Vector2, Vector3, Object, Array and Dictionary (their elements the same way, down to MAX_NESTING levels)
+// and the packed arrays; anything else is NONE. Texts and arrays live in `allocator`.
+variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator, depth: int = 0) -> Value {
     context = runtime.default_context()
     switch gd.variant_get_type(variant) {
     case .BOOL:
@@ -427,7 +431,50 @@ variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator) -
         object: rawptr
         gd.to_object(&object, variant)
         return {kind = .OBJECT, object = object}
-    case .NIL, .DICTIONARY, .ARRAY, .PACKED_BYTE_ARRAY, .PACKED_INT64_ARRAY, .PACKED_FLOAT64_ARRAY, .PACKED_STRING_ARRAY, .PACKED_INT32_ARRAY, .PACKED_FLOAT32_ARRAY, .PACKED_VECTOR2_ARRAY, .PACKED_VECTOR3_ARRAY, .PACKED_COLOR_ARRAY:
+    case .ARRAY:
+        if depth >= MAX_NESTING { return {} }
+        array: GdArray
+        gd.to_array(&array, variant)
+        items: []Value = readArray(&array, allocator, depth + 1)
+        gd.array_destroy(&array)
+        return {kind = .ARRAY, items = items}
+    case .DICTIONARY:
+        if depth >= MAX_NESTING { return {} }
+        dictionary: GdArray
+        gd.to_dictionary(&dictionary, variant)
+        keys, items := readDictionary(&dictionary, allocator, depth + 1)
+        gd.dictionary_destroy(&dictionary)
+        return {kind = .DICTIONARY, keys = keys, items = items}
+    case .PACKED_BYTE_ARRAY:
+        array: GdBytes
+        gd.to_bytes(&array, variant)
+        text: []u8 = readBytes(&array, allocator)
+        gd.bytes_destroy(&array)
+        return {kind = .BYTES, text = text}
+    case .PACKED_INT64_ARRAY:
+        array: GdBytes
+        gd.packed_ints.to(&array, variant)
+        numbers: []i64 = readPackedInts(&array, allocator)
+        gd.packed_ints.destroy(&array)
+        return {kind = .PACKED_INTS, ints = numbers}
+    case .PACKED_FLOAT64_ARRAY:
+        array: GdBytes
+        gd.packed_floats.to(&array, variant)
+        numbers: []f64 = readPackedFloats(&array, allocator)
+        gd.packed_floats.destroy(&array)
+        return {kind = .PACKED_FLOATS, floats = numbers}
+    case .PACKED_STRING_ARRAY:
+        array: GdBytes
+        gd.packed_strings.to(&array, variant)
+        items: []Value = readPackedStrings(&array, allocator)
+        gd.packed_strings.destroy(&array)
+        return {kind = .PACKED_STRINGS, items = items}
+    case .PACKED_INT32_ARRAY: return readPackedVariant(variant, .PACKED_INT32S, allocator)
+    case .PACKED_FLOAT32_ARRAY: return readPackedVariant(variant, .PACKED_FLOAT32S, allocator)
+    case .PACKED_VECTOR2_ARRAY: return readPackedVariant(variant, .PACKED_VECTOR2S, allocator)
+    case .PACKED_VECTOR3_ARRAY: return readPackedVariant(variant, .PACKED_VECTOR3S, allocator)
+    case .PACKED_COLOR_ARRAY: return readPackedVariant(variant, .PACKED_COLORS, allocator)
+    case .NIL:
     }
     return {}
 }
@@ -445,17 +492,23 @@ valueToVariant :: proc "c" (variant: ^GdVariant, value: Value) {
     case .OBJECT:
         object: rawptr = value.object
         gd.from_object(variant, &object)
-    case .ARRAY, .DICTIONARY, .PACKED_INTS, .PACKED_FLOATS, .PACKED_STRINGS, .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS, .NONE:
+    case .ARRAY: variantArray(variant, value.items)
+    case .DICTIONARY: variantDictionary(variant, value.keys, value.items)
+    case .PACKED_INTS: variantPackedInts(variant, value.ints)
+    case .PACKED_FLOATS: variantPackedFloats(variant, value.floats)
+    case .PACKED_STRINGS: variantPackedStrings(variant, value.items)
+    case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: variantPackedNumeric(variant, value.kind, value)
+    case .VARIANT, .NONE:
     }
 }
 
-// The scalar elements of an Array
-readArray :: proc "c" (array: rawptr, allocator: runtime.Allocator) -> []Value {
+// The elements of an Array, nested ones included (see MAX_NESTING)
+readArray :: proc "c" (array: rawptr, allocator: runtime.Allocator, depth: int = 0) -> []Value {
     context = runtime.default_context()
     size: i64
     gd.array_size(array, nil, &size, 0)
     items: []Value = make([]Value, int(size), allocator)
-    for i in 0 ..< int(size) { items[i] = variantToValue(gd.array_index_const(array, GdInt(i)), allocator) }
+    for i in 0 ..< int(size) { items[i] = variantToValue(gd.array_index_const(array, GdInt(i)), allocator, depth) }
     return items
 }
 
@@ -469,8 +522,8 @@ writeArray :: proc "c" (array: rawptr, items: []Value) {
     for item, i in items { valueToVariant(gd.array_index(array, GdInt(i)), item) }
 }
 
-// The entries of a Dictionary whose keys are Strings (an entry with another kind of key is left out)
-readDictionary :: proc "c" (dictionary: rawptr, allocator: runtime.Allocator) -> (keys: []Value, items: []Value) {
+// The entries of a Dictionary whose keys are Strings (an entry with another kind of key is left out), values nested down to MAX_NESTING
+readDictionary :: proc "c" (dictionary: rawptr, allocator: runtime.Allocator, depth: int = 0) -> (keys: []Value, items: []Value) {
     context = runtime.default_context()
     key_array: GdArray
     gd.dictionary_keys(dictionary, nil, &key_array, 0)
@@ -484,7 +537,7 @@ readDictionary :: proc "c" (dictionary: rawptr, allocator: runtime.Allocator) ->
         key_variant: ^GdVariant = gd.array_index_const(&key_array, GdInt(i))
         if gd.variant_get_type(key_variant) != .STRING { continue }
         keys[used] = variantToValue(key_variant, allocator)
-        items[used] = variantToValue(gd.dictionary_index_const(dictionary, key_variant), allocator)
+        items[used] = variantToValue(gd.dictionary_index_const(dictionary, key_variant), allocator, depth)
         used += 1
     }
     return keys[:used], items[:used]
@@ -594,6 +647,16 @@ packedOpsOf :: proc "contextless" (kind: ValueKind) -> (ops: ^PackedOps, compone
     case .PACKED_COLORS: return &gd.packed_colors, 4
     }
     return nil, 0
+}
+
+// A packed array that arrives inside a Variant (an element of an Array, a Variant argument): copied out and released
+readPackedVariant :: proc "c" (variant: ^GdVariant, kind: ValueKind, allocator: runtime.Allocator) -> Value {
+    ops, _ := packedOpsOf(kind)
+    array: GdBytes
+    ops.to(&array, variant)
+    value: Value = readPackedNumeric(kind, &array, allocator)
+    ops.destroy(&array)
+    return value
 }
 
 // Copies the numbers of the array `array` of the engine into a Value of `kind` (memory of `allocator`)

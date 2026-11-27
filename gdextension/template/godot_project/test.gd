@@ -55,6 +55,21 @@ func _init() -> void:
 	many_points.resize(50000)
 	many_points.fill(Vector2(1, 1))
 	_check(failures, counter.shift_points(many_points)[49999] == Vector2(11, 21), "a big PackedVector2Array")
+	var nested: Array = [1, [2, [3, "x"]], {"k": [1.5, true, {"deep": PackedInt32Array([7, 8])}]}]
+	_check(failures, counter.nest_depth(nested) == 4, "nested Arrays and Dictionaries are read: depth %s" % [counter.nest_depth(nested)])
+	_check(failures, counter.echo(nested) == nested, "a nested Array through a Variant argument and result: %s" % [counter.echo(nested)])
+	_check(failures, counter.echo(5) == 5 and counter.echo("s") == "s" and counter.echo(2.5) == 2.5 and counter.echo(true) == true, "echo of scalars")
+	_check(failures, counter.echo(null) == null, "echo of nil")
+	_check(failures, counter.echo(Vector2(1, 2)) == Vector2(1, 2) and counter.echo(Vector3(1, 2, 3)) == Vector3(1, 2, 3), "echo of vectors")
+	_check(failures, counter.echo(PackedColorArray([Color(1, 0, 0, 1)])) == PackedColorArray([Color(1, 0, 0, 1)]), "echo of a packed array")
+	_check(failures, counter.echo({"a": {"b": [1, 2]}}) == {"a": {"b": [1, 2]}}, "echo of nested Dictionaries")
+	_check(failures, counter.echo(Rect2(1, 2, 3, 4)) == null, "a type without a kind comes as nil")
+	_check(failures, counter.kind_of(5) != counter.kind_of("x") and counter.kind_of([1]) == counter.kind_of([]), "the kind of a Variant argument is the kind that arrived")
+	var cycle: Array = []
+	cycle.append(cycle)
+	_check(failures, counter.nest_depth(cycle) == 9, "an Array that holds itself is read down to the limit and stops: %s" % [counter.nest_depth(cycle)])
+	var untyped_echo: Variant = counter
+	_check(failures, untyped_echo.call("echo", [1, [2]]) == [1, [2]], "echo through a Variant call")
 	_check(failures, counter.prefix_sums(PackedInt64Array()) == PackedInt64Array(), "an empty PackedInt64Array")
 	var big := PackedInt64Array()
 	big.resize(100000)
