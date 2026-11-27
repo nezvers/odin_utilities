@@ -5,7 +5,7 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] Classes as tables: methods with bool, int, String and PackedByteArray, both call paths; one sub library (`godot_spacetimedb`) tested in headless Godot
 - [x] Signals (`Class.signals`, `Class.bind`, `Emit`)
 - [ ] (high) More value kinds: float, Vector2/3, Array, Dictionary, StringName, objects (a Node as an argument or a result)
-- [ ] (high) A `Node` parent with virtual `_process`/`_ready` (`get_virtual_func`), so a class works without a script that calls it every frame
+- [x] Virtual methods `_ready`, `_enter_tree`, `_exit_tree`, `_process`, `_physics_process` (`Class.virtuals`, a Node parent)
 - [ ] (medium) Properties (registered properties with getters and setters) and exported enums
 - [ ] (medium) Build tool: `odin run gdextension/tool/build -- <package> <project dir>` that builds for the host platform and writes the `.gdextension` file; Linux and macOS checks
 - [ ] (medium) Call engine methods from Odin (`classdb_get_method_bind` with the hashes of `extension_api.json`)

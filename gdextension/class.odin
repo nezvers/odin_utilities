@@ -28,7 +28,10 @@ package gdextension
 // `Emit(object, "name", {values})`; it gets its `object` from `bind`, called once when the object is made (keep it in the instance). Emit runs the connected callables at once, on the
 // calling thread, and the engine allows it from the thread of a method call (the main thread in GDScript).
 //
-// Properties, virtual methods and other argument kinds are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
+// Virtual methods: `virtuals = {{"_process", proc(instance: rawptr, delta: f64) {...}}}` with a Node as `parent`: the engine calls them (a class that updates itself, no script that polls). A
+// class can be made twice from one table of methods, once under RefCounted and once under Node (see `godot_spacetimedb/lobby.odin`).
+//
+// Properties and other argument kinds are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
 
 import "base:runtime"
 
@@ -79,11 +82,19 @@ Signal :: struct {
     arguments: []ValueKind,
 }
 
+// A virtual method of the parent that the class overrides: `_ready`, `_enter_tree`, `_exit_tree` (no argument), `_process`, `_physics_process` (the delta in seconds). Only these five,
+// the parent has to be a Node (or a class below it) for the engine to call them.
+Virtual :: struct {
+    name: cstring,
+    call: proc(instance: rawptr, delta: f64),
+}
+
 Class :: struct {
     name: cstring,
     parent: cstring,
     methods: []Method,
     signals: []Signal,
+    virtuals: []Virtual,
     bind: proc(instance: rawptr, object: rawptr),   // optional: gets the engine object of a new instance, for `Emit`
     create: proc() -> rawptr,       // the instance that goes with a new object (what the methods receive)
     destroy: proc(instance: rawptr),
@@ -92,6 +103,7 @@ Class :: struct {
     method_names: []GdStringName,
     method_infos: []GdMethodInfo,
     signal_names: []GdStringName,
+    virtual_names: []GdStringName,
     signal_infos: [][MAX_ARGUMENTS]GdPropertyInfo,
     property_infos: [][MAX_ARGUMENTS + 1]GdPropertyInfo,
 }
@@ -221,10 +233,14 @@ registerClass :: proc "c" (class: ^Class) {
     info: GdClassInfo4 = {
         is_exposed = 1,
         create_instance_func = createInstance,
+        get_virtual_call_data_func = getVirtualData if len(class.virtuals) > 0 else nil,
+        call_virtual_with_data_func = callVirtual if len(class.virtuals) > 0 else nil,
         free_instance_func = freeInstance,
         class_userdata = class,
     }
     gd.register_class(gd.library, &class.name_id, &class.parent_id, &info)
+    class.virtual_names = make([]GdStringName, len(class.virtuals))
+    for virtual, i in class.virtuals { class.virtual_names[i] = stringName(virtual.name) }
     count: int = len(class.methods)
     class.method_names = make([]GdStringName, count)
     class.method_infos = make([]GdMethodInfo, count)
@@ -287,6 +303,26 @@ Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
     gd.variant_destroy(&result)
     for i in 0 ..< len(arguments) + 1 { gd.variant_destroy(&variants[i]) }
     return error.error == .OK
+}
+
+// The engine asks for a virtual by name; the Virtual row is the data it gives back when it calls. Nil: not overridden.
+@(private)
+getVirtualData :: proc "c" (class_userdata: rawptr, name: ^GdStringName, hash: u32) -> rawptr {
+    class: ^Class = cast(^Class)class_userdata
+    for i in 0 ..< len(class.virtuals) {
+        if class.virtual_names[i][0] == name[0] { return &class.virtuals[i] }      // StringNames are interned: the same text is the same pointer
+    }
+    return nil
+}
+
+@(private)
+callVirtual :: proc "c" (instance: GdInstance, name: ^GdStringName, call_data: rawptr, args: [^]rawptr, result: rawptr) {
+    context = defaultContext()
+    virtual: ^Virtual = cast(^Virtual)call_data
+    delta: f64
+    if args != nil { delta = (cast(^f64)args[0])^ }       // `_process` and `_physics_process` are the ones with an argument
+    virtual.call(instance, delta)
+    free_all(context.temp_allocator)
 }
 
 @(private)

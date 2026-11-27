@@ -49,22 +49,8 @@ lobbyUpdate :: proc(instance: rawptr) {
     state.was_ready, state.was_failed, state.guests = state.lobby.ready, state.lobby.failed, guests
 }
 
-lobby_class: ge.Class = {
-    name = "SpacetimeDBLobby",
-    parent = "RefCounted",
-    create = proc() -> rawptr { return new(LobbyObject) },
-    bind = proc(instance: rawptr, object: rawptr) { (cast(^LobbyObject)instance).object = object },
-    signals = {
-        {"became_ready", {}},                       // the game can connect: a host once its server is up, a guest once the tunnel is open
-        {"became_failed", {.STRING}},                // with the text of `error()`
-        {"guest_joined", {.INT}},               // a friend connected: the number of friends
-        {"guest_left", {.INT}},
-    },
-    destroy = proc(instance: rawptr) {
-        session.LobbyLeave(lobbyOf(instance))
-        free(instance)
-    },
-    methods = {
+// One table of methods for both flavours: a RefCounted (the script calls `update`) and a Node (it updates itself from the engine's `_process`)
+lobby_methods := [?]ge.Method{
         // host(root, database, module, name, port, flags): `root` is the folder of the server, `module` the file of the built module (a res:// path is globalized by the script), `port` 0 is 3000
         {"host", {.STRING, .STRING, .STRING, .STRING, .INT, .INT}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             flags: int = int(a[5].number)
@@ -86,9 +72,7 @@ lobby_class: ge.Class = {
             return {}
         }},
         {"leave", {}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            session.LobbyLeave(lobbyOf(instance))
-            state: ^LobbyObject = cast(^LobbyObject)instance
-            state.was_ready, state.was_failed, state.guests = false, false, 0
+            lobbyLeave(instance)
             return {}
         }},
         // the game can connect: a host once its server is up, a guest once the tunnel is open
@@ -118,5 +102,60 @@ lobby_class: ge.Class = {
         }},
         // who made the code (the name in it, or the room name)
         {"code_from", {.STRING}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueText(session.LobbyCodeFrom(lobbyOf(instance), string(a[0].text))) }},
+}
+
+@(private = "file")
+lobbyCreate :: proc() -> rawptr {
+    return new(LobbyObject)
+}
+
+@(private = "file")
+lobbyBind :: proc(instance: rawptr, object: rawptr) {
+    (cast(^LobbyObject)instance).object = object
+}
+
+@(private = "file")
+lobbyDestroy :: proc(instance: rawptr) {
+    session.LobbyLeave(lobbyOf(instance))
+    free(instance)
+}
+
+// leaves and forgets what was told, so the signals come again for the next game
+@(private = "file")
+lobbyLeave :: proc(instance: rawptr) {
+    session.LobbyLeave(lobbyOf(instance))
+    state: ^LobbyObject = cast(^LobbyObject)instance
+    state.was_ready, state.was_failed, state.guests = false, false, 0
+}
+
+lobby_signals := [?]ge.Signal{
+    {"became_ready", {}},                       // the game can connect: a host once its server is up, a guest once the tunnel is open
+    {"became_failed", {.STRING}},               // with the text of `error()`
+    {"guest_joined", {.INT}},                   // a friend connected: the number of friends
+    {"guest_left", {.INT}},
+}
+
+lobby_class: ge.Class = {
+    name = "SpacetimeDBLobby",
+    parent = "RefCounted",
+    create = lobbyCreate,
+    destroy = lobbyDestroy,
+    bind = lobbyBind,
+    signals = lobby_signals[:],
+    methods = lobby_methods[:],
+}
+
+// The Node flavour: add it to the tree and it updates every frame by itself, and leaves when it leaves the tree. Same methods and signals as SpacetimeDBLobby.
+lobby_node_class: ge.Class = {
+    name = "SpacetimeDBLobbyNode",
+    parent = "Node",
+    create = lobbyCreate,
+    destroy = lobbyDestroy,
+    bind = lobbyBind,
+    signals = lobby_signals[:],
+    methods = lobby_methods[:],
+    virtuals = {
+        {"_process", proc(instance: rawptr, delta: f64) { lobbyUpdate(instance) }},
+        {"_exit_tree", proc(instance: rawptr, delta: f64) { lobbyLeave(instance) }},
     },
 }

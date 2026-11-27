@@ -82,7 +82,7 @@ client_class: ge.Class = {
     },
 }
 
-classes: [3]^ge.Class = {&client_class, &lobby_class, &arena_example.arena_class}
+classes: [4]^ge.Class = {&client_class, &lobby_class, &lobby_node_class, &arena_example.arena_class}
 
 // `entry_symbol` of the .gdextension file
 @(export)

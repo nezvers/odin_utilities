@@ -108,4 +108,12 @@ test_godot_lobby_hosts_and_joins_a_module_that_is_not_the_arena :: proc(t: ^test
     state, output, errors, run_error := os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--script", "test_lobby.gd", "--", "3199", root, module}}, context.temp_allocator)
     text: string = strings.concatenate({string(output), string(errors)}, context.temp_allocator)
     testing.expectf(t, run_error == nil && state.success && strings.contains(text, "PASS"), "the lobby script passes:\n%s", text)
+
+    // the Node flavour updates itself from the engine's _process: the script only reacts to signals
+    node_root: string = fmt.tprintf("%s/godot_lobby_node_server", cwd)
+    spacetimedb.ServerRemove(node_root)
+    defer spacetimedb.ServerRemove(node_root)
+    node_state, node_output, node_errors, node_error := os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--script", "test_lobby_node.gd", "--", "3197", node_root, module}}, context.temp_allocator)
+    node_text: string = strings.concatenate({string(node_output), string(node_errors)}, context.temp_allocator)
+    testing.expectf(t, node_error == nil && node_state.success && strings.contains(node_text, "PASS"), "the lobby node script passes:\n%s", node_text)
 }

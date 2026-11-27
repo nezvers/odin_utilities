@@ -11,7 +11,8 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] A sample Godot project that uses the extension: `arena_project/` is the arena game (host, join, play) on the class `ArenaClient`, tested headless with a host and a guest in one process (`godot_test`)
 - [x] Host and join are generic: `SpacetimeDBLobby` + `SpacetimeDBClient` work with any module and database name (`spacetimedb/session` `Lobby`), the arena is an example on top
 - [x] `SpacetimeDBLobby` signals: `became_ready`, `became_failed(error)`, `guest_joined(count)`, `guest_left(count)` (emitted from `update()`)
-- [ ] (medium) A `Node` flavour that updates itself for `SpacetimeDBLobby` (and `ArenaClient`), needs virtual `_process` in `gdextension`
+- [x] `SpacetimeDBLobbyNode`: the Node flavour of the lobby that updates itself
+- [ ] (medium) The same Node flavour for `SpacetimeDBClient` and `ArenaClient`
 - [ ] (medium) Try the Godot arena between two real windows and two computers (a host window and a join window on the clipboard code), and export a build with the module next to the project (`arena-odin.wasm` as a resource)
 - [ ] (low) Run the SpacetimeDB server of a LAN game from the extension (`ServerStart` with `lan`)
 - [ ] (low) Web export (`wasm32` GDExtension) once the websocket goes through the browser instead of a socket

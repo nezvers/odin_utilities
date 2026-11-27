@@ -28,6 +28,7 @@ Build the package as a DLL (`odin build <pkg> -build-mode:dll -out:<project>/bin
 - Argument and result kinds: bool, int, String (UTF-8 bytes), PackedByteArray (bytes). Both the Variant call (untyped GDScript) and the native call (typed code) are made from the same method row.
 - Callbacks run with a default context whose temp allocator is freed after every call.
 - Signals: a class lists `signals` (name, argument kinds), keeps the engine object that `bind` gives it, and calls `Emit(object, "name", {values})`; GDScript connects as usual (the template's `Counter.changed` and `noted`). Emit runs the connected callables at once on the calling thread.
+- Virtual methods: `virtuals = {{"_process", proc(instance, delta)}}` with `parent = "Node"`: the class updates itself, no script polls it (`_ready`, `_enter_tree`, `_exit_tree`, `_process`, `_physics_process` only).
 - Not here yet: properties, virtual methods, other types (floats, vectors, arrays, dictionaries, objects). See TODO.md.
 
 ## Template and testing ground
