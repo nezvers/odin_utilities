@@ -27,7 +27,8 @@ Build the package as a DLL (`odin build <pkg> -build-mode:dll -out:<project>/bin
 
 - Argument and result kinds: bool, int, String (UTF-8 bytes), PackedByteArray (bytes). Both the Variant call (untyped GDScript) and the native call (typed code) are made from the same method row.
 - Callbacks run with a default context whose temp allocator is freed after every call.
-- Not here yet: signals, properties, virtual methods, other types (floats, vectors, arrays, dictionaries, objects). See TODO.md.
+- Signals: a class lists `signals` (name, argument kinds), keeps the engine object that `bind` gives it, and calls `Emit(object, "name", {values})`; GDScript connects as usual (the template's `Counter.changed` and `noted`). Emit runs the connected callables at once on the calling thread.
+- Not here yet: properties, virtual methods, other types (floats, vectors, arrays, dictionaries, objects). See TODO.md.
 
 ## Template and testing ground
 `template/` is a copyable project (an extension with a `Counter` class, a Godot project, a headless test): start a new extension from it, and try a new feature of this library there first.

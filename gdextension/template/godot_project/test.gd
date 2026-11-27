@@ -8,6 +8,15 @@ func _init() -> void:
 	_check(failures, counter.add(5) == 5, "add 5")
 	_check(failures, counter.add(7) == 12, "add 7")
 	_check(failures, counter.get() == 12, "get")
+	var seen := []
+	counter.changed.connect(func(total: int) -> void: seen.append(total))
+	counter.add(3)
+	_check(failures, seen == [15], "the changed signal carries the total: %s" % [seen])
+	var notes := []
+	counter.noted.connect(func(text: String, flag: bool, bytes: PackedByteArray) -> void: notes.append([text, flag, bytes.size()]))
+	counter.note("héllo")
+	_check(failures, notes == [["héllo", true, 6]], "the noted signal carries a String, a bool and bytes: %s" % [notes])
+	_check(failures, counter.has_signal("changed") and counter.get_signal_list().size() >= 2, "the signals are registered")
 	_check(failures, counter.is_even(4) and not counter.is_even(7), "is_even")
 	_check(failures, counter.greet("Godot") == "Hello, Godot!", "greet")
 	_check(failures, counter.greet("Zoë") == "Hello, Zoë!", "greet with a non ASCII letter")

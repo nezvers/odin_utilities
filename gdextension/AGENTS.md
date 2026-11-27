@@ -15,4 +15,5 @@ What is not obvious from the code of this library. The rules that hold for every
 - Every `proc "c"` callback sets `context = runtime.default_context()` first; temp memory is freed at the end of each call.
 - A DLL that Godot loads is copied as `~name.dll` next to it: git ignore `bin/`.
 - A test folder must not be called `test`: `odin run tool/test` writes `test.exe` and the package exe would clash.
+- Signals: registered with `classdb_register_extension_class_signal` (argument infos as for methods); `Emit` calls `Object.emit_signal` (vararg, hash 4047867050 from extension_api.json) through `object_method_bind_call` with the signal name as a StringName Variant first. All Variants it builds are destroyed with `variant_destroy`. A signal must not share a name with a method of the class (GDScript then sees the method: `connect` not found on Callable).
 - Adding an argument kind: a `ValueKind`, a `variantTypeOf` row, a row in both adapters and the helpers in interface.odin.

@@ -57,6 +57,8 @@ func _process(_delta):
 | `invite()`, `room()`, `reply()`, `needs_reply()`, `relay_ready()`, `accept_reply(text) -> bool`, `guests()`, `notice()`, `stage()` | the codes: a host gives out the invite (or the room name with the relay); a guest of an invite with no relay sends its reply back and the host accepts it. `stage()`: 0 idle, 1 gathering, 2 relay, 3 finding a room, 4 ready, 5 connected, 6 failed |
 | `code_kind(text)` (0 empty, 1 not a code, 2 invite, 3 reply, 4 room), `code_from(text)` | what a pasted text is, before anything starts |
 
+Signals (emitted by `update()`): `became_ready`, `became_failed(error)`, `guest_joined(count)`, `guest_left(count)`.
+
 Flags: 1 invite for friends (a host), 2 free relay (a friend joins with the room name or the one code, even behind strict NATs), 4 public address with STUN (needs the internet), 8 loopback (two programs on one computer). The same thing for Odin programs is `spacetimedb/session` (`Lobby`, `Host`, `Guest`). `arena_project/test_lobby.gd` shows it with a module that is not the arena.
 
 ## Example: the arena game (`ArenaClient`)

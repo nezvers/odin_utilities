@@ -9,7 +9,7 @@ package godot_spacetimedb
 //     lobby.host(OS.get_user_data_dir() + "/server", "mygame", "res://mygame.wasm", "Ada", 0, 1)     # a host: root folder, database, module file, name, port (0: 3000), flags
 //     # or:  lobby.join(code_or_room, "mygame", "Bob", 0)                                           # a guest
 //     func _process(_delta):
-//         lobby.update()                                   # once a frame: the link, the tunnel, the stages
+//         lobby.update()                                   # once a frame: the link, the tunnel, the stages (it emits the signals below)
 //         if lobby.ready() and not client.is_open():       # the host at once, a guest when the tunnel is open
 //             client.open(lobby.endpoint_host(), lobby.endpoint_port(), lobby.database(), "")
 //
@@ -24,15 +24,42 @@ FLAG_RELAY :: 2
 FLAG_INTERNET :: 4
 FLAG_LOOPBACK :: 8
 
+// The lobby and what is needed to tell GDScript about its changes: `update` emits the signals `became_ready`, `became_failed(error)`, `guest_joined(count)` and `guest_left(count)` when the state changed
+LobbyObject :: struct {
+    lobby: session.Lobby,
+    object: rawptr,
+    was_ready, was_failed: bool,
+    guests: int,
+}
+
 @(private = "file")
 lobbyOf :: proc(instance: rawptr) -> ^session.Lobby {
-    return cast(^session.Lobby)instance
+    return &(cast(^LobbyObject)instance).lobby
+}
+
+@(private = "file")
+lobbyUpdate :: proc(instance: rawptr) {
+    state: ^LobbyObject = cast(^LobbyObject)instance
+    session.LobbyUpdate(&state.lobby)
+    if state.lobby.ready && !state.was_ready { ge.Emit(state.object, "became_ready", {}) }
+    if state.lobby.failed && !state.was_failed { ge.Emit(state.object, "became_failed", {ge.ValueText(session.LobbyError(&state.lobby))}) }
+    guests: int = session.LobbyGuests(&state.lobby)
+    if guests > state.guests { ge.Emit(state.object, "guest_joined", {ge.ValueInt(i64(guests))}) }
+    if guests < state.guests { ge.Emit(state.object, "guest_left", {ge.ValueInt(i64(guests))}) }
+    state.was_ready, state.was_failed, state.guests = state.lobby.ready, state.lobby.failed, guests
 }
 
 lobby_class: ge.Class = {
     name = "SpacetimeDBLobby",
     parent = "RefCounted",
-    create = proc() -> rawptr { return new(session.Lobby) },
+    create = proc() -> rawptr { return new(LobbyObject) },
+    bind = proc(instance: rawptr, object: rawptr) { (cast(^LobbyObject)instance).object = object },
+    signals = {
+        {"became_ready", {}},                       // the game can connect: a host once its server is up, a guest once the tunnel is open
+        {"became_failed", {.STRING}},                // with the text of `error()`
+        {"guest_joined", {.INT}},               // a friend connected: the number of friends
+        {"guest_left", {.INT}},
+    },
     destroy = proc(instance: rawptr) {
         session.LobbyLeave(lobbyOf(instance))
         free(instance)
@@ -55,11 +82,13 @@ lobby_class: ge.Class = {
             return ge.ValueBool(session.LobbyJoin(lobbyOf(instance), string(a[0].text), string(a[1].text), {name = string(a[2].text), internet = flags & FLAG_INTERNET != 0, loopback = flags & FLAG_LOOPBACK != 0}))
         }},
         {"update", {}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            session.LobbyUpdate(lobbyOf(instance))
+            lobbyUpdate(instance)
             return {}
         }},
         {"leave", {}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             session.LobbyLeave(lobbyOf(instance))
+            state: ^LobbyObject = cast(^LobbyObject)instance
+            state.was_ready, state.was_failed, state.guests = false, false, 0
             return {}
         }},
         // the game can connect: a host once its server is up, a guest once the tunnel is open

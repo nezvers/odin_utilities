@@ -23,6 +23,7 @@ GdVariantType :: enum u32 {
     INT = 2,
     FLOAT = 3,
     STRING = 4,
+    STRING_NAME = 21,
     PACKED_BYTE_ARRAY = 29,
 }
 
@@ -142,6 +143,13 @@ Interface :: struct {
     bytes_destroy: proc "c" (array: rawptr),
     from_bytes: proc "c" (variant: ^GdVariant, value: rawptr),
     to_bytes: proc "c" (value: rawptr, variant: ^GdVariant),
+    from_string_name: proc "c" (variant: ^GdVariant, value: rawptr),
+    destroy_string_name: proc "c" (value: rawptr),
+    variant_destroy: proc "c" (variant: ^GdVariant),
+    register_signal: proc "c" (library: GdLibrary, class_name: ^GdStringName, signal_name: ^GdStringName, arguments: [^]GdPropertyInfo, count: GdInt),
+    get_method_bind: proc "c" (class_name: ^GdStringName, method_name: ^GdStringName, hash: GdInt) -> rawptr,
+    method_bind_call: proc "c" (bind: rawptr, object: GdObject, args: [^]^GdVariant, count: GdInt, result: ^GdVariant, error: ^GdCallError),
+    emit_signal_bind: rawptr,
 }
 
 GetProcAddress :: #type proc "c" (name: cstring) -> rawptr
@@ -171,6 +179,10 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.register_class = auto_cast lookup(get, "classdb_register_extension_class4", &ok)
     gd.register_method = auto_cast lookup(get, "classdb_register_extension_class_method", &ok)
     gd.unregister_class = auto_cast lookup(get, "classdb_unregister_extension_class", &ok)
+    gd.variant_destroy = auto_cast lookup(get, "variant_destroy", &ok)
+    gd.register_signal = auto_cast lookup(get, "classdb_register_extension_class_signal", &ok)
+    gd.get_method_bind = auto_cast lookup(get, "classdb_get_method_bind", &ok)
+    gd.method_bind_call = auto_cast lookup(get, "object_method_bind_call", &ok)
     gd.print_warning = auto_cast lookup(get, "print_warning", &ok)
     gd.bytes_index = auto_cast lookup(get, "packed_byte_array_operator_index", &ok)
     gd.bytes_index_const = auto_cast lookup(get, "packed_byte_array_operator_index_const", &ok)
@@ -185,6 +197,8 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.to_string = gd.variant_to_type(.STRING)
     gd.destroy_string = gd.variant_destructor(.STRING)
     gd.bytes_destroy = gd.variant_destructor(.PACKED_BYTE_ARRAY)
+    gd.from_string_name = gd.variant_from_type(.STRING_NAME)
+    gd.destroy_string_name = gd.variant_destructor(.STRING_NAME)
     gd.from_bytes = gd.variant_from_type(.PACKED_BYTE_ARRAY)
     gd.to_bytes = gd.variant_to_type(.PACKED_BYTE_ARRAY)
     gd.bytes_construct = constructor(.PACKED_BYTE_ARRAY, 0)
@@ -193,7 +207,11 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     resize_name: GdStringName = stringName("resize")
     gd.bytes_size = method(.PACKED_BYTE_ARRAY, &size_name, 3173160232)
     gd.bytes_resize = method(.PACKED_BYTE_ARRAY, &resize_name, 848867239)
-    return gd.bytes_size != nil && gd.bytes_resize != nil
+    // Object.emit_signal (vararg) is how an extension class tells GDScript
+    object_name: GdStringName = stringName("Object")
+    emit_name: GdStringName = stringName("emit_signal")
+    gd.emit_signal_bind = gd.get_method_bind(&object_name, &emit_name, 4047867050)
+    return gd.bytes_size != nil && gd.bytes_resize != nil && gd.emit_signal_bind != nil
 }
 
 stringName :: proc "c" (text: cstring) -> GdStringName {

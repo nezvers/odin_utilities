@@ -8,6 +8,7 @@ import ge "../../gdextension"
 
 // The state of one Counter object: what `create` returns is what every method receives as `instance`
 Counter :: struct {
+    object: rawptr,         // the engine object, from `bind`: what `Emit` needs
     total: int,
     greeting: [256]u8,      // a result string has to live until the call ends: the instance keeps it
 }
@@ -17,11 +18,18 @@ counter_class: ge.Class = {
     parent = "RefCounted",
     create = proc() -> rawptr { return new(Counter) },
     destroy = proc(instance: rawptr) { free(instance) },
+    bind = proc(instance: rawptr, object: rawptr) { (cast(^Counter)instance).object = object },
+    // signals: connect from GDScript with `counter.changed.connect(callable)`
+    signals = {
+        {"changed", {.INT}},                    // the new total
+        {"noted", {.STRING, .BOOL, .BYTES}},    // every kind of argument
+    },
     methods = {
         // int -> int
         {"add", {.INT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             counter: ^Counter = cast(^Counter)instance
             counter.total += int(a[0].number)
+            ge.Emit(counter.object, "changed", {ge.ValueInt(i64(counter.total))})
             return {kind = .INT, number = i64(counter.total)}
         }},
         // nothing -> int
@@ -49,6 +57,11 @@ counter_class: ge.Class = {
             reversed: []u8 = make([]u8, len(a[0].text), context.temp_allocator)
             for b, i in a[0].text { reversed[len(reversed) - 1 - i] = b }
             return {kind = .BYTES, text = reversed}
+        }},
+        // emits `noted` with a String, a bool and bytes
+        {"note", {.STRING}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            ge.Emit((cast(^Counter)instance).object, "noted", {ge.ValueText(string(a[0].text)), ge.ValueBool(true), {kind = .BYTES, text = a[0].text}})
+            return {}
         }},
         // several arguments
         {"mix", {.INT, .STRING, .BOOL}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {

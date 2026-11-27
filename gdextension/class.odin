@@ -24,7 +24,11 @@ package gdextension
 // Godot calls a method in two ways: with Variants (untyped GDScript, `call_func`) and with the native types (typed code, `ptrcall_func`); both are made from the same row. Callbacks run
 // with a default context whose temp allocator is freed after each call: a `Value.text` that a method returns has to live that long (a string of the instance, or temp memory).
 //
-// Signals, properties, virtual methods and other argument kinds are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
+// Signals: a class lists `signals` (a name and the kinds of the arguments); GDScript connects to them as to any signal (`obj.connected.connect(f)`). The class tells the engine with
+// `Emit(object, "name", {values})`; it gets its `object` from `bind`, called once when the object is made (keep it in the instance). Emit runs the connected callables at once, on the
+// calling thread, and the engine allows it from the thread of a method call (the main thread in GDScript).
+//
+// Properties, virtual methods and other argument kinds are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
 
 import "base:runtime"
 
@@ -70,16 +74,25 @@ Method :: struct {
     call: proc(instance: rawptr, arguments: []Value) -> Value,
 }
 
+Signal :: struct {
+    name: cstring,
+    arguments: []ValueKind,
+}
+
 Class :: struct {
     name: cstring,
     parent: cstring,
     methods: []Method,
+    signals: []Signal,
+    bind: proc(instance: rawptr, object: rawptr),   // optional: gets the engine object of a new instance, for `Emit`
     create: proc() -> rawptr,       // the instance that goes with a new object (what the methods receive)
     destroy: proc(instance: rawptr),
     // made by Register
     name_id, parent_id: GdStringName,
     method_names: []GdStringName,
     method_infos: []GdMethodInfo,
+    signal_names: []GdStringName,
+    signal_infos: [][MAX_ARGUMENTS]GdPropertyInfo,
     property_infos: [][MAX_ARGUMENTS + 1]GdPropertyInfo,
 }
 
@@ -187,7 +200,9 @@ createInstance :: proc "c" (class_userdata: rawptr, notify_postinitialize: GdBoo
     context = defaultContext()
     class: ^Class = cast(^Class)class_userdata
     object: GdObject = gd.construct_object(&class.parent_id)
-    gd.object_set_instance(object, &class.name_id, class.create())
+    instance: rawptr = class.create()
+    gd.object_set_instance(object, &class.name_id, instance)
+    if class.bind != nil { class.bind(instance, object) }
     return object
 }
 
@@ -235,6 +250,43 @@ registerClass :: proc "c" (class: ^Class) {
         }
         gd.register_method(gd.library, &class.name_id, &class.method_infos[i])
     }
+    class.signal_names = make([]GdStringName, len(class.signals))
+    class.signal_infos = make([][MAX_ARGUMENTS]GdPropertyInfo, len(class.signals))
+    for signal, i in class.signals {
+        assert(len(signal.arguments) <= MAX_ARGUMENTS)
+        class.signal_names[i] = stringName(signal.name)
+        for kind, a in signal.arguments {
+            class.signal_infos[i][a] = {type = variantTypeOf(kind), name = &empty_name, class_name = &empty_name, hint_string = &empty_string, usage = 6}
+        }
+        gd.register_signal(gd.library, &class.name_id, &class.signal_names[i], raw_data(class.signal_infos[i][:]), GdInt(len(signal.arguments)))
+    }
+}
+
+// Emits a signal of an object (`object` is what `bind` gave): the connected callables run before it returns. False when the engine refused the call.
+Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
+    assert(len(arguments) <= MAX_ARGUMENTS)
+    name: GdStringName = stringName(signal)
+    variants: [MAX_ARGUMENTS + 1]GdVariant
+    pointers: [MAX_ARGUMENTS + 1]^GdVariant
+    gd.from_string_name(&variants[0], &name)
+    gd.destroy_string_name(&name)
+    pointers[0] = &variants[0]
+    for value, i in arguments {
+        switch value.kind {
+        case .INT: variantInt(&variants[i + 1], value.number)
+        case .BOOL: variantBool(&variants[i + 1], value.number != 0)
+        case .STRING: variantString(&variants[i + 1], value.text)
+        case .BYTES: variantBytes(&variants[i + 1], value.text)
+        case .NONE:
+        }
+        pointers[i + 1] = &variants[i + 1]
+    }
+    result: GdVariant
+    error: GdCallError
+    gd.method_bind_call(gd.emit_signal_bind, object, raw_data(pointers[:]), GdInt(len(arguments) + 1), &result, &error)
+    gd.variant_destroy(&result)
+    for i in 0 ..< len(arguments) + 1 { gd.variant_destroy(&variants[i]) }
+    return error.error == .OK
 }
 
 @(private)

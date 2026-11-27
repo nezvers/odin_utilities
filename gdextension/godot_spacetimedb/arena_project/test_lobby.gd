@@ -12,6 +12,7 @@ var host := SpacetimeDBLobby.new()
 var guest := SpacetimeDBLobby.new()
 var host_client := SpacetimeDBClient.new()
 var guest_client := SpacetimeDBClient.new()
+var events := []
 
 
 func _init() -> void:
@@ -21,6 +22,10 @@ func _init() -> void:
 	var module: String = arguments[2]
 	var failures := []
 
+	host.became_ready.connect(func() -> void: events.append("host ready"))
+	guest.became_ready.connect(func() -> void: events.append("guest ready"))
+	host.guest_joined.connect(func(count: int) -> void: events.append("joined %d" % count))
+	guest.became_failed.connect(func(error: String) -> void: events.append("failed " + error))
 	if not host.host(root, "basic", module, "Ada", port, P2P | LOOPBACK):
 		print("FAIL host: ", host.error())
 		quit(1)
@@ -37,6 +42,7 @@ func _init() -> void:
 
 	if guest.join("not a code", "basic", "X", 0) or not guest.failed() or guest.error() == "":
 		failures.append("a bad code should fail with a text")
+	guest.leave()
 	if not guest.join(invite, "basic", "Bob", LOOPBACK):
 		print("FAIL join: ", guest.error())
 		quit(1)
@@ -54,6 +60,8 @@ func _init() -> void:
 		quit(1)
 		return
 
+	if not events.has("host ready") or not events.has("guest ready") or not events.has("joined 1"):
+		failures.append("the signals ready and guest_joined did not arrive: %s" % [events])
 	# any game connects a client to the endpoint of its lobby: the host's own server, the guest's tunnel (a different port)
 	if guest.endpoint_port() == host.endpoint_port():
 		failures.append("the guest talks to a local port of its tunnel")
