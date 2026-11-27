@@ -82,7 +82,7 @@ No. The server is a release binary that setup downloads, the client is Odin, a m
 `odin run spacetimedb/tool/generate -- --server 127.0.0.1:3000 --database chat --package game_data --library ../spacetimedb --out game/data.odin` (or `--schema file.json`) writes the row structs with `<Type>Read` / `<Type>Write`, a `Call<Reducer>(&connection, ...)` per reducer, `TablesAdd(&cache)` and `SubscribeAll(&connection, id)`. Then a game does `CacheCollect(&cache, tables.person, PersonRead, people[:])`.
 
 ## A game to try it with
-`arena/` is a small multiplayer game whose world lives in a SpacetimeDB database, with a window on raylib and Karl2D; players find each other with p2p (an invite code, or one code through a free relay) and reach the host's database through `tunnel/`. See `arena/README.md`.
+`arena/` is a small multiplayer game whose world lives in a SpacetimeDB database, with a window on raylib and Karl2D; players find each other with p2p (an invite code, or one code through a free relay) and reach the host's database through `tunnel/`. See `arena/README.md`. The p2p host and join part is generic (`session/`: any module, any database name; `Lobby` is the same in one object), so another game gets friends without a server the same way.
 
 ## TLS
 Give the endpoint `secure = true` (port 443) to reach a database on maincloud or behind a proxy: `ConnectionOpen(&c, {endpoint = {host = "maincloud.spacetimedb.com", port = 443, secure = true}, database = "mygame"}, ...)`. The certificate is checked against the host (p2p `P2P_CA_FILE`, `P2P_TLS_VERIFY` apply).

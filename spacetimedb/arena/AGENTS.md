@@ -2,7 +2,7 @@
 
 What is not obvious from the code. The rules for every library are in [../../AGENTS.md](../../AGENTS.md), `spacetimedb` in [../AGENTS.md](../AGENTS.md), the use in README.md.
 
-- Layers: `module/` (the game in the database, Odin wasm) -> `schema/` (GENERATED, never edit: `odin run spacetimedb/arena/tool/schema` after the module changed; it starts a server) -> `game/` (client logic) -> `session/` (p2p: host, guest, tunnel) -> `demo_common/` (window).
+- Layers: `module/` (the game in the database, Odin wasm) -> `schema/` (GENERATED, never edit: `odin run spacetimedb/arena/tool/schema` after the module changed; it starts a server) -> `game/` (client logic) -> `session/` (p2p: host, guest, tunnel; only the arena defaults over the generic `spacetimedb/session`, which also has the stage and lobby tests) -> `demo_common/` (window).
 - Build the module with `odin run spacetimedb/tool/build_module -- spacetimedb/arena/module spacetimedb/bin/arena-odin.wasm` (the setup does it too: `SetupOdinModule` looks in `module/example/<name>` and in `<name>/module`).
 - The blocking calls of the client (HTTP, the websocket handshake) through a tunnel need the same thread to step the tunnel: `session.SetIdle` sets `spacetimedb.StreamIdle`. A host process steps itself in its frame loop. If a join hangs, look there first.
 - A host keeps its database in `<root>` and the owner identity in `<root>/owner.token`: without the token a second start cannot update the database ("not authorized").

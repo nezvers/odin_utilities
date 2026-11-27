@@ -5,6 +5,7 @@ package godot_spacetimedb
 
 import "core:strings"
 import ge "../../gdextension"
+import "arena_example"
 
 @(private)
 clientOf :: proc(instance: rawptr) -> ^Client {
@@ -81,7 +82,7 @@ client_class: ge.Class = {
     },
 }
 
-classes: [2]^ge.Class = {&client_class, &arena_class}
+classes: [3]^ge.Class = {&client_class, &lobby_class, &arena_example.arena_class}
 
 // `entry_symbol` of the .gdextension file
 @(export)

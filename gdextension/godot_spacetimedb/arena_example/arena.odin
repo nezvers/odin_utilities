@@ -1,9 +1,12 @@
 #+build !js
-package godot_spacetimedb
+package arena_example
 
-// The arena game (odin_utilities/spacetimedb/arena) for Godot: the class `ArenaClient` (a RefCounted) does everything of the Odin demo that is not drawing: it starts the server of a host, makes the p2p
-// invite, joins a host by a code or a room name, connects the game client (through the tunnel for a guest), keeps the rows of `player` and `coin` and smooths the players. A script (arena_project) only
-// calls `update` once a frame, `set_input` with the held direction, and draws `snapshot`. No thread, no callback into Godot.
+// AN EXAMPLE of a game on the generic parts of the extension: the arena (odin_utilities/spacetimedb/arena) for Godot. The networking is `spacetimedb/session`'s `Lobby` (the same object that
+// the generic class `SpacetimeDBLobby` of the extension wraps): this file only adds what the arena knows, its database and module, the game client (the rows of `player` and `coin`, the
+// smoothing, the input) and a packed `snapshot` of the field. A game of your own does the same with its own client logic, or uses `SpacetimeDBLobby` + `SpacetimeDBClient` from GDScript
+// (test_lobby.gd shows that with a different module). Drop this package and its line in entry.odin to leave the example out of a library build.
+//
+// The class `ArenaClient` (a RefCounted): `update` once a frame, `set_input` with the held direction, draw `snapshot`. No thread, no callback into Godot.
 //
 // The snapshot (a PackedByteArray, little endian: read it with a StreamPeerBuffer):
 //     u32 game phase (see GamePhase), u32 players, u32 coins, u32 coins picked up since the start, u64 id of this player (0: not joined yet)
@@ -12,12 +15,13 @@ package godot_spacetimedb
 // The field is 800 x 600 (arena_game FIELD_WIDTH, FIELD_HEIGHT).
 
 import "core:encoding/endian"
-import "core:fmt"
 import "core:strings"
-import "core:time"
-import ge "../../gdextension"
-import game_lib "../../spacetimedb/arena/game"
-import "../../spacetimedb/arena/session"
+import ge "../../../gdextension"
+import "../../../spacetimedb"
+import game_lib "../../../spacetimedb/arena/game"
+import "../../../spacetimedb/session"
+
+ARENA_DATABASE :: "arena"
 
 // What `phase()` says: where the whole thing is
 ArenaPhase :: enum u8 {
@@ -35,21 +39,11 @@ FLAG_LOOPBACK :: 8      // host and join: also offer 127.0.0.1 (two programs on 
 
 SNAPSHOT_MAX :: 8192
 
-// The host of this process (the last one started): a guest in the SAME process (a test, two clients in one script) steps it while it waits in a blocking call. Nil when there is none.
-@(private = "file")
-active_host: ^session.Host
-
 Arena :: struct {
     phase: ArenaPhase,
+    lobby: session.Lobby,
     game: ^game_lib.Game,
-    host: ^session.Host,
-    guest: ^session.Guest,
-    name: string,                       // heap copies: the session keeps strings by reference
-    root: string,
-    module: string,
-    error: [400]u8,
-    error_length: int,
-    code: [512]u8,                      // the text that `code_from` returns
+    name: string,                       // heap copy
     snapshot: [SNAPSHOT_MAX]u8,
     picked_up: int,
 }
@@ -59,47 +53,39 @@ arenaOf :: proc(instance: rawptr) -> ^Arena {
     return cast(^Arena)instance
 }
 
+// The game client opens on the endpoint of the lobby: a host's own server, a guest's tunnel
 @(private = "file")
-arenaFail :: proc(arena: ^Arena, message: string) {
-    arena.error_length = copy(arena.error[:], message)
-    arena.phase = .FAILED
+arenaOpenGame :: proc(arena: ^Arena) -> bool {
+    arena.game = new(game_lib.Game)
+    if !game_lib.GameOpen(arena.game, arena.lobby.endpoint, arena.name) {
+        arena.lobby.failed = true
+        copy(arena.lobby.error[:], arena.game.error)
+        arena.lobby.error_length = len(arena.game.error)
+        arena.phase = .FAILED
+        return false
+    }
+    arena.phase = .PLAYING
+    return true
 }
 
-// Goes back to IDLE: closes the game, the server, the link
+// Goes back to IDLE: closes the game first, then the lobby (the server, the link)
 @(private = "file")
 arenaLeave :: proc(arena: ^Arena) {
     if arena.game != nil {
         game_lib.GameClose(arena.game)
         free(arena.game)
         arena.game = nil
-        // the close of the websocket travels through the tunnel: step it a few times so that the host hears it now and not after the p2p timeout
-        if arena.guest != nil && arena.guest.tunnel_started {
-            for _ in 0 ..< 12 {
-                session.GuestUpdate(arena.guest)
-                if active_host != nil { session.HostUpdate(active_host) }
-                time.sleep(5 * time.Millisecond)
-            }
-        }
     }
-    session.ClearIdle()
-    if arena.host != nil {
-        if active_host == arena.host { active_host = nil }
-        session.HostStop(arena.host)
-        free(arena.host)
-        arena.host = nil
-    }
-    if arena.guest != nil {
-        session.GuestStop(arena.guest)
-        free(arena.guest)
-        arena.guest = nil
-    }
+    session.LobbyLeave(&arena.lobby)
     delete(arena.name)
-    delete(arena.root)
-    delete(arena.module)
-    arena.name, arena.root, arena.module = "", "", ""
-    arena.error_length = 0
+    arena.name = ""
     arena.picked_up = 0
     arena.phase = .IDLE
+}
+
+@(private = "file")
+arenaFail :: proc(arena: ^Arena) {
+    arena.phase = .FAILED
 }
 
 // Starts the server with the game (a second or two: the call blocks), makes the invite for friends when asked, and opens the game on the server. False with `error()` set.
@@ -107,27 +93,18 @@ arenaLeave :: proc(arena: ^Arena) {
 arenaHost :: proc(arena: ^Arena, name: string, root: string, port: int, flags: int, module: string) -> bool {
     arenaLeave(arena)
     arena.name = strings.clone(name if name != "" else "player")
-    arena.root = strings.clone(root if root != "" else "arena_server")
-    arena.module = strings.clone(module)
-    arena.host = new(session.Host)
-    arena.game = new(game_lib.Game)
     options: session.HostOptions = {
-        root = arena.root, port = port, module_path = arena.module, name = arena.name,
+        root = root if root != "" else "arena_server", port = port, name = arena.name, database = ARENA_DATABASE,
+        module_path = module if module != "" else spacetimedb.FixturePath("arena-odin"),
         internet = flags & FLAG_P2P != 0 && flags & FLAG_INTERNET != 0,
         derp = flags & FLAG_P2P != 0 && flags & FLAG_RELAY != 0,
         loopback = flags & FLAG_LOOPBACK != 0,
     }
-    if !session.HostBegin(arena.host, options) {
-        arenaFail(arena, arena.host.error)
+    if !session.LobbyHost(&arena.lobby, options) {
+        arenaFail(arena)
         return false
     }
-    if !game_lib.GameOpen(arena.game, arena.host.server.endpoint, arena.name) {
-        arenaFail(arena, arena.game.error)
-        return false
-    }
-    active_host = arena.host
-    arena.phase = .PLAYING
-    return true
+    return arenaOpenGame(arena)
 }
 
 // Begins joining a host by the code of its invite or by its room name; `update` goes on until the game is open. False with `error()` set.
@@ -135,44 +112,24 @@ arenaHost :: proc(arena: ^Arena, name: string, root: string, port: int, flags: i
 arenaJoin :: proc(arena: ^Arena, code: string, name: string, flags: int) -> bool {
     arenaLeave(arena)
     arena.name = strings.clone(name if name != "" else "player")
-    arena.guest = new(session.Guest)
-    arena.game = new(game_lib.Game)
-    trimmed: string = strings.trim_space(code)
-    if trimmed == "" {
-        arenaFail(arena, "paste the code of the host first")
-        return false
-    }
-    options: session.GuestOptions = {internet = flags & FLAG_INTERNET != 0, name = arena.name, loopback = flags & FLAG_LOOPBACK != 0}
-    began: bool = session.GuestBeginRoom(arena.guest, trimmed, options) if session.RoomLooksLike(trimmed) else session.GuestBegin(arena.guest, trimmed, options)
-    if !began {
-        arenaFail(arena, arena.guest.error)
+    if !session.LobbyJoin(&arena.lobby, code, ARENA_DATABASE, {name = arena.name, internet = flags & FLAG_INTERNET != 0, loopback = flags & FLAG_LOOPBACK != 0}) {
+        arenaFail(arena)
         return false
     }
     arena.phase = .CONNECTING
     return true
 }
 
-// Once a frame: the p2p side, the tunnel, the game client and the smoothing of the players
+// Once a frame: the lobby (link, tunnel, stages), the game client and the smoothing of the players
 @(private = "file")
 arenaUpdate :: proc(arena: ^Arena, delta_ms: int) {
     if arena.phase == .IDLE || arena.phase == .FAILED { return }
-    if arena.host != nil { session.HostUpdate(arena.host) }
-    if arena.guest != nil {
-        session.GuestUpdate(arena.guest)
-        if arena.guest.stage == .FAILED {
-            arenaFail(arena, arena.guest.error)
-            return
-        }
-        if arena.phase == .CONNECTING && arena.guest.stage == .CONNECTED && session.GuestStartTunnel(arena.guest) {
-            // the tunnel is the way to the server: the blocking calls of the client step it while they wait
-            session.SetIdle(arena.guest, active_host)
-            if !game_lib.GameOpen(arena.game, session.GuestEndpoint(arena.guest), arena.name) {
-                arenaFail(arena, arena.game.error)
-                return
-            }
-            arena.phase = .PLAYING
-        }
+    session.LobbyUpdate(&arena.lobby)
+    if arena.lobby.failed {
+        arenaFail(arena)
+        return
     }
+    if arena.phase == .CONNECTING && arena.lobby.ready && !arenaOpenGame(arena) { return }
     if arena.phase == .PLAYING {
         game_lib.GamePoll(arena.game)
         game_lib.GameSmooth(arena.game, f32(delta_ms) / 1000)
@@ -236,13 +193,6 @@ arenaSnapshot :: proc(arena: ^Arena) -> []u8 {
     return buffer[:at]
 }
 
-@(private = "file")
-stageOf :: proc(arena: ^Arena) -> session.Stage {
-    if arena.host != nil { return arena.host.stage }
-    if arena.guest != nil { return arena.guest.stage }
-    return .IDLE
-}
-
 arena_class: ge.Class = {
     name = "ArenaClient",
     parent = "RefCounted",
@@ -254,11 +204,11 @@ arena_class: ge.Class = {
     methods = {
         // host(name, root, port, flags, module): `root` is the folder of the server (OS.get_user_data_dir() + "/arena_server"), `port` 0 is 3000, `module` "" is the built module of the library
         {"host", {.STRING, .STRING, .INT, .INT, .STRING}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            return boolOf(arenaHost(arenaOf(instance), string(a[0].text), string(a[1].text), int(a[2].number), int(a[3].number), string(a[4].text)))
+            return ge.ValueBool(arenaHost(arenaOf(instance), string(a[0].text), string(a[1].text), int(a[2].number), int(a[3].number), string(a[4].text)))
         }},
         // join(code, name, flags): `code` is an invite code or a room name
         {"join", {.STRING, .STRING, .INT}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            return boolOf(arenaJoin(arenaOf(instance), string(a[0].text), string(a[1].text), int(a[2].number)))
+            return ge.ValueBool(arenaJoin(arenaOf(instance), string(a[0].text), string(a[1].text), int(a[2].number)))
         }},
         {"update", {.INT}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             arenaUpdate(arenaOf(instance), int(a[0].number))
@@ -274,75 +224,42 @@ arena_class: ge.Class = {
             arenaLeave(arenaOf(instance))
             return {}
         }},
-        {"phase", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return intOf(i64(arenaOf(instance).phase)) }},
+        {"phase", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueInt(i64(arenaOf(instance).phase)) }},
         // the step of the p2p connection: 0 idle, 1 gathering addresses, 2 waiting for the relay, 3 finding a room, 4 ready (a host: the invite is made; a guest: the reply is made), 5 connected, 6 failed
-        {"stage", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return intOf(i64(stageOf(arenaOf(instance)))) }},
+        {"stage", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueInt(i64(session.LobbyStage(&arenaOf(instance).lobby))) }},
         // the phase of the game client: 0 closed, 1 connecting, 2 joining (waiting for the first rows), 3 playing, 4 connection lost
         {"game_phase", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             arena: ^Arena = arenaOf(instance)
-            return intOf(i64(arena.game.phase) if arena.game != nil else 0)
+            return ge.ValueInt(i64(arena.game.phase) if arena.game != nil else 0)
         }},
         {"waiting_ms", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             arena: ^Arena = arenaOf(instance)
-            return intOf(i64(game_lib.GameWaitingMs(arena.game)) if arena.game != nil else 0)
+            return ge.ValueInt(i64(game_lib.GameWaitingMs(arena.game)) if arena.game != nil else 0)
         }},
-        {"invite", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            arena: ^Arena = arenaOf(instance)
-            return textOf(session.HostInvite(arena.host) if arena.host != nil else "")
-        }},
-        {"room", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            arena: ^Arena = arenaOf(instance)
-            return textOf(session.HostRoom(arena.host) if arena.host != nil else "")
-        }},
-        {"reply", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            arena: ^Arena = arenaOf(instance)
-            return textOf(session.GuestReply(arena.guest) if arena.guest != nil else "")
-        }},
-        {"notice", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            arena: ^Arena = arenaOf(instance)
-            if arena.host != nil { return textOf(session.HostNotice(arena.host)) }
-            if arena.guest != nil { return textOf(session.GuestNotice(arena.guest)) }
-            return textOf("")
-        }},
-        {"error", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            arena: ^Arena = arenaOf(instance)
-            return textOf(string(arena.error[:arena.error_length]))
-        }},
+        {"invite", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueText(session.LobbyInvite(&arenaOf(instance).lobby)) }},
+        {"room", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueText(session.LobbyRoom(&arenaOf(instance).lobby)) }},
+        {"reply", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueText(session.LobbyReply(&arenaOf(instance).lobby)) }},
+        {"notice", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueText(session.LobbyNotice(&arenaOf(instance).lobby)) }},
+        {"error", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueText(session.LobbyError(&arenaOf(instance).lobby)) }},
         // accept_reply(text): a host pastes the reply code of a friend (needed when the invite names no relay)
-        {"accept_reply", {.STRING}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            arena: ^Arena = arenaOf(instance)
-            return boolOf(arena.host != nil && session.HostAcceptReply(arena.host, strings.trim_space(string(a[0].text))))
-        }},
+        {"accept_reply", {.STRING}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueBool(session.LobbyAcceptReply(&arenaOf(instance).lobby, string(a[0].text))) }},
         // a guest whose invite names no relay has to send its `reply()` back to the host
-        {"needs_reply", {}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            arena: ^Arena = arenaOf(instance)
-            return boolOf(arena.guest != nil && !arena.guest.room_mode && (arena.guest.invite.derp_server == 0 || arena.guest.options.no_derp))
-        }},
+        {"needs_reply", {}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueBool(session.LobbyNeedsReply(&arenaOf(instance).lobby)) }},
         // a host whose relay is up: a friend needs only the invite (or the room name), no reply
-        {"relay_ready", {}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            arena: ^Arena = arenaOf(instance)
-            return boolOf(arena.host != nil && arena.host.relay_used && arena.host.link.derp.state == .READY)
-        }},
+        {"relay_ready", {}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueBool(session.LobbyRelayReady(&arenaOf(instance).lobby)) }},
         // friends whose connection is made
-        {"guests", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            arena: ^Arena = arenaOf(instance)
-            return intOf(i64(session.HostConnectedGuests(arena.host)) if arena.host != nil else 0)
-        }},
+        {"guests", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueInt(i64(session.LobbyGuests(&arenaOf(instance).lobby))) }},
         // what a pasted text is: 0 empty, 1 not a code, 2 an invite, 3 a reply, 4 a room name
         {"code_kind", {.STRING}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             kind, _, _ := session.CodeInspect(string(a[0].text))
-            return intOf(i64(kind))
+            return ge.ValueInt(i64(kind))
         }},
         // who made the code (the name in it, or the room name)
         {"code_from", {.STRING}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
-            arena: ^Arena = arenaOf(instance)
-            _, from, _ := session.CodeInspect(string(a[0].text))
-            return textOf(string(arena.code[:copy(arena.code[:], from)]))
+            return ge.ValueText(session.LobbyCodeFrom(&arenaOf(instance).lobby, string(a[0].text)))
         }},
         {"snapshot", {}, .BYTES, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             return {kind = .BYTES, text = arenaSnapshot(arenaOf(instance))}
         }},
     },
 }
-
-_ :: fmt

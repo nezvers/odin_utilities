@@ -47,6 +47,19 @@ Value :: struct {
     text: []u8,
 }
 
+// The results of a method, one line each: `ValueText` keeps the bytes of the string until the call ends (a string of the instance or temp memory)
+ValueText :: proc "contextless" (text: string) -> Value {
+    return {kind = .STRING, text = transmute([]u8)text}
+}
+
+ValueInt :: proc "contextless" (number: i64) -> Value {
+    return {kind = .INT, number = number}
+}
+
+ValueBool :: proc "contextless" (flag: bool) -> Value {
+    return {kind = .BOOL, number = 1 if flag else 0}
+}
+
 MAX_ARGUMENTS :: 6
 ARGUMENT_TEXT :: 1 << 17        // the biggest String argument
 

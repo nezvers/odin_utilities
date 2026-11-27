@@ -444,12 +444,3 @@ test_a_pasted_text_is_told_apart :: proc(t: ^testing.T) {
     kind, _, _ = CodeInspect(invite_text[:len(invite_text) / 2])
     testing.expect_value(t, kind, CodeKind.NOT_A_CODE)
 }
-
-// The stages of a connection give a slower device more time
-@(test)
-test_the_stage_times_follow_the_time_scale :: proc(t: ^testing.T) {
-    testing.expect_value(t, stageMsFor(STAGE_GATHER_MS, 1), 5000)
-    testing.expect_value(t, stageMsFor(STAGE_RELAY_MS, 3), 24000)
-    testing.expect_value(t, stageMsFor(STAGE_FIND_MS, 0.5), 15000)
-    testing.expect_value(t, stageMs(STAGE_GATHER_MS), stageMsFor(STAGE_GATHER_MS, st.TimeScale))
-}

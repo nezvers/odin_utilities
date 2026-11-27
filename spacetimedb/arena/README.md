@@ -21,7 +21,7 @@ The host keeps the world in `arena_server/` (a persistent database, owned by the
 - `module/`: the game, written in Odin and run by the database: tables `player` and `coin`, reducers `join(name)` and `set_input(dx, dy)`, and a scheduled reducer `tick` (every 50 ms) that moves players, lets them pick up coins and puts new coins on the field. A player who disconnects leaves the field.
 - `schema/`: generated from the module (`odin run spacetimedb/arena/tool/schema`): the row structs, readers and writers, `CallJoin`, `CallSetInput`, the tables for the cache.
 - `game/`: the client without a window (`Game`): connection, cache of the two tables, the input, smoothing of the 20 steps per second. Used by every front end.
-- `session/`: the p2p side: `HostStart` (server, published module, invite code), `GuestJoin` (the codes, the tunnel to the host's database).
+- `session/`: the p2p side: `HostStart` (server, published module, invite code), `GuestJoin` (the codes, the tunnel to the host's database). It is the generic `spacetimedb/session` with the arena's database and module filled in: another game uses that package (or its `Lobby`) with its own module.
 - `../tunnel/`: TCP over a p2p Link, so a client reaches a server that is on another computer behind NATs.
 - `demo_common/`, `demo_raylib/`, `demo_karl2d/`: the window (one demo written against `odin_utilities/demo_kit`): the start screen, the game, and two scripts (the start screen with its buttons, paste and copy; a solo game) that play headless.
 

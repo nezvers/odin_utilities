@@ -9,7 +9,8 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (medium) The cache of `spacetimedb` inside the client: UPDATE events with the old row, `get_rows(table)` that a script reads without keeping its own copy
 - [ ] (medium) Builds for Linux and macOS and a `tool/build` that makes the binaries and the `.gdextension` file for a project; an export check
 - [x] A sample Godot project that uses the extension: `arena_project/` is the arena game (host, join, play) on the class `ArenaClient`, tested headless with a host and a guest in one process (`godot_test`)
-- [ ] (medium) `ArenaClient` signals (`connected`, `phase_changed`) and a `Node` flavour that updates itself, with the same `gdextension` work as the signals of `SpacetimeDBClient`
+- [x] Host and join are generic: `SpacetimeDBLobby` + `SpacetimeDBClient` work with any module and database name (`spacetimedb/session` `Lobby`), the arena is an example on top
+- [ ] (medium) Signals (`ready`, `failed`, `guest_joined`) and a `Node` flavour that updates itself for `SpacetimeDBLobby` (and `ArenaClient`), with the same `gdextension` work as the signals of `SpacetimeDBClient`
 - [ ] (medium) Try the Godot arena between two real windows and two computers (a host window and a join window on the clipboard code), and export a build with the module next to the project (`arena-odin.wasm` as a resource)
 - [ ] (low) Run the SpacetimeDB server of a LAN game from the extension (`ServerStart` with `lan`)
 - [ ] (low) Web export (`wasm32` GDExtension) once the websocket goes through the browser instead of a socket
