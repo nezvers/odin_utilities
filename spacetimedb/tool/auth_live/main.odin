@@ -182,6 +182,12 @@ run :: proc(arguments: []string) -> int {
     if !greeted || !is_initial { return failed("the server did not accept the ID token (no greeting)") }
     hex: [64]u8
     say(fmt.tprintf("let in, identity %s", spacetimedb.IdentityHex(initial.identity, hex[:])))
+    // the identity computed here, without the server, has to be the one the server made from the same token
+    computed: spacetimedb.Identity = spacetimedb.IdentityFromClaims(login.claims.issuer, login.claims.subject)
+    if computed != initial.identity {
+        return failed(fmt.tprintf("the identity computed from issuer and subject differs from the server's: %s", spacetimedb.IdentityHex(computed, hex[:])))
+    }
+    say("the identity computed from issuer and subject (blake3) is the server's")
     sql := spacetimedb.DatabaseSql(server.endpoint, "auth", "SELECT * FROM login", token, response)
     say(fmt.tprintf("the module recorded (email hidden):\n%s", hideEmail(string(sql.body))))
     return 0
