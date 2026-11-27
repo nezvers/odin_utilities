@@ -164,6 +164,73 @@ counter_class: ge.Class = {
         {"kind_of", {.VARIANT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             return ge.ValueInt(i64(a[0].kind))
         }},
+        // The plain structs of the engine, one method each (the numbers of the small ones are in `real`, of AABB, Transform2D, Basis, Transform3D, Projection in `floats32`)
+        {"step_cell", {.VECTOR2I}, .VECTOR2I, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .VECTOR2I, real = {a[0].real[0] + 1, a[0].real[1] - 1, 0, 0}}
+        }},
+        {"step_cell3", {.VECTOR3I}, .VECTOR3I, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .VECTOR3I, real = {a[0].real[0] + 1, a[0].real[1] + 2, a[0].real[2] + 3, 0}}
+        }},
+        {"sum4", {.VECTOR4}, .FLOAT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .FLOAT, real = {a[0].real[0] + a[0].real[1] + a[0].real[2] + a[0].real[3], 0, 0, 0}}
+        }},
+        {"reverse4", {.VECTOR4I}, .VECTOR4I, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .VECTOR4I, real = {a[0].real[3], a[0].real[2], a[0].real[1], a[0].real[0]}}
+        }},
+        // the position moves by (10, 10), the size doubles
+        {"move_rect", {.RECT2}, .RECT2, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .RECT2, real = {a[0].real[0] + 10, a[0].real[1] + 10, a[0].real[2] * 2, a[0].real[3] * 2}}
+        }},
+        {"grow_rect", {.RECT2I}, .RECT2I, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .RECT2I, real = {a[0].real[0] - 1, a[0].real[1] - 1, a[0].real[2] + 2, a[0].real[3] + 2}}
+        }},
+        {"invert_color", {.COLOR}, .COLOR, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .COLOR, real = {1 - a[0].real[0], 1 - a[0].real[1], 1 - a[0].real[2], a[0].real[3]}}
+        }},
+        {"conjugate", {.QUATERNION}, .QUATERNION, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .QUATERNION, real = {-a[0].real[0], -a[0].real[1], -a[0].real[2], a[0].real[3]}}
+        }},
+        {"flip_plane", {.PLANE}, .PLANE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .PLANE, real = {-a[0].real[0], -a[0].real[1], -a[0].real[2], -a[0].real[3]}}
+        }},
+        // the box keeps its position and doubles its size
+        {"grow_box", {.AABB}, .AABB, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []f32 = make([]f32, 6, context.temp_allocator)
+            copy(out, a[0].floats32)
+            for i in 3 ..< 6 { out[i] *= 2 }
+            return {kind = .AABB, floats32 = out}
+        }},
+        // the origin (the last two numbers) moves by (5, 6)
+        {"slide", {.TRANSFORM2D}, .TRANSFORM2D, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []f32 = make([]f32, 6, context.temp_allocator)
+            copy(out, a[0].floats32)
+            out[4] += 5
+            out[5] += 6
+            return {kind = .TRANSFORM2D, floats32 = out}
+        }},
+        {"double_basis", {.BASIS}, .BASIS, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []f32 = make([]f32, 9, context.temp_allocator)
+            for i in 0 ..< min(9, len(a[0].floats32)) { out[i] = a[0].floats32[i] * 2 }
+            return {kind = .BASIS, floats32 = out}
+        }},
+        // the origin (the last three numbers) goes up by one
+        {"lift", {.TRANSFORM3D}, .TRANSFORM3D, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []f32 = make([]f32, 12, context.temp_allocator)
+            copy(out, a[0].floats32)
+            out[10] += 1
+            return {kind = .TRANSFORM3D, floats32 = out}
+        }},
+        {"double_projection", {.PROJECTION}, .PROJECTION, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []f32 = make([]f32, 16, context.temp_allocator)
+            for i in 0 ..< min(16, len(a[0].floats32)) { out[i] = a[0].floats32[i] * 2 }
+            return {kind = .PROJECTION, floats32 = out}
+        }},
+        {"shout_name", {.STRING_NAME}, .STRING_NAME, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .STRING_NAME, text = transmute([]u8)strings.to_upper(string(a[0].text), context.temp_allocator)}
+        }},
+        {"shout_path", {.NODE_PATH}, .NODE_PATH, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return {kind = .NODE_PATH, text = transmute([]u8)strings.to_upper(string(a[0].text), context.temp_allocator)}
+        }},
         // The numeric packed arrays of the engine (32 bit): ints, floats, points, 3D points, colors
         {"double_ints32", {.PACKED_INT32S}, .PACKED_INT32S, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             out: []i32 = make([]i32, len(a[0].ints32), context.temp_allocator)

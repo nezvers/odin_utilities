@@ -18,6 +18,8 @@ GdBytes :: [2]u64                   // a PackedByteArray is a pointer and a refe
 GdStringName :: [1]u64
 GdArray :: [1]u64                   // an Array and a Dictionary are one pointer
 
+VARIANT_TYPE_COUNT :: 40
+
 GdVariantType :: enum u32 {
     NIL = 0,
     BOOL = 1,
@@ -25,7 +27,21 @@ GdVariantType :: enum u32 {
     FLOAT = 3,
     STRING = 4,
     VECTOR2 = 5,
+    VECTOR2I = 6,
+    RECT2 = 7,
+    RECT2I = 8,
     VECTOR3 = 9,
+    VECTOR3I = 10,
+    TRANSFORM2D = 11,
+    VECTOR4 = 12,
+    VECTOR4I = 13,
+    PLANE = 14,
+    QUATERNION = 15,
+    AABB = 16,
+    BASIS = 17,
+    TRANSFORM3D = 18,
+    PROJECTION = 19,
+    COLOR = 20,
     STRING_NAME = 21,
     NODE_PATH = 22,
     OBJECT = 24,
@@ -194,6 +210,11 @@ Interface :: struct {
     dictionary_keys: proc "c" (dictionary: rawptr, args: [^]rawptr, result: rawptr, count: i32),
     packed_ints, packed_floats, packed_strings: PackedOps,
     packed_ints32, packed_floats32, packed_vector2s, packed_vector3s, packed_colors: PackedOps,
+    type_from: [VARIANT_TYPE_COUNT]proc "c" (variant: ^GdVariant, value: rawptr),    // native value -> Variant, by Variant type: the plain structs and the names
+    type_to: [VARIANT_TYPE_COUNT]proc "c" (value: rawptr, variant: ^GdVariant),
+    type_destroy: [VARIANT_TYPE_COUNT]proc "c" (value: rawptr),
+    string_from_name: [VARIANT_TYPE_COUNT]proc "c" (string: rawptr, args: [^]rawptr),   // String(StringName) at STRING_NAME, String(NodePath) at NODE_PATH
+    name_from_string: [VARIANT_TYPE_COUNT]proc "c" (name: rawptr, args: [^]rawptr),     // StringName(String) at STRING_NAME, NodePath(String) at NODE_PATH
     from_object: proc "c" (variant: ^GdVariant, value: rawptr),
     to_object: proc "c" (value: rawptr, variant: ^GdVariant),
     from_string_name: proc "c" (variant: ^GdVariant, value: rawptr),
@@ -258,6 +279,15 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     packedLoad(&gd.packed_vector2s, .PACKED_VECTOR2_ARRAY, get, "packed_vector2_array", constructor, method)
     packedLoad(&gd.packed_vector3s, .PACKED_VECTOR3_ARRAY, get, "packed_vector3_array", constructor, method)
     packedLoad(&gd.packed_colors, .PACKED_COLOR_ARRAY, get, "packed_color_array", constructor, method)
+    for type in ([?]GdVariantType{.VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION, .STRING_NAME, .NODE_PATH}) {
+        gd.type_from[type] = gd.variant_from_type(type)
+        gd.type_to[type] = gd.variant_to_type(type)
+        gd.type_destroy[type] = gd.variant_destructor(type)
+    }
+    gd.string_from_name[GdVariantType.STRING_NAME] = constructor(.STRING, 2)
+    gd.string_from_name[GdVariantType.NODE_PATH] = constructor(.STRING, 3)
+    gd.name_from_string[GdVariantType.STRING_NAME] = constructor(.STRING_NAME, 2)
+    gd.name_from_string[GdVariantType.NODE_PATH] = constructor(.NODE_PATH, 2)
     size_name_for_collections: GdStringName = stringName("size")
     resize_name_for_collections: GdStringName = stringName("resize")
     gd.from_bool = gd.variant_from_type(.BOOL)
@@ -474,6 +504,8 @@ variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator, d
     case .PACKED_VECTOR2_ARRAY: return readPackedVariant(variant, .PACKED_VECTOR2S, allocator)
     case .PACKED_VECTOR3_ARRAY: return readPackedVariant(variant, .PACKED_VECTOR3S, allocator)
     case .PACKED_COLOR_ARRAY: return readPackedVariant(variant, .PACKED_COLORS, allocator)
+    case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION:
+        return variantToPod(variant, podKindOf(gd.variant_get_type(variant)), allocator)
     case .NIL:
     }
     return {}
@@ -498,6 +530,8 @@ valueToVariant :: proc "c" (variant: ^GdVariant, value: Value) {
     case .PACKED_FLOATS: variantPackedFloats(variant, value.floats)
     case .PACKED_STRINGS: variantPackedStrings(variant, value.items)
     case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: variantPackedNumeric(variant, value.kind, value)
+    case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION: podToVariant(variant, value.kind, value)
+    case .STRING_NAME, .NODE_PATH: nameToVariant(variant, value.kind, value.text)
     case .VARIANT, .NONE:
     }
 }
@@ -634,6 +668,147 @@ writePackedStrings :: proc "c" (array: rawptr, items: []Value) {
         // a fresh element is an empty String (no memory to release): the new text replaces it
         gd.string_new_utf8_len(cast(^GdString)gd.packed_strings.index(array, GdInt(i)), raw_data(item.text), GdInt(len(item.text)))
     }
+}
+
+// The plain structs of the engine (32 bit build): Vector2i, Vector3i, Vector4, Vector4i, Rect2, Rect2i, Color, Quaternion, Plane (4 numbers or fewer: `real`) and AABB, Transform2D, Basis, Transform3D,
+// Projection (6, 6, 9, 12, 16 numbers: `floats32`). The native memory is the numbers one after the other, so one reader and one writer serve all of them. The Rect2 is position then size, the
+// Plane is normal then d, a Transform2D is three Vector2 (x axis, y axis, origin), a Basis three Vector3 (the rows), a Transform3D a Basis and the origin, a Projection four Vector4 (columns).
+PodInfo :: struct {
+    type: GdVariantType,
+    count: int,
+    ints: bool,             // 32 bit integers, else 32 bit floats
+    big: bool,              // the numbers go to `floats32`, else to `real`
+}
+
+podInfoOf :: proc "contextless" (kind: ValueKind) -> (info: PodInfo, ok: bool) {
+    #partial switch kind {
+    case .VECTOR2I: return {.VECTOR2I, 2, true, false}, true
+    case .VECTOR3I: return {.VECTOR3I, 3, true, false}, true
+    case .VECTOR4: return {.VECTOR4, 4, false, false}, true
+    case .VECTOR4I: return {.VECTOR4I, 4, true, false}, true
+    case .RECT2: return {.RECT2, 4, false, false}, true
+    case .RECT2I: return {.RECT2I, 4, true, false}, true
+    case .COLOR: return {.COLOR, 4, false, false}, true
+    case .QUATERNION: return {.QUATERNION, 4, false, false}, true
+    case .PLANE: return {.PLANE, 4, false, false}, true
+    case .AABB: return {.AABB, 6, false, true}, true
+    case .TRANSFORM2D: return {.TRANSFORM2D, 6, false, true}, true
+    case .BASIS: return {.BASIS, 9, false, true}, true
+    case .TRANSFORM3D: return {.TRANSFORM3D, 12, false, true}, true
+    case .PROJECTION: return {.PROJECTION, 16, false, true}, true
+    }
+    return {}, false
+}
+
+// The kind that goes with a Variant type of the structs above (NONE when it is not one)
+podKindOf :: proc "contextless" (type: GdVariantType) -> ValueKind {
+    #partial switch type {
+    case .VECTOR2I: return .VECTOR2I
+    case .VECTOR3I: return .VECTOR3I
+    case .VECTOR4: return .VECTOR4
+    case .VECTOR4I: return .VECTOR4I
+    case .RECT2: return .RECT2
+    case .RECT2I: return .RECT2I
+    case .COLOR: return .COLOR
+    case .QUATERNION: return .QUATERNION
+    case .PLANE: return .PLANE
+    case .AABB: return .AABB
+    case .TRANSFORM2D: return .TRANSFORM2D
+    case .BASIS: return .BASIS
+    case .TRANSFORM3D: return .TRANSFORM3D
+    case .PROJECTION: return .PROJECTION
+    }
+    return .NONE
+}
+
+// A native struct (an argument of a native call, or the memory of a Variant conversion) as a Value
+podRead :: proc "c" (kind: ValueKind, native: rawptr, allocator: runtime.Allocator) -> Value {
+    context = runtime.default_context()
+    info, _ := podInfoOf(kind)
+    value: Value = {kind = kind}
+    if info.ints {
+        numbers: [^]i32 = cast([^]i32)native
+        for i in 0 ..< info.count { value.real[i] = f64(numbers[i]) }
+    } else if info.big {
+        value.floats32 = make([]f32, info.count, allocator)
+        copy(value.floats32, (cast([^]f32)native)[:info.count])
+    } else {
+        numbers: [^]f32 = cast([^]f32)native
+        for i in 0 ..< info.count { value.real[i] = f64(numbers[i]) }
+    }
+    return value
+}
+
+// Writes a Value into native memory of the struct (a result of a native call). Numbers that are missing are zero.
+podWrite :: proc "c" (kind: ValueKind, native: rawptr, value: Value) {
+    info, _ := podInfoOf(kind)
+    bytes: [^]u8 = cast([^]u8)native
+    for i in 0 ..< info.count * 4 { bytes[i] = 0 }
+    if info.ints {
+        numbers: [^]i32 = cast([^]i32)native
+        for i in 0 ..< info.count { numbers[i] = i32(value.real[i]) }
+    } else if info.big {
+        numbers: [^]f32 = cast([^]f32)native
+        for i in 0 ..< min(info.count, len(value.floats32)) { numbers[i] = value.floats32[i] }
+    } else {
+        numbers: [^]f32 = cast([^]f32)native
+        for i in 0 ..< info.count { numbers[i] = f32(value.real[i]) }
+    }
+}
+
+podToVariant :: proc "c" (variant: ^GdVariant, kind: ValueKind, value: Value) {
+    info, _ := podInfoOf(kind)
+    memory: [16]u32                       // the biggest struct (Projection) is 16 numbers
+    podWrite(kind, &memory, value)
+    gd.type_from[info.type](variant, &memory)
+}
+
+variantToPod :: proc "c" (variant: ^GdVariant, kind: ValueKind, allocator: runtime.Allocator) -> Value {
+    info, _ := podInfoOf(kind)
+    memory: [16]u32
+    gd.type_to[info.type](&memory, variant)
+    return podRead(kind, &memory, allocator)
+}
+
+// A StringName or a NodePath (`kind` STRING_NAME or NODE_PATH) as its text. `native` is the engine's own value and stays so.
+nameRead :: proc "c" (kind: ValueKind, native: rawptr, allocator: runtime.Allocator) -> Value {
+    context = runtime.default_context()
+    type: GdVariantType = .STRING_NAME if kind == .STRING_NAME else .NODE_PATH
+    text: GdString
+    arguments: [1]rawptr = {native}
+    gd.string_from_name[type](&text, raw_data(arguments[:]))
+    length: int = int(gd.string_to_utf8(&text, nil, 0))
+    buffer: []u8 = make([]u8, length, allocator)
+    if length > 0 { gd.string_to_utf8(&text, raw_data(buffer), GdInt(length)) }
+    gd.destroy_string(&text)
+    return {kind = kind, text = buffer}
+}
+
+// Makes a StringName or NodePath in `native` (memory for one) from text
+nameWrite :: proc "c" (kind: ValueKind, native: rawptr, text: []u8) {
+    type: GdVariantType = .STRING_NAME if kind == .STRING_NAME else .NODE_PATH
+    string_value: GdString
+    gd.string_new_utf8_len(&string_value, raw_data(text), GdInt(len(text)))
+    arguments: [1]rawptr = {&string_value}
+    gd.name_from_string[type](native, raw_data(arguments[:]))
+    gd.destroy_string(&string_value)
+}
+
+variantToName :: proc "c" (variant: ^GdVariant, kind: ValueKind, allocator: runtime.Allocator) -> Value {
+    type: GdVariantType = .STRING_NAME if kind == .STRING_NAME else .NODE_PATH
+    native: GdStringName
+    gd.type_to[type](&native, variant)
+    value: Value = nameRead(kind, &native, allocator)
+    gd.type_destroy[type](&native)
+    return value
+}
+
+nameToVariant :: proc "c" (variant: ^GdVariant, kind: ValueKind, text: []u8) {
+    type: GdVariantType = .STRING_NAME if kind == .STRING_NAME else .NODE_PATH
+    native: GdStringName
+    nameWrite(kind, &native, text)
+    gd.type_from[type](variant, &native)
+    gd.type_destroy[type](&native)
 }
 
 // The five numeric packed arrays that are plain memory: PackedInt32Array (1 i32 per element) and PackedFloat32Array, PackedVector2Array, PackedVector3Array, PackedColorArray (1, 2, 3 and 4 f32

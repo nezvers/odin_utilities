@@ -9,7 +9,8 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] PackedInt64Array, PackedFloat64Array, PackedStringArray (`PACKED_INTS`, `PACKED_FLOATS`, `PACKED_STRINGS`)
 - [x] The other numeric packed arrays: `PACKED_INT32S` (`ints32`), `PACKED_FLOAT32S`, `PACKED_VECTOR2S`, `PACKED_VECTOR3S`, `PACKED_COLORS` (`floats32`), both call paths, in the template
 - [x] Nested Arrays and Dictionaries (read down to `MAX_NESTING` = 8 levels, an Array that holds itself stops there), packed arrays inside them, and the `VARIANT` kind: an argument or result of any type (`echo`, `kind_of` in the template); a StringName or NodePath inside a Variant arrives as its text (`STRING`)
-- [ ] (low) A StringName as its own argument and result kind (today a STRING argument refuses a StringName Variant); Rect2, Color, Vector2i and the other scalars as kinds
+- [x] The plain structs as kinds (Vector2i, Vector3i, Vector4, Vector4i, Rect2, Rect2i, Color, Quaternion, Plane in `real`; AABB, Transform2D, Basis, Transform3D, Projection in `floats32`) and StringName and NodePath (`text`), both call paths, inside Arrays and Dictionaries; the template checks each
+- [ ] (low) Kinds for RID, Callable, Signal and PackedVector4Array (they come as NONE, nil as a result)
 - [x] Virtual methods `_ready`, `_enter_tree`, `_exit_tree`, `_process`, `_physics_process` (`Class.virtuals`, a Node parent)
 - [x] Properties over getter and setter methods (`Class.properties`)
 - [ ] (low) Exported enums and property hints (ranges, file paths) for the inspector

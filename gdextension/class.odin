@@ -59,6 +59,22 @@ ValueKind :: enum u8 {
     PACKED_VECTOR2S,        // a PackedVector2Array: `floats32`, x and y of every element one after the other
     PACKED_VECTOR3S,        // a PackedVector3Array: `floats32`, x, y, z
     PACKED_COLORS,          // a PackedColorArray: `floats32`, r, g, b, a
+    VECTOR2I,               // `real[0..1]` (32 bit integers in the engine)
+    VECTOR3I,               // `real[0..2]`
+    VECTOR4,                // `real[0..3]`
+    VECTOR4I,               // `real[0..3]`
+    RECT2,                  // `real`: x, y, width, height
+    RECT2I,                 // `real`: x, y, width, height
+    COLOR,                  // `real`: r, g, b, a (0 to 1)
+    QUATERNION,             // `real`: x, y, z, w
+    PLANE,                  // `real`: the normal x, y, z and d
+    AABB,                   // `floats32`: position x, y, z, size x, y, z
+    TRANSFORM2D,            // `floats32`: x axis, y axis, origin (two numbers each)
+    BASIS,                  // `floats32`: three rows of three numbers
+    TRANSFORM3D,            // `floats32`: the Basis (nine numbers), then the origin
+    PROJECTION,             // `floats32`: four columns of four numbers
+    STRING_NAME,            // a StringName: its text in `text`
+    NODE_PATH,              // a NodePath: its text in `text`
     VARIANT,                // an argument or result of any type: the Value comes with the kind of what really arrived (BOOL, INT, ..., ARRAY with nested items, NONE for a nil or a type that has no kind)
 }
 
@@ -198,6 +214,22 @@ variantTypeOf :: proc "contextless" (kind: ValueKind) -> GdVariantType {
     case .PACKED_VECTOR3S: return .PACKED_VECTOR3_ARRAY
     case .PACKED_COLORS: return .PACKED_COLOR_ARRAY
     case .VARIANT: return .NIL
+    case .VECTOR2I: return .VECTOR2I
+    case .VECTOR3I: return .VECTOR3I
+    case .VECTOR4: return .VECTOR4
+    case .VECTOR4I: return .VECTOR4I
+    case .RECT2: return .RECT2
+    case .RECT2I: return .RECT2I
+    case .COLOR: return .COLOR
+    case .QUATERNION: return .QUATERNION
+    case .PLANE: return .PLANE
+    case .AABB: return .AABB
+    case .TRANSFORM2D: return .TRANSFORM2D
+    case .BASIS: return .BASIS
+    case .TRANSFORM3D: return .TRANSFORM3D
+    case .PROJECTION: return .PROJECTION
+    case .STRING_NAME: return .STRING_NAME
+    case .NODE_PATH: return .NODE_PATH
     case .NONE: return .NIL
     }
     return .NIL
@@ -288,6 +320,10 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
             ops.destroy(&array)
         case .VARIANT:
             values[i] = variantToValue(variant, context.temp_allocator)
+        case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION:
+            values[i] = variantToPod(variant, kind, context.temp_allocator)
+        case .STRING_NAME, .NODE_PATH:
+            values[i] = variantToName(variant, kind, context.temp_allocator)
         case .NONE:
         }
         if kind != .VARIANT { values[i].kind = kind }
@@ -310,6 +346,8 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     case .PACKED_STRINGS: variantPackedStrings(result, answer.items)
     case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: variantPackedNumeric(result, method.result, answer)
     case .VARIANT: valueToVariant(result, answer)
+    case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION: podToVariant(result, method.result, answer)
+    case .STRING_NAME, .NODE_PATH: nameToVariant(result, method.result, answer.text)
     }
     free_all(context.temp_allocator)
 }
@@ -343,6 +381,8 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
         case .PACKED_STRINGS: values[i].items = readPackedStrings(args[i], context.temp_allocator)
         case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: values[i] = readPackedNumeric(kind, args[i], context.temp_allocator)
         case .VARIANT: values[i] = variantToValue(cast(^GdVariant)args[i], context.temp_allocator)
+        case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION: values[i] = podRead(kind, args[i], context.temp_allocator)
+        case .STRING_NAME, .NODE_PATH: values[i] = nameRead(kind, args[i], context.temp_allocator)
         case .NONE:
         }
         if kind != .VARIANT { values[i].kind = kind }
@@ -380,6 +420,8 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
     case .VARIANT:
         (cast(^GdVariant)result)^ = {}                       // a nil Variant is all zero: what is not a value stays nil
         valueToVariant(cast(^GdVariant)result, answer)
+    case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION: podWrite(method.result, result, answer)
+    case .STRING_NAME, .NODE_PATH: nameWrite(method.result, result, answer.text)
     }
     free_all(context.temp_allocator)
 }
@@ -538,6 +580,8 @@ Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
         case .PACKED_FLOATS: variantPackedFloats(&variants[i + 1], value.floats)
         case .PACKED_STRINGS: variantPackedStrings(&variants[i + 1], value.items)
         case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: variantPackedNumeric(&variants[i + 1], value.kind, value)
+        case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION: podToVariant(&variants[i + 1], value.kind, value)
+        case .STRING_NAME, .NODE_PATH: nameToVariant(&variants[i + 1], value.kind, value.text)
         case .VARIANT, .NONE:
         }
         pointers[i + 1] = &variants[i + 1]
