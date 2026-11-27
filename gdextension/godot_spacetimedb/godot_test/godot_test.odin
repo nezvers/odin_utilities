@@ -14,8 +14,14 @@ import spacetimedb "../../../spacetimedb"
 
 PROJECT :: #directory + "../test_project"
 
+// The tests build the same package (`odin build` writes its objects next to the sources) and load the library into Godot: one at a time, or a build under another build fails now and then
+@(private = "file")
+arena_project_lock: sync.Mutex
+
 @(test)
 test_godot_script_uses_the_extension_against_a_server :: proc(t: ^testing.T) {
+    sync.mutex_lock(&arena_project_lock)
+    defer sync.mutex_unlock(&arena_project_lock)
     godot_check, _, _, godot_error := os.process_exec({command = {"godot", "--version"}}, context.temp_allocator)
     module_path: string = spacetimedb.FixturePath("basic-odin")
     if godot_error != nil || !godot_check.success || module_path == "" || !os.exists(spacetimedb.ServerCliPath()) {
@@ -55,10 +61,6 @@ test_godot_script_uses_the_extension_against_a_server :: proc(t: ^testing.T) {
 }
 
 ARENA_PROJECT :: #directory + "../arena_project"
-
-// Both tests of the project build and load the same library: one at a time
-@(private = "file")
-arena_project_lock: sync.Mutex
 
 // The arena in Godot: `ArenaClient` hosts (a server with the arena module and a p2p invite over loopback), a second `ArenaClient` joins with the invite code and the reply, both play on the host's
 // database (the guest through the tunnel), the guest walks and the host sees it, the guest leaves. test_arena.gd does it in headless Godot, one process playing both sides.
