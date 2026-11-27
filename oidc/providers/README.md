@@ -21,6 +21,7 @@ SpacetimeDB accepts the Discord ID token as it is (issuer `https://discord.com`,
 3. Copy the **Client ID** (`....apps.googleusercontent.com`). Google also shows a "client secret" for desktop apps and asks for it at the code exchange; Google documents that it is not confidential, but it still stays out of the repository: put it only into your git ignored `providers.local.txt` as `google.client_secret`.
 4. A desktop client takes any loopback port: no redirect to register.
 5. `google.client_id = <id>`. The ID token has `email` and `email_verified` when the `email` scope is asked.
+6. Checked with a person (2026-11-28, `odin run oidc/tool/login -- google`): a random loopback port with the path `/callback`, scope `openid profile email`, PKCE, the secret sent as HTTP Basic at the code exchange. Result: the ID token verifies (signature, issuer `https://accounts.google.com`, audience, expiry, nonce), the refresh token renews, userinfo returns `sub`, `name`, `email`, `email_verified`, `given_name`, `family_name`, `picture`. Nothing else needed to be set.
 
 ## GitHub (OAuth 2.0, not OpenID Connect)
 GitHub has no discovery document and no ID token for logins (`token.actions.githubusercontent.com` is for CI jobs only). Therefore: an access token and the user from `https://api.github.com/user`; SpacetimeDB cannot take that token (it is not a JWT).
