@@ -37,6 +37,7 @@ Event :: struct {
 CLIENT_BUFFER :: 1 << 20        // the biggest message the connection can take (the first answer of a subscription is the largest)
 
 Client :: struct {
+    object: rawptr,             // the engine object (the Node flavour emits signals through it)
     connection: spacetimedb.Connection,
     open: bool,
     receive, message: []u8,

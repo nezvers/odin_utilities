@@ -1,6 +1,6 @@
 # godot_spacetimedb
 
-A Godot 4 GDExtension written in Odin (a sub library of `odin_utilities/gdextension`) that connects a game to a SpacetimeDB database (`odin_utilities/spacetimedb`). GDScript gets one class, `SpacetimeDBClient`, that it polls from `_process`: no thread, no callback from the network into Godot.
+A Godot 4 GDExtension written in Odin (a sub library of `odin_utilities/gdextension`) that connects a game to a SpacetimeDB database (`odin_utilities/spacetimedb`). GDScript gets a class, `SpacetimeDBClient`, that it polls from `_process` (or its Node flavour `SpacetimeDBClientNode` that polls itself and emits signals): no thread, no callback from the network into Godot.
 
 ```gdscript
 var client := SpacetimeDBClient.new()
@@ -30,6 +30,18 @@ Calling a reducer: `client.call_reducer("add", args_hex)` where `args_hex` is th
 | `next_event() -> bool`, `event_kind()`, `event_request()`, `event_ok()`, `event_table()`, `event_row()`, `event_text()`, `event_row_bytes() -> PackedByteArray` | the events of the last poll |
 
 Event kinds: 1 CONNECTED, 2 INSERT, 3 DELETE, 4 SUBSCRIBED, 5 REDUCER, 6 SUBSCRIPTION_ERROR, 7 DISCONNECTED, 8 RECONNECTED (see `client.odin`).
+
+### The Node flavour: signals instead of polling (`SpacetimeDBClientNode`)
+The same class (same methods: `open`, `subscribe`, `call_reducer`, ...) as a Node. Add it to the tree and it reads the network every frame by itself and tells the script with signals; it closes when it leaves the tree. Do not call `poll()` or `next_event()` on it.
+```gdscript
+var client := SpacetimeDBClientNode.new()
+add_child(client)
+client.row_inserted.connect(func(table: String, row: PackedByteArray) -> void: ...)   # BSATN bytes of the row
+client.subscribed.connect(func(request: int) -> void: client.call_reducer_bytes("add", bytes))
+client.open("127.0.0.1", 3000, "mygame", "")
+client.subscribe("SELECT * FROM person")
+```
+Signals: `connected(identity)`, `row_inserted(table, row)`, `row_deleted(table, row)` (an update is a delete and an insert of the same key), `subscribed(request)`, `reducer_result(request, ok, error)`, `subscription_error(text)`, `disconnected(text)`, `reconnected` (the rows of the subscriptions come again: clear what you keep).
 
 ## Build and test
 - `odin build gdextension/godot_spacetimedb -build-mode:dll -out:<project>/bin/godot_spacetimedb.dll` (Linux `.so`, macOS `.dylib`), and a `.gdextension` file next to it: `test_project/spacetimedb.gdextension` is the model (`entry_symbol = "spacetimedb_entry"`, Godot 4.4 or newer).

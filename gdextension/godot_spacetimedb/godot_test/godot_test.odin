@@ -47,6 +47,11 @@ test_godot_script_uses_the_extension_against_a_server :: proc(t: ^testing.T) {
     state, output, errors, run_error := os.process_exec({command = {"godot", "--headless", "--path", PROJECT, "--script", "test.gd", "--", "3194"}}, context.temp_allocator)
     text: string = strings.concatenate({string(output), string(errors)}, context.temp_allocator)
     testing.expectf(t, run_error == nil && state.success && strings.contains(text, "PASS"), "the script passes:\n%s", text)
+
+    // the Node flavour polls itself and tells the script with signals
+    node_state, node_output, node_errors, node_error := os.process_exec({command = {"godot", "--headless", "--path", PROJECT, "--script", "test_node.gd", "--", "3194"}}, context.temp_allocator)
+    node_text: string = strings.concatenate({string(node_output), string(node_errors)}, context.temp_allocator)
+    testing.expectf(t, node_error == nil && node_state.success && strings.contains(node_text, "PASS"), "the client node script passes:\n%s", node_text)
 }
 
 ARENA_PROJECT :: #directory + "../arena_project"
