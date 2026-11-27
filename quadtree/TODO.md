@@ -9,7 +9,7 @@ Next steps, most valuable first. A task starts with `(high)`, `(medium)` or `(lo
 - [x] Circle queries without marks (ownership of the nearest point, descent like a rectangle): 34 to 24 ms at 50k; segments test the rectangle copy in the link first. Circle iterators on the immediate and retained tree
 - [x] Segment queries without marks (owner = entry point rounded and clamped into the element, padded descent), session API removed
 - [x] `SegmentFirst` walks the children in the order along the segment (5 to 19% on long rays, scene dependent)
-- [ ] (low) Segment slice queries are 1.8x a rectangle pass (the slab test per link): a cheaper per link test (the segment's quadrant pattern or a DDA over the leaves) and a segment iterator that needs the padded box descent
+- [ ] (low) Segment slice queries are 1.8x a rectangle pass. NOT the slab test per link: a bounding box pre-test before it changed nothing (26 to 30 ms against 25.7). Look at the descent instead (four `segmentBox` per branch, padded boxes, leaves visited) with a profile before trying anything; a segment iterator needs the padded box descent
 - [x] Nearest and k-nearest on the three trees (`QuadtreeNearest`, `QuadtreeRetainedNearest`, `QuadtreeChunksNearest`)
 - [x] Benchmarks against a uniform grid, `grid_collision_map` and brute force (`tool/bench`, findings in README): leaf 8 and depth 8 confirmed as the default
 - [x] Iterator queries without a result slice for rectangles and points on the three trees (`QueryIterator`, `QuadtreeChunksIterator`)
