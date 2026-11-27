@@ -3,7 +3,7 @@ Immediate mode broad phase for 2D rectangles, without allocations: the tree is r
 The size of the tree is given by compile time parameters, all memory is inside of the `Quadtree` value (put it in a global or in your own struct). Functions fail (return false) instead of growing.
 
 `odin run demo_raylib` / `odin run demo_karl2d` / `odin test .`
-Demos (the menu of the demo kit switches between them): `collision` (the demo of grid_collision_map on a quadtree: paint walls, a box slides along them), `hover circles` (random circles, the mouse asks the tree which one it is over), `bouncing balls` (balls bounce off the window and each other, hold the left button to spawn more at the mouse). `G` shows the tree.
+Demos (the menu of the demo kit switches between them): `retained crates` (the retained tree, see below), `collision` (the demo of grid_collision_map on a quadtree: paint walls, a box slides along them), `hover circles` (random circles, the mouse asks the tree which one it is over), `bouncing balls` (balls bounce off the window and each other, hold the left button to spawn more at the mouse). `G` shows the tree.
 
 ```odin
 import qt "quadtree"
@@ -22,6 +22,10 @@ count := qt.QuadtreeQuery(&tree, rect, buffer[:], omit = index)   // overlapping
 count  = qt.QuadtreeQueryPoint(&tree, mouse, buffer[:])           // elements whose rectangle holds the point
 for i in 0 ..< count { other := &things[buffer[i]] }
 ```
+
+## Retained mode (`quadtree_retained.odin`)
+The same tree that lives between frames: `QuadtreeRetained(E, N, L)` with `QuadtreeRetainedInit / Add / Remove / Get / Move / Query / QueryPoint / Cleanup / Visit / Usage / Len / Clear`. `Add` gives a stable `Handle` (`core:container/handle_map`, generation checked: a removed handle is stale), `ptr` carries your data, `Move` and `Remove` change one element without a rebuild. Use it when most of the scene stays put and few things move (the `retained crates` demo moves 10 wanderers among 300 crates); when most things move every frame, the immediate tree above is simpler.
+`QuadtreeRetainedMove` that runs out of links does not move and keeps the element where it was; only when it cannot even be put back it is removed (the handle is then stale). Both trees share `Rect`, `Vec2`, `RectOverlaps`, `RectContainsPoint` and `QuadtreeNodeProc`.
 
 ## Parts
 - `Item` - an `int` you choose, usually the index in your array. It is what a query gives back, so no lookup is needed.

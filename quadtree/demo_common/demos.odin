@@ -5,4 +5,4 @@ package demo_common
 
 import kit "../../demo_kit"
 
-demos: []kit.Demo = {demo_collision, demo_hover, demo_balls}
+demos: []kit.Demo = {demo_collision, demo_hover, demo_balls, demo_retained}
