@@ -31,7 +31,7 @@ package gdextension
 // Virtual methods: `virtuals = {{"_process", proc(instance: rawptr, delta: f64) {...}}}` with a Node as `parent`: the engine calls them (a class that updates itself, no script that polls). A
 // class can be made twice from one table of methods, once under RefCounted and once under Node (see `godot_spacetimedb/lobby.odin`).
 //
-// Properties: `properties = {{"total", .INT, "get", "set_total"}}` over methods of the class (see the template). Argument kinds: bool, int, float, String, PackedByteArray, Vector2, Vector3. Array, Dictionary and objects are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
+// Properties: `properties = {{"total", .INT, "get", "set_total"}}` over methods of the class (see the template). Argument kinds: bool, int, float, String, PackedByteArray, Vector2, Vector3, Array and Dictionary (flat: their elements are bool, int, float or String; a Dictionary has String keys). Objects are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
 
 import "base:runtime"
 
@@ -48,6 +48,8 @@ ValueKind :: enum u8 {
     FLOAT,                  // a float (`real[0]`, 64 bit)
     VECTOR2,                // `real[0..1]` (32 bit floats in the engine)
     VECTOR3,                // `real[0..2]`
+    ARRAY,                  // `items`: bool, int, float and String elements (other elements come as NONE)
+    DICTIONARY,             // `keys` (Strings) and `items`, same length: bool, int, float and String values
 }
 
 // An argument or a result. A string is UTF-8 bytes in `text`; a bool is `number` 0 or 1.
@@ -56,6 +58,8 @@ Value :: struct {
     number: i64,
     text: []u8,
     real: [4]f64,
+    items: []Value,             // an ARRAY, or the values of a DICTIONARY
+    keys: []Value,              // the keys of a DICTIONARY (kind STRING)
 }
 
 // The results of a method, one line each: `ValueText` keeps the bytes of the string until the call ends (a string of the instance or temp memory)
@@ -77,6 +81,15 @@ ValueVector2 :: proc "contextless" (x, y: f64) -> Value {
 
 ValueVector3 :: proc "contextless" (x, y, z: f64) -> Value {
     return {kind = .VECTOR3, real = {x, y, z, 0}}
+}
+
+ValueArray :: proc "contextless" (items: []Value) -> Value {
+    return {kind = .ARRAY, items = items}
+}
+
+ValueDictionary :: proc "contextless" (keys: []Value, items: []Value) -> Value {
+    assert_contextless(len(keys) == len(items))
+    return {kind = .DICTIONARY, keys = keys, items = items}
 }
 
 ValueBool :: proc "contextless" (flag: bool) -> Value {
@@ -154,6 +167,8 @@ variantTypeOf :: proc "contextless" (kind: ValueKind) -> GdVariantType {
     case .FLOAT: return .FLOAT
     case .VECTOR2: return .VECTOR2
     case .VECTOR3: return .VECTOR3
+    case .ARRAY: return .ARRAY
+    case .DICTIONARY: return .DICTIONARY
     case .NONE: return .NIL
     }
     return .NIL
@@ -203,6 +218,16 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
             native: [3]f32
             gd.to_vector3(&native, variant)
             values[i].real = {f64(native[0]), f64(native[1]), f64(native[2]), 0}
+        case .ARRAY:
+            array: GdArray
+            gd.to_array(&array, variant)
+            values[i].items = readArray(&array, context.temp_allocator)
+            gd.array_destroy(&array)
+        case .DICTIONARY:
+            dictionary: GdArray
+            gd.to_dictionary(&dictionary, variant)
+            values[i].keys, values[i].items = readDictionary(&dictionary, context.temp_allocator)
+            gd.dictionary_destroy(&dictionary)
         case .NONE:
         }
         values[i].kind = kind
@@ -217,6 +242,8 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     case .FLOAT: variantFloat(result, answer.real[0])
     case .VECTOR2: variantVector2(result, answer.real)
     case .VECTOR3: variantVector3(result, answer.real)
+    case .ARRAY: variantArray(result, answer.items)
+    case .DICTIONARY: variantDictionary(result, answer.keys, answer.items)
     }
     free_all(context.temp_allocator)
 }
@@ -242,6 +269,8 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
         case .VECTOR3:
             native: ^[3]f32 = cast(^[3]f32)args[i]
             values[i].real = {f64(native[0]), f64(native[1]), f64(native[2]), 0}
+        case .ARRAY: values[i].items = readArray(args[i], context.temp_allocator)
+        case .DICTIONARY: values[i].keys, values[i].items = readDictionary(args[i], context.temp_allocator)
         case .NONE:
         }
         values[i].kind = kind
@@ -256,6 +285,12 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
     case .FLOAT: (cast(^f64)result)^ = answer.real[0]
     case .VECTOR2: (cast(^[2]f32)result)^ = {f32(answer.real[0]), f32(answer.real[1])}
     case .VECTOR3: (cast(^[3]f32)result)^ = {f32(answer.real[0]), f32(answer.real[1]), f32(answer.real[2])}
+    case .ARRAY:
+        gd.array_construct(result, nil)
+        writeArray(result, answer.items)
+    case .DICTIONARY:
+        gd.dictionary_construct(result, nil)
+        writeDictionary(result, answer.keys, answer.items)
     }
     free_all(context.temp_allocator)
 }
@@ -357,6 +392,8 @@ Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
         case .FLOAT: variantFloat(&variants[i + 1], value.real[0])
         case .VECTOR2: variantVector2(&variants[i + 1], value.real)
         case .VECTOR3: variantVector3(&variants[i + 1], value.real)
+        case .ARRAY: variantArray(&variants[i + 1], value.items)
+        case .DICTIONARY: variantDictionary(&variants[i + 1], value.keys, value.items)
         case .NONE:
         }
         pointers[i + 1] = &variants[i + 1]

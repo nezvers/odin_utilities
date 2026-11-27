@@ -16,6 +16,7 @@ GdVariant :: [3]u64                 // a Variant is 24 bytes
 GdString :: [1]u64                  // a String and a StringName are one pointer
 GdBytes :: [2]u64                   // a PackedByteArray is a pointer and a reference count
 GdStringName :: [1]u64
+GdArray :: [1]u64                   // an Array and a Dictionary are one pointer
 
 GdVariantType :: enum u32 {
     NIL = 0,
@@ -26,6 +27,8 @@ GdVariantType :: enum u32 {
     VECTOR2 = 5,
     VECTOR3 = 9,
     STRING_NAME = 21,
+    DICTIONARY = 27,
+    ARRAY = 28,
     PACKED_BYTE_ARRAY = 29,
 }
 
@@ -151,6 +154,21 @@ Interface :: struct {
     to_vector2: proc "c" (value: rawptr, variant: ^GdVariant),
     from_vector3: proc "c" (variant: ^GdVariant, value: rawptr),
     to_vector3: proc "c" (value: rawptr, variant: ^GdVariant),
+    from_array: proc "c" (variant: ^GdVariant, value: rawptr),
+    to_array: proc "c" (value: rawptr, variant: ^GdVariant),
+    from_dictionary: proc "c" (variant: ^GdVariant, value: rawptr),
+    to_dictionary: proc "c" (value: rawptr, variant: ^GdVariant),
+    array_construct: proc "c" (array: rawptr, args: [^]rawptr),
+    dictionary_construct: proc "c" (dictionary: rawptr, args: [^]rawptr),
+    array_destroy: proc "c" (array: rawptr),
+    dictionary_destroy: proc "c" (dictionary: rawptr),
+    array_index: proc "c" (array: rawptr, index: GdInt) -> ^GdVariant,
+    array_index_const: proc "c" (array: rawptr, index: GdInt) -> ^GdVariant,
+    dictionary_index: proc "c" (dictionary: rawptr, key: ^GdVariant) -> ^GdVariant,
+    dictionary_index_const: proc "c" (dictionary: rawptr, key: ^GdVariant) -> ^GdVariant,
+    array_size: proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32),
+    array_resize: proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32),
+    dictionary_keys: proc "c" (dictionary: rawptr, args: [^]rawptr, result: rawptr, count: i32),
     from_string_name: proc "c" (variant: ^GdVariant, value: rawptr),
     destroy_string_name: proc "c" (value: rawptr),
     variant_destroy: proc "c" (variant: ^GdVariant),
@@ -193,12 +211,18 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.register_signal = auto_cast lookup(get, "classdb_register_extension_class_signal", &ok)
     gd.get_method_bind = auto_cast lookup(get, "classdb_get_method_bind", &ok)
     gd.method_bind_call = auto_cast lookup(get, "object_method_bind_call", &ok)
+    gd.array_index = auto_cast lookup(get, "array_operator_index", &ok)
+    gd.array_index_const = auto_cast lookup(get, "array_operator_index_const", &ok)
+    gd.dictionary_index = auto_cast lookup(get, "dictionary_operator_index", &ok)
+    gd.dictionary_index_const = auto_cast lookup(get, "dictionary_operator_index_const", &ok)
     gd.print_warning = auto_cast lookup(get, "print_warning", &ok)
     gd.bytes_index = auto_cast lookup(get, "packed_byte_array_operator_index", &ok)
     gd.bytes_index_const = auto_cast lookup(get, "packed_byte_array_operator_index_const", &ok)
     constructor: proc "c" (type: GdVariantType, index: i32) -> proc "c" (array: rawptr, args: [^]rawptr) = auto_cast lookup(get, "variant_get_ptr_constructor", &ok)
     method: proc "c" (type: GdVariantType, name: ^GdStringName, hash: GdInt) -> proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32) = auto_cast lookup(get, "variant_get_ptr_builtin_method", &ok)
     if !ok { return false }
+    size_name_for_collections: GdStringName = stringName("size")
+    resize_name_for_collections: GdStringName = stringName("resize")
     gd.from_bool = gd.variant_from_type(.BOOL)
     gd.from_int = gd.variant_from_type(.INT)
     gd.from_string = gd.variant_from_type(.STRING)
@@ -213,11 +237,24 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.to_vector2 = gd.variant_to_type(.VECTOR2)
     gd.from_vector3 = gd.variant_from_type(.VECTOR3)
     gd.to_vector3 = gd.variant_to_type(.VECTOR3)
+    gd.from_array = gd.variant_from_type(.ARRAY)
+    gd.to_array = gd.variant_to_type(.ARRAY)
+    gd.from_dictionary = gd.variant_from_type(.DICTIONARY)
+    gd.to_dictionary = gd.variant_to_type(.DICTIONARY)
+    gd.array_construct = constructor(.ARRAY, 0)
+    gd.dictionary_construct = constructor(.DICTIONARY, 0)
+    gd.array_destroy = gd.variant_destructor(.ARRAY)
+    gd.dictionary_destroy = gd.variant_destructor(.DICTIONARY)
     gd.from_string_name = gd.variant_from_type(.STRING_NAME)
     gd.destroy_string_name = gd.variant_destructor(.STRING_NAME)
     gd.from_bytes = gd.variant_from_type(.PACKED_BYTE_ARRAY)
     gd.to_bytes = gd.variant_to_type(.PACKED_BYTE_ARRAY)
     gd.bytes_construct = constructor(.PACKED_BYTE_ARRAY, 0)
+    // the hashes are the ones of extension_api.json for Array and Dictionary .size, .resize, .keys
+    keys_name: GdStringName = stringName("keys")
+    gd.array_size = method(.ARRAY, &size_name_for_collections, 3173160232)
+    gd.array_resize = method(.ARRAY, &resize_name_for_collections, 848867239)
+    gd.dictionary_keys = method(.DICTIONARY, &keys_name, 4144163970)
     // the hashes are the ones of extension_api.json for PackedByteArray.size and .resize
     size_name: GdStringName = stringName("size")
     resize_name: GdStringName = stringName("resize")
@@ -268,6 +305,116 @@ variantVector2 :: proc "c" (result: ^GdVariant, v: [4]f64) {
 variantVector3 :: proc "c" (result: ^GdVariant, v: [4]f64) {
     native: [3]f32 = {f32(v[0]), f32(v[1]), f32(v[2])}
     gd.from_vector3(result, &native)
+}
+
+// A scalar Variant (bool, int, float, String) as a Value; anything else is NONE. The text lives in `allocator`.
+variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator) -> Value {
+    context = runtime.default_context()
+    switch gd.variant_get_type(variant) {
+    case .BOOL:
+        flag: GdBool
+        gd.to_bool(&flag, variant)
+        return {kind = .BOOL, number = i64(flag)}
+    case .INT:
+        number: i64
+        gd.to_int(&number, variant)
+        return {kind = .INT, number = number}
+    case .FLOAT:
+        number: f64
+        gd.to_float(&number, variant)
+        return {kind = .FLOAT, real = {number, 0, 0, 0}}
+    case .STRING:
+        text: GdString
+        gd.to_string(&text, variant)
+        length: int = int(gd.string_to_utf8(&text, nil, 0))
+        buffer: []u8 = make([]u8, length, allocator)
+        if length > 0 { gd.string_to_utf8(&text, raw_data(buffer), GdInt(length)) }
+        gd.destroy_string(&text)
+        return {kind = .STRING, text = buffer}
+    case .NIL, .STRING_NAME, .VECTOR2, .VECTOR3, .DICTIONARY, .ARRAY, .PACKED_BYTE_ARRAY:
+    }
+    return {}
+}
+
+// Writes a scalar Value into an uninitialized Variant (a NONE becomes nil)
+valueToVariant :: proc "c" (variant: ^GdVariant, value: Value) {
+    switch value.kind {
+    case .BOOL: variantBool(variant, value.number != 0)
+    case .INT: variantInt(variant, value.number)
+    case .FLOAT: variantFloat(variant, value.real[0])
+    case .STRING: variantString(variant, value.text)
+    case .VECTOR2: variantVector2(variant, value.real)
+    case .VECTOR3: variantVector3(variant, value.real)
+    case .BYTES: variantBytes(variant, value.text)
+    case .ARRAY, .DICTIONARY, .NONE:
+    }
+}
+
+// The scalar elements of an Array
+readArray :: proc "c" (array: rawptr, allocator: runtime.Allocator) -> []Value {
+    context = runtime.default_context()
+    size: i64
+    gd.array_size(array, nil, &size, 0)
+    items: []Value = make([]Value, int(size), allocator)
+    for i in 0 ..< int(size) { items[i] = variantToValue(gd.array_index_const(array, GdInt(i)), allocator) }
+    return items
+}
+
+// Fills an Array that was just constructed
+writeArray :: proc "c" (array: rawptr, items: []Value) {
+    if len(items) == 0 { return }
+    count: i64 = i64(len(items))
+    args: [1]rawptr = {&count}
+    status: i64
+    gd.array_resize(array, raw_data(args[:]), &status, 1)
+    for item, i in items { valueToVariant(gd.array_index(array, GdInt(i)), item) }
+}
+
+// The entries of a Dictionary whose keys are Strings (an entry with another kind of key is left out)
+readDictionary :: proc "c" (dictionary: rawptr, allocator: runtime.Allocator) -> (keys: []Value, items: []Value) {
+    context = runtime.default_context()
+    key_array: GdArray
+    gd.dictionary_keys(dictionary, nil, &key_array, 0)
+    defer gd.array_destroy(&key_array)
+    size: i64
+    gd.array_size(&key_array, nil, &size, 0)
+    keys = make([]Value, int(size), allocator)
+    items = make([]Value, int(size), allocator)
+    used: int
+    for i in 0 ..< int(size) {
+        key_variant: ^GdVariant = gd.array_index_const(&key_array, GdInt(i))
+        if gd.variant_get_type(key_variant) != .STRING { continue }
+        keys[used] = variantToValue(key_variant, allocator)
+        items[used] = variantToValue(gd.dictionary_index_const(dictionary, key_variant), allocator)
+        used += 1
+    }
+    return keys[:used], items[:used]
+}
+
+// Fills a Dictionary that was just constructed
+writeDictionary :: proc "c" (dictionary: rawptr, keys: []Value, items: []Value) {
+    for key, i in keys {
+        key_variant: GdVariant
+        variantString(&key_variant, key.text)
+        valueToVariant(gd.dictionary_index(dictionary, &key_variant), items[i])
+        gd.variant_destroy(&key_variant)
+    }
+}
+
+variantArray :: proc "c" (result: ^GdVariant, items: []Value) {
+    array: GdArray
+    gd.array_construct(&array, nil)
+    writeArray(&array, items)
+    gd.from_array(result, &array)
+    gd.array_destroy(&array)
+}
+
+variantDictionary :: proc "c" (result: ^GdVariant, keys: []Value, items: []Value) {
+    dictionary: GdArray
+    gd.dictionary_construct(&dictionary, nil)
+    writeDictionary(&dictionary, keys, items)
+    gd.from_dictionary(result, &dictionary)
+    gd.dictionary_destroy(&dictionary)
 }
 
 variantBool :: proc "c" (result: ^GdVariant, value: bool) {

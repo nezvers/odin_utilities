@@ -28,6 +28,7 @@ counter_class: ge.Class = {
         {"changed", {.INT}},                    // the new total
         {"noted", {.STRING, .BOOL, .BYTES}},    // every kind of argument
         {"moved", {.FLOAT, .VECTOR2}},
+        {"listed", {.ARRAY, .DICTIONARY}},
     },
     methods = {
         // int -> int
@@ -90,6 +91,34 @@ counter_class: ge.Class = {
         // emits `moved` with a float and a Vector2
         {"move", {.FLOAT, .VECTOR2}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             ge.Emit((cast(^Counter)instance).object, "moved", {a[0], a[1]})
+            return {}
+        }},
+        // Array -> Array: the numbers doubled, the strings upper cased with a mark
+        {"double_all", {.ARRAY}, .ARRAY, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []ge.Value = make([]ge.Value, len(a[0].items), context.temp_allocator)
+            for item, i in a[0].items {
+                out[i] = item
+                #partial switch item.kind {
+                case .INT: out[i].number = item.number * 2
+                case .FLOAT: out[i].real[0] = item.real[0] * 2
+                case .STRING: out[i].text = transmute([]u8)strings.concatenate({string(item.text), "!"}, context.temp_allocator)
+                }
+            }
+            return ge.ValueArray(out)
+        }},
+        // Dictionary -> Dictionary: the same entries with the values of each key added to a `count` entry
+        {"annotate", {.DICTIONARY}, .DICTIONARY, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            keys: []ge.Value = make([]ge.Value, len(a[0].keys) + 1, context.temp_allocator)
+            items: []ge.Value = make([]ge.Value, len(a[0].keys) + 1, context.temp_allocator)
+            copy(keys, a[0].keys)
+            copy(items, a[0].items)
+            keys[len(keys) - 1] = {kind = .STRING, text = transmute([]u8)string("count")}
+            items[len(items) - 1] = ge.ValueInt(i64(len(a[0].keys)))
+            return ge.ValueDictionary(keys, items)
+        }},
+        // emits `listed` with an Array and a Dictionary
+        {"list", {.ARRAY, .DICTIONARY}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            ge.Emit((cast(^Counter)instance).object, "listed", {a[0], a[1]})
             return {}
         }},
         // several arguments
