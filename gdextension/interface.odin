@@ -30,6 +30,9 @@ GdVariantType :: enum u32 {
     DICTIONARY = 27,
     ARRAY = 28,
     PACKED_BYTE_ARRAY = 29,
+    PACKED_INT64_ARRAY = 31,
+    PACKED_FLOAT64_ARRAY = 33,
+    PACKED_STRING_ARRAY = 34,
 }
 
 GdCallErrorType :: enum i32 {
@@ -116,6 +119,19 @@ GdClassInfo4 :: struct {
     class_userdata: rawptr,
 }
 
+// What one packed array type needs (each type has its own `size` and `resize` functions: the ones of PackedByteArray do not work on the others)
+PackedOps :: struct {
+    type: GdVariantType,
+    size: proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32),
+    resize: proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32),
+    construct: proc "c" (array: rawptr, args: [^]rawptr),
+    destroy: proc "c" (array: rawptr),
+    from: proc "c" (variant: ^GdVariant, value: rawptr),
+    to: proc "c" (value: rawptr, variant: ^GdVariant),
+    index: proc "c" (array: rawptr, index: GdInt) -> rawptr,
+    index_const: proc "c" (array: rawptr, index: GdInt) -> rawptr,
+}
+
 // What is looked up from get_proc_address once, when the extension starts
 Interface :: struct {
     library: GdLibrary,
@@ -169,6 +185,7 @@ Interface :: struct {
     array_size: proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32),
     array_resize: proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32),
     dictionary_keys: proc "c" (dictionary: rawptr, args: [^]rawptr, result: rawptr, count: i32),
+    packed_ints, packed_floats, packed_strings: PackedOps,
     from_string_name: proc "c" (variant: ^GdVariant, value: rawptr),
     destroy_string_name: proc "c" (value: rawptr),
     variant_destroy: proc "c" (variant: ^GdVariant),
@@ -221,6 +238,9 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     constructor: proc "c" (type: GdVariantType, index: i32) -> proc "c" (array: rawptr, args: [^]rawptr) = auto_cast lookup(get, "variant_get_ptr_constructor", &ok)
     method: proc "c" (type: GdVariantType, name: ^GdStringName, hash: GdInt) -> proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32) = auto_cast lookup(get, "variant_get_ptr_builtin_method", &ok)
     if !ok { return false }
+    packedLoad(&gd.packed_ints, .PACKED_INT64_ARRAY, get, "packed_int64_array", constructor, method)
+    packedLoad(&gd.packed_floats, .PACKED_FLOAT64_ARRAY, get, "packed_float64_array", constructor, method)
+    packedLoad(&gd.packed_strings, .PACKED_STRING_ARRAY, get, "packed_string_array", constructor, method)
     size_name_for_collections: GdStringName = stringName("size")
     resize_name_for_collections: GdStringName = stringName("resize")
     gd.from_bool = gd.variant_from_type(.BOOL)
@@ -265,6 +285,42 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     emit_name: GdStringName = stringName("emit_signal")
     gd.emit_signal_bind = gd.get_method_bind(&object_name, &emit_name, 4047867050)
     return gd.bytes_size != nil && gd.bytes_resize != nil && gd.emit_signal_bind != nil
+}
+
+@(private)
+packedLoad :: proc "c" (ops: ^PackedOps, type: GdVariantType, get: GetProcAddress, prefix: cstring, constructor: proc "c" (type: GdVariantType, index: i32) -> proc "c" (array: rawptr, args: [^]rawptr), method: proc "c" (type: GdVariantType, name: ^GdStringName, hash: GdInt) -> proc "c" (array: rawptr, args: [^]rawptr, result: rawptr, count: i32)) {
+    context = runtime.default_context()
+    size_name: GdStringName = stringName("size")
+    resize_name: GdStringName = stringName("resize")
+    ops.type = type
+    ops.size = method(type, &size_name, 3173160232)
+    ops.resize = method(type, &resize_name, 848867239)
+    ops.construct = constructor(type, 0)
+    ops.destroy = gd.variant_destructor(type)
+    ops.from = gd.variant_from_type(type)
+    ops.to = gd.variant_to_type(type)
+    ops.index = auto_cast get(fmt_name(prefix, "_operator_index"))
+    ops.index_const = auto_cast get(fmt_name(prefix, "_operator_index_const"))
+}
+
+// "packed_int64_array" + "_operator_index" as a C string in a small static buffer (only used while loading, one at a time)
+@(private)
+name_buffer: [96]u8
+
+@(private)
+fmt_name :: proc "contextless" (prefix: cstring, suffix: string) -> cstring {
+    at: int
+    text: [^]u8 = cast([^]u8)prefix
+    for i := 0; text[i] != 0; i += 1 {
+        name_buffer[at] = text[i]
+        at += 1
+    }
+    for b in transmute([]u8)suffix {
+        name_buffer[at] = b
+        at += 1
+    }
+    name_buffer[at] = 0
+    return cstring(raw_data(name_buffer[:]))
 }
 
 stringName :: proc "c" (text: cstring) -> GdStringName {
@@ -331,7 +387,7 @@ variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator) -
         if length > 0 { gd.string_to_utf8(&text, raw_data(buffer), GdInt(length)) }
         gd.destroy_string(&text)
         return {kind = .STRING, text = buffer}
-    case .NIL, .STRING_NAME, .VECTOR2, .VECTOR3, .DICTIONARY, .ARRAY, .PACKED_BYTE_ARRAY:
+    case .NIL, .STRING_NAME, .VECTOR2, .VECTOR3, .DICTIONARY, .ARRAY, .PACKED_BYTE_ARRAY, .PACKED_INT64_ARRAY, .PACKED_FLOAT64_ARRAY, .PACKED_STRING_ARRAY:
     }
     return {}
 }
@@ -346,7 +402,7 @@ valueToVariant :: proc "c" (variant: ^GdVariant, value: Value) {
     case .VECTOR2: variantVector2(variant, value.real)
     case .VECTOR3: variantVector3(variant, value.real)
     case .BYTES: variantBytes(variant, value.text)
-    case .ARRAY, .DICTIONARY, .NONE:
+    case .ARRAY, .DICTIONARY, .PACKED_INTS, .PACKED_FLOATS, .PACKED_STRINGS, .NONE:
     }
 }
 
@@ -415,6 +471,97 @@ variantDictionary :: proc "c" (result: ^GdVariant, keys: []Value, items: []Value
     writeDictionary(&dictionary, keys, items)
     gd.from_dictionary(result, &dictionary)
     gd.dictionary_destroy(&dictionary)
+}
+
+packedSize :: proc "c" (ops: ^PackedOps, array: rawptr) -> int {
+    size: i64
+    ops.size(array, nil, &size, 0)
+    return int(size)
+}
+
+packedResize :: proc "c" (ops: ^PackedOps, array: rawptr, count: int) {
+    number: i64 = i64(count)
+    args: [1]rawptr = {&number}
+    status: i64
+    ops.resize(array, raw_data(args[:]), &status, 1)
+}
+
+// The numbers of a PackedInt64Array or PackedFloat64Array, copied into `allocator` memory
+readPackedInts :: proc "c" (array: rawptr, allocator: runtime.Allocator) -> []i64 {
+    context = runtime.default_context()
+    count: int = packedSize(&gd.packed_ints, array)
+    numbers: []i64 = make([]i64, count, allocator)
+    if count > 0 { copy(numbers, (cast([^]i64)gd.packed_ints.index_const(array, 0))[:count]) }
+    return numbers
+}
+
+readPackedFloats :: proc "c" (array: rawptr, allocator: runtime.Allocator) -> []f64 {
+    context = runtime.default_context()
+    count: int = packedSize(&gd.packed_floats, array)
+    numbers: []f64 = make([]f64, count, allocator)
+    if count > 0 { copy(numbers, (cast([^]f64)gd.packed_floats.index_const(array, 0))[:count]) }
+    return numbers
+}
+
+// A PackedStringArray as String values (`kind` STRING each)
+readPackedStrings :: proc "c" (array: rawptr, allocator: runtime.Allocator) -> []Value {
+    context = runtime.default_context()
+    count: int = packedSize(&gd.packed_strings, array)
+    items: []Value = make([]Value, count, allocator)
+    for i in 0 ..< count {
+        text: ^GdString = cast(^GdString)gd.packed_strings.index_const(array, GdInt(i))
+        length: int = int(gd.string_to_utf8(text, nil, 0))
+        buffer: []u8 = make([]u8, length, allocator)
+        if length > 0 { gd.string_to_utf8(text, raw_data(buffer), GdInt(length)) }
+        items[i] = {kind = .STRING, text = buffer}
+    }
+    return items
+}
+
+// The writers fill an array that was just constructed
+writePackedInts :: proc "c" (array: rawptr, numbers: []i64) {
+    if len(numbers) == 0 { return }
+    packedResize(&gd.packed_ints, array, len(numbers))
+    copy((cast([^]i64)gd.packed_ints.index(array, 0))[:len(numbers)], numbers)
+}
+
+writePackedFloats :: proc "c" (array: rawptr, numbers: []f64) {
+    if len(numbers) == 0 { return }
+    packedResize(&gd.packed_floats, array, len(numbers))
+    copy((cast([^]f64)gd.packed_floats.index(array, 0))[:len(numbers)], numbers)
+}
+
+writePackedStrings :: proc "c" (array: rawptr, items: []Value) {
+    if len(items) == 0 { return }
+    packedResize(&gd.packed_strings, array, len(items))
+    for item, i in items {
+        // a fresh element is an empty String (no memory to release): the new text replaces it
+        gd.string_new_utf8_len(cast(^GdString)gd.packed_strings.index(array, GdInt(i)), raw_data(item.text), GdInt(len(item.text)))
+    }
+}
+
+variantPackedInts :: proc "c" (result: ^GdVariant, numbers: []i64) {
+    array: GdBytes
+    gd.packed_ints.construct(&array, nil)
+    writePackedInts(&array, numbers)
+    gd.packed_ints.from(result, &array)
+    gd.packed_ints.destroy(&array)
+}
+
+variantPackedFloats :: proc "c" (result: ^GdVariant, numbers: []f64) {
+    array: GdBytes
+    gd.packed_floats.construct(&array, nil)
+    writePackedFloats(&array, numbers)
+    gd.packed_floats.from(result, &array)
+    gd.packed_floats.destroy(&array)
+}
+
+variantPackedStrings :: proc "c" (result: ^GdVariant, items: []Value) {
+    array: GdBytes
+    gd.packed_strings.construct(&array, nil)
+    writePackedStrings(&array, items)
+    gd.packed_strings.from(result, &array)
+    gd.packed_strings.destroy(&array)
 }
 
 variantBool :: proc "c" (result: ^GdVariant, value: bool) {

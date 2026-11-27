@@ -31,7 +31,7 @@ package gdextension
 // Virtual methods: `virtuals = {{"_process", proc(instance: rawptr, delta: f64) {...}}}` with a Node as `parent`: the engine calls them (a class that updates itself, no script that polls). A
 // class can be made twice from one table of methods, once under RefCounted and once under Node (see `godot_spacetimedb/lobby.odin`).
 //
-// Properties: `properties = {{"total", .INT, "get", "set_total"}}` over methods of the class (see the template). Argument kinds: bool, int, float, String, PackedByteArray, Vector2, Vector3, Array and Dictionary (flat: their elements are bool, int, float or String; a Dictionary has String keys). Objects are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
+// Properties: `properties = {{"total", .INT, "get", "set_total"}}` over methods of the class (see the template). Argument kinds: bool, int, float, String, PackedByteArray, Vector2, Vector3, PackedInt64Array, PackedFloat64Array, PackedStringArray, Array and Dictionary (flat: their elements are bool, int, float or String; a Dictionary has String keys). Objects are not here yet (TODO.md). The structs follow `gdextension_interface.h` of Godot 4.4 and later; see interface.odin.
 
 import "base:runtime"
 
@@ -49,6 +49,9 @@ ValueKind :: enum u8 {
     VECTOR2,                // `real[0..1]` (32 bit floats in the engine)
     VECTOR3,                // `real[0..2]`
     ARRAY,                  // `items`: bool, int, float and String elements (other elements come as NONE)
+    PACKED_INTS,            // a PackedInt64Array: `ints`
+    PACKED_FLOATS,          // a PackedFloat64Array: `floats`
+    PACKED_STRINGS,         // a PackedStringArray: `items` (kind STRING each)
     DICTIONARY,             // `keys` (Strings) and `items`, same length: bool, int, float and String values
 }
 
@@ -60,6 +63,8 @@ Value :: struct {
     real: [4]f64,
     items: []Value,             // an ARRAY, or the values of a DICTIONARY
     keys: []Value,              // the keys of a DICTIONARY (kind STRING)
+    ints: []i64,                // PACKED_INTS
+    floats: []f64,              // PACKED_FLOATS
 }
 
 // The results of a method, one line each: `ValueText` keeps the bytes of the string until the call ends (a string of the instance or temp memory)
@@ -169,6 +174,9 @@ variantTypeOf :: proc "contextless" (kind: ValueKind) -> GdVariantType {
     case .VECTOR3: return .VECTOR3
     case .ARRAY: return .ARRAY
     case .DICTIONARY: return .DICTIONARY
+    case .PACKED_INTS: return .PACKED_INT64_ARRAY
+    case .PACKED_FLOATS: return .PACKED_FLOAT64_ARRAY
+    case .PACKED_STRINGS: return .PACKED_STRING_ARRAY
     case .NONE: return .NIL
     }
     return .NIL
@@ -228,6 +236,21 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
             gd.to_dictionary(&dictionary, variant)
             values[i].keys, values[i].items = readDictionary(&dictionary, context.temp_allocator)
             gd.dictionary_destroy(&dictionary)
+        case .PACKED_INTS:
+            array: GdBytes
+            gd.packed_ints.to(&array, variant)
+            values[i].ints = readPackedInts(&array, context.temp_allocator)
+            gd.packed_ints.destroy(&array)
+        case .PACKED_FLOATS:
+            array: GdBytes
+            gd.packed_floats.to(&array, variant)
+            values[i].floats = readPackedFloats(&array, context.temp_allocator)
+            gd.packed_floats.destroy(&array)
+        case .PACKED_STRINGS:
+            array: GdBytes
+            gd.packed_strings.to(&array, variant)
+            values[i].items = readPackedStrings(&array, context.temp_allocator)
+            gd.packed_strings.destroy(&array)
         case .NONE:
         }
         values[i].kind = kind
@@ -244,6 +267,9 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     case .VECTOR3: variantVector3(result, answer.real)
     case .ARRAY: variantArray(result, answer.items)
     case .DICTIONARY: variantDictionary(result, answer.keys, answer.items)
+    case .PACKED_INTS: variantPackedInts(result, answer.ints)
+    case .PACKED_FLOATS: variantPackedFloats(result, answer.floats)
+    case .PACKED_STRINGS: variantPackedStrings(result, answer.items)
     }
     free_all(context.temp_allocator)
 }
@@ -271,6 +297,9 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
             values[i].real = {f64(native[0]), f64(native[1]), f64(native[2]), 0}
         case .ARRAY: values[i].items = readArray(args[i], context.temp_allocator)
         case .DICTIONARY: values[i].keys, values[i].items = readDictionary(args[i], context.temp_allocator)
+        case .PACKED_INTS: values[i].ints = readPackedInts(args[i], context.temp_allocator)
+        case .PACKED_FLOATS: values[i].floats = readPackedFloats(args[i], context.temp_allocator)
+        case .PACKED_STRINGS: values[i].items = readPackedStrings(args[i], context.temp_allocator)
         case .NONE:
         }
         values[i].kind = kind
@@ -291,6 +320,15 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
     case .DICTIONARY:
         gd.dictionary_construct(result, nil)
         writeDictionary(result, answer.keys, answer.items)
+    case .PACKED_INTS:
+        gd.packed_ints.construct(result, nil)
+        writePackedInts(result, answer.ints)
+    case .PACKED_FLOATS:
+        gd.packed_floats.construct(result, nil)
+        writePackedFloats(result, answer.floats)
+    case .PACKED_STRINGS:
+        gd.packed_strings.construct(result, nil)
+        writePackedStrings(result, answer.items)
     }
     free_all(context.temp_allocator)
 }
@@ -394,6 +432,9 @@ Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
         case .VECTOR3: variantVector3(&variants[i + 1], value.real)
         case .ARRAY: variantArray(&variants[i + 1], value.items)
         case .DICTIONARY: variantDictionary(&variants[i + 1], value.keys, value.items)
+        case .PACKED_INTS: variantPackedInts(&variants[i + 1], value.ints)
+        case .PACKED_FLOATS: variantPackedFloats(&variants[i + 1], value.floats)
+        case .PACKED_STRINGS: variantPackedStrings(&variants[i + 1], value.items)
         case .NONE:
         }
         pointers[i + 1] = &variants[i + 1]

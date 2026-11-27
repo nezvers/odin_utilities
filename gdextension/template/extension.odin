@@ -121,6 +121,28 @@ counter_class: ge.Class = {
             ge.Emit((cast(^Counter)instance).object, "listed", {a[0], a[1]})
             return {}
         }},
+        // PackedInt64Array, PackedFloat64Array and PackedStringArray in and out
+        {"prefix_sums", {.PACKED_INTS}, .PACKED_INTS, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            sums: []i64 = make([]i64, len(a[0].ints), context.temp_allocator)
+            total: i64
+            for number, i in a[0].ints {
+                total += number
+                sums[i] = total
+            }
+            return {kind = .PACKED_INTS, ints = sums}
+        }},
+        {"halve_all", {.PACKED_FLOATS}, .PACKED_FLOATS, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            halves: []f64 = make([]f64, len(a[0].floats), context.temp_allocator)
+            for number, i in a[0].floats { halves[i] = number / 2 }
+            return {kind = .PACKED_FLOATS, floats = halves}
+        }},
+        {"shout_all", {.PACKED_STRINGS}, .PACKED_STRINGS, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            out: []ge.Value = make([]ge.Value, len(a[0].items), context.temp_allocator)
+            for item, i in a[0].items {
+                out[i] = {kind = .STRING, text = transmute([]u8)strings.to_upper(string(item.text), context.temp_allocator)}
+            }
+            return {kind = .PACKED_STRINGS, items = out}
+        }},
         // several arguments
         {"mix", {.INT, .STRING, .BOOL}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             counter: ^Counter = cast(^Counter)instance
