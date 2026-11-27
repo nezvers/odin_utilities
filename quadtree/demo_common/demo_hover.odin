@@ -199,6 +199,9 @@ hoverScript: []kit.Step = {
         return offset.x * offset.x + offset.y * offset.y <= hover_picked.radius * hover_picked.radius
     }, "the circle under the mouse is found, and it really holds the mouse"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return hover_candidates >= 1 && hover_candidates < CIRCLE_START / 4 }, "the tree gives a few boxes, not the whole set"),
+    kit.Wait(2),
+    kit.Capture("hover_picked"),
+    kit.Wait(1),
     kit.MoveTo({-50, -50}),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return hover_picked == nil }, "nothing is picked outside of the window"),

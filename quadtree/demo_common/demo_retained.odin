@@ -210,6 +210,9 @@ retainedScript: []kit.Step = {
     kit.Wait(180),
     kit.Check(retainedConsistent, "after three seconds of moving only the wanderers the tree is still exact"),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return retained_moves == WANDERERS && retained_lit_events > 0 }, "a frame moves only the wanderers, and they found crates to light up"),
+    kit.Wait(2),
+    kit.Capture("retained_moving"),
+    kit.Wait(1),
     // add a crate with the left button, remove it with the right button: the old handle must be stale
     kit.Check(proc(ctx: ^kit.Context) -> bool { retained_remember = retained_crates; return true }, "remember the number of crates"),
     kit.Click({640, 360}, .LEFT),

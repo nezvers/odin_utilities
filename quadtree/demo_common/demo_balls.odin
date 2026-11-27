@@ -158,6 +158,9 @@ ballsScript: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return balls_count == BALL_START }, "the balls start spawned"),
     kit.Wait(120),
     kit.Check(ballsConsistent, "after two seconds all balls are in the window and in the tree"),
+    kit.Wait(2),
+    kit.Capture("balls_running"),
+    kit.Wait(1),
     // hold the left button over the middle of the window: two balls a frame
     kit.MoveTo({640, 360}),
     kit.MouseDownStep(.LEFT),

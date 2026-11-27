@@ -206,6 +206,9 @@ chunksScript: []kit.Step = {
         corner: qt.Vec2 = chunksScreen(rect.x, rect.y)
         return point.x >= corner.x && point.x < corner.x + f32(rect.w) && point.y >= corner.y && point.y < corner.y + f32(rect.h)
     }, "the object under the mouse is found at half a million units from the origin"),
+    kit.Wait(2),
+    kit.Capture("chunks_hover"),
+    kit.Wait(1),
     // walk right for two seconds: about five chunks of streaming
     kit.Hold(.D, 120),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return chunks_player.x > START.x + 1000 && chunks_loaded_total > RING * RING }, "walking streams new chunks in"),
@@ -218,6 +221,9 @@ chunksScript: []kit.Step = {
     kit.Check(proc(ctx: ^kit.Context) -> bool { return abs(chunks_player.x - START.x) > 100_000 && chunks_unloaded_total - chunks_remember == RING * RING }, "a jump replaces the whole window"),
     kit.Check(chunksFull, "the window is full far away too"),
     kit.Check(chunksMatchesBruteForce, "and queries still match a brute force search there"),
+    kit.Wait(2),
+    kit.Capture("chunks_far"),
+    kit.Wait(1),
     kit.Tap(.R),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return math.abs(chunks_player.x - START.x) < 1 && chunksFull(ctx) }, "R goes back to the start"),

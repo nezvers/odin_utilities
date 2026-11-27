@@ -161,6 +161,9 @@ raysScript: []kit.Step = {
     kit.MoveTo({50, 700}),
     kit.Wait(2),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return raysChecked() }, "the other diagonal agrees too"),
+    kit.Wait(2),
+    kit.Capture("rays_diagonal"),
+    kit.Wait(1),
     // the mouse outside of the window: the tree still answers (the border leaves)
     kit.MoveTo({-200, 900}),
     kit.Wait(2),

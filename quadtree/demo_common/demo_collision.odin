@@ -164,4 +164,7 @@ collisionScript: []kit.Step = {
     kit.Click({300, 300}, .MIDDLE),
     kit.Wait(1),
     kit.Check(proc(ctx: ^kit.Context) -> bool { return abs(collision_player.x - 296) < 0.01 }, "middle click puts the player on the mouse"),
+    kit.Wait(2),
+    kit.Capture("collision_wall"),
+    kit.Wait(1),
 }
