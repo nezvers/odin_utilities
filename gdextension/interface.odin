@@ -198,6 +198,7 @@ Interface :: struct {
     from_dictionary: proc "c" (variant: ^GdVariant, value: rawptr),
     to_dictionary: proc "c" (value: rawptr, variant: ^GdVariant),
     array_construct: proc "c" (array: rawptr, args: [^]rawptr),
+    array_construct_typed: proc "c" (array: rawptr, args: [^]rawptr),       // Array(base, type, class_name, script)
     dictionary_construct: proc "c" (dictionary: rawptr, args: [^]rawptr),
     array_destroy: proc "c" (array: rawptr),
     dictionary_destroy: proc "c" (dictionary: rawptr),
@@ -317,6 +318,7 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.from_dictionary = gd.variant_from_type(.DICTIONARY)
     gd.to_dictionary = gd.variant_to_type(.DICTIONARY)
     gd.array_construct = constructor(.ARRAY, 0)
+    gd.array_construct_typed = constructor(.ARRAY, 2)
     gd.dictionary_construct = constructor(.DICTIONARY, 0)
     gd.array_destroy = gd.variant_destructor(.ARRAY)
     gd.dictionary_destroy = gd.variant_destructor(.DICTIONARY)
@@ -532,7 +534,7 @@ valueToVariant :: proc "c" (variant: ^GdVariant, value: Value) {
     case .OBJECT:
         object: rawptr = value.object
         gd.from_object(variant, &object)
-    case .ARRAY: variantArray(variant, value.items)
+    case .ARRAY: variantArray(variant, value.items, value.element_class)
     case .DICTIONARY: variantDictionary(variant, value.keys, value.items)
     case .PACKED_INTS: variantPackedInts(variant, value.ints)
     case .PACKED_FLOATS: variantPackedFloats(variant, value.floats)
@@ -595,10 +597,29 @@ writeDictionary :: proc "c" (dictionary: rawptr, keys: []Value, items: []Value) 
     }
 }
 
-variantArray :: proc "c" (result: ^GdVariant, items: []Value) {
+// Makes the Array in `array` (not constructed yet) from `items`; with `element_class` it is a typed Array of objects of that class (`Array[Settings]`), which is what a property of that type and
+// GDScript's typed variables accept.
+constructArray :: proc "c" (array: rawptr, items: []Value, element_class: cstring) {
+    if element_class == nil {
+        gd.array_construct(array, nil)
+        writeArray(array, items)
+        return
+    }
+    base: GdArray
+    gd.array_construct(&base, nil)
+    writeArray(&base, items)
+    kind: i64 = i64(GdVariantType.OBJECT)
+    class_name: GdStringName = stringName(element_class)
+    script: GdVariant                       // all zero is nil: no script
+    args: [4]rawptr = {&base, &kind, &class_name, &script}
+    gd.array_construct_typed(array, raw_data(args[:]))
+    gd.destroy_string_name(&class_name)
+    gd.array_destroy(&base)
+}
+
+variantArray :: proc "c" (result: ^GdVariant, items: []Value, element_class: cstring = nil) {
     array: GdArray
-    gd.array_construct(&array, nil)
-    writeArray(&array, items)
+    constructArray(&array, items, element_class)
     gd.from_array(result, &array)
     gd.array_destroy(&array)
 }

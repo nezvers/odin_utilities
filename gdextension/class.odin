@@ -85,6 +85,7 @@ Value :: struct {
     text: []u8,
     real: [4]f64,
     items: []Value,             // an ARRAY, or the values of a DICTIONARY
+    element_class: cstring,     // ARRAY result or argument: a typed Array of OBJECTs of this class ("Settings"), nil for a plain Array
     keys: []Value,              // the keys of a DICTIONARY (kind STRING)
     object: rawptr,             // OBJECT: the engine's pointer; it stays the engine's, keep it only as long as the engine keeps the object
     ints: []i64,                // PACKED_INTS
@@ -221,6 +222,7 @@ PropertyHint :: enum u32 {
     GLOBAL_DIR = 16,
     RESOURCE_TYPE = 17,         // the text is the class: "Texture2D"
     MULTILINE_TEXT = 18,
+    ARRAY_TYPE = 31,            // an Array property of one class: the text is "24/17:Settings" (24: object, 17: resource) or the name of a builtin type
     EXPRESSION = 19,
     PLACEHOLDER_TEXT = 20,      // the text is what the empty field shows
     COLOR_NO_ALPHA = 21,
@@ -410,7 +412,7 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     case .FLOAT: variantFloat(result, answer.real[0])
     case .VECTOR2: variantVector2(result, answer.real)
     case .VECTOR3: variantVector3(result, answer.real)
-    case .ARRAY: variantArray(result, answer.items)
+    case .ARRAY: variantArray(result, answer.items, answer.element_class)
     case .DICTIONARY: variantDictionary(result, answer.keys, answer.items)
     case .OBJECT: variantObject(result, answer.object)
     case .PACKED_INTS: variantPackedInts(result, answer.ints)
@@ -470,8 +472,7 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
     case .VECTOR2: (cast(^[2]f32)result)^ = {f32(answer.real[0]), f32(answer.real[1])}
     case .VECTOR3: (cast(^[3]f32)result)^ = {f32(answer.real[0]), f32(answer.real[1]), f32(answer.real[2])}
     case .ARRAY:
-        gd.array_construct(result, nil)
-        writeArray(result, answer.items)
+        constructArray(result, answer.items, answer.element_class)
     case .DICTIONARY:
         gd.dictionary_construct(result, nil)
         writeDictionary(result, answer.keys, answer.items)
@@ -698,7 +699,7 @@ Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
         case .FLOAT: variantFloat(&variants[i + 1], value.real[0])
         case .VECTOR2: variantVector2(&variants[i + 1], value.real)
         case .VECTOR3: variantVector3(&variants[i + 1], value.real)
-        case .ARRAY: variantArray(&variants[i + 1], value.items)
+        case .ARRAY: variantArray(&variants[i + 1], value.items, value.element_class)
         case .DICTIONARY: variantDictionary(&variants[i + 1], value.keys, value.items)
         case .OBJECT: variantObject(&variants[i + 1], value.object)
         case .PACKED_INTS: variantPackedInts(&variants[i + 1], value.ints)

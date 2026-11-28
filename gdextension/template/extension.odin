@@ -378,6 +378,7 @@ Settings :: struct {
     title_length: int,
     speed: f64,
     child: rawptr,          // another Settings (a reference is kept while it is here)
+    parts: [dynamic]rawptr, // the typed Array property `parts`: every object holds a reference
 }
 
 settings_class: ge.Class = {
@@ -385,7 +386,10 @@ settings_class: ge.Class = {
     parent = "Resource",
     create = proc() -> rawptr { return new(Settings) },
     destroy = proc(instance: rawptr) {
-        ge.ObjectRelease((cast(^Settings)instance).child)
+        settings: ^Settings = cast(^Settings)instance
+        ge.ObjectRelease(settings.child)
+        for part in settings.parts { ge.ObjectRelease(part) }
+        delete(settings.parts)
         free(instance)
     },
     bind = proc(instance: rawptr, object: rawptr) { (cast(^Settings)instance).object = object },
@@ -393,9 +397,11 @@ settings_class: ge.Class = {
         {"title", .STRING, "get_title", "set_title"},
         {"speed", .FLOAT, "get_speed", "set_speed"},
         {"child", .OBJECT, "get_child", "set_child"},
+        {"parts", .ARRAY, "get_parts", "set_parts"},
     },
     hints = {
         {"child", .RESOURCE_TYPE, "Settings"},
+        {"parts", .ARRAY_TYPE, "24/17:Settings"},
         {"speed", .RANGE, "0,10,0.5"},
     },
     methods = {
@@ -415,6 +421,21 @@ settings_class: ge.Class = {
             ge.ObjectKeep(a[0].object)
             ge.ObjectRelease(settings.child)
             settings.child = a[0].object
+            return {}
+        }},
+        // an Array[Settings]: the result says which class its elements are, so GDScript can assign it to a typed variable
+        {"get_parts", {}, .ARRAY, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            settings: ^Settings = cast(^Settings)instance
+            items: []ge.Value = make([]ge.Value, len(settings.parts), context.temp_allocator)
+            for part, i in settings.parts { items[i] = ge.ValueObject(part) }
+            return {kind = .ARRAY, items = items, element_class = "Settings"}
+        }},
+        {"set_parts", {.ARRAY}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            settings: ^Settings = cast(^Settings)instance
+            for part in a[0].items { ge.ObjectKeep(part.object) }      // first the new ones: the same object may be in both
+            for part in settings.parts { ge.ObjectRelease(part) }
+            clear(&settings.parts)
+            for part in a[0].items { append(&settings.parts, part.object) }
             return {}
         }},
         {"get_speed", {}, .FLOAT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueFloat((cast(^Settings)instance).speed) }},

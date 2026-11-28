@@ -41,13 +41,26 @@ func _init() -> void:
 	_check(failures, references == 2, "a Resource property keeps a reference: %s" % [references])
 	_check(failures, settings.child == inner, "and gives the object back")
 	_check(failures, settings.get_property_list().any(func(p: Dictionary) -> bool: return p.name == "child" and p.class_name == &"Settings" and p.hint == PROPERTY_HINT_RESOURCE_TYPE), "the property names its class")
+	var extra := Settings.new()
+	extra.title = "extra"
+	var parts: Array[Settings] = [inner, extra]
+	settings.parts = parts
+	parts = []     # the script keeps no reference of its own: the counts below are the ones of the extension
+	var kept_parts: Array[Settings] = settings.parts
+	_check(failures, kept_parts.size() == 2 and kept_parts[1].title == "extra" and kept_parts.is_typed(), "an Array[Settings] property: %s" % [kept_parts])
+	kept_parts = []
+	var part_references: int = extra.get_reference_count()
+	_check(failures, part_references == 2, "the elements are kept: %s" % [part_references])
 	var settings_path := "user://odin_template_settings.tres"
 	_check(failures, settings is Resource and ResourceSaver.save(settings, settings_path) == OK, "a Resource of the extension is saved")
 	var loaded: Resource = ResourceLoader.load(settings_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	_check(failures, loaded != null and loaded.title == "fast" and loaded.speed == 2.5, "and loaded again with its properties: %s" % [loaded])
 	_check(failures, FileAccess.get_file_as_string(settings_path).contains('type="Settings"'), "the file names the class")
 	_check(failures, loaded != null and loaded.child != null and loaded.child.title == "inner", "a nested Resource is saved with it: %s" % [loaded.child if loaded else null])
+	_check(failures, loaded != null and loaded.parts.size() == 2 and loaded.parts[1].title == "extra", "the typed Array is saved and loaded: %s" % [loaded.parts if loaded else null])
 	DirAccess.remove_absolute(settings_path)
+	settings.parts = []
+	_check(failures, extra.get_reference_count() == 1, "an emptied Array gives the references back: %s" % [extra.get_reference_count()])
 	settings.child = null
 	_check(failures, inner.get_reference_count() == 1, "setting null gives the reference back: %s" % [inner.get_reference_count()])
 	var hints := {}
