@@ -15,7 +15,7 @@ Next steps, most valuable first. A task starts with `(high)`, `(medium)` or `(lo
 - [x] Iterator queries without a result slice for rectangles and points on the three trees (`QueryIterator`, `QuadtreeChunksIterator`)
 - [x] Retained `Move` fast path (same leaves: only the rect copies change), 26% faster for small steps; the rest is cache misses in the link lists (bench: update alone, 165 ns a move against 20 for grid_collision_map)
 - [x] Contiguous leaves as an optional compaction step (`QuadtreeCompact` and the retained and chunked versions): queries 10 to 20% faster for 0.7 ms at 50k; a leaf storage redesign (buckets) was not needed
-- [ ] (low) Compaction at the end of a split or a Move that changes leaves, so a retained tree stays compact without calling it (measure what it costs `Move` first)
+- [x] Compaction inside a split or a Move: measured, not worth it (the bench prints the query pass of a retained tree after 300 frames of moves before and after one compaction: 5 to 7% slower, a compaction costs 10% of a query pass). Call `QuadtreeRetainedCompact` now and then if wanted
 - [x] Chunked tree: items bigger than `max_item_size` go into an oversize list (`QuadtreeChunksOversize`, quadtree_oversize.odin)
 - [x] Chunked tree: a query of many chunks with a limit (`QuadtreeChunksQueryNear`, `QuadtreeChunksQueryCircleNear`: nearest chunks first; a segment version is not done)
 - [x] One shared debug draw (`quadtree/kit`) for all demos

@@ -549,6 +549,38 @@ benchMovesBy :: proc(scene: ^Scene, tree: ^Tree, retained: ^Retained, step: f32)
             results[row][column] = median(samples[row][:])
             updates[row][column] = median(updated[row][:])
         }
+        // what the moves did to the layout: a long run of moves first (the few frames above hardly fragment the links), then the same query pass before and after one compaction
+        LONG_RUN :: 300
+        for frame in FRAMES ..< FRAMES + LONG_RUN {
+            first: int = (frame * moving) % count
+            for k in 0 ..< moving {
+                i: int = (first + k) % count
+                rect: qt.Rect = copy_scene.rects[i]
+                rect.x = clamp(rect.x + (rand.float32(state) * 2 - 1) * step, 0, WORLD - rect.w)
+                rect.y = clamp(rect.y + (rand.float32(state) * 2 - 1) * step, 0, WORLD - rect.h)
+                setRect(&copy_scene, i, rect)
+                qt.QuadtreeRetainedMove(retained, handles[i], rect)
+            }
+        }
+        scratch: []qt.RetainedLink = make([]qt.RetainedLink, len(retained.links))
+        defer delete(scratch)
+        before, after: [dynamic]f64
+        before.allocator = context.temp_allocator
+        after.allocator = context.temp_allocator
+        for _ in 0 ..< FRAMES {
+            start: time.Tick = now()
+            for probe, i in copy_scene.probes { _ = qt.QuadtreeRetainedQuery(retained, probe, out_handles[:], handles[i]) }
+            append(&before, elapsed(start))
+        }
+        start: time.Tick = now()
+        qt.QuadtreeRetainedCompact(retained, scratch)
+        compaction: f64 = elapsed(start)
+        for _ in 0 ..< FRAMES {
+            start = now()
+            for probe, i in copy_scene.probes { _ = qt.QuadtreeRetainedQuery(retained, probe, out_handles[:], handles[i]) }
+            append(&after, elapsed(start))
+        }
+        fmt.printfln("  retained, %3d%% moving: query pass %.3f ms after %d frames of moves, %.3f ms after one compaction (which took %.3f ms)", percent, median(before[:]), FRAMES + LONG_RUN, median(after[:]), compaction)
     }
     for row in 0 ..< 3 {
         fmt.printfln("  %-34s %9.3f %9.3f %9.3f   | %9.3f %9.3f %9.3f", names[row], results[row][0], results[row][1], results[row][2], updates[row][0], updates[row][1], updates[row][2])
