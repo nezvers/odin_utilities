@@ -62,7 +62,7 @@ var game_status: Label
 func _ready() -> void:
 	_build()
 	var arguments := OS.get_cmdline_user_args()
-	var name := "player"
+	var player_name := "player"
 	var port := 0
 	for argument in arguments:
 		if argument.begins_with("--port="):
@@ -78,13 +78,13 @@ func _ready() -> void:
 	if words.size() > 0:
 		match words[0]:
 			"solo", "host":
-				name = words[1] if words.size() > 1 else name
-				name_edit.text = name
+				player_name = words[1] if words.size() > 1 else player_name
+				name_edit.text = player_name
 				_start(words[0], "", port)
 			"join":
 				if words.size() > 1:
-					name = words[2] if words.size() > 2 else name
-					name_edit.text = name
+					player_name = words[2] if words.size() > 2 else player_name
+					name_edit.text = player_name
 					_start("join", words[1], port)
 
 
@@ -233,7 +233,7 @@ func _read(bytes: PackedByteArray) -> Dictionary:
 	var coins := []
 	for i in coin_count:
 		coins.append(Vector2(0, 0))
-		var id := buffer.get_u64()
+		buffer.get_u64()
 		coins[i] = Vector2(buffer.get_float(), buffer.get_float())
 	result["players"] = players
 	result["coins"] = coins
@@ -253,12 +253,12 @@ func _draw_field() -> void:
 		field.draw_circle(coin, 7.0, Color(1.0, 0.82, 0.25))
 		field.draw_arc(coin, 7.0, 0, TAU, 16, Color(0.6, 0.45, 0.1), 1.5)
 	for player in snapshot["players"]:
-		var position := Vector2(player["x"], player["y"])
+		var spot := Vector2(player["x"], player["y"])
 		var color := Color.from_hsv(float(player["hue"]) / 255.0, 0.65, 0.95)
-		field.draw_circle(position, 14.0, color)
+		field.draw_circle(spot, 14.0, color)
 		if player["id"] == snapshot["me"]:
-			field.draw_arc(position, 17.0, 0, TAU, 28, Color.WHITE, 2.5)
-		field.draw_string(ThemeDB.fallback_font, position + Vector2(-40, -22), player["name"], HORIZONTAL_ALIGNMENT_CENTER, 80, 14, Color(0.9, 0.9, 0.95))
+			field.draw_arc(spot, 17.0, 0, TAU, 28, Color.WHITE, 2.5)
+		field.draw_string(ThemeDB.fallback_font, spot + Vector2(-40, -22), player["name"], HORIZONTAL_ALIGNMENT_CENTER, 80, 14, Color(0.9, 0.9, 0.95))
 
 
 func _update_side() -> void:
@@ -272,14 +272,14 @@ func _update_side() -> void:
 	game_status.text = GAME_PHASES[phase] if phase < GAME_PHASES.size() else ""
 	host_box.visible = hosting
 	if host_box.visible:
-		var ready := arena.invite() != ""
-		invite_button.disabled = not ready
-		invite_button.text = "Copy the invite code" if ready else "Making the invite..."
+		var invite_ready := arena.invite() != ""
+		invite_button.disabled = not invite_ready
+		invite_button.text = "Copy the invite code" if invite_ready else "Making the invite..."
 		room_button.visible = arena.room() != ""
 		room_button.text = "Copy the room name (" + arena.room() + ")"
 		var guests := arena.guests()
 		friends_label.text = "%d friend%s connected" % [guests, "" if guests == 1 else "s"]
-		if ready and not arena.relay_ready():
+		if invite_ready and not arena.relay_ready():
 			accept_edit.get_parent().visible = true
 		else:
 			accept_edit.get_parent().visible = false
@@ -345,7 +345,7 @@ func _build() -> void:
 	_label(join_box, "Paste the invite code or the room name of the host.", 14, DIM)
 	code_edit = LineEdit.new()
 	code_edit.placeholder_text = "invite code or room name"
-	code_edit.text_changed.connect(func(text: String) -> void: _update_code_status())
+	code_edit.text_changed.connect(func(_text: String) -> void: _update_code_status())
 	join_box.add_child(code_edit)
 	_button(join_box, "Paste", func() -> void:
 		code_edit.text = DisplayServer.clipboard_get().strip_edges()
@@ -426,10 +426,10 @@ func _column(position_value: Vector2, width: float) -> VBoxContainer:
 	return box
 
 
-func _label(parent: Control, text: String, size: int, color: Color = Color(0.92, 0.92, 0.96)) -> Label:
+func _label(parent: Control, text: String, font_size: int, color: Color = Color(0.92, 0.92, 0.96)) -> Label:
 	var label := Label.new()
 	label.text = text
-	label.add_theme_font_size_override("font_size", size)
+	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", color)
 	parent.add_child(label)
 	return label
