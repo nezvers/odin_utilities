@@ -40,7 +40,7 @@ Client :: struct {
     object: rawptr,             // the engine object (the Node flavour emits signals through it)
     connection: spacetimedb.Connection,
     open: bool,
-    receive, message: []u8,
+    receive, message, inflate: []u8,        // inflate: where gzip frames are unpacked (the server compresses big frames, so a game with a lot of rows sends less over the network)
     host, database: string,     // owned: the connection keeps them for a reconnect
     queries: [dynamic]string,   // owned, same reason
     next_set: u32,
@@ -54,6 +54,7 @@ clientFree :: proc(client: ^Client) {
     if client.open { spacetimedb.ConnectionClose(&client.connection) }
     delete(client.receive)
     delete(client.message)
+    delete(client.inflate)
     delete(client.host)
     delete(client.database)
     for query in client.queries { delete(query) }
@@ -110,11 +111,12 @@ clientOpen :: proc(client: ^Client, host: string, port: int, database: string, t
     if client.receive == nil {
         client.receive = make([]u8, CLIENT_BUFFER)
         client.message = make([]u8, CLIENT_BUFFER)
+        client.inflate = make([]u8, CLIENT_BUFFER)
     }
     delete(client.host)
     delete(client.database)
     client.host, client.database = strings.clone(host), strings.clone(database)
-    config: spacetimedb.ConnectionConfig = {endpoint = {host = client.host, port = port, secure = port == 443}, database = client.database, token = token}
+    config: spacetimedb.ConnectionConfig = {endpoint = {host = client.host, port = port, secure = port == 443}, database = client.database, token = token, inflate = client.inflate}
     client.open = spacetimedb.ConnectionOpen(&client.connection, config, client.receive, client.message)
     client.error = client.connection.error
     client.next_set = 0

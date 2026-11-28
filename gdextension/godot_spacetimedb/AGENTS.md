@@ -17,4 +17,5 @@ What is not obvious from the code of this library. The rules that hold for every
 - GDScript cannot infer the type of `var x := arena.method()` before the DLL that registers the class has been built (it says "Cannot infer the type" for every method): build the library first.
 - Never kill all `spacetimedb-standalone` processes to clean up a test (a broad kill is not allowed here); a host stops its own server in `leave()`.
 - Strings that the connection keeps by reference (host, database, queries) are cloned into the client, because a reconnect uses them later.
+- The client always lets the server compress (`ConnectionConfig.inflate` is a `CLIENT_BUFFER` of its own): a frame that is bigger than that after inflating is skipped like one that is too big for the socket buffers.
 - The Godot side gotchas (property infos, sizes, contexts) are in `../AGENTS.md`.
