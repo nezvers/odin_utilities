@@ -16,7 +16,8 @@ Next steps, most valuable first. A task starts with `(high)`, `(medium)` or `(lo
 - [x] Retained `Move` fast path (same leaves: only the rect copies change), 26% faster for small steps; the rest is cache misses in the link lists (bench: update alone, 165 ns a move against 20 for grid_collision_map)
 - [x] Contiguous leaves as an optional compaction step (`QuadtreeCompact` and the retained and chunked versions): queries 10 to 20% faster for 0.7 ms at 50k; a leaf storage redesign (buckets) was not needed
 - [ ] (low) Compaction at the end of a split or a Move that changes leaves, so a retained tree stays compact without calling it (measure what it costs `Move` first)
-- [ ] (low) Chunked tree: items bigger than `max_item_size` (a fallback list), and a query of many chunks with a limit
+- [x] Chunked tree: items bigger than `max_item_size` go into an oversize list (`QuadtreeChunksOversize`, quadtree_oversize.odin)
+- [ ] (low) Chunked tree: a query of many chunks with a limit (the chunks are still visited in coordinate order)
 - [x] One shared debug draw (`quadtree/kit`) for all demos
 - [x] Build from a whole array: tried (top down partition), not faster than insert + compaction, dropped (see AGENTS.md)
 - [ ] (low) A build by Morton code sort for static scenes, only if it can beat insert + compaction (2.8 ms at 50k) by a clear margin

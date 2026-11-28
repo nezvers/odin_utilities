@@ -5,7 +5,7 @@
 // - streaming: `QuadtreeChunksStream` unloads far chunks and loads the new ones near the center, calling your `fill` for every loaded chunk
 // How an element is placed (a "loose grid"): it lives in exactly ONE chunk, the one that holds its top left corner. It may stick out of that chunk by up to `max_item_size`. A query looks at the chunks
 // whose elements can reach into the query rectangle (the query grown by `max_item_size`), so every element is reported once, with no duplicates across chunks and no copies per overlapped chunk.
-// An item bigger than `max_item_size` is refused: keep terrain, rivers and huge triggers in a separate list.
+// An item bigger than `max_item_size` is refused unless the world has an oversize list (`QuadtreeChunksOversize`, quadtree_oversize.odin): terrain, rivers and huge triggers go there and every query scans it.
 // Chunks are a ring: coordinate (cx, cy) goes to slot (cx mod W, cy mod H), so a lookup is O(1) and the window can slide forever. Two loaded chunks must not share a slot: unload first (`Stream` does).
 // Like the other trees it is immediate mode per chunk: load fills a chunk, `QuadtreeChunksClear` empties every chunk but keeps it loaded (a second world for the moving things, refilled each frame).
 package quadtree
@@ -41,6 +41,8 @@ QuadtreeChunks :: struct($W: uint, $H: uint, $E: uint, $N: uint, $L: uint) {
     max_elements: int,
     max_depth: int,
     chunks: [W * H]QuadtreeChunk(E, N, L),
+    oversize: []OversizeEntry,          // the items that are bigger than max_item_size (optional, see quadtree_oversize.odin)
+    oversize_count: int,
 }
 
 // `chunk_size`: side of a chunk in world units. `max_item_size`: the largest width or height of an item (at most `chunk_size`). `max_elements` / `max_depth` are for the tree of each chunk.
@@ -54,6 +56,7 @@ QuadtreeChunksInit :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), chunk_siz
     world.max_elements = max_elements
     world.max_depth = max_depth
     for &chunk in world.chunks { chunk.loaded = false }
+    world.oversize_count = 0
 }
 
 // The chunk coordinate that holds a world coordinate
@@ -103,6 +106,7 @@ QuadtreeChunksClear :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L)) {
     for &chunk in world.chunks {
         if chunk.loaded { QuadtreeClear(&chunk.tree) }
     }
+    world.oversize_count = 0
 }
 
 // Optional, after the inserts of a frame: compact the tree of every loaded chunk (see QuadtreeCompact). One `scratch` serves all the chunks, at least `most_links` of `QuadtreeChunksUsage` long
@@ -112,9 +116,9 @@ QuadtreeChunksCompact :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), scratc
     }
 }
 
-// Put an item into the chunk that holds the top left corner of `rect`. Fails (nothing changes) when that chunk is not loaded, the rectangle is bigger than `max_item_size`, or the chunk's tree is full
+// Put an item into the chunk that holds the top left corner of `rect`. Fails (nothing changes) when that chunk is not loaded or its tree is full, or when the rectangle is bigger than `max_item_size` and the oversize list is full or not given (a big item goes into that list whatever chunks are loaded)
 QuadtreeChunksInsert :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), rect: WorldRect, item: Item) -> bool {
-    if rect.w > world.max_item_size || rect.h > world.max_item_size { return false }
+    if rect.w > world.max_item_size || rect.h > world.max_item_size { return oversizeAdd(world, rect, item) }
     chunk: ^QuadtreeChunk(E, N, L) = chunksFind(world, QuadtreeChunksCoord(world, rect.x), QuadtreeChunksCoord(world, rect.y)) or_return
     return QuadtreeInsert(&chunk.tree, chunksLocal(world, chunk, rect), item)
 }
@@ -160,6 +164,15 @@ QuadtreeChunksSegmentFirst :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), a
             item = found_item
         }
     }
+    for i in 0 ..< world.oversize_count {
+        entry: OversizeEntry = world.oversize[i]
+        if entry.item == omit { continue }
+        enter, entered := oversizeSegmentEnter(&probe, entry.rect)
+        if entered && f32(enter) < best {
+            best = f32(enter)
+            item = entry.item
+        }
+    }
     if item == ITEM_NONE { return ITEM_NONE, 0, false }
     return item, best, true
 }
@@ -198,6 +211,12 @@ QuadtreeChunksNearest :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), point:
         chunk: ^QuadtreeChunk(E, N, L) = found[i]
         local: Vec2 = {f32(point.x - f64(chunk.cx) * world.chunk_size), f32(point.y - f64(chunk.cy) * world.chunk_size)}
         nodeNearest(&chunk.tree, 0, rootArea(&chunk.tree), EXTENT_LOW, EXTENT_HIGH, local, &nearest)
+    }
+    for i in 0 ..< world.oversize_count {
+        entry: OversizeEntry = world.oversize[i]
+        if entry.item == omit { continue }
+        squared: f32 = f32(min(oversizeDistanceSquared(point, entry.rect), f64(max(f32))))
+        if nearestWants(&nearest, squared) { nearestAdd(&nearest, entry.item, squared) }
     }
     return nearestFinish(nearest.distances, nearest.count)
 }
@@ -246,7 +265,7 @@ QuadtreeChunksLen :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L)) -> int {
     for &chunk in world.chunks {
         if chunk.loaded { count += QuadtreeLen(&chunk.tree) }
     }
-    return count
+    return count + world.oversize_count
 }
 
 // Nodes and links in use over all loaded chunks, and the largest of one chunk (to size E, N and L of a chunk)
@@ -385,5 +404,6 @@ chunksQuery :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), probe: ChunkProb
         local: Probe = chunksProbeLocal(world, found[i], &probe)
         count += treeQuery(&found[i].tree, local, out[count:], omit)
     }
+    count += oversizeQuery(world, &probe, out[count:], omit)
     return count
 }

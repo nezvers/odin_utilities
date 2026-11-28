@@ -91,6 +91,7 @@ QuadtreeChunksIterator :: struct {
     by_slot: bool,
     current: int,               // the slot of the chunk being iterated
     active: bool,
+    oversize_next: int,         // the next entry of the oversize list, once the chunks are done
     inner: QueryIterator,
 }
 
@@ -113,7 +114,17 @@ QuadtreeChunksQueryNext :: proc(world: ^QuadtreeChunks($W, $H, $E, $N, $L), it: 
             }
             it.active = false
         }
-        chunk: ^QuadtreeChunk(E, N, L) = chunksIteratorChunk(world, it) or_return
+        chunk, more := chunksIteratorChunk(world, it)
+        if !more {
+            // the chunks are done: the items that are bigger than max_item_size
+            for it.oversize_next < world.oversize_count {
+                entry: OversizeEntry = world.oversize[it.oversize_next]
+                it.oversize_next += 1
+                probe: ChunkProbe = {kind = .POINT if it.point else .RECT, rect = it.rect}
+                if entry.item != it.omit && oversizeHits(&probe, entry.rect) { return entry.item, true }
+            }
+            return ITEM_NONE, false
+        }
         local: Rect = chunksLocal(world, chunk, it.rect)
         iteratorBegin(&it.inner, rootArea(&chunk.tree), probePoint({local.x, local.y}) if it.point else probeRect(local))
         it.current = int(uintptr(chunk) - uintptr(&world.chunks[0])) / size_of(QuadtreeChunk(E, N, L))
@@ -182,6 +193,7 @@ chunksIteratorBegin :: proc(it: ^QuadtreeChunksIterator, world: ^QuadtreeChunks(
     it.slot = 0
     it.by_slot = (it.last_x - it.first_x + 1) * (it.last_y - it.first_y + 1) > int(W * H)
     it.active = false
+    it.oversize_next = 0
 }
 
 @(private)
