@@ -219,6 +219,7 @@ Class :: struct {
     methods: []Method,
     signals: []Signal,
     properties: []Property,
+    statics: []cstring,             // optional: names of methods that are static (`Counter.twice(2)` without an object): the instance they receive is nil
     constants: []Constant,          // optional: enums and integer constants
     groups: []Group,                // optional: sections of the inspector
     hints: []Hint,                  // optional: inspector hints of properties (enum, range, file, ...)
@@ -493,6 +494,14 @@ createInstance :: proc "c" (class_userdata: rawptr, notify_postinitialize: GdBoo
     return object
 }
 
+@(private)
+isStatic :: proc "contextless" (class: ^Class, name: cstring) -> bool {
+    for candidate in class.statics {
+        if candidate == name { return true }
+    }
+    return false
+}
+
 // Hot reload (`reloadable = true` in the .gdextension file): the engine has unloaded the library and loaded it again, and asks for a new instance for every object that was made from the class. The
 // object stays, its state is saved and restored by the engine through the properties of the class (the ones with a getter and a setter), so what is not a property is lost.
 @(private)
@@ -544,7 +553,7 @@ registerClass :: proc "c" (class: ^Class) {
             method_userdata = &method,
             call_func = callMethod,
             ptrcall_func = ptrCallMethod,
-            method_flags = 1,                                   // normal
+            method_flags = 1 | (32 if isStatic(class, method.name) else 0),     // normal, and static
             has_return_value = 1 if method.result != .NONE else 0,
             return_value_info = &class.property_infos[i][0] if method.result != .NONE else nil,
             argument_count = u32(len(method.arguments)),

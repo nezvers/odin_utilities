@@ -31,6 +31,7 @@ counter_class: ge.Class = {
         {"mode", .INT, "get_mode", "set_mode"},
         {"gain", .FLOAT, "get_gain", "set_gain"},
     },
+    statics = {"twice"},        // callable on the class: Counter.twice(21)
     // an enum: GDScript reads Counter.Mode.HIGH (and Counter.HIGH); the property `mode` shows the same names
     constants = {
         {"Mode", "OFF", 0, false},
@@ -65,6 +66,7 @@ counter_class: ge.Class = {
         {"get", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             return {kind = .INT, number = i64((cast(^Counter)instance).total)}
         }},
+        {"twice", {.INT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueInt(a[0].number * 2) }},      // static: `instance` is nil
         {"get_mode", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueInt(i64((cast(^Counter)instance).mode)) }},
         {"set_mode", {.INT}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             (cast(^Counter)instance).mode = int(a[0].number)

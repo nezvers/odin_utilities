@@ -44,6 +44,7 @@ func _init() -> void:
 	_check(failures, Counter.Mode.HIGH == 10 and Counter.LOW == 5 and Counter.LIMIT == 99, "the constants of the class")
 	_check(failures, ClassDB.class_get_enum_constants("Counter", "Mode") == PackedStringArray(["OFF", "LOW", "HIGH"]), "the enum lists its members: %s" % [ClassDB.class_get_enum_constants("Counter", "Mode")])
 	counter.mode = Counter.Mode.LOW
+	_check(failures, Counter.twice(21) == 42 and counter.twice(4) == 8, "a static method on the class and on an object")
 	counter.gain = 0.25
 	_check(failures, counter.mode == 5 and counter.gain == 0.25, "the enum and range properties work")
 	counter.mode = 0
