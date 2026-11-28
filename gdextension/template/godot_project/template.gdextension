@@ -1,6 +1,7 @@
 [configuration]
 entry_symbol = "template_entry"
 compatibility_minimum = "4.4"
+reloadable = true
 
 [libraries]
 windows.debug.x86_64 = "res://bin/gdextension_template.dll"

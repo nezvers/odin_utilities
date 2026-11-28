@@ -5,6 +5,7 @@ package template_test
 
 import "core:fmt"
 import "core:os"
+import "core:path/filepath"
 import "core:strings"
 import "core:testing"
 
@@ -38,4 +39,18 @@ test_the_template_extension_works_in_godot :: proc(t: ^testing.T) {
     scene, scene_output, scene_errors, scene_error := os.process_exec({command = {"godot", "--headless", "--path", PROJECT, "--quit-after", "60"}}, context.temp_allocator)
     scene_text: string = strings.concatenate({string(scene_output), string(scene_errors)}, context.temp_allocator)
     testing.expectf(t, scene_error == nil && scene.success && strings.contains(scene_text, "get -> 12"), "main.tscn runs:\n%s", scene_text)
+
+    // Hot reload: Godot reloads an extension only inside the editor. A second build (TEMPLATE_VERSION=2) is made next to the project, the editor plugin of the project (addons/reload_test) makes
+    // an object, copies the second build over the loaded library, reloads the extension and checks that the object answers with the new build and has its property back. This replaces the
+    // library in bin/ with the second build: the next run of this test builds the first one again.
+    next_library, _ := strings.replace(library, "/bin/", "/bin_next/", 1, context.temp_allocator)
+    os.make_directory_all(PROJECT + "/bin_next")
+    next_build, _, next_errors, next_error := os.process_exec({command = {"odin", "build", #directory + "..", "-build-mode:dll", "-strict-style", "-vet", "-define:TEMPLATE_VERSION=2", fmt.tprintf("-out:%s", next_library)}}, context.temp_allocator)
+    testing.expectf(t, next_error == nil && next_build.success, "the second build compiles: %s", string(next_errors))
+    loaded_path, loaded_error := filepath.abs(library, context.temp_allocator)
+    next_path, next_path_error := filepath.abs(next_library, context.temp_allocator)
+    testing.expect(t, loaded_error == nil && next_path_error == nil)
+    reload, reload_output, reload_errors, reload_error := os.process_exec({command = {"godot", "--headless", "--editor", "--quit-after", "1200", "--path", PROJECT, "--", next_path, loaded_path}}, context.temp_allocator)
+    reload_text: string = strings.concatenate({string(reload_output), string(reload_errors)}, context.temp_allocator)
+    testing.expectf(t, reload_error == nil && reload.success && strings.contains(reload_text, "PASS"), "the hot reload test passes:\n%s", reload_text)
 }

@@ -3,3 +3,4 @@ godot_project/.godot/
 *.lib
 *.exp
 *.pdb
+godot_project/bin_next/

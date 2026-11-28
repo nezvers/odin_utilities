@@ -91,6 +91,7 @@ descriptorText :: proc(name, entry: string) -> string {
     return fmt.tprintf(`[configuration]
 entry_symbol = "%s"
 compatibility_minimum = "4.4"
+reloadable = true
 
 [libraries]
 windows.debug.x86_64 = "res://bin/%s.dll"

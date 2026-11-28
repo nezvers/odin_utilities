@@ -437,6 +437,17 @@ createInstance :: proc "c" (class_userdata: rawptr, notify_postinitialize: GdBoo
     return object
 }
 
+// Hot reload (`reloadable = true` in the .gdextension file): the engine has unloaded the library and loaded it again, and asks for a new instance for every object that was made from the class. The
+// object stays, its state is saved and restored by the engine through the properties of the class (the ones with a getter and a setter), so what is not a property is lost.
+@(private)
+recreateInstance :: proc "c" (class_userdata: rawptr, object: GdObject) -> GdInstance {
+    context = defaultContext()
+    class: ^Class = cast(^Class)class_userdata
+    instance: rawptr = class.create()
+    if class.bind != nil { class.bind(instance, object) }
+    return instance
+}
+
 @(private)
 freeInstance :: proc "c" (class_userdata: rawptr, instance: GdInstance) {
     context = defaultContext()
@@ -455,6 +466,7 @@ registerClass :: proc "c" (class: ^Class) {
         get_virtual_call_data_func = getVirtualData if len(class.virtuals) > 0 else nil,
         call_virtual_with_data_func = callVirtual if len(class.virtuals) > 0 else nil,
         free_instance_func = freeInstance,
+        recreate_instance_func = recreateInstance,
         class_userdata = class,
     }
     gd.register_class(gd.library, &class.name_id, &class.parent_id, &info)

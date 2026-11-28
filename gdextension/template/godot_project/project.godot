@@ -4,3 +4,7 @@ config_version=5
 [application]
 config/name="gdextension template"
 run/main_scene="res://main.tscn"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/reload_test/plugin.cfg")

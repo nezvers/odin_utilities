@@ -135,7 +135,7 @@ GdClassInfo4 :: struct {
     unreference_func: rawptr,
     create_instance_func: proc "c" (class_userdata: rawptr, notify_postinitialize: GdBool) -> GdObject,
     free_instance_func: proc "c" (class_userdata: rawptr, instance: GdInstance),
-    recreate_instance_func: rawptr,
+    recreate_instance_func: proc "c" (class_userdata: rawptr, object: GdObject) -> GdInstance,
     get_virtual_func: rawptr,
     get_virtual_call_data_func: proc "c" (class_userdata: rawptr, name: ^GdStringName, hash: u32) -> rawptr,
     call_virtual_with_data_func: proc "c" (instance: GdInstance, name: ^GdStringName, call_data: rawptr, args: [^]rawptr, result: rawptr),

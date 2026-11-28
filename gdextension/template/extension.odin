@@ -8,6 +8,8 @@ import ge "../../gdextension"
 import "../../gdextension/engine"
 
 // The state of one Counter object: what `create` returns is what every method receives as `instance`
+TEMPLATE_VERSION :: #config(TEMPLATE_VERSION, 1)
+
 Counter :: struct {
     object: rawptr,         // the engine object, from `bind`: what `Emit` needs
     total: int,
@@ -76,6 +78,10 @@ counter_class: ge.Class = {
             return {}
         }},
         // float -> float
+        // which build of the extension answers: the hot reload test builds it twice with another value (`-define:TEMPLATE_VERSION=2`)
+        {"version", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            return ge.ValueInt(TEMPLATE_VERSION)
+        }},
         {"half", {.FLOAT}, .FLOAT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             return ge.ValueFloat(a[0].real[0] / 2)
         }},
