@@ -33,6 +33,22 @@ func _init() -> void:
 	var main_font := SystemFont.new()
 	var fallback := SystemFont.new()
 	_check(failures, counter.set_fallbacks(main_font, fallback) == 1 and main_font.fallbacks.size() == 1 and main_font.fallbacks[0] == fallback, "a typed Array argument reaches the engine")
+	_check(failures, counter.call_back(func(x: int) -> int: return x + 1, 4) == 5, "a lambda is called through a Callable argument")
+	_check(failures, counter.call_back(Callable(self, "_double"), 21) == 42, "a method Callable")
+	_check(failures, counter.fire(1) == -1, "no callback kept yet")
+	var captured := [0]
+	counter.on_total(func(x: int) -> int:
+		captured[0] += x
+		return captured[0])
+	_check(failures, counter.fire(3) == 3 and counter.fire(4) == 7 and captured[0] == 7, "a kept Callable is called later: %s" % [captured])
+	counter.on_total(func(x: int) -> int: return x * 10)
+	var probe := RefCounted.new()
+	counter.on_total(func(x: int) -> int: return probe.get_reference_count())
+	var held: int = counter.fire(0)
+	counter.on_total(func(x: int) -> int: return x * 10)
+	var released: int = probe.get_reference_count()
+	_check(failures, released == 1 and held > released, "the kept Callable holds what the lambda captured until it is replaced: %s then %s" % [held, released])
+	_check(failures, counter.fire(5) == 50 and captured[0] == 7, "a new callback replaces the kept one")
 	counter.reset()
 	var settings := Settings.new()
 	settings.title = "fast"
@@ -205,3 +221,6 @@ func _init() -> void:
 func _check(failures: Array, condition: bool, name: String) -> void:
 	if not condition:
 		failures.append(name)
+
+func _double(x: int) -> int:
+	return x * 2

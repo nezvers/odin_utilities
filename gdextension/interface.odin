@@ -45,6 +45,7 @@ GdVariantType :: enum u32 {
     STRING_NAME = 21,
     NODE_PATH = 22,
     OBJECT = 24,
+    CALLABLE = 25,
     DICTIONARY = 27,
     ARRAY = 28,
     PACKED_BYTE_ARRAY = 29,
@@ -225,6 +226,8 @@ Interface :: struct {
     register_property: proc "c" (library: GdLibrary, class_name: ^GdStringName, info: ^GdPropertyInfo, setter: ^GdStringName, getter: ^GdStringName),
     register_constant: proc "c" (library: GdLibrary, class_name: ^GdStringName, enum_name: ^GdStringName, name: ^GdStringName, value: GdInt, bitfield: u8),
     object_destroy: proc "c" (object: rawptr),
+    variant_call: proc "c" (variant: ^GdVariant, method: ^GdStringName, args: [^]^GdVariant, count: GdInt, result: ^GdVariant, error: ^GdCallError),
+    callable_copy: proc "c" (callable: rawptr, args: [^]rawptr),            // Callable(from: Callable)
     register_group: proc "c" (library: GdLibrary, class_name: ^GdStringName, name: ^GdString, prefix: ^GdString),
     register_subgroup: proc "c" (library: GdLibrary, class_name: ^GdStringName, name: ^GdString, prefix: ^GdString),
     register_signal: proc "c" (library: GdLibrary, class_name: ^GdStringName, signal_name: ^GdStringName, arguments: [^]GdPropertyInfo, count: GdInt),
@@ -264,6 +267,7 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.register_property = auto_cast lookup(get, "classdb_register_extension_class_property", &ok)
     gd.stringify = auto_cast lookup(get, "variant_stringify", &ok)
     gd.register_constant = auto_cast lookup(get, "classdb_register_extension_class_integer_constant", &ok)
+    gd.variant_call = auto_cast lookup(get, "variant_call", &ok)
     gd.object_destroy = auto_cast lookup(get, "object_destroy", &ok)
     gd.register_group = auto_cast lookup(get, "classdb_register_extension_class_property_group", &ok)
     gd.register_subgroup = auto_cast lookup(get, "classdb_register_extension_class_property_subgroup", &ok)
@@ -288,7 +292,7 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     packedLoad(&gd.packed_vector2s, .PACKED_VECTOR2_ARRAY, get, "packed_vector2_array", constructor, method)
     packedLoad(&gd.packed_vector3s, .PACKED_VECTOR3_ARRAY, get, "packed_vector3_array", constructor, method)
     packedLoad(&gd.packed_colors, .PACKED_COLOR_ARRAY, get, "packed_color_array", constructor, method)
-    for type in ([?]GdVariantType{.VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION, .STRING_NAME, .NODE_PATH}) {
+    for type in ([?]GdVariantType{.VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION, .STRING_NAME, .NODE_PATH, .CALLABLE}) {
         gd.type_from[type] = gd.variant_from_type(type)
         gd.type_to[type] = gd.variant_to_type(type)
         gd.type_destroy[type] = gd.variant_destructor(type)
@@ -319,6 +323,7 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.to_dictionary = gd.variant_to_type(.DICTIONARY)
     gd.array_construct = constructor(.ARRAY, 0)
     gd.array_construct_typed = constructor(.ARRAY, 2)
+    gd.callable_copy = constructor(.CALLABLE, 1)
     gd.dictionary_construct = constructor(.DICTIONARY, 0)
     gd.array_destroy = gd.variant_destructor(.ARRAY)
     gd.dictionary_destroy = gd.variant_destructor(.DICTIONARY)
@@ -516,7 +521,7 @@ variantToValue :: proc "c" (variant: ^GdVariant, allocator: runtime.Allocator, d
     case .PACKED_COLOR_ARRAY: return readPackedVariant(variant, .PACKED_COLORS, allocator)
     case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION:
         return variantToPod(variant, podKindOf(gd.variant_get_type(variant)), allocator)
-    case .NIL:
+    case .NIL, .CALLABLE:        // a Callable inside a Variant is not read (nobody would destroy the copy): it comes as NONE
     }
     return {}
 }
@@ -542,6 +547,9 @@ valueToVariant :: proc "c" (variant: ^GdVariant, value: Value) {
     case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: variantPackedNumeric(variant, value.kind, value)
     case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION: podToVariant(variant, value.kind, value)
     case .STRING_NAME, .NODE_PATH: nameToVariant(variant, value.kind, value.text)
+    case .CALLABLE:
+        source: [2]u64 = value.callable
+        gd.type_from[GdVariantType.CALLABLE](variant, &source)
     case .VARIANT, .NONE:
     }
 }

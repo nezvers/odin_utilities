@@ -75,6 +75,7 @@ ValueKind :: enum u8 {
     PROJECTION,             // `floats32`: four columns of four numbers
     STRING_NAME,            // a StringName: its text in `text`
     NODE_PATH,              // a NodePath: its text in `text`
+    CALLABLE,               // a Callable (a lambda or a method of GDScript): `callable`, call it with `CallableCall`. An argument is yours until the call returns: keep it with `CallableCopy`
     VARIANT,                // an argument or result of any type: the Value comes with the kind of what really arrived (BOOL, INT, ..., ARRAY with nested items, NONE for a nil or a type that has no kind)
 }
 
@@ -88,6 +89,7 @@ Value :: struct {
     element_class: cstring,     // ARRAY result or argument: a typed Array of OBJECTs of this class ("Settings"), nil for a plain Array
     keys: []Value,              // the keys of a DICTIONARY (kind STRING)
     object: rawptr,             // OBJECT: the engine's pointer; it stays the engine's, keep it only as long as the engine keeps the object
+    callable: [2]u64,           // CALLABLE: the engine's Callable (16 bytes); a copy that the library destroys after the call that received it
     ints: []i64,                // PACKED_INTS
     floats: []f64,              // PACKED_FLOATS
     ints32: []i32,              // PACKED_INT32S
@@ -120,6 +122,44 @@ ValueArray :: proc "contextless" (items: []Value) -> Value {
 }
 
 // A typed Array of objects of `class` ("Node") for an argument or a result: the elements are objects of the engine (the temp allocator holds the list until the end of the call)
+// A Callable that outlives the call that brought it (a callback to call later): the copy holds a reference until `CallableRelease`.
+CallableCopy :: proc(callable: [2]u64) -> [2]u64 {
+    source: [2]u64 = callable
+    copy: [2]u64
+    arguments: [1]rawptr = {&source}
+    gd.callable_copy(&copy, raw_data(arguments[:]))
+    return copy
+}
+
+CallableRelease :: proc(callable: ^[2]u64) {
+    gd.type_destroy[GdVariantType.CALLABLE](callable)
+    callable^ = {}
+}
+
+// Calls a Callable (`callable.call(arguments...)`); false when the engine refused the call (an invalid Callable, a freed object). The text of a result lives in the temp allocator.
+CallableCall :: proc(callable: [2]u64, arguments: []Value) -> (result: Value, ok: bool) {
+    assert(len(arguments) <= MAX_ARGUMENTS)
+    source: [2]u64 = callable
+    self: GdVariant
+    gd.type_from[GdVariantType.CALLABLE](&self, &source)
+    variants: [MAX_ARGUMENTS]GdVariant
+    pointers: [MAX_ARGUMENTS]^GdVariant
+    for value, i in arguments {
+        valueToVariant(&variants[i], value)
+        pointers[i] = &variants[i]
+    }
+    method: GdStringName = stringName("call")
+    answer: GdVariant
+    error: GdCallError
+    gd.variant_call(&self, &method, raw_data(pointers[:]), GdInt(len(arguments)), &answer, &error)
+    result = variantToValue(&answer, context.temp_allocator)
+    gd.variant_destroy(&answer)
+    for i in 0 ..< len(arguments) { gd.variant_destroy(&variants[i]) }
+    gd.variant_destroy(&self)
+    gd.destroy_string_name(&method)
+    return result, error.error == .OK
+}
+
 ValueObjects :: proc(objects: []rawptr, class: cstring) -> Value {
     items: []Value = make([]Value, len(objects), context.temp_allocator)
     for object, i in objects { items[i] = {kind = .OBJECT, object = object} }
@@ -310,6 +350,7 @@ variantTypeOf :: proc "contextless" (kind: ValueKind) -> GdVariantType {
     case .PROJECTION: return .PROJECTION
     case .STRING_NAME: return .STRING_NAME
     case .NODE_PATH: return .NODE_PATH
+    case .CALLABLE: return .CALLABLE
     case .NONE: return .NIL
     }
     return .NIL
@@ -405,11 +446,16 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
             values[i] = variantToPod(variant, kind, context.temp_allocator)
         case .STRING_NAME, .NODE_PATH:
             values[i] = variantToName(variant, kind, context.temp_allocator)
+        case .CALLABLE:
+            gd.type_to[GdVariantType.CALLABLE](&values[i].callable, variant)       // a copy: destroyed after the call
         case .NONE:
         }
         if kind != .VARIANT { values[i].kind = kind }
     }
     answer: Value = method.call(instance, values[:len(method.arguments)])
+    for kind, i in method.arguments {
+        if kind == .CALLABLE { gd.type_destroy[GdVariantType.CALLABLE](&values[i].callable) }
+    }
     switch method.result {
     case .NONE:
     case .BOOL: variantBool(result, answer.number != 0)
@@ -429,6 +475,7 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     case .VARIANT: valueToVariant(result, answer)
     case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION: podToVariant(result, method.result, answer)
     case .STRING_NAME, .NODE_PATH: nameToVariant(result, method.result, answer.text)
+    case .CALLABLE: gd.type_from[GdVariantType.CALLABLE](result, &answer.callable)
     }
     free_all(context.temp_allocator)
 }
@@ -464,6 +511,7 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
         case .VARIANT: values[i] = variantToValue(cast(^GdVariant)args[i], context.temp_allocator)
         case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION: values[i] = podRead(kind, args[i], context.temp_allocator)
         case .STRING_NAME, .NODE_PATH: values[i] = nameRead(kind, args[i], context.temp_allocator)
+        case .CALLABLE: values[i].callable = (cast(^[2]u64)args[i])^        // the engine's own: used during the call, not destroyed
         case .NONE:
         }
         if kind != .VARIANT { values[i].kind = kind }
@@ -502,6 +550,10 @@ ptrCallMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawp
         valueToVariant(cast(^GdVariant)result, answer)
     case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION: podWrite(method.result, result, answer)
     case .STRING_NAME, .NODE_PATH: nameWrite(method.result, result, answer.text)
+    case .CALLABLE:
+        source: [2]u64 = answer.callable
+        arguments: [1]rawptr = {&source}
+        gd.callable_copy(result, raw_data(arguments[:]))
     }
     free_all(context.temp_allocator)
 }
@@ -715,6 +767,9 @@ Emit :: proc(object: rawptr, signal: cstring, arguments: []Value) -> bool {
         case .PACKED_INT32S, .PACKED_FLOAT32S, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS: variantPackedNumeric(&variants[i + 1], value.kind, value)
         case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION: podToVariant(&variants[i + 1], value.kind, value)
         case .STRING_NAME, .NODE_PATH: nameToVariant(&variants[i + 1], value.kind, value.text)
+        case .CALLABLE:
+            source: [2]u64 = value.callable
+            gd.type_from[GdVariantType.CALLABLE](&variants[i + 1], &source)
         case .VARIANT, .NONE:
         }
         pointers[i + 1] = &variants[i + 1]

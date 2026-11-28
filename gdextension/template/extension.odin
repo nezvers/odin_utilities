@@ -15,6 +15,7 @@ Counter :: struct {
     total: int,
     mode: int,
     gain: f64,
+    callback: [2]u64,       // a Callable kept for later (`on_total`), zero when there is none
     greeting: [256]u8,      // a result string has to live until the call ends: the instance keeps it
 }
 
@@ -22,7 +23,11 @@ counter_class: ge.Class = {
     name = "Counter",
     parent = "RefCounted",
     create = proc() -> rawptr { return new(Counter) },
-    destroy = proc(instance: rawptr) { free(instance) },
+    destroy = proc(instance: rawptr) {
+        counter: ^Counter = cast(^Counter)instance
+        if counter.callback != {} { ge.CallableRelease(&counter.callback) }
+        free(instance)
+    },
     bind = proc(instance: rawptr, object: rawptr) { (cast(^Counter)instance).object = object },
     // signals: connect from GDScript with `counter.changed.connect(callable)`
     // a property is a name that GDScript reads and writes (`counter.total = 5`): it calls the methods `get` and `set_total`
@@ -311,6 +316,23 @@ counter_class: ge.Class = {
             ge.Call(a[0].object, "Font", "set_fallbacks", 381264803, {ge.ValueObjects({a[1].object}, "Font")})
             fallbacks, _ := ge.Call(a[0].object, "Font", "get_fallbacks", 3995934104, {})
             return ge.ValueInt(i64(len(fallbacks.items)))
+        }},
+        // Callables: `call_back(func(x): return x + 1, 4)` calls the lambda now; `on_total(callable)` keeps one and `fire(7)` calls it later
+        {"call_back", {.CALLABLE, .INT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            answer, _ := ge.CallableCall(a[0].callable, {a[1]})
+            return answer
+        }},
+        {"on_total", {.CALLABLE}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            counter: ^Counter = cast(^Counter)instance
+            if counter.callback != {} { ge.CallableRelease(&counter.callback) }
+            counter.callback = ge.CallableCopy(a[0].callable)       // the argument is destroyed when this call returns
+            return {}
+        }},
+        {"fire", {.INT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            counter: ^Counter = cast(^Counter)instance
+            if counter.callback == {} { return ge.ValueInt(-1) }
+            answer, ok := ge.CallableCall(counter.callback, {a[0]})
+            return answer if ok else ge.ValueInt(-2)
         }},
         {"parent_of", {.OBJECT}, .OBJECT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             parent, _ := engine.NodeGetParent(a[0].object)
