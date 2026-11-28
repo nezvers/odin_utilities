@@ -18,6 +18,8 @@ main :: proc() {
 	serve, open_browser: bool
 	port: int = 8000
 	odin_arguments: [dynamic]string
+	// the 16 byte text kernels of the simd package need wasm SIMD: without the feature LLVM stops with "Do not know how to split the result of this operator!"
+	append(&odin_arguments, "-target-features:simd128")
 	arguments: []string = os.args[1:]
 	for i := 0; i < len(arguments); i += 1 {
 		switch arguments[i] {
