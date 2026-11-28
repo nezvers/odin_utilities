@@ -31,6 +31,10 @@ counter_class: ge.Class = {
         {"mode", .INT, "get_mode", "set_mode"},
         {"gain", .FLOAT, "get_gain", "set_gain"},
     },
+    // sections of the inspector: "Mixer" starts at `mode` and holds `mode` and `gain`
+    groups = {
+        {"mode", "Mixer", "", false},
+    },
     // how the inspector edits them: a dropdown and a slider
     hints = {
         {"mode", .ENUM, "Off,Low:5,High:10"},

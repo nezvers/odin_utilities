@@ -170,6 +170,16 @@ Hint :: struct {
     text: cstring,          // the `hint_string` of Godot
 }
 
+// A section of the inspector: the properties registered after it (in the order of `Class.properties`) go under the header `name` until the next group; `before` is the property that starts it. The
+// engine also cuts the prefix off the names it shows (`prefix = "mixer_"` shows `mixer_volume` as `Volume`). `sub` makes a subgroup of the current group; an empty `name` ends the group, for properties
+// that follow without a section.
+Group :: struct {
+    before: cstring,
+    name: cstring,
+    prefix: cstring,
+    sub: bool,
+}
+
 // The values of Godot's PropertyHint (the ones that make sense for a property of an extension class)
 PropertyHint :: enum u32 {
     NONE = 0,
@@ -200,6 +210,7 @@ Class :: struct {
     methods: []Method,
     signals: []Signal,
     properties: []Property,
+    groups: []Group,                // optional: sections of the inspector
     hints: []Hint,                  // optional: inspector hints of properties (enum, range, file, ...)
     virtuals: []Virtual,
     bind: proc(instance: rawptr, object: rawptr),   // optional: gets the engine object of a new instance, for `Emit`
@@ -212,6 +223,7 @@ Class :: struct {
     signal_names: []GdStringName,
     property_names: []GdStringName,    // name, getter, setter of each property: three entries
     property_hints: []GdString,        // the hint text of each property
+    group_texts: []GdString,           // name and prefix of each group: two entries
     virtual_names: []GdStringName,
     signal_infos: [][MAX_ARGUMENTS]GdPropertyInfo,
     property_infos: [][MAX_ARGUMENTS + 1]GdPropertyInfo,
@@ -533,10 +545,17 @@ registerClass :: proc "c" (class: ^Class) {
     }
     class.property_names = make([]GdStringName, len(class.properties) * 3)
     class.property_hints = make([]GdString, len(class.properties))
+    class.group_texts = make([]GdString, len(class.groups) * 2)
     for property, i in class.properties {
         class.property_names[i * 3] = stringName(property.name)
         class.property_names[i * 3 + 1] = stringName(property.getter)
         class.property_names[i * 3 + 2] = stringName(property.setter if property.setter != nil else "")
+        for group, g in class.groups {
+            if group.before != property.name { continue }
+            gd.string_new_utf8(&class.group_texts[g * 2], group.name if group.name != nil else "")
+            gd.string_new_utf8(&class.group_texts[g * 2 + 1], group.prefix if group.prefix != nil else "")
+            (gd.register_subgroup if group.sub else gd.register_group)(gd.library, &class.name_id, &class.group_texts[g * 2], &class.group_texts[g * 2 + 1])
+        }
         hint_text: ^GdString = &empty_string
         hint: PropertyHint
         for candidate in class.hints {

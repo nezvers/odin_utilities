@@ -37,6 +37,10 @@ func _init() -> void:
 	_check(failures, hints.get("mode") == [PROPERTY_HINT_ENUM, "Off,Low:5,High:10"], "the enum hint reaches the inspector: %s" % [hints.get("mode")])
 	_check(failures, hints.get("gain") == [PROPERTY_HINT_RANGE, "0,1,0.05"], "the range hint: %s" % [hints.get("gain")])
 	_check(failures, hints.get("total") == [PROPERTY_HINT_NONE, ""], "a property without a hint: %s" % [hints.get("total")])
+	var names: Array = counter.get_property_list().map(func(p: Dictionary) -> String: return p.name)
+	var at_group: int = names.find("Mixer")
+	_check(failures, at_group >= 0 and names.find("mode") == at_group + 1 and names.find("gain") == at_group + 2, "the group Mixer comes before its properties: %s" % [names])
+	_check(failures, names.find("total") < at_group, "total is outside of the group: %s" % [names])
 	counter.mode = 5
 	counter.gain = 0.25
 	_check(failures, counter.mode == 5 and counter.gain == 0.25, "the enum and range properties work")
