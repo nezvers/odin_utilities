@@ -14,12 +14,16 @@ import "core:os"
 import "core:strings"
 import "core:sync"
 import "core:testing"
+import "core:time"
 import "core:thread"
 import browser_drive "../browser_drive"
 import web_serve "../web_serve"
 
-// How long the page gets to start. The page loads, then its wasm compiles and runs: what it writes to the console in that time is collected.
-WEB_BUILD_CHECK_WAIT_MS :: 3000
+// The longest a page gets to start: the template sets `window.odinStarted` after the first frame, and the check stops waiting at the first console error. A grace time after the signal
+// catches what the first frames write.
+WEB_BUILD_CHECK_START_MS :: 20000
+WEB_BUILD_CHECK_GRACE_MS :: 500
+WEB_BUILD_CHECK_POLL_MS :: 100 // one wait of the loop: it ends at once when the page has started
 
 WebBuildCheckStatus :: enum {
     PASSED,
@@ -86,8 +90,19 @@ WebBuildCheck :: proc(config: WebBuildConfig, browser: Maybe(browser_drive.Brows
     if error := browser_drive.DriverNavigate(driver, fmt.tprintf("http://127.0.0.1:%d/", server.port)); error == .CONNECT_FAILED || error == .CLOSED {
         return {status = .NOT_RUN, browser = name, message = fmt.tprintf("web_build: %s could not load the page: %s", name, browser_drive.DriverLastError(driver))}
     }
-    browser_drive.DriverWait(driver, WEB_BUILD_CHECK_WAIT_MS)
+    started: bool
+    deadline: time.Time = time.time_add(time.now(), WEB_BUILD_CHECK_START_MS * time.Millisecond)
+    for time.diff(time.now(), deadline) > 0 && len(browser_drive.DriverConsoleErrors(driver)) == 0 {
+        if browser_drive.DriverWaitUntil(driver, "window.odinStarted === true", WEB_BUILD_CHECK_POLL_MS) == .NONE {
+            started = true
+            break
+        }
+    }
+    if started { browser_drive.DriverWait(driver, WEB_BUILD_CHECK_GRACE_MS) }
     errors: string = browser_drive.DriverConsoleErrors(driver)
+    if len(errors) == 0 && !started {
+        return {status = .FAILED, browser = name, message = fmt.tprintf("the page did not start in %d ms (window.odinStarted was never set) and wrote no console error", WEB_BUILD_CHECK_START_MS)}
+    }
     if len(errors) == 0 { return {status = .PASSED, browser = name} }
     return {status = .FAILED, browser = name, message = strings.clone(strings.trim_space(errors), context.temp_allocator)}
 }

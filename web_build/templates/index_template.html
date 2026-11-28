@@ -44,6 +44,8 @@
 				if (exports._start) {
 					exports._start();
 				}
+				// a test that drives the page (browser_drive, WebBuildCheck) waits for this instead of a fixed time: set once the wasm has run, after the first frame when there are frames
+				window.odinStarted = !exports.step;
 
 				// the generated entry exports step and shutdown, step runs once per frame until it returns false
 				if (exports.step) {
@@ -58,7 +60,9 @@
 						const dt = (currTimeStamp - prevTimeStamp) * 0.001;
 						prevTimeStamp = currTimeStamp;
 
-						if (!exports.step(dt, odin_ctx)) {
+						const keep_running = exports.step(dt, odin_ctx);
+						window.odinStarted = true;
+						if (!keep_running) {
 							if (exports.shutdown) {
 								exports.shutdown(dt, odin_ctx);
 							}
