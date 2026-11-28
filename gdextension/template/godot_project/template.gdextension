@@ -10,3 +10,7 @@ linux.debug.x86_64 = "res://bin/libgdextension_template.so"
 linux.release.x86_64 = "res://bin/libgdextension_template.so"
 macos.debug = "res://bin/libgdextension_template.dylib"
 macos.release = "res://bin/libgdextension_template.dylib"
+
+[icons]
+
+Counter = "res://counter.svg"

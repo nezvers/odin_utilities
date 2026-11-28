@@ -1,11 +1,11 @@
 package main
 
-// `odin run gdextension/tool/build -- <package> <godot project> [--name N] [--entry symbol] [--release] [--force] [--import]`
+// `odin run gdextension/tool/build -- <package> <godot project> [--name N] [--entry symbol] [--icon Class=res://icon.svg]... [--release] [--force] [--import]`
 //
 // Builds a GDExtension package as a dynamic library for this computer into `<project>/bin` and writes `<project>/<name>.gdextension` with the entries for Windows, Linux and macOS, so a project
 // needs nothing by hand. The name is the folder name of the package unless `--name` says otherwise; the entry symbol is found in the sources (the `@(export)` proc that takes a
 // `GetProcAddress`) unless `--entry` says otherwise. An existing .gdextension file is kept (it may be edited) unless `--force`; `--release` builds with `-o:speed`; `--import` runs
-// `godot --headless --import` in the project, which Godot needs once before it loads a new extension.
+// `godot --headless --import` in the project, which Godot needs once before it loads a new extension. `--icon` (any number) gives a class its icon in the editor (the `[icons]` section).
 
 import "core:fmt"
 import "core:os"
@@ -15,6 +15,7 @@ import "core:testing"
 main :: proc() {
     package_path, project: string
     name, entry: string
+    icons: [dynamic]string
     release, force, import_project: bool
     positional: int
     arguments: []string = os.args[1:]
@@ -26,6 +27,10 @@ main :: proc() {
         case "--entry":
             i += 1
             if i < len(arguments) { entry = arguments[i] }
+        case "--icon":
+            i += 1
+            if i >= len(arguments) || !strings.contains(arguments[i], "=") { fail("--icon takes Class=res://path/icon.svg") }
+            append(&icons, arguments[i])
         case "--release": release = true
         case "--force": force = true
         case "--import": import_project = true
@@ -39,7 +44,7 @@ main :: proc() {
             positional += 1
         }
     }
-    if package_path == "" || project == "" { fail("usage: odin run gdextension/tool/build -- <package> <godot project> [--name N] [--entry symbol] [--release] [--force] [--import]") }
+    if package_path == "" || project == "" { fail("usage: odin run gdextension/tool/build -- <package> <godot project> [--name N] [--entry symbol] [--icon Class=res://icon.svg] [--release] [--force] [--import]") }
     if !os.is_directory(package_path) { fail(fmt.tprintf("%s is not a folder", package_path)) }
     if !os.exists(fmt.tprintf("%s/project.godot", project)) { fail(fmt.tprintf("%s has no project.godot", project)) }
 
@@ -71,7 +76,7 @@ main :: proc() {
     if os.exists(descriptor) && !force {
         fmt.printfln("kept %s (--force replaces it)", descriptor)
     } else {
-        text: string = descriptorText(name, entry)
+        text: string = descriptorText(name, entry, icons[:])
         if os.write_entire_file(descriptor, transmute([]u8)text) != nil { fail("cannot write the .gdextension file") }
         fmt.printfln("wrote %s (entry %s)", descriptor, entry)
     }
@@ -87,8 +92,8 @@ fail :: proc(message: string) {
     os.exit(1)
 }
 
-descriptorText :: proc(name, entry: string) -> string {
-    return fmt.tprintf(`[configuration]
+descriptorText :: proc(name, entry: string, icons: []string = nil) -> string {
+    text: string = fmt.tprintf(`[configuration]
 entry_symbol = "%s"
 compatibility_minimum = "4.4"
 reloadable = true
@@ -101,6 +106,16 @@ linux.release.x86_64 = "res://bin/lib%s.so"
 macos.debug = "res://bin/lib%s.dylib"
 macos.release = "res://bin/lib%s.dylib"
 `, entry, name, name, name, name, name, name)
+    if len(icons) == 0 { return text }
+    builder: strings.Builder
+    strings.builder_init(&builder, context.temp_allocator)
+    strings.write_string(&builder, text)
+    strings.write_string(&builder, "\n[icons]\n")
+    for icon in icons {
+        cut: int = strings.index_byte(icon, '=')
+        fmt.sbprintfln(&builder, `%s = "%s"`, icon[:cut], icon[cut + 1:])
+    }
+    return strings.to_string(builder)
 }
 
 // The last folder of a path ("a/b/", "a\b" and "." give "b", "b" and the folder's own name is not known for ".": say --name then)
@@ -147,4 +162,15 @@ test_the_descriptor_names_every_platform :: proc(t: ^testing.T) {
     testing.expect(t, strings.contains(text, `windows.release.x86_64 = "res://bin/my_ext.dll"`))
     testing.expect(t, strings.contains(text, `linux.debug.x86_64 = "res://bin/libmy_ext.so"`))
     testing.expect(t, strings.contains(text, `macos.release = "res://bin/libmy_ext.dylib"`))
+    testing.expect(t, !strings.contains(text, "[icons]"), "no icons, no section")
+}
+
+@(test)
+test_icons_become_the_icons_section :: proc(t: ^testing.T) {
+    text: string = descriptorText("my_ext", "my_entry", {"Counter=res://counter.svg", "Other=res://o.svg"})
+    testing.expect(t, strings.contains(text, `[icons]
+Counter = "res://counter.svg"
+Other = "res://o.svg"
+`), text)
+    testing.expect(t, strings.index(text, "[icons]") > strings.index(text, "[libraries]"))
 }
