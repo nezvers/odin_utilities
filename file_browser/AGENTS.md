@@ -8,5 +8,5 @@ Open/save dialog on `ui` plus IO backends. See README for the API.
 - A browser chooser needs a user gesture: the request is made in the frame after the click.
 - Tests never touch outside a temp root (`chooseInside` guard); keep it so.
 - Demo scripts use `IoMemory` (headless or `DEMO_TEST`), so paths are `/demo/...`.
-- The web build needs `-target-features:simd128` (build_web passes it): the 16 byte kernels of `simd` otherwise stop LLVM with "Do not know how to split the result of this operator!". Other web hosts that import `simd` (font, demo_kit glue, youtube_shorts) need it too. `ui/aa_test.odin` lacks `#+build !js` and breaks a js build of `ui`.
+- A web build needs `-target-features:simd128`: `WebBuild` and `ExtensionBuild` pass it. Without it the 16 byte kernels of `simd` (font, demo_kit glue) stop LLVM with "Do not know how to split the result of this operator!"; a build of your own (not through them) has to pass it.
 - Commands: `odin test file_browser -strict-style -vet`, `odin test file_browser/demo_common`, `odin run demo_kit/tool/captures -- --karl2d file_browser`.
