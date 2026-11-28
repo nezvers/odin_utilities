@@ -42,3 +42,5 @@ arena_schema_server/
 providers.local.txt
 /file_browser/demo_web/game/bin/
 /file_browser/demo_web/game/build/
+/simd/web_check/game/bin/
+/simd/web_check/game/build/
