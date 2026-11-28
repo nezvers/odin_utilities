@@ -127,6 +127,19 @@ ValueObject :: proc "contextless" (object: rawptr) -> Value {
     return {kind = .OBJECT, object = object}
 }
 
+// An object that a class keeps between two calls (a Resource in a property): `ObjectKeep` takes a reference when it is a RefCounted, `ObjectRelease` gives it back and frees the object when it was the
+// last one. Both do nothing for nil. A Node is not reference counted: the engine owns it, do not keep it past its life. The result of `reference` is what the engine says about success.
+ObjectKeep :: proc(object: rawptr) {
+    if object == nil { return }
+    Call(object, "RefCounted", "reference", 2240911060, {})
+}
+
+ObjectRelease :: proc(object: rawptr) {
+    if object == nil { return }
+    freed, ok := Call(object, "RefCounted", "unreference", 2240911060, {})
+    if ok && freed.number != 0 { gd.object_destroy(object) }
+}
+
 ValueBool :: proc "contextless" (flag: bool) -> Value {
     return {kind = .BOOL, number = 1 if flag else 0}
 }
@@ -235,6 +248,7 @@ Class :: struct {
     property_names: []GdStringName,    // name, getter, setter of each property: three entries
     property_hints: []GdString,        // the hint text of each property
     group_texts: []GdString,           // name and prefix of each group: two entries
+    property_classes: []GdStringName,  // the class of an OBJECT property (its hint text with the hint RESOURCE_TYPE)
     virtual_names: []GdStringName,
     signal_infos: [][MAX_ARGUMENTS]GdPropertyInfo,
     property_infos: [][MAX_ARGUMENTS + 1]GdPropertyInfo,
@@ -310,7 +324,8 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
     values: [MAX_ARGUMENTS]Value
     for kind, i in method.arguments {
         variant: ^GdVariant = cast(^GdVariant)args[i]
-        if kind != .VARIANT && gd.variant_get_type(variant) != variantTypeOf(kind) {
+        // null is a NIL Variant: it is an object argument too (`child = null`)
+        if kind != .VARIANT && gd.variant_get_type(variant) != variantTypeOf(kind) && !(kind == .OBJECT && gd.variant_get_type(variant) == .NIL) {
             error.error, error.argument, error.expected = .INVALID_ARGUMENT, i32(i), i32(variantTypeOf(kind))
             return
         }
@@ -353,7 +368,7 @@ callMethod :: proc "c" (userdata: rawptr, instance: GdInstance, args: [^]rawptr,
             values[i].keys, values[i].items = readDictionary(&dictionary, context.temp_allocator)
             gd.dictionary_destroy(&dictionary)
         case .OBJECT:
-            gd.to_object(&values[i].object, variant)
+            if gd.variant_get_type(variant) == .OBJECT { gd.to_object(&values[i].object, variant) }
         case .PACKED_INTS:
             array: GdBytes
             gd.packed_ints.to(&array, variant)
@@ -565,6 +580,7 @@ registerClass :: proc "c" (class: ^Class) {
     class.property_names = make([]GdStringName, len(class.properties) * 3)
     class.property_hints = make([]GdString, len(class.properties))
     class.group_texts = make([]GdString, len(class.groups) * 2)
+    class.property_classes = make([]GdStringName, len(class.properties))
     for property, i in class.properties {
         class.property_names[i * 3] = stringName(property.name)
         class.property_names[i * 3 + 1] = stringName(property.getter)
@@ -585,7 +601,17 @@ registerClass :: proc "c" (class: ^Class) {
                 hint_text = &class.property_hints[i]
             }
         }
-        info: GdPropertyInfo = {type = variantTypeOf(property.kind), name = &class.property_names[i * 3], hint = u32(hint), class_name = &empty_name, hint_string = hint_text, usage = usageOf(property.kind)}
+        class_name: ^GdStringName = &empty_name
+        if property.kind == .OBJECT && hint == .RESOURCE_TYPE && hint_text != &empty_string {
+            // the editor and the .tres loader need the class of the object: the hint text names it
+            for candidate in class.hints {
+                if candidate.property == property.name && candidate.text != nil {
+                    class.property_classes[i] = stringName(candidate.text)
+                    class_name = &class.property_classes[i]
+                }
+            }
+        }
+        info: GdPropertyInfo = {type = variantTypeOf(property.kind), name = &class.property_names[i * 3], hint = u32(hint), class_name = class_name, hint_string = hint_text, usage = usageOf(property.kind)}
         gd.register_property(gd.library, &class.name_id, &info, &class.property_names[i * 3 + 2], &class.property_names[i * 3 + 1])
     }
     for constant in class.constants {

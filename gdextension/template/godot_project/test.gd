@@ -34,12 +34,22 @@ func _init() -> void:
 	var settings := Settings.new()
 	settings.title = "fast"
 	settings.speed = 2.5
+	var inner := Settings.new()
+	inner.title = "inner"
+	settings.child = inner
+	var references: int = inner.get_reference_count()
+	_check(failures, references == 2, "a Resource property keeps a reference: %s" % [references])
+	_check(failures, settings.child == inner, "and gives the object back")
+	_check(failures, settings.get_property_list().any(func(p: Dictionary) -> bool: return p.name == "child" and p.class_name == &"Settings" and p.hint == PROPERTY_HINT_RESOURCE_TYPE), "the property names its class")
 	var settings_path := "user://odin_template_settings.tres"
 	_check(failures, settings is Resource and ResourceSaver.save(settings, settings_path) == OK, "a Resource of the extension is saved")
 	var loaded: Resource = ResourceLoader.load(settings_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	_check(failures, loaded != null and loaded.title == "fast" and loaded.speed == 2.5, "and loaded again with its properties: %s" % [loaded])
 	_check(failures, FileAccess.get_file_as_string(settings_path).contains('type="Settings"'), "the file names the class")
+	_check(failures, loaded != null and loaded.child != null and loaded.child.title == "inner", "a nested Resource is saved with it: %s" % [loaded.child if loaded else null])
 	DirAccess.remove_absolute(settings_path)
+	settings.child = null
+	_check(failures, inner.get_reference_count() == 1, "setting null gives the reference back: %s" % [inner.get_reference_count()])
 	var hints := {}
 	for p in counter.get_property_list():
 		hints[p.name] = [p.hint, p.hint_string]

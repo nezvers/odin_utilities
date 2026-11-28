@@ -31,7 +31,7 @@ test_the_template_extension_works_in_godot :: proc(t: ^testing.T) {
 
     // the first run of a project imports it: that writes the list of extensions that Godot loads
     _, _, _, _ = os.process_exec({command = {"godot", "--headless", "--path", PROJECT, "--import"}}, context.temp_allocator)
-    state, output, errors, run_error := os.process_exec({command = {"godot", "--headless", "--path", PROJECT, "--script", "test.gd"}}, context.temp_allocator)
+    state, output, errors, run_error := os.process_exec({command = {"godot", "--headless", "--quit-after", "600", "--path", PROJECT, "--script", "test.gd"}}, context.temp_allocator)
     text: string = strings.concatenate({string(output), string(errors)}, context.temp_allocator)
     testing.expectf(t, run_error == nil && state.success && strings.contains(text, "PASS"), "test.gd passes:\n%s", text)
 

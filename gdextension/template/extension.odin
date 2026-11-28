@@ -377,19 +377,25 @@ Settings :: struct {
     title: [64]u8,
     title_length: int,
     speed: f64,
+    child: rawptr,          // another Settings (a reference is kept while it is here)
 }
 
 settings_class: ge.Class = {
     name = "Settings",
     parent = "Resource",
     create = proc() -> rawptr { return new(Settings) },
-    destroy = proc(instance: rawptr) { free(instance) },
+    destroy = proc(instance: rawptr) {
+        ge.ObjectRelease((cast(^Settings)instance).child)
+        free(instance)
+    },
     bind = proc(instance: rawptr, object: rawptr) { (cast(^Settings)instance).object = object },
     properties = {
         {"title", .STRING, "get_title", "set_title"},
         {"speed", .FLOAT, "get_speed", "set_speed"},
+        {"child", .OBJECT, "get_child", "set_child"},
     },
     hints = {
+        {"child", .RESOURCE_TYPE, "Settings"},
         {"speed", .RANGE, "0,10,0.5"},
     },
     methods = {
@@ -400,6 +406,15 @@ settings_class: ge.Class = {
         {"set_title", {.STRING}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             settings: ^Settings = cast(^Settings)instance
             settings.title_length = copy(settings.title[:], a[0].text)
+            return {}
+        }},
+        {"get_child", {}, .OBJECT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueObject((cast(^Settings)instance).child) }},
+        {"set_child", {.OBJECT}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            settings: ^Settings = cast(^Settings)instance
+            if settings.child == a[0].object { return {} }
+            ge.ObjectKeep(a[0].object)
+            ge.ObjectRelease(settings.child)
+            settings.child = a[0].object
             return {}
         }},
         {"get_speed", {}, .FLOAT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueFloat((cast(^Settings)instance).speed) }},
