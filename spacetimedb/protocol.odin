@@ -208,7 +208,7 @@ ServerMessage :: union {
     SubscribeBatchApplied,
 }
 
-// A frame that came over the socket: the first byte says how it is compressed. `ok` is false for a compressed frame (connect with compression=None) or an empty one.
+// A frame that came over the socket: the first byte says how it is compressed. `ok` is false for a compressed frame (gzip: `ServerFrameInflate`) or an empty one.
 ServerFrame :: proc(frame: []u8) -> (body: []u8, ok: bool) {
     if len(frame) == 0 || frame[0] != COMPRESSION_NONE { return nil, false }
     return frame[1:], true

@@ -21,6 +21,7 @@ package spacetimedb
 
 import "base:runtime"
 import "core:fmt"
+import "core:mem"
 import "core:time"
 
 CONNECTION_SEND_BUFFER :: 1 << 16
@@ -36,6 +37,7 @@ ConnectionConfig :: struct {
     confirmed: bool,            // `confirmed=true`: the server tells a change only when it is durable (slower, never taken back)
     refresh: proc(user: rawptr) -> string,      // for a login that expires (OIDC, see auth.odin): asked for the token again at every reconnect; "" keeps the one in use. The text is copied.
     refresh_user: rawptr,
+    inflate: []u8,              // memory to inflate gzip frames in (it has to hold the biggest message after inflating): given, the server may compress big frames (`compression=Gzip`); nil: it never does. By reference, as the database.
 }
 
 // What the connection subscribed to, to do it again after a reconnect (the query strings are kept by reference)
@@ -63,6 +65,7 @@ Connection :: struct {
     next_attempt: time.Tick,
     coalesced: int,                                 // frames that held more than one message (protocol v3), for tests and statistics
     pending: []u8,                                  // the rest of a v3 frame: more messages, decoded by the next polls (it points into the socket's buffer, which is not touched before it is used up)
+    inflate: mem.Arena,                             // over config.inflate: holds the frame that was inflated last (`pending` may point into it)
     dropped: bool,                                  // the socket closed after it was open: `ConnectionMaintain` reconnects
 }
 
@@ -91,6 +94,7 @@ ConnectionOpen :: proc(connection: ^Connection, config: ConnectionConfig, receiv
     connection.token_length = copy(connection.token[:], token)
     connection.config = config
     connection.config.token = ""
+    mem.arena_init(&connection.inflate, config.inflate)
     connection.receive_buffer, connection.message_buffer = receive, message
     return connectSocket(connection)
 }
@@ -104,7 +108,7 @@ connectSocket :: proc(connection: ^Connection) -> bool {
         if renewed != "" && len(renewed) <= CONNECTION_TOKEN_LENGTH { connection.token_length = copy(connection.token[:], renewed) }
     }
     token: string = ConnectionToken(connection)
-    path: string = fmt.tprintf("/v1/database/%s/subscribe?compression=None%s", config.database, "&confirmed=true" if config.confirmed else "")
+    path: string = fmt.tprintf("/v1/database/%s/subscribe?compression=%s%s", config.database, "Gzip" if len(config.inflate) > 0 else "None", "&confirmed=true" if config.confirmed else "")
     headers: [1]HttpHeader = {{"Authorization", fmt.tprintf("Bearer %s", token)}}
     // v3 first: the server may then put several messages into one frame; a server without v3 answers v2, which has one message per frame
     protocols: [2]string = {PROTOCOL_V3, PROTOCOL_V2}
@@ -238,6 +242,11 @@ ConnectionPoll :: proc(connection: ^Connection, allocator: runtime.Allocator) ->
             continue                        // the server speaks binary on this protocol
         case .BINARY:
             body, ok := ServerFrame(payload)
+            if !ok && len(payload) > 0 && payload[0] == COMPRESSION_GZIP && len(connection.config.inflate) > 0 {
+                // the previous frame is used up (pending is empty here), so its memory can be taken again
+                free_all(mem.arena_allocator(&connection.inflate))
+                body, ok = ServerFrameInflate(payload, &connection.inflate)
+            }
             if !ok { continue }
             decoded, rest, decoded_ok := ServerMessageDecodeNext(body, allocator)
             if !decoded_ok { continue }

@@ -2,8 +2,11 @@
 package spacetimedb
 
 import "base:runtime"
+import "core:compress/deflate"
 import "core:fmt"
+import "core:mem"
 import "core:os"
+import "core:slice"
 import "core:strings"
 import "core:testing"
 
@@ -302,7 +305,8 @@ runSession :: proc(t: ^testing.T, module_path: string, port: int) {
     first, second: Connection
     testing.expect(t, ConnectionOpen(&first, {endpoint = server.endpoint, database = "odin-session"}, receive_a[:], message_a[:]), "the first client connects")
     testing.expect_value(t, WebSocketProtocol(&first.socket), PROTOCOL_V3)       // this server speaks v3 and the client asked for it first
-    testing.expect(t, ConnectionOpen(&second, {endpoint = server.endpoint, database = "odin-session"}, receive_b[:], message_b[:]), "the second client connects")
+    inflate_memory: [1 << 16]u8       // the second client lets the server compress big frames (this small session may not make one: the test is that the server accepts the request)
+    testing.expect(t, ConnectionOpen(&second, {endpoint = server.endpoint, database = "odin-session", inflate = inflate_memory[:]}, receive_b[:], message_b[:]), "the second client connects")
     defer ConnectionClose(&first)
     defer ConnectionClose(&second)
     testing.expect(t, first.token_length > 0 && ConnectionToken(&first) != ConnectionToken(&second), "every client has an identity of its own")
@@ -460,4 +464,63 @@ test_procedure_and_batch_messages_are_encoded :: proc(t: ^testing.T) {
     testing.expect_value(t, ReadU32(&reader), 3)
     testing.expect_value(t, ReadLength(&reader, 1), 2)
     testing.expect_value(t, ReadU32(&reader), 5)
+}
+
+@(test)
+test_gzip_frames_are_inflated_into_the_given_memory :: proc(t: ^testing.T) {
+    // a message that repeats itself, so that gzip makes it much smaller
+    message: [4096]u8
+    writer: Writer = WriterMake(message[:])
+    WriteTag(&writer, 0)
+    identity: Identity
+    identity[5] = 7
+    WriteIdentity(&writer, identity)
+    connection_id: ConnectionId
+    WriteConnectionId(&writer, connection_id)
+    WriteString(&writer, strings.repeat("token", 400, context.temp_allocator))
+    body: []u8 = WriterBytes(&writer)
+
+    packed: [dynamic]u8
+    packed.allocator = context.temp_allocator
+    append(&packed, COMPRESSION_GZIP)
+    gzipped: [dynamic]u8
+    gzipped.allocator = context.temp_allocator
+    testing.expect(t, deflate.compress_gzip_to_dynamic(&gzipped, body, allocator = context.temp_allocator) == nil)
+    append(&packed, ..gzipped[:])
+    testing.expectf(t, len(packed) < len(body) / 4, "the frame is smaller: %d of %d", len(packed), len(body))
+
+    memory: [16384]u8
+    arena: mem.Arena
+    mem.arena_init(&arena, memory[:])
+    inflated, ok := ServerFrameInflate(packed[:], &arena)
+    testing.expect(t, ok)
+    testing.expect(t, slice.equal(inflated, body))
+    decoded, decoded_ok := ServerMessageDecode(inflated, context.temp_allocator)
+    initial, is_initial := decoded.(InitialConnection)
+    testing.expect(t, decoded_ok && is_initial && initial.identity == identity && len(initial.token) == 2000)
+
+    // the arena is cleared per frame: the same memory serves the next frame
+    free_all(mem.arena_allocator(&arena))
+    again, again_ok := ServerFrameInflate(packed[:], &arena)
+    testing.expect(t, again_ok && slice.equal(again, body))
+
+    // a memory that is too small, damaged data, a frame that is not gzip: refused, never a crash
+    small: [256]u8
+    small_arena: mem.Arena
+    mem.arena_init(&small_arena, small[:])
+    _, small_ok := ServerFrameInflate(packed[:], &small_arena)
+    testing.expect(t, !small_ok)
+    free_all(mem.arena_allocator(&arena))
+    damaged: [dynamic]u8
+    damaged.allocator = context.temp_allocator
+    append(&damaged, ..packed[:])
+    damaged[len(damaged) / 2] ~= 0x55
+    _, damaged_ok := ServerFrameInflate(damaged[:], &arena)
+    testing.expect(t, !damaged_ok)
+    free_all(mem.arena_allocator(&arena))
+    _, truncated_ok := ServerFrameInflate(packed[:len(packed) - 6], &arena)
+    testing.expect(t, !truncated_ok)
+    plain: [8]u8 = {COMPRESSION_NONE, 1, 2, 3, 4, 5, 6, 7}
+    _, plain_ok := ServerFrameInflate(plain[:], &arena)
+    testing.expect(t, !plain_ok)
 }
