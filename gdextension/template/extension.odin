@@ -339,6 +339,18 @@ counter_class: ge.Class = {
             status, _ := engine.ObjectConnect(a[0].object, string(a[1].text), a[2].callable)
             return ge.ValueInt(status)
         }},
+        // generated wrappers of more classes: a Sprite2D sheet (a Vector2i argument), a Camera2D zoom (a Vector2 result), an Area2D flag
+        {"sprite_frame", {.OBJECT, .OBJECT, .OBJECT}, .FLOAT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            engine.Sprite2DSetHframes(a[0].object, 4)
+            engine.Sprite2DSetVframes(a[0].object, 2)
+            engine.Sprite2DSetFrameCoords(a[0].object, {3, 1})
+            frame, _ := engine.Sprite2DGetFrame(a[0].object)
+            engine.Camera2DSetZoom(a[1].object, {2, 4})
+            zoom, _ := engine.Camera2DGetZoom(a[1].object)
+            engine.Area2DSetMonitoring(a[2].object, false)
+            monitoring, _ := engine.Area2DIsMonitoring(a[2].object)
+            return ge.ValueFloat(f64(frame) * 1000 + zoom[0] * 100 + zoom[1] * 10 + (1 if monitoring else 0))
+        }},
         {"parent_of", {.OBJECT}, .OBJECT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             parent, _ := engine.NodeGetParent(a[0].object)
             return ge.ValueObject(parent)

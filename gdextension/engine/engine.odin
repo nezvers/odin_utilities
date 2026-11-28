@@ -2956,3 +2956,1074 @@ TimerGetTimerProcessCallback :: proc(self: rawptr) -> (i64, bool) {
     return result.number, ok
 }
 
+// ---- Sprite2D ----
+
+Sprite2DSetTexture :: proc(self: rawptr, texture: rawptr) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_texture", 4051416890, {ge.ValueObject(texture)})
+    return ok
+}
+
+Sprite2DGetTexture :: proc(self: rawptr) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "get_texture", 3635182373, {})
+    return result.object, ok
+}
+
+Sprite2DSetCentered :: proc(self: rawptr, centered: bool) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_centered", 2586408642, {ge.ValueBool(centered)})
+    return ok
+}
+
+Sprite2DIsCentered :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "is_centered", 36873697, {})
+    return result.number != 0, ok
+}
+
+Sprite2DSetOffset :: proc(self: rawptr, offset: [2]f64) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_offset", 743155724, {ge.ValueVector2(offset[0], offset[1])})
+    return ok
+}
+
+Sprite2DGetOffset :: proc(self: rawptr) -> ([2]f64, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "get_offset", 3341600327, {})
+    return [2]f64{result.real[0], result.real[1]}, ok
+}
+
+Sprite2DSetFlipH :: proc(self: rawptr, flip_h: bool) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_flip_h", 2586408642, {ge.ValueBool(flip_h)})
+    return ok
+}
+
+Sprite2DIsFlippedH :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "is_flipped_h", 36873697, {})
+    return result.number != 0, ok
+}
+
+Sprite2DSetFlipV :: proc(self: rawptr, flip_v: bool) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_flip_v", 2586408642, {ge.ValueBool(flip_v)})
+    return ok
+}
+
+Sprite2DIsFlippedV :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "is_flipped_v", 36873697, {})
+    return result.number != 0, ok
+}
+
+Sprite2DSetRegionEnabled :: proc(self: rawptr, enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_region_enabled", 2586408642, {ge.ValueBool(enabled)})
+    return ok
+}
+
+Sprite2DIsRegionEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "is_region_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Sprite2DIsPixelOpaque :: proc(self: rawptr, pos: [2]f64) -> (bool, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "is_pixel_opaque", 556197845, {ge.ValueVector2(pos[0], pos[1])})
+    return result.number != 0, ok
+}
+
+Sprite2DSetRegionRect :: proc(self: rawptr, rect: [4]f64) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_region_rect", 2046264180, {ge.Value{kind = .RECT2, real = {rect[0], rect[1], rect[2], rect[3]}}})
+    return ok
+}
+
+Sprite2DGetRegionRect :: proc(self: rawptr) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "get_region_rect", 1639390495, {})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
+}
+
+Sprite2DSetRegionFilterClipEnabled :: proc(self: rawptr, enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_region_filter_clip_enabled", 2586408642, {ge.ValueBool(enabled)})
+    return ok
+}
+
+Sprite2DIsRegionFilterClipEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "is_region_filter_clip_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Sprite2DSetFrame :: proc(self: rawptr, frame: i64) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_frame", 1286410249, {ge.ValueInt(frame)})
+    return ok
+}
+
+Sprite2DGetFrame :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "get_frame", 3905245786, {})
+    return result.number, ok
+}
+
+Sprite2DSetFrameCoords :: proc(self: rawptr, coords: [2]i64) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_frame_coords", 1130785943, {ge.Value{kind = .VECTOR2I, real = {f64(coords[0]), f64(coords[1]), 0, 0}}})
+    return ok
+}
+
+Sprite2DGetFrameCoords :: proc(self: rawptr) -> ([2]i64, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "get_frame_coords", 3690982128, {})
+    return [2]i64{i64(result.real[0]), i64(result.real[1])}, ok
+}
+
+Sprite2DSetVframes :: proc(self: rawptr, vframes: i64) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_vframes", 1286410249, {ge.ValueInt(vframes)})
+    return ok
+}
+
+Sprite2DGetVframes :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "get_vframes", 3905245786, {})
+    return result.number, ok
+}
+
+Sprite2DSetHframes :: proc(self: rawptr, hframes: i64) -> bool {
+    _, ok := ge.Call(self, "Sprite2D", "set_hframes", 1286410249, {ge.ValueInt(hframes)})
+    return ok
+}
+
+Sprite2DGetHframes :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "get_hframes", 3905245786, {})
+    return result.number, ok
+}
+
+Sprite2DGetRect :: proc(self: rawptr) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "Sprite2D", "get_rect", 1639390495, {})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
+}
+
+// ---- Camera2D ----
+
+Camera2DSetOffset :: proc(self: rawptr, offset: [2]f64) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_offset", 743155724, {ge.ValueVector2(offset[0], offset[1])})
+    return ok
+}
+
+Camera2DGetOffset :: proc(self: rawptr) -> ([2]f64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_offset", 3341600327, {})
+    return [2]f64{result.real[0], result.real[1]}, ok
+}
+
+Camera2DSetAnchorMode :: proc(self: rawptr, anchor_mode: i64) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_anchor_mode", 2050398218, {ge.ValueInt(anchor_mode)})
+    return ok
+}
+
+Camera2DGetAnchorMode :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_anchor_mode", 155978067, {})
+    return result.number, ok
+}
+
+Camera2DSetIgnoreRotation :: proc(self: rawptr, ignore: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_ignore_rotation", 2586408642, {ge.ValueBool(ignore)})
+    return ok
+}
+
+Camera2DIsIgnoringRotation :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_ignoring_rotation", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DSetProcessCallback :: proc(self: rawptr, mode: i64) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_process_callback", 4201947462, {ge.ValueInt(mode)})
+    return ok
+}
+
+Camera2DGetProcessCallback :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_process_callback", 2325344499, {})
+    return result.number, ok
+}
+
+Camera2DSetEnabled :: proc(self: rawptr, enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_enabled", 2586408642, {ge.ValueBool(enabled)})
+    return ok
+}
+
+Camera2DIsEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DMakeCurrent :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "make_current", 3218959716, {})
+    return ok
+}
+
+Camera2DIsCurrent :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_current", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DSetLimitEnabled :: proc(self: rawptr, limit_enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_limit_enabled", 2586408642, {ge.ValueBool(limit_enabled)})
+    return ok
+}
+
+Camera2DIsLimitEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_limit_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DSetLimit :: proc(self: rawptr, margin: i64, limit: i64) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_limit", 437707142, {ge.ValueInt(margin), ge.ValueInt(limit)})
+    return ok
+}
+
+Camera2DGetLimit :: proc(self: rawptr, margin: i64) -> (i64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_limit", 1983885014, {ge.ValueInt(margin)})
+    return result.number, ok
+}
+
+Camera2DSetLimitSmoothingEnabled :: proc(self: rawptr, limit_smoothing_enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_limit_smoothing_enabled", 2586408642, {ge.ValueBool(limit_smoothing_enabled)})
+    return ok
+}
+
+Camera2DIsLimitSmoothingEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_limit_smoothing_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DSetDragVerticalEnabled :: proc(self: rawptr, enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_drag_vertical_enabled", 2586408642, {ge.ValueBool(enabled)})
+    return ok
+}
+
+Camera2DIsDragVerticalEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_drag_vertical_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DSetDragHorizontalEnabled :: proc(self: rawptr, enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_drag_horizontal_enabled", 2586408642, {ge.ValueBool(enabled)})
+    return ok
+}
+
+Camera2DIsDragHorizontalEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_drag_horizontal_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DSetDragVerticalOffset :: proc(self: rawptr, offset: f64) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_drag_vertical_offset", 373806689, {ge.ValueFloat(offset)})
+    return ok
+}
+
+Camera2DGetDragVerticalOffset :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_drag_vertical_offset", 1740695150, {})
+    return result.real[0], ok
+}
+
+Camera2DSetDragHorizontalOffset :: proc(self: rawptr, offset: f64) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_drag_horizontal_offset", 373806689, {ge.ValueFloat(offset)})
+    return ok
+}
+
+Camera2DGetDragHorizontalOffset :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_drag_horizontal_offset", 1740695150, {})
+    return result.real[0], ok
+}
+
+Camera2DSetDragMargin :: proc(self: rawptr, margin: i64, drag_margin: f64) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_drag_margin", 4290182280, {ge.ValueInt(margin), ge.ValueFloat(drag_margin)})
+    return ok
+}
+
+Camera2DGetDragMargin :: proc(self: rawptr, margin: i64) -> (f64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_drag_margin", 2869120046, {ge.ValueInt(margin)})
+    return result.real[0], ok
+}
+
+Camera2DGetTargetPosition :: proc(self: rawptr) -> ([2]f64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_target_position", 3341600327, {})
+    return [2]f64{result.real[0], result.real[1]}, ok
+}
+
+Camera2DGetScreenCenterPosition :: proc(self: rawptr) -> ([2]f64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_screen_center_position", 3341600327, {})
+    return [2]f64{result.real[0], result.real[1]}, ok
+}
+
+Camera2DGetScreenRotation :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_screen_rotation", 1740695150, {})
+    return result.real[0], ok
+}
+
+Camera2DSetZoom :: proc(self: rawptr, zoom: [2]f64) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_zoom", 743155724, {ge.ValueVector2(zoom[0], zoom[1])})
+    return ok
+}
+
+Camera2DGetZoom :: proc(self: rawptr) -> ([2]f64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_zoom", 3341600327, {})
+    return [2]f64{result.real[0], result.real[1]}, ok
+}
+
+Camera2DSetCustomViewport :: proc(self: rawptr, viewport: rawptr) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_custom_viewport", 1078189570, {ge.ValueObject(viewport)})
+    return ok
+}
+
+Camera2DGetCustomViewport :: proc(self: rawptr) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_custom_viewport", 3160264692, {})
+    return result.object, ok
+}
+
+Camera2DSetPositionSmoothingSpeed :: proc(self: rawptr, position_smoothing_speed: f64) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_position_smoothing_speed", 373806689, {ge.ValueFloat(position_smoothing_speed)})
+    return ok
+}
+
+Camera2DGetPositionSmoothingSpeed :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_position_smoothing_speed", 1740695150, {})
+    return result.real[0], ok
+}
+
+Camera2DSetPositionSmoothingEnabled :: proc(self: rawptr, enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_position_smoothing_enabled", 2586408642, {ge.ValueBool(enabled)})
+    return ok
+}
+
+Camera2DIsPositionSmoothingEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_position_smoothing_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DSetRotationSmoothingEnabled :: proc(self: rawptr, enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_rotation_smoothing_enabled", 2586408642, {ge.ValueBool(enabled)})
+    return ok
+}
+
+Camera2DIsRotationSmoothingEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_rotation_smoothing_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DSetRotationSmoothingSpeed :: proc(self: rawptr, speed: f64) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_rotation_smoothing_speed", 373806689, {ge.ValueFloat(speed)})
+    return ok
+}
+
+Camera2DGetRotationSmoothingSpeed :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "Camera2D", "get_rotation_smoothing_speed", 1740695150, {})
+    return result.real[0], ok
+}
+
+Camera2DForceUpdateScroll :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "force_update_scroll", 3218959716, {})
+    return ok
+}
+
+Camera2DResetSmoothing :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "reset_smoothing", 3218959716, {})
+    return ok
+}
+
+Camera2DAlign :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "align", 3218959716, {})
+    return ok
+}
+
+Camera2DSetScreenDrawingEnabled :: proc(self: rawptr, screen_drawing_enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_screen_drawing_enabled", 2586408642, {ge.ValueBool(screen_drawing_enabled)})
+    return ok
+}
+
+Camera2DIsScreenDrawingEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_screen_drawing_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DSetLimitDrawingEnabled :: proc(self: rawptr, limit_drawing_enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_limit_drawing_enabled", 2586408642, {ge.ValueBool(limit_drawing_enabled)})
+    return ok
+}
+
+Camera2DIsLimitDrawingEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_limit_drawing_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+Camera2DSetMarginDrawingEnabled :: proc(self: rawptr, margin_drawing_enabled: bool) -> bool {
+    _, ok := ge.Call(self, "Camera2D", "set_margin_drawing_enabled", 2586408642, {ge.ValueBool(margin_drawing_enabled)})
+    return ok
+}
+
+Camera2DIsMarginDrawingEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Camera2D", "is_margin_drawing_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+// ---- Area2D ----
+
+Area2DSetGravitySpaceOverrideMode :: proc(self: rawptr, space_override_mode: i64) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_gravity_space_override_mode", 2879900038, {ge.ValueInt(space_override_mode)})
+    return ok
+}
+
+Area2DGetGravitySpaceOverrideMode :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_gravity_space_override_mode", 3990256304, {})
+    return result.number, ok
+}
+
+Area2DSetGravityIsPoint :: proc(self: rawptr, enable: bool) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_gravity_is_point", 2586408642, {ge.ValueBool(enable)})
+    return ok
+}
+
+Area2DIsGravityAPoint :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Area2D", "is_gravity_a_point", 36873697, {})
+    return result.number != 0, ok
+}
+
+Area2DSetGravityPointUnitDistance :: proc(self: rawptr, distance_scale: f64) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_gravity_point_unit_distance", 373806689, {ge.ValueFloat(distance_scale)})
+    return ok
+}
+
+Area2DGetGravityPointUnitDistance :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_gravity_point_unit_distance", 1740695150, {})
+    return result.real[0], ok
+}
+
+Area2DSetGravityPointCenter :: proc(self: rawptr, center: [2]f64) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_gravity_point_center", 743155724, {ge.ValueVector2(center[0], center[1])})
+    return ok
+}
+
+Area2DGetGravityPointCenter :: proc(self: rawptr) -> ([2]f64, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_gravity_point_center", 3341600327, {})
+    return [2]f64{result.real[0], result.real[1]}, ok
+}
+
+Area2DSetGravityDirection :: proc(self: rawptr, direction: [2]f64) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_gravity_direction", 743155724, {ge.ValueVector2(direction[0], direction[1])})
+    return ok
+}
+
+Area2DGetGravityDirection :: proc(self: rawptr) -> ([2]f64, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_gravity_direction", 3341600327, {})
+    return [2]f64{result.real[0], result.real[1]}, ok
+}
+
+Area2DSetGravity :: proc(self: rawptr, gravity: f64) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_gravity", 373806689, {ge.ValueFloat(gravity)})
+    return ok
+}
+
+Area2DGetGravity :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_gravity", 1740695150, {})
+    return result.real[0], ok
+}
+
+Area2DSetLinearDampSpaceOverrideMode :: proc(self: rawptr, space_override_mode: i64) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_linear_damp_space_override_mode", 2879900038, {ge.ValueInt(space_override_mode)})
+    return ok
+}
+
+Area2DGetLinearDampSpaceOverrideMode :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_linear_damp_space_override_mode", 3990256304, {})
+    return result.number, ok
+}
+
+Area2DSetAngularDampSpaceOverrideMode :: proc(self: rawptr, space_override_mode: i64) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_angular_damp_space_override_mode", 2879900038, {ge.ValueInt(space_override_mode)})
+    return ok
+}
+
+Area2DGetAngularDampSpaceOverrideMode :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_angular_damp_space_override_mode", 3990256304, {})
+    return result.number, ok
+}
+
+Area2DSetLinearDamp :: proc(self: rawptr, linear_damp: f64) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_linear_damp", 373806689, {ge.ValueFloat(linear_damp)})
+    return ok
+}
+
+Area2DGetLinearDamp :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_linear_damp", 1740695150, {})
+    return result.real[0], ok
+}
+
+Area2DSetAngularDamp :: proc(self: rawptr, angular_damp: f64) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_angular_damp", 373806689, {ge.ValueFloat(angular_damp)})
+    return ok
+}
+
+Area2DGetAngularDamp :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_angular_damp", 1740695150, {})
+    return result.real[0], ok
+}
+
+Area2DSetPriority :: proc(self: rawptr, priority: i64) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_priority", 1286410249, {ge.ValueInt(priority)})
+    return ok
+}
+
+Area2DGetPriority :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_priority", 3905245786, {})
+    return result.number, ok
+}
+
+Area2DSetMonitoring :: proc(self: rawptr, enable: bool) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_monitoring", 2586408642, {ge.ValueBool(enable)})
+    return ok
+}
+
+Area2DIsMonitoring :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Area2D", "is_monitoring", 36873697, {})
+    return result.number != 0, ok
+}
+
+Area2DSetMonitorable :: proc(self: rawptr, enable: bool) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_monitorable", 2586408642, {ge.ValueBool(enable)})
+    return ok
+}
+
+Area2DIsMonitorable :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Area2D", "is_monitorable", 36873697, {})
+    return result.number != 0, ok
+}
+
+Area2DGetOverlappingBodies :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_overlapping_bodies", 3995934104, {})
+    return result.items, ok
+}
+
+Area2DGetOverlappingAreas :: proc(self: rawptr) -> ([]ge.Value, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_overlapping_areas", 3995934104, {})
+    return result.items, ok
+}
+
+Area2DHasOverlappingBodies :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Area2D", "has_overlapping_bodies", 36873697, {})
+    return result.number != 0, ok
+}
+
+Area2DHasOverlappingAreas :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Area2D", "has_overlapping_areas", 36873697, {})
+    return result.number != 0, ok
+}
+
+Area2DOverlapsBody :: proc(self: rawptr, body: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Area2D", "overlaps_body", 3093956946, {ge.ValueObject(body)})
+    return result.number != 0, ok
+}
+
+Area2DOverlapsArea :: proc(self: rawptr, area: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Area2D", "overlaps_area", 3093956946, {ge.ValueObject(area)})
+    return result.number != 0, ok
+}
+
+Area2DSetAudioBusName :: proc(self: rawptr, name: string) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_audio_bus_name", 3304788590, {ge.ValueText(name)})
+    return ok
+}
+
+Area2DGetAudioBusName :: proc(self: rawptr) -> (string, bool) {
+    result, ok := ge.Call(self, "Area2D", "get_audio_bus_name", 2002593661, {})
+    return string(result.text), ok
+}
+
+Area2DSetAudioBusOverride :: proc(self: rawptr, enable: bool) -> bool {
+    _, ok := ge.Call(self, "Area2D", "set_audio_bus_override", 2586408642, {ge.ValueBool(enable)})
+    return ok
+}
+
+Area2DIsOverridingAudioBus :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Area2D", "is_overriding_audio_bus", 36873697, {})
+    return result.number != 0, ok
+}
+
+// ---- CollisionObject2D ----
+
+CollisionObject2DSetCollisionLayer :: proc(self: rawptr, layer: i64) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "set_collision_layer", 1286410249, {ge.ValueInt(layer)})
+    return ok
+}
+
+CollisionObject2DGetCollisionLayer :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "get_collision_layer", 3905245786, {})
+    return result.number, ok
+}
+
+CollisionObject2DSetCollisionMask :: proc(self: rawptr, mask: i64) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "set_collision_mask", 1286410249, {ge.ValueInt(mask)})
+    return ok
+}
+
+CollisionObject2DGetCollisionMask :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "get_collision_mask", 3905245786, {})
+    return result.number, ok
+}
+
+CollisionObject2DSetCollisionLayerValue :: proc(self: rawptr, layer_number: i64, value: bool) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "set_collision_layer_value", 300928843, {ge.ValueInt(layer_number), ge.ValueBool(value)})
+    return ok
+}
+
+CollisionObject2DGetCollisionLayerValue :: proc(self: rawptr, layer_number: i64) -> (bool, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "get_collision_layer_value", 1116898809, {ge.ValueInt(layer_number)})
+    return result.number != 0, ok
+}
+
+CollisionObject2DSetCollisionMaskValue :: proc(self: rawptr, layer_number: i64, value: bool) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "set_collision_mask_value", 300928843, {ge.ValueInt(layer_number), ge.ValueBool(value)})
+    return ok
+}
+
+CollisionObject2DGetCollisionMaskValue :: proc(self: rawptr, layer_number: i64) -> (bool, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "get_collision_mask_value", 1116898809, {ge.ValueInt(layer_number)})
+    return result.number != 0, ok
+}
+
+CollisionObject2DSetCollisionPriority :: proc(self: rawptr, priority: f64) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "set_collision_priority", 373806689, {ge.ValueFloat(priority)})
+    return ok
+}
+
+CollisionObject2DGetCollisionPriority :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "get_collision_priority", 1740695150, {})
+    return result.real[0], ok
+}
+
+CollisionObject2DSetDisableMode :: proc(self: rawptr, mode: i64) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "set_disable_mode", 1919204045, {ge.ValueInt(mode)})
+    return ok
+}
+
+CollisionObject2DGetDisableMode :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "get_disable_mode", 3172846349, {})
+    return result.number, ok
+}
+
+CollisionObject2DSetPickable :: proc(self: rawptr, enabled: bool) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "set_pickable", 2586408642, {ge.ValueBool(enabled)})
+    return ok
+}
+
+CollisionObject2DIsPickable :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "is_pickable", 36873697, {})
+    return result.number != 0, ok
+}
+
+CollisionObject2DCreateShapeOwner :: proc(self: rawptr, owner: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "create_shape_owner", 3429307534, {ge.ValueObject(owner)})
+    return result.number, ok
+}
+
+CollisionObject2DRemoveShapeOwner :: proc(self: rawptr, owner_id: i64) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "remove_shape_owner", 1286410249, {ge.ValueInt(owner_id)})
+    return ok
+}
+
+CollisionObject2DGetShapeOwners :: proc(self: rawptr) -> ([]i32, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "get_shape_owners", 969006518, {})
+    return result.ints32, ok
+}
+
+CollisionObject2DShapeOwnerSetTransform :: proc(self: rawptr, owner_id: i64, transform: []f32) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "shape_owner_set_transform", 30160968, {ge.ValueInt(owner_id), ge.Value{kind = .TRANSFORM2D, floats32 = transform}})
+    return ok
+}
+
+CollisionObject2DShapeOwnerGetTransform :: proc(self: rawptr, owner_id: i64) -> ([]f32, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "shape_owner_get_transform", 3836996910, {ge.ValueInt(owner_id)})
+    return result.floats32, ok
+}
+
+CollisionObject2DShapeOwnerGetOwner :: proc(self: rawptr, owner_id: i64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "shape_owner_get_owner", 3332903315, {ge.ValueInt(owner_id)})
+    return result.object, ok
+}
+
+CollisionObject2DShapeOwnerSetDisabled :: proc(self: rawptr, owner_id: i64, disabled: bool) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "shape_owner_set_disabled", 300928843, {ge.ValueInt(owner_id), ge.ValueBool(disabled)})
+    return ok
+}
+
+CollisionObject2DIsShapeOwnerDisabled :: proc(self: rawptr, owner_id: i64) -> (bool, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "is_shape_owner_disabled", 1116898809, {ge.ValueInt(owner_id)})
+    return result.number != 0, ok
+}
+
+CollisionObject2DShapeOwnerSetOneWayCollision :: proc(self: rawptr, owner_id: i64, enable: bool) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "shape_owner_set_one_way_collision", 300928843, {ge.ValueInt(owner_id), ge.ValueBool(enable)})
+    return ok
+}
+
+CollisionObject2DIsShapeOwnerOneWayCollisionEnabled :: proc(self: rawptr, owner_id: i64) -> (bool, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "is_shape_owner_one_way_collision_enabled", 1116898809, {ge.ValueInt(owner_id)})
+    return result.number != 0, ok
+}
+
+CollisionObject2DShapeOwnerSetOneWayCollisionMargin :: proc(self: rawptr, owner_id: i64, margin: f64) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "shape_owner_set_one_way_collision_margin", 1602489585, {ge.ValueInt(owner_id), ge.ValueFloat(margin)})
+    return ok
+}
+
+CollisionObject2DGetShapeOwnerOneWayCollisionMargin :: proc(self: rawptr, owner_id: i64) -> (f64, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "get_shape_owner_one_way_collision_margin", 2339986948, {ge.ValueInt(owner_id)})
+    return result.real[0], ok
+}
+
+CollisionObject2DGetShapeOwnerOneWayCollisionDirection :: proc(self: rawptr, owner_id: i64) -> ([2]f64, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "get_shape_owner_one_way_collision_direction", 2299179447, {ge.ValueInt(owner_id)})
+    return [2]f64{result.real[0], result.real[1]}, ok
+}
+
+CollisionObject2DShapeOwnerSetOneWayCollisionDirection :: proc(self: rawptr, owner_id: i64, direction: [2]f64) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "shape_owner_set_one_way_collision_direction", 163021252, {ge.ValueInt(owner_id), ge.ValueVector2(direction[0], direction[1])})
+    return ok
+}
+
+CollisionObject2DShapeOwnerAddShape :: proc(self: rawptr, owner_id: i64, shape: rawptr) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "shape_owner_add_shape", 2077425081, {ge.ValueInt(owner_id), ge.ValueObject(shape)})
+    return ok
+}
+
+CollisionObject2DShapeOwnerGetShapeCount :: proc(self: rawptr, owner_id: i64) -> (i64, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "shape_owner_get_shape_count", 923996154, {ge.ValueInt(owner_id)})
+    return result.number, ok
+}
+
+CollisionObject2DShapeOwnerGetShape :: proc(self: rawptr, owner_id: i64, shape_id: i64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "shape_owner_get_shape", 3106725749, {ge.ValueInt(owner_id), ge.ValueInt(shape_id)})
+    return result.object, ok
+}
+
+CollisionObject2DShapeOwnerGetShapeIndex :: proc(self: rawptr, owner_id: i64, shape_id: i64) -> (i64, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "shape_owner_get_shape_index", 3175239445, {ge.ValueInt(owner_id), ge.ValueInt(shape_id)})
+    return result.number, ok
+}
+
+CollisionObject2DShapeOwnerRemoveShape :: proc(self: rawptr, owner_id: i64, shape_id: i64) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "shape_owner_remove_shape", 3937882851, {ge.ValueInt(owner_id), ge.ValueInt(shape_id)})
+    return ok
+}
+
+CollisionObject2DShapeOwnerClearShapes :: proc(self: rawptr, owner_id: i64) -> bool {
+    _, ok := ge.Call(self, "CollisionObject2D", "shape_owner_clear_shapes", 1286410249, {ge.ValueInt(owner_id)})
+    return ok
+}
+
+CollisionObject2DShapeFindOwner :: proc(self: rawptr, shape_index: i64) -> (i64, bool) {
+    result, ok := ge.Call(self, "CollisionObject2D", "shape_find_owner", 923996154, {ge.ValueInt(shape_index)})
+    return result.number, ok
+}
+
+// ---- CollisionShape2D ----
+
+CollisionShape2DSetShape :: proc(self: rawptr, shape: rawptr) -> bool {
+    _, ok := ge.Call(self, "CollisionShape2D", "set_shape", 771364740, {ge.ValueObject(shape)})
+    return ok
+}
+
+CollisionShape2DGetShape :: proc(self: rawptr) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "CollisionShape2D", "get_shape", 522005891, {})
+    return result.object, ok
+}
+
+CollisionShape2DSetDisabled :: proc(self: rawptr, disabled: bool) -> bool {
+    _, ok := ge.Call(self, "CollisionShape2D", "set_disabled", 2586408642, {ge.ValueBool(disabled)})
+    return ok
+}
+
+CollisionShape2DIsDisabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "CollisionShape2D", "is_disabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+CollisionShape2DSetOneWayCollision :: proc(self: rawptr, enabled: bool) -> bool {
+    _, ok := ge.Call(self, "CollisionShape2D", "set_one_way_collision", 2586408642, {ge.ValueBool(enabled)})
+    return ok
+}
+
+CollisionShape2DIsOneWayCollisionEnabled :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "CollisionShape2D", "is_one_way_collision_enabled", 36873697, {})
+    return result.number != 0, ok
+}
+
+CollisionShape2DSetOneWayCollisionMargin :: proc(self: rawptr, margin: f64) -> bool {
+    _, ok := ge.Call(self, "CollisionShape2D", "set_one_way_collision_margin", 373806689, {ge.ValueFloat(margin)})
+    return ok
+}
+
+CollisionShape2DGetOneWayCollisionMargin :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "CollisionShape2D", "get_one_way_collision_margin", 1740695150, {})
+    return result.real[0], ok
+}
+
+CollisionShape2DSetOneWayCollisionDirection :: proc(self: rawptr, direction: [2]f64) -> bool {
+    _, ok := ge.Call(self, "CollisionShape2D", "set_one_way_collision_direction", 743155724, {ge.ValueVector2(direction[0], direction[1])})
+    return ok
+}
+
+CollisionShape2DGetOneWayCollisionDirection :: proc(self: rawptr) -> ([2]f64, bool) {
+    result, ok := ge.Call(self, "CollisionShape2D", "get_one_way_collision_direction", 3341600327, {})
+    return [2]f64{result.real[0], result.real[1]}, ok
+}
+
+CollisionShape2DSetDebugColor :: proc(self: rawptr, color: [4]f64) -> bool {
+    _, ok := ge.Call(self, "CollisionShape2D", "set_debug_color", 2920490490, {ge.Value{kind = .COLOR, real = {color[0], color[1], color[2], color[3]}}})
+    return ok
+}
+
+CollisionShape2DGetDebugColor :: proc(self: rawptr) -> ([4]f64, bool) {
+    result, ok := ge.Call(self, "CollisionShape2D", "get_debug_color", 3444240500, {})
+    return [4]f64{result.real[0], result.real[1], result.real[2], result.real[3]}, ok
+}
+
+// ---- Tween ----
+
+TweenTweenProperty :: proc(self: rawptr, object: rawptr, property: string, final_val: ge.Value, duration: f64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "tween_property", 4049770449, {ge.ValueObject(object), ge.ValueText(property), final_val, ge.ValueFloat(duration)})
+    return result.object, ok
+}
+
+TweenTweenInterval :: proc(self: rawptr, time: f64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "tween_interval", 413360199, {ge.ValueFloat(time)})
+    return result.object, ok
+}
+
+TweenTweenCallback :: proc(self: rawptr, callback: [2]u64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "tween_callback", 1540176488, {ge.Value{kind = .CALLABLE, callable = callback}})
+    return result.object, ok
+}
+
+TweenTweenMethod :: proc(self: rawptr, method: [2]u64, from: ge.Value, to: ge.Value, duration: f64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "tween_method", 2337877153, {ge.Value{kind = .CALLABLE, callable = method}, from, to, ge.ValueFloat(duration)})
+    return result.object, ok
+}
+
+TweenTweenSubtween :: proc(self: rawptr, subtween: rawptr) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "tween_subtween", 1567358477, {ge.ValueObject(subtween)})
+    return result.object, ok
+}
+
+TweenCustomStep :: proc(self: rawptr, delta: f64) -> (bool, bool) {
+    result, ok := ge.Call(self, "Tween", "custom_step", 330693286, {ge.ValueFloat(delta)})
+    return result.number != 0, ok
+}
+
+TweenStop :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Tween", "stop", 3218959716, {})
+    return ok
+}
+
+TweenPause :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Tween", "pause", 3218959716, {})
+    return ok
+}
+
+TweenPlay :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Tween", "play", 3218959716, {})
+    return ok
+}
+
+TweenKill :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Tween", "kill", 3218959716, {})
+    return ok
+}
+
+TweenGetTotalElapsedTime :: proc(self: rawptr) -> (f64, bool) {
+    result, ok := ge.Call(self, "Tween", "get_total_elapsed_time", 1740695150, {})
+    return result.real[0], ok
+}
+
+TweenHasTweeners :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Tween", "has_tweeners", 36873697, {})
+    return result.number != 0, ok
+}
+
+TweenIsRunning :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Tween", "is_running", 2240911060, {})
+    return result.number != 0, ok
+}
+
+TweenIsValid :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Tween", "is_valid", 2240911060, {})
+    return result.number != 0, ok
+}
+
+TweenBindNode :: proc(self: rawptr, node: rawptr) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "bind_node", 2946786331, {ge.ValueObject(node)})
+    return result.object, ok
+}
+
+TweenSetProcessMode :: proc(self: rawptr, mode: i64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "set_process_mode", 855258840, {ge.ValueInt(mode)})
+    return result.object, ok
+}
+
+TweenSetPauseMode :: proc(self: rawptr, mode: i64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "set_pause_mode", 3363368837, {ge.ValueInt(mode)})
+    return result.object, ok
+}
+
+TweenSetIgnoreTimeScale :: proc(self: rawptr, ignore: bool = true) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "set_ignore_time_scale", 1942052223, {ge.ValueBool(ignore)})
+    return result.object, ok
+}
+
+TweenSetParallel :: proc(self: rawptr, parallel: bool = true) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "set_parallel", 1942052223, {ge.ValueBool(parallel)})
+    return result.object, ok
+}
+
+TweenSetLoops :: proc(self: rawptr, loops: i64 = 0) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "set_loops", 2670836414, {ge.ValueInt(loops)})
+    return result.object, ok
+}
+
+TweenGetLoopsLeft :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Tween", "get_loops_left", 3905245786, {})
+    return result.number, ok
+}
+
+TweenSetSpeedScale :: proc(self: rawptr, speed: f64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "set_speed_scale", 3961971106, {ge.ValueFloat(speed)})
+    return result.object, ok
+}
+
+TweenSetTrans :: proc(self: rawptr, trans: i64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "set_trans", 3965963875, {ge.ValueInt(trans)})
+    return result.object, ok
+}
+
+TweenSetEase :: proc(self: rawptr, ease: i64) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "set_ease", 1208117252, {ge.ValueInt(ease)})
+    return result.object, ok
+}
+
+TweenParallel :: proc(self: rawptr) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "parallel", 3426978995, {})
+    return result.object, ok
+}
+
+TweenChain :: proc(self: rawptr) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Tween", "chain", 3426978995, {})
+    return result.object, ok
+}
+
+// ---- Resource ----
+
+ResourceSetPath :: proc(self: rawptr, path: string) -> bool {
+    _, ok := ge.Call(self, "Resource", "set_path", 83702148, {ge.ValueText(path)})
+    return ok
+}
+
+ResourceTakeOverPath :: proc(self: rawptr, path: string) -> bool {
+    _, ok := ge.Call(self, "Resource", "take_over_path", 83702148, {ge.ValueText(path)})
+    return ok
+}
+
+ResourceGetPath :: proc(self: rawptr) -> (string, bool) {
+    result, ok := ge.Call(self, "Resource", "get_path", 201670096, {})
+    return string(result.text), ok
+}
+
+ResourceSetPathCache :: proc(self: rawptr, path: string) -> bool {
+    _, ok := ge.Call(self, "Resource", "set_path_cache", 83702148, {ge.ValueText(path)})
+    return ok
+}
+
+ResourceSetName :: proc(self: rawptr, name: string) -> bool {
+    _, ok := ge.Call(self, "Resource", "set_name", 83702148, {ge.ValueText(name)})
+    return ok
+}
+
+ResourceGetName :: proc(self: rawptr) -> (string, bool) {
+    result, ok := ge.Call(self, "Resource", "get_name", 201670096, {})
+    return string(result.text), ok
+}
+
+ResourceSetLocalToScene :: proc(self: rawptr, enable: bool) -> bool {
+    _, ok := ge.Call(self, "Resource", "set_local_to_scene", 2586408642, {ge.ValueBool(enable)})
+    return ok
+}
+
+ResourceIsLocalToScene :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Resource", "is_local_to_scene", 36873697, {})
+    return result.number != 0, ok
+}
+
+ResourceGetLocalScene :: proc(self: rawptr) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Resource", "get_local_scene", 3160264692, {})
+    return result.object, ok
+}
+
+ResourceSetupLocalToScene :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Resource", "setup_local_to_scene", 3218959716, {})
+    return ok
+}
+
+ResourceResetState :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Resource", "reset_state", 3218959716, {})
+    return ok
+}
+
+ResourceSetIdForPath :: proc(self: rawptr, path: string, id: string) -> bool {
+    _, ok := ge.Call(self, "Resource", "set_id_for_path", 3186203200, {ge.ValueText(path), ge.ValueText(id)})
+    return ok
+}
+
+ResourceGetIdForPath :: proc(self: rawptr, path: string) -> (string, bool) {
+    result, ok := ge.Call(self, "Resource", "get_id_for_path", 3135753539, {ge.ValueText(path)})
+    return string(result.text), ok
+}
+
+ResourceIsBuiltIn :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "Resource", "is_built_in", 36873697, {})
+    return result.number != 0, ok
+}
+
+ResourceSetSceneUniqueId :: proc(self: rawptr, id: string) -> bool {
+    _, ok := ge.Call(self, "Resource", "set_scene_unique_id", 83702148, {ge.ValueText(id)})
+    return ok
+}
+
+ResourceGetSceneUniqueId :: proc(self: rawptr) -> (string, bool) {
+    result, ok := ge.Call(self, "Resource", "get_scene_unique_id", 201670096, {})
+    return string(result.text), ok
+}
+
+ResourceEmitChanged :: proc(self: rawptr) -> bool {
+    _, ok := ge.Call(self, "Resource", "emit_changed", 3218959716, {})
+    return ok
+}
+
+ResourceDuplicate :: proc(self: rawptr, deep: bool = false) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Resource", "duplicate", 482882304, {ge.ValueBool(deep)})
+    return result.object, ok
+}
+
+ResourceDuplicateDeep :: proc(self: rawptr, deep_subresources_mode: i64 = 1) -> (rawptr, bool) {
+    result, ok := ge.Call(self, "Resource", "duplicate_deep", 905779109, {ge.ValueInt(deep_subresources_mode)})
+    return result.object, ok
+}
+
+ResourceCopyFromResource :: proc(self: rawptr, resource: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "Resource", "copy_from_resource", 3338311164, {ge.ValueObject(resource)})
+    return result.number, ok
+}
+
+// ---- RefCounted ----
+
+RefCountedInitRef :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "RefCounted", "init_ref", 2240911060, {})
+    return result.number != 0, ok
+}
+
+RefCountedReference :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "RefCounted", "reference", 2240911060, {})
+    return result.number != 0, ok
+}
+
+RefCountedUnreference :: proc(self: rawptr) -> (bool, bool) {
+    result, ok := ge.Call(self, "RefCounted", "unreference", 2240911060, {})
+    return result.number != 0, ok
+}
+
+RefCountedGetReferenceCount :: proc(self: rawptr) -> (i64, bool) {
+    result, ok := ge.Call(self, "RefCounted", "get_reference_count", 3905245786, {})
+    return result.number, ok
+}
+

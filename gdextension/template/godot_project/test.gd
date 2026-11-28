@@ -53,6 +53,13 @@ func _init() -> void:
 	_check(failures, counter.listen(counter, "changed", func(total: int) -> void: heard.append(total)) == OK, "Object.connect through a generated wrapper with a Callable")
 	counter.add(1)
 	_check(failures, heard == [counter.get()], "the connected lambda heard the signal: %s" % [heard])
+	var sprite := Sprite2D.new()
+	var camera := Camera2D.new()
+	var area := Area2D.new()
+	_check(failures, counter.sprite_frame(sprite, camera, area) == 7240.0 and sprite.frame == 7 and camera.zoom == Vector2(2, 4) and not area.monitoring, "generated wrappers of Sprite2D, Camera2D and Area2D")
+	sprite.free()
+	camera.free()
+	area.free()
 	counter.reset()
 	var settings := Settings.new()
 	settings.title = "fast"

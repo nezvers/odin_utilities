@@ -356,8 +356,9 @@ toValue :: proc(kind: Kind, name: string, element: string = "") -> string {
     case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE:
         count, ints, _ := smallOf(kind)
         parts: [4]string
+        for i in 0 ..< 4 { parts[i] = "0" }
         for i in 0 ..< count { parts[i] = fmt.tprintf("f64(%s[%d])", name, i) if ints else fmt.tprintf("%s[%d]", name, i) }
-        return fmt.tprintf("ge.Value{{kind = %s, real = {{%s}}}}", valueKindName(kind), strings.join(parts[:count], ", ", context.temp_allocator))
+        return fmt.tprintf("ge.Value{{kind = %s, real = {{%s}}}}", valueKindName(kind), strings.join(parts[:], ", ", context.temp_allocator))
     case .NONE: return ""
     }
     return ""
@@ -464,6 +465,9 @@ test_wrappers_are_generated_from_the_dump :: proc(t: ^testing.T) {
     testing.expect(t, strings.contains(colored, "ControlGetRect :: proc(self: rawptr) -> ([4]f64, bool) {"))
     testing.expect(t, strings.contains(colored, "ObjectSetMeta :: proc(self: rawptr, name: string, value: ge.Value) -> bool {"), "a Variant argument is a Value")
     testing.expect(t, strings.contains(colored, "ObjectGetMeta :: proc(self: rawptr, name: string, default: ge.Value) -> (ge.Value, bool) {"))
+    sprites, sprites_ok := Generate(api, {"Sprite2D"}, "engine", "..")
+    testing.expect(t, sprites_ok)
+    testing.expect(t, strings.contains(sprites, "ge.Value{kind = .VECTOR2I, real = {f64(coords[0]), f64(coords[1]), 0, 0}}"), "a literal of fewer than four numbers is padded")
     timers, timers_ok := Generate(api, {"Object"}, "engine", "..")
     testing.expect(t, timers_ok)
     testing.expect(t, strings.contains(timers, "ObjectConnect :: proc(self: rawptr, signal: string, callable: [2]u64, flags: i64 = 0) -> (i64, bool) {"), "a Callable argument is 16 bytes")
