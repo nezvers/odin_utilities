@@ -40,3 +40,5 @@ arena_schema_server/
 
 # oidc settings with a person's client ids
 providers.local.txt
+/file_browser/demo_web/game/bin/
+/file_browser/demo_web/game/build/
