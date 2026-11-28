@@ -11,6 +11,8 @@
 //                                           ("Compile time panic") or builds only for the web is said to be unchecked, not failed
 //     odin run tool/test -- --levels        also run the packages that use the `simd` library once per instruction set level (SIMD_LEVEL=scalar, sse2, sse4.2, avx, avx2, avx512;
 //                                           a level above the CPU runs its best), so the kernels of the lower levels run on a machine that has more
+//     odin run tool/test -- --browser       also run the checks that need a browser, when the package they belong to is selected: `simd` runs its SIMD128 text kernels in a headless Chrome or Edge
+//                                           (simd/web_check, a few seconds). Without a browser on the machine it says so and does not fail
 //
 // Run it from odin_utilities. A package is a folder with .odin files; one is tested when it has an @(test) proc. A change in a folder
 // counts for that package and, through the imports (`import x "../ui"`), for every package that uses it, so a change of `ui` also runs
@@ -39,7 +41,7 @@ Package :: struct {
 main :: proc() {
     explicit: [dynamic]string
     since: string
-    all, list, verbose, levels, cross: bool
+    all, list, verbose, levels, cross, browser: bool
     arguments: []string = os.args[1:]
     for i := 0; i < len(arguments); i += 1 {
         switch arguments[i] {
@@ -48,6 +50,7 @@ main :: proc() {
         case "--verbose": verbose = true
         case "--levels": levels = true
         case "--cross": cross = true
+        case "--browser": browser = true
         case "--since":
             i += 1
             if i >= len(arguments) { fail("--since needs a commit or branch") }
@@ -141,6 +144,11 @@ main :: proc() {
                 if imported == "simd" { uses = true }
             }
             if uses && !runLevels(dir, verbose) { failures += 1 }
+        }
+    }
+    if browser {
+        for dir in order {
+            if dir == "simd" && !runBrowserCheck("simd", {"odin", "run", "simd/web_check/build_web", "--", "--headless"}) { failures += 1 }
         }
     }
     seconds: f64 = time.duration_seconds(time.tick_since(start))
@@ -384,4 +392,28 @@ interesting :: proc(line: string) -> bool {
 baseName :: proc(dir: string) -> string {
     slash: int = strings.last_index_byte(dir, '/')
     return dir[slash + 1:]
+}
+
+// A check that runs in a browser: the program prints its verdict and exits 0 (passed), 1 (failed) or 3 (no browser on this machine: not a failure)
+runBrowserCheck :: proc(name: string, command: []string) -> bool {
+    start: time.Tick = time.tick_now()
+    state, stdout, stderr, err := os.process_exec({command = command}, context.allocator)
+    seconds: f64 = time.duration_seconds(time.tick_since(start))
+    if err != nil {
+        fmt.printfln("FAIL browser %s: cannot start odin: %v", name, err)
+        return false
+    }
+    verdict: string
+    for line in strings.split_lines(strings.concatenate({string(stdout), "\n", string(stderr)}, context.temp_allocator), context.temp_allocator) {
+        text: string = strings.trim_space(line)
+        if text != "" && !strings.has_prefix(text, "Done:") { verdict = text }
+    }
+    switch state.exit_code {
+    case 0: fmt.printfln("ok   browser %-21s %s (%.1f s)", name, verdict, seconds)
+    case 3: fmt.printfln("skip browser %-21s %s", name, verdict)
+    case:
+        fmt.printfln("FAIL browser %-21s %s (%.1f s)", name, verdict if verdict != "" else "did not build or run", seconds)
+        return false
+    }
+    return true
 }
