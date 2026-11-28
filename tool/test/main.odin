@@ -411,7 +411,10 @@ BrowserCheck :: struct {
 
 BROWSER_CHECKS := [?]BrowserCheck{
     {"simd kernels", {"odin", "run", "simd/web_check/build_web", "--", "--headless"}, "", {"simd"}},
-    {"file_browser page", {"odin", "run", "file_browser/demo_web/build_web", "--", "--check"}, "", {"file_browser", "ui", "web_build", "web_serve", "simd", "font", "demo_kit"}},
+    {"file_browser page", {"odin", "run", "file_browser/demo_web/build_web", "--", "--check"}, "", {"file_browser", "ui", "web_build", "web_serve", "browser_drive", "simd", "font", "demo_kit"}},
+    // the click-through of the page (open, play, save, invert) in a real browser; they use the build of the check above
+    {"file_browser chrome", {"odin", "run", "file_browser/demo_web/build_web", "--", "--no-build", "--drive", "chrome"}, "", {"file_browser", "ui", "web_build", "web_serve", "browser_drive", "simd", "font", "demo_kit"}},
+    {"file_browser firefox", {"odin", "run", "file_browser/demo_web/build_web", "--", "--no-build", "--drive", "firefox"}, "", {"file_browser", "ui", "web_build", "web_serve", "browser_drive", "simd", "font", "demo_kit"}},
     {"web_build page", {"odin", "run", "demo_karl2d/build_web", "--", "--check"}, "web_build", {"web_build", "web_serve", "simd", "font", "demo_kit"}},
 }
 

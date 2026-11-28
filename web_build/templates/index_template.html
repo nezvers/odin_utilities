@@ -4,6 +4,8 @@
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>{{TITLE}}</title>
+		<!-- no icon file: without this the browser asks for /favicon.ico and logs a 404 -->
+		<link rel="icon" href="data:,">
 		<link rel="preload" href="main.wasm" as="fetch" type="application/wasm" crossorigin="anonymous">
 	</head>
 	<body id="body" style="height: 100%; padding: 0; margin: 0; overflow: hidden; background-color: black;">
