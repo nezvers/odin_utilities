@@ -15,6 +15,7 @@ package browser_drive
 // (`DriverEvaluate`, `DriverConsoleErrors`, `DriverLastError`) are valid until the next call.
 
 import "core:encoding/base64"
+import "base:runtime"
 import "core:encoding/json"
 import "core:fmt"
 import "core:net"
@@ -366,20 +367,78 @@ DriverType :: proc(driver: ^Driver, text: string) -> Error {
     return error
 }
 
-// The picture of the page as a PNG file
-DriverScreenshot :: proc(driver: ^Driver, path: string) -> Error {
+// The picture of the page as base64 PNG text (temp allocator, valid until the temp allocator is cleared)
+@(private)
+driverCapture :: proc(driver: ^Driver) -> (data: string, error: Error) {
     result: json.Value
-    error: Error
     if driver.protocol == .CDP {
         result, error = DriverCall(driver, "Page.captureScreenshot", `{"format":"png"}`)
     } else {
         result, error = DriverCall(driver, "browsingContext.captureScreenshot", fmt.tprintf(`{{"context":%s}}`, quote(driverContext(driver))))
     }
+    if error != .NONE { return "", error }
+    data = jsonText(jsonPath(result, "data"))
+    if len(data) == 0 { return "", .PROTOCOL }
+    return data, .NONE
+}
+
+// The picture of the page as a PNG file
+DriverScreenshot :: proc(driver: ^Driver, path: string) -> Error {
+    data, error := driverCapture(driver)
     if error != .NONE { return error }
-    png, decode_error := base64.decode(jsonText(jsonPath(result, "data")), allocator = context.temp_allocator)
+    png, decode_error := base64.decode(data, allocator = context.temp_allocator)
     if decode_error != nil || len(png) == 0 { return .PROTOCOL }
     if os.write_entire_file(path, png) != nil { return .FILE }
     return .NONE
+}
+
+// A number that is the same for two pictures of the page that are the same (a hash of the PNG; the same pixels give the same PNG)
+DriverPictureHash :: proc(driver: ^Driver) -> (hash: u64, error: Error) {
+    // the picture is a few hundred KB of text: give it back at once, a wait takes many of them
+    runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+    data, capture_error := driverCapture(driver)
+    if capture_error != .NONE { return 0, capture_error }
+    hash = 14695981039346656037 // FNV-1a
+    for b in transmute([]u8)data {
+        hash = (hash ~ u64(b)) * 1099511628211
+    }
+    return hash, .NONE
+}
+
+// Wait until the picture of the page has not changed for `quiet_ms` (the default 200): for a canvas that is drawn in the frames after a click, where there is no event to wait for. A page that
+// always moves (a blinking cursor, an animation) never gets quiet: .TIMEOUT after `timeout_ms` (0 - the driver's timeout).
+DriverWaitStable :: proc(driver: ^Driver, quiet_ms: int = 200, timeout_ms: int = 0) -> Error {
+    limit: int = timeout_ms if timeout_ms > 0 else driver.config.timeout_ms
+    deadline: time.Time = time.time_add(time.now(), time.Duration(limit) * time.Millisecond)
+    last, error := DriverPictureHash(driver)
+    if error != .NONE { return error }
+    since: time.Time = time.now()
+    for time.diff(time.now(), deadline) > 0 {
+        DriverWait(driver, 30)
+        hash: u64
+        hash, error = DriverPictureHash(driver)
+        if error != .NONE { return error }
+        if hash != last {
+            last = hash
+            since = time.now()
+        } else if time.diff(since, time.now()) >= time.Duration(quiet_ms) * time.Millisecond {
+            return .NONE
+        }
+    }
+    return .TIMEOUT
+}
+
+// Wait until the picture differs from the one with hash `before` (take it with DriverPictureHash before the click) and is quiet again: the page reacted and finished drawing
+DriverWaitChanged :: proc(driver: ^Driver, before: u64, quiet_ms: int = 200, timeout_ms: int = 0) -> Error {
+    limit: int = timeout_ms if timeout_ms > 0 else driver.config.timeout_ms
+    deadline: time.Time = time.time_add(time.now(), time.Duration(limit) * time.Millisecond)
+    for time.diff(time.now(), deadline) > 0 {
+        hash, error := DriverPictureHash(driver)
+        if error != .NONE { return error }
+        if hash != before { return DriverWaitStable(driver, quiet_ms, int(time.diff(time.now(), deadline) / time.Millisecond)) }
+        DriverWait(driver, 30)
+    }
+    return .TIMEOUT
 }
 
 // The file that the next file chooser of the page gets (a page can only open it after a click: click, then DriverWait). The path is a path of this machine.

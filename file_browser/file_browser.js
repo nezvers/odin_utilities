@@ -71,8 +71,13 @@ const fileBrowserJsImports = {
 					fileBrowserPick.status = 3;
 				});
 			});
+			// a short delay: a headless Firefox fires cancel at once and a driver answers the chooser a moment later (change), which must win; a person who cancels does not notice 250 ms
 			input.addEventListener("cancel", () => {
-				fileBrowserPick.status = 2;
+				setTimeout(() => {
+					if (fileBrowserPick.status === 0 && !(input.files && input.files.length > 0) && fileBrowserPick.input === input) {
+						fileBrowserPick.status = 2;
+					}
+				}, 250);
 			});
 			document.body.appendChild(input);
 			fileBrowserPick.input = input;

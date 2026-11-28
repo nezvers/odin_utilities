@@ -29,6 +29,7 @@ errors := browser_drive.DriverConsoleErrors(driver)                  // "" when 
 | `DriverTrackDownloads`, `DriverDownloads` | what the page saves with an `<a download>`, as `name:bytes,...` (the same on every browser) |
 | `DriverConsoleErrors`, `DriverConsoleClear` | uncaught exceptions, `console.error`, failed loads (a 404, a failed import) |
 | `DriverScreenshot(path)` | a PNG of the page |
+| `DriverPictureHash`, `DriverWaitStable`, `DriverWaitChanged(before)` | wait for a canvas that has no event: until the picture is quiet, or until it changed (after a click) and is quiet again. The quiet time must be longer than the page's own delays; a page that always moves times out |
 | `DriverCall`, `DriverSend` | any command of the protocol (`Page.reload`, `browsingContext.reload`, ...) with its JSON params |
 
 `BrowserFind(browser)` says whether one is installed; a test that needs a browser skips when it is not.

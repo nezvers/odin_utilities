@@ -22,13 +22,19 @@ ServeJob :: struct {
 }
 
 WAIT_MS :: 5000
-SETTLE_MS :: 300    // an action of the page that shows only on the canvas (play, invert): it happens in the next frames
 
-// Wait until the program took the `count`th chosen file (file_browser.js counts them: the chooser opened, the file was read, the program has it), then a frame to draw it
+// Click and wait until the canvas shows a reaction (it changed and is quiet again): for what only shows on the canvas
+clickAndWait :: proc(driver: ^browser_drive.Driver, x, y: f64) -> bool {
+	before, _ := browser_drive.DriverPictureHash(driver)
+	browser_drive.DriverClick(driver, x, y)
+	return browser_drive.DriverWaitChanged(driver, before, 150, WAIT_MS) == .NONE
+}
+
+// Wait until the program took the `count`th chosen file (file_browser.js counts them: the chooser opened, the file was read, the program has it), then until the canvas is quiet
 waitPicks :: proc(driver: ^browser_drive.Driver, count: int) -> bool {
 	ok: bool = browser_drive.DriverWaitUntil(driver, fmt.tprintf("(window.fileBrowserPicksTaken || 0) >= %d", count), WAIT_MS) == .NONE
-	browser_drive.DriverWait(driver, 100)
-	return ok
+	// the next request is only taken once the page has settled (a click in the frames after the pick was lost now and then in Firefox)
+	return browser_drive.DriverWaitStable(driver, 150, WAIT_MS) == .NONE && ok
 }
 
 // Wait until the page saved a file whose entry (`name:bytes`) contains `text`
@@ -109,8 +115,7 @@ ClickThrough :: proc(directory: string, browser: browser_drive.Browser, screensh
 	browser_drive.DriverClick(driver, 224, 58)
 	check(&failures, waitPicks(driver, 2), "the program takes the sound")
 	check(&failures, browser_drive.DriverFileDialogs(driver) == 2, "Open sound opens the file chooser of the browser")
-	browser_drive.DriverClick(driver, 274, 96)
-	browser_drive.DriverWait(driver, SETTLE_MS)
+	check(&failures, clickAndWait(driver, 274, 96), "Play changes the page (the played counter)")
 	shot(driver, screenshots, name, "3_sound")
 
 	// save both back: the buttons only work when the files were opened
@@ -123,8 +128,7 @@ ClickThrough :: proc(directory: string, browser: browser_drive.Browser, screensh
 	check(&failures, strings.contains(downloads, "damage_sound.wav:27328"), "the sound is saved with its 27328 bytes", downloads)
 
 	// change the picture, save it under its new name
-	browser_drive.DriverClick(driver, 65, 96)
-	browser_drive.DriverWait(driver, SETTLE_MS)
+	check(&failures, clickAndWait(driver, 65, 96), "Invert changes the picture")
 	browser_drive.DriverClick(driver, 312, 58)
 	waitDownload(driver, "player_sheet_inverted.png:")
 	downloads = browser_drive.DriverDownloads(driver)

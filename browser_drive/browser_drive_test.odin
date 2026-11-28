@@ -61,8 +61,11 @@ PAGE :: `<!doctype html><title>start</title><link rel="icon" href="data:,">
 <button style="position:absolute;left:10px;top:110px;width:100px;height:40px" onclick="pick()">file</button>
 <button style="position:absolute;left:10px;top:160px;width:100px;height:40px" onclick="save()">save</button>
 <input id="field" style="position:absolute;left:10px;top:210px;width:200px;height:30px">
+<button style="position:absolute;left:10px;top:260px;width:100px;height:40px" onclick="paint()">paint</button>
+<div id="box" style="position:absolute;left:250px;top:10px;width:80px;height:80px;background:blue"></div>
 <script>
 function pick() { const i = document.createElement('input'); i.type = 'file'; i.onchange = () => { document.title = 'file:' + i.files[0].name + ':' + i.files[0].size; }; document.body.appendChild(i); i.click(); }
+function paint() { setTimeout(() => { document.getElementById("box").style.background = "red"; }, 400); }
 function save() { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['hello'])); a.download = 'x.txt'; document.body.appendChild(a); a.click(); }
 </script>`
 
@@ -124,6 +127,17 @@ drivePage :: proc(t: ^testing.T, browser: Browser) {
     DriverClick(driver, 30, 80)
     DriverWait(driver, 500)
     testing.expectf(t, strings.contains(DriverConsoleErrors(driver), "boom from the page"), "%s collects console errors: %q", name, DriverConsoleErrors(driver))
+
+    // the picture: a page that changes a moment after a click (a canvas has no event for that) is waited for by what it looks like
+    testing.expect_value(t, DriverWaitStable(driver), Error.NONE)
+    before, hash_error := DriverPictureHash(driver)
+    testing.expect_value(t, hash_error, Error.NONE)
+    again, _ := DriverPictureHash(driver)
+    testing.expectf(t, before == again, "%s: the same page has the same picture hash", name)
+    DriverClick(driver, 30, 280)
+    testing.expect_value(t, DriverWaitChanged(driver, before, 700), Error.NONE) // the click itself changes the button (focus, hover): the quiet time has to be longer than the 400 ms of the page
+    value, _ = DriverEvaluate(driver, "document.getElementById('box').style.background")
+    testing.expectf(t, value == "red", "%s: the page was drawn again when the wait ended: %q", name, value)
 
     // typing into a field
     DriverClick(driver, 30, 225)
