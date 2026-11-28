@@ -42,7 +42,7 @@ function fileBrowserMime(name) {
 
 const fileBrowserJsImports = {
 	file_browser: {
-		pick_start: function (acceptPointer, acceptLength) {
+		file_browser_pick_start: function (acceptPointer, acceptLength) {
 			const accept = fileBrowserString(acceptPointer, acceptLength);
 			fileBrowserPick.status = 0;
 			fileBrowserPick.bytes = null;
@@ -79,11 +79,11 @@ const fileBrowserJsImports = {
 			input.click();
 		},
 
-		pick_poll: function () {
+		file_browser_pick_poll: function () {
 			return fileBrowserPick.status;
 		},
 
-		pick_name: function (pointer, length) {
+		file_browser_pick_name: function (pointer, length) {
 			const encoded = new TextEncoder().encode(fileBrowserPick.name);
 			const count = Math.min(encoded.length, length);
 			fileBrowserBytes(pointer, count).set(encoded.subarray(0, count));
@@ -91,7 +91,7 @@ const fileBrowserJsImports = {
 		},
 
 		// -1: the file is bigger than the buffer of the program; it stays for a try with a bigger one
-		pick_take: function (pointer, length) {
+		file_browser_pick_take: function (pointer, length) {
 			const bytes = fileBrowserPick.bytes;
 			if (bytes === null) {
 				return 0;
@@ -105,7 +105,7 @@ const fileBrowserJsImports = {
 			return bytes.length;
 		},
 
-		download: function (namePointer, nameLength, dataPointer, dataLength) {
+		file_browser_download: function (namePointer, nameLength, dataPointer, dataLength) {
 			const name = fileBrowserString(namePointer, nameLength);
 			// a copy: the memory of the program changes after this call
 			const copy = fileBrowserBytes(dataPointer, dataLength).slice();

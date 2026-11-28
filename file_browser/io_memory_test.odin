@@ -1,6 +1,8 @@
 #+build !js
 package file_browser
 
+import "core:os"
+import "core:strings"
 import "core:testing"
 
 @(private = "file")
@@ -107,4 +109,29 @@ test_memory_fs_fails_when_full_and_the_browser_works_on_it :: proc(t: ^testing.T
     testing.expect_value(t, result.kind, ResultKind.OPENED)
     testing.expect_value(t, len(result.data), 3)
     testing.expect_value(t, result.path, "/pictures/cat.png")
+}
+
+// The web side cannot run under `odin test`, but a name that does not match is the one mistake that breaks it at load time ("function import requires a callable"): every proc of the foreign block of
+// io_web.odin has to be a key of the imports in file_browser.js
+@(test)
+test_the_imports_of_the_web_page_match_the_foreign_procs :: proc(t: ^testing.T) {
+    odin_source, odin_error := os.read_entire_file("file_browser/io_web.odin", context.temp_allocator)
+    javascript, javascript_error := os.read_entire_file("file_browser/file_browser.js", context.temp_allocator)
+    if odin_error != nil || javascript_error != nil {
+        // run from the folder of the library
+        odin_source, odin_error = os.read_entire_file("io_web.odin", context.temp_allocator)
+        javascript, javascript_error = os.read_entire_file("file_browser.js", context.temp_allocator)
+    }
+    testing.expect(t, odin_error == nil && javascript_error == nil, "io_web.odin and file_browser.js are found")
+    names: int
+    for line in strings.split_lines(string(odin_source), context.temp_allocator) {
+        text: string = strings.trim_space(line)
+        if !strings.has_prefix(text, "file_browser_") { continue }
+        end: int = strings.index(text, " :: proc")
+        if end < 0 { continue }
+        name: string = text[:end]
+        names += 1
+        testing.expectf(t, strings.contains(string(javascript), strings.concatenate({name, ": function"}, context.temp_allocator)), "file_browser.js has no import %s", name)
+    }
+    testing.expect(t, names == 5, "five foreign procs")
 }

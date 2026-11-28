@@ -10,3 +10,4 @@ Open/save dialog on `ui` plus IO backends. See README for the API.
 - Demo scripts use `IoMemory` (headless or `DEMO_TEST`), so paths are `/demo/...`.
 - `WebBuild` and `ExtensionBuild` pass `-target-features:simd128` so `simd` runs its vector text kernels in the browser; a build without it still links (scalar kernels).
 - Commands: `odin test file_browser -strict-style -vet`, `odin test file_browser/demo_common`, `odin run demo_kit/tool/captures -- --karl2d file_browser`.
+- The web page was driven in a headless Chrome (DevTools protocol, 2026-11-28): the chooser opens after the click, a picture and a sound open, Play counts, the download is byte identical. The names of `file_browser.js` must be the foreign proc names (`file_browser_pick_start`, ...): a test compares them.
