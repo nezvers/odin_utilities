@@ -102,6 +102,8 @@ const fileBrowserJsImports = {
 			fileBrowserBytes(pointer, bytes.length).set(bytes);
 			fileBrowserPick.bytes = null;
 			fileBrowserPick.status = 0;
+			// a driver (browser_drive) waits for this instead of a fixed time: the program has the file
+			window.fileBrowserPicksTaken = (window.fileBrowserPicksTaken || 0) + 1;
 			return bytes.length;
 		},
 

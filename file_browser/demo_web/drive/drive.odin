@@ -22,15 +22,13 @@ ServeJob :: struct {
 }
 
 WAIT_MS :: 5000
-SETTLE_MS :: 300    // the page reads a chosen file in the frames after the chooser answered
+SETTLE_MS :: 300    // an action of the page that shows only on the canvas (play, invert): it happens in the next frames
 
-// Wait until the browser opened `count` file choosers (the page asked for them in the frame after the click)
-waitDialogs :: proc(driver: ^browser_drive.Driver, count: int) {
-	deadline: time.Time = time.time_add(time.now(), WAIT_MS * time.Millisecond)
-	for browser_drive.DriverFileDialogs(driver) < count && time.diff(time.now(), deadline) > 0 {
-		browser_drive.DriverWait(driver, 50)
-	}
-	browser_drive.DriverWait(driver, SETTLE_MS)
+// Wait until the program took the `count`th chosen file (file_browser.js counts them: the chooser opened, the file was read, the program has it), then a frame to draw it
+waitPicks :: proc(driver: ^browser_drive.Driver, count: int) -> bool {
+	ok: bool = browser_drive.DriverWaitUntil(driver, fmt.tprintf("(window.fileBrowserPicksTaken || 0) >= %d", count), WAIT_MS) == .NONE
+	browser_drive.DriverWait(driver, 100)
+	return ok
 }
 
 // Wait until the page saved a file whose entry (`name:bytes`) contains `text`
@@ -102,14 +100,14 @@ ClickThrough :: proc(directory: string, browser: browser_drive.Browser, screensh
 	// open a picture
 	browser_drive.DriverAnswerFileChooser(driver, picture)
 	browser_drive.DriverClick(driver, 84, 58)
-	waitDialogs(driver, 1)
+	check(&failures, waitPicks(driver, 1), "the program takes the picture")
 	check(&failures, browser_drive.DriverFileDialogs(driver) == 1, "Open picture opens the file chooser of the browser")
 	shot(driver, screenshots, name, "2_picture")
 
 	// open a sound, play it
 	browser_drive.DriverAnswerFileChooser(driver, sound)
 	browser_drive.DriverClick(driver, 224, 58)
-	waitDialogs(driver, 2)
+	check(&failures, waitPicks(driver, 2), "the program takes the sound")
 	check(&failures, browser_drive.DriverFileDialogs(driver) == 2, "Open sound opens the file chooser of the browser")
 	browser_drive.DriverClick(driver, 274, 96)
 	browser_drive.DriverWait(driver, SETTLE_MS)
