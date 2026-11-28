@@ -16,7 +16,7 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [x] Class icons: `--icon Class=res://icon.svg` of the build tool writes the `[icons]` section (the template has one; an icon shows in the editor only, not headless)
 - [x] Exported enums and property hints (`Class.hints`: enum, range, file, ...) for the inspector
 - [x] Build tool `odin run gdextension/tool/build -- <package> <project dir>` (builds for this computer, writes the `.gdextension`, `--import`)
-- [ ] (medium) Build tool: try it on Linux and macOS (the file names are written for all three, only Windows was run); cross builds
+- [ ] (medium) Build tool: try it on Linux and macOS (the file names are written for all three, only Windows was run; `odin check -target:linux_amd64|darwin_arm64|darwin_amd64|linux_arm64` of gdextension, template, engine, godot_spacetimedb and what they import is clean since 2026-11-28, but nothing has been linked or loaded by Godot there); cross builds
 - [x] Objects as values (`OBJECT`) and engine calls from Odin (`ge.Call(object, class, method, hash, args)`, binds cached)
 - [x] Typed wrappers for engine classes generated from `extension_api.json` (`tool/bindings`, package `engine`: Object, Node, Node2D, Node3D, CanvasItem, Control, Label, Timer, Sprite2D, Camera2D, Area2D, CollisionObject2D, CollisionShape2D, Tween, Resource, RefCounted; more by adding the name to the class list)
 - [x] Wrappers for methods with Array, Dictionary, Variant, Vector2i, Color, Rect2 and the other structs and packed arrays as arguments or results (tool/bindings; typed Arrays only as results); 495 wrappers became 583 for the same classes

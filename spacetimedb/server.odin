@@ -12,7 +12,6 @@ package spacetimedb
 
 import "core:fmt"
 import "core:os"
-import "core:strings"
 import "core:time"
 
 ServerOptions :: struct {
@@ -72,7 +71,9 @@ ServerStart :: proc(server: ^Server, options: ServerOptions) -> bool {
             script: string = fmt.tprintf("%s/start_server.cmd", options.root)
             if os.write_entire_file(script, line[:]) != nil { return false }
             clear(&command)
-            windows_script, _ := strings.replace_all(script, "/", "\\", context.temp_allocator)     // cmd reads a slash as a switch
+            backslashed: []u8 = make([]u8, len(script), context.temp_allocator)       // cmd reads a slash as a switch
+            for character, i in transmute([]u8)script { backslashed[i] = '\\' if character == '/' else character }
+            windows_script: string = string(backslashed)
             append(&command, "cmd", "/c", windows_script)
         } else {
             file, file_error := os.create(options.log_file)

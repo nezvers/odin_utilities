@@ -510,8 +510,8 @@ test_the_login_address_is_given_to_the_opener :: proc(t: ^testing.T) {
     // the address of a login is long: on Windows it reaches the browser through a shortcut file (explorer cuts an address after 259 characters), elsewhere it is the argument itself
     when ODIN_OS == .Windows {
         testing.expect(t, strings.has_suffix(last, ".url"))
-        data, error := os.read_entire_file(last, context.temp_allocator)
-        testing.expect(t, error == nil)
+        data, read_ok := readShortcut(last)
+        testing.expect(t, read_ok)
         testing.expect(t, strings.contains(string(data), oidc.LoginUrl(pair.login)), "the shortcut holds the whole address")
         testing.expect(t, strings.contains(string(data), "code_challenge_method=S256"), "including its end")
         oidc.BrowserShortcutRemove(last)
@@ -582,4 +582,10 @@ test_a_token_without_a_nonce_needs_nonce_optional :: proc(t: ^testing.T) {
     testing.expect(t, oidc.LoginBegin(pair.login, config), oidc.LoginError(pair.login))
     browse(t, pair.login)
     testing.expect_value(t, pair.login.state, oidc.LoginState.FAILED)
+}
+
+// The shortcut file that the Windows browser launcher writes (a procedure of its own, so `core:os` is used on every system the file builds for)
+readShortcut :: proc(path: string) -> (data: []u8, ok: bool) {
+    bytes, error := os.read_entire_file(path, context.temp_allocator)
+    return bytes, error == nil
 }
