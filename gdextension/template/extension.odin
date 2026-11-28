@@ -31,6 +31,13 @@ counter_class: ge.Class = {
         {"mode", .INT, "get_mode", "set_mode"},
         {"gain", .FLOAT, "get_gain", "set_gain"},
     },
+    // an enum: GDScript reads Counter.Mode.HIGH (and Counter.HIGH); the property `mode` shows the same names
+    constants = {
+        {"Mode", "OFF", 0, false},
+        {"Mode", "LOW", 5, false},
+        {"Mode", "HIGH", 10, false},
+        {"", "LIMIT", 99, false},
+    },
     // sections of the inspector: "Mixer" starts at `mode` and holds `mode` and `gain`
     groups = {
         {"mode", "Mixer", "", false},

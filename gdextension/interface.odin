@@ -222,6 +222,7 @@ Interface :: struct {
     variant_destroy: proc "c" (variant: ^GdVariant),
     stringify: proc "c" (variant: ^GdVariant, result: ^GdString),
     register_property: proc "c" (library: GdLibrary, class_name: ^GdStringName, info: ^GdPropertyInfo, setter: ^GdStringName, getter: ^GdStringName),
+    register_constant: proc "c" (library: GdLibrary, class_name: ^GdStringName, enum_name: ^GdStringName, name: ^GdStringName, value: GdInt, bitfield: u8),
     register_group: proc "c" (library: GdLibrary, class_name: ^GdStringName, name: ^GdString, prefix: ^GdString),
     register_subgroup: proc "c" (library: GdLibrary, class_name: ^GdStringName, name: ^GdString, prefix: ^GdString),
     register_signal: proc "c" (library: GdLibrary, class_name: ^GdStringName, signal_name: ^GdStringName, arguments: [^]GdPropertyInfo, count: GdInt),
@@ -260,6 +261,7 @@ interfaceLoad :: proc "c" (get: GetProcAddress, library: GdLibrary) -> bool {
     gd.variant_destroy = auto_cast lookup(get, "variant_destroy", &ok)
     gd.register_property = auto_cast lookup(get, "classdb_register_extension_class_property", &ok)
     gd.stringify = auto_cast lookup(get, "variant_stringify", &ok)
+    gd.register_constant = auto_cast lookup(get, "classdb_register_extension_class_integer_constant", &ok)
     gd.register_group = auto_cast lookup(get, "classdb_register_extension_class_property_group", &ok)
     gd.register_subgroup = auto_cast lookup(get, "classdb_register_extension_class_property_subgroup", &ok)
     gd.register_signal = auto_cast lookup(get, "classdb_register_extension_class_signal", &ok)

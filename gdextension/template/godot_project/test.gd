@@ -41,7 +41,9 @@ func _init() -> void:
 	var at_group: int = names.find("Mixer")
 	_check(failures, at_group >= 0 and names.find("mode") == at_group + 1 and names.find("gain") == at_group + 2, "the group Mixer comes before its properties: %s" % [names])
 	_check(failures, names.find("total") < at_group, "total is outside of the group: %s" % [names])
-	counter.mode = 5
+	_check(failures, Counter.Mode.HIGH == 10 and Counter.LOW == 5 and Counter.LIMIT == 99, "the constants of the class")
+	_check(failures, ClassDB.class_get_enum_constants("Counter", "Mode") == PackedStringArray(["OFF", "LOW", "HIGH"]), "the enum lists its members: %s" % [ClassDB.class_get_enum_constants("Counter", "Mode")])
+	counter.mode = Counter.Mode.LOW
 	counter.gain = 0.25
 	_check(failures, counter.mode == 5 and counter.gain == 0.25, "the enum and range properties work")
 	counter.mode = 0

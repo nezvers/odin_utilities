@@ -180,6 +180,15 @@ Group :: struct {
     sub: bool,
 }
 
+// An integer constant of the class, in the enum `enum_name` ("" for none): GDScript reads `Counter.Mode.HIGH` and `Counter.HIGH`, and a property with `.ENUM` and the same names shows them.
+// `bitfield` marks the members of a flags enum (values 1, 2, 4, ...).
+Constant :: struct {
+    enum_name: cstring,
+    name: cstring,
+    value: i64,
+    bitfield: bool,
+}
+
 // The values of Godot's PropertyHint (the ones that make sense for a property of an extension class)
 PropertyHint :: enum u32 {
     NONE = 0,
@@ -210,6 +219,7 @@ Class :: struct {
     methods: []Method,
     signals: []Signal,
     properties: []Property,
+    constants: []Constant,          // optional: enums and integer constants
     groups: []Group,                // optional: sections of the inspector
     hints: []Hint,                  // optional: inspector hints of properties (enum, range, file, ...)
     virtuals: []Virtual,
@@ -568,6 +578,10 @@ registerClass :: proc "c" (class: ^Class) {
         }
         info: GdPropertyInfo = {type = variantTypeOf(property.kind), name = &class.property_names[i * 3], hint = u32(hint), class_name = &empty_name, hint_string = hint_text, usage = usageOf(property.kind)}
         gd.register_property(gd.library, &class.name_id, &info, &class.property_names[i * 3 + 2], &class.property_names[i * 3 + 1])
+    }
+    for constant in class.constants {
+        enum_name, name: GdStringName = stringName(constant.enum_name if constant.enum_name != nil else ""), stringName(constant.name)
+        gd.register_constant(gd.library, &class.name_id, &enum_name, &name, GdInt(constant.value), 1 if constant.bitfield else 0)
     }
     class.signal_names = make([]GdStringName, len(class.signals))
     class.signal_infos = make([][MAX_ARGUMENTS]GdPropertyInfo, len(class.signals))
