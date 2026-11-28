@@ -66,19 +66,6 @@ main :: proc() {
 	web_serve.ServerRun(&server)
 }
 
-// The browsers that can read the page without a window, in the order they are tried
-BROWSERS :: [?]string{
-	"C:/Program Files/Google/Chrome/Application/chrome.exe",
-	"C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-	"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
-	"C:/Program Files/Microsoft/Edge/Application/msedge.exe",
-	"/usr/bin/google-chrome",
-	"/usr/bin/chromium",
-	"/usr/bin/chromium-browser",
-	"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-	"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-}
-
 ServeJob :: struct {
 	server: ^web_serve.Server,
 	stop: bool,
@@ -86,13 +73,7 @@ ServeJob :: struct {
 
 // Serve the build, let the browser load it, print what its title says. The page runs the check in the start of its wasm; --virtual-time-budget lets the browser wait for it.
 runHeadless :: proc() -> int {
-	browser: string
-	for candidate in BROWSERS {
-		if os.exists(candidate) {
-			browser = candidate
-			break
-		}
-	}
+	browser: string = web_build.WebBuildBrowserFind()
 	if len(browser) == 0 {
 		fmt.println("no Chrome or Edge found: the browser check was not run")
 		return 3

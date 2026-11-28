@@ -1,6 +1,8 @@
 // Build the web version of the file browser demo with web_build and, with --serve, serve it with web_serve. Run from odin_utilities:
 //
-//   odin run file_browser/demo_web/build_web -- [--serve] [--open] [--port N] [odin arguments such as -o:size]
+//   odin run file_browser/demo_web/build_web -- [--serve] [--open] [--check] [--port N] [odin arguments such as -o:size]
+//
+// --check loads the page in a headless Chrome or Edge after the build and fails when it writes errors to its console.
 //
 // The result is in file_browser/demo_web/game/bin/web (index.html, main.wasm, odin.js and the two JavaScript files of the audio of Karl2D and of file_browser).
 // --serve then serves that folder (Ctrl+C stops), --open opens the page in the default browser.
@@ -15,13 +17,14 @@ import web_serve "../../../web_serve"
 SOURCE :: "file_browser/demo_web/game"
 
 main :: proc() {
-	serve, open_browser: bool
+	serve, open_browser, check: bool
 	port: int = 8000
 	odin_arguments: [dynamic]string
 	arguments: []string = os.args[1:]
 	for i := 0; i < len(arguments); i += 1 {
 		switch arguments[i] {
 		case "--serve": serve = true
+		case "--check": check = true
 		case "--open": open_browser, serve = true, true
 		case "--port":
 			i += 1
@@ -49,6 +52,12 @@ main :: proc() {
 	}
 	if !web_build.WebBuild(config) { os.exit(1) }
 	fmt.printfln("Done: %s/bin/web", SOURCE)
+	if check {
+		// the page is loaded in a headless Chrome or Edge: what only a browser sees (a wrong import name, a 404) is reported
+		result: web_build.WebBuildCheckResult = web_build.WebBuildCheck(config)
+		fmt.printfln("page check: %v %s", result.status, result.message)
+		if result.status == .FAILED || result.status == .NOT_RUN { os.exit(1) }
+	}
 	if !serve { return }
 
 	server: web_serve.Server
