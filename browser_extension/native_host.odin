@@ -15,16 +15,21 @@ import "core:strings"
 import "core:testing"
 import "core:unicode/utf16"
 
+// The path as UTF-16 little endian bytes (a procedure of its own, so the package is used on every system the file builds for)
+appendUtf16 :: proc(bytes: ^[dynamic]u8, text: string) {
+    units: []u16 = make([]u16, len(text) + 1, context.temp_allocator)
+    count: int = utf16.encode_string(units, text)
+    for unit in units[:count] {
+        append(bytes, u8(unit), u8(unit >> 8))
+    }
+}
+
 // The id Chromium gives an unpacked extension loaded from `directory` (an absolute path). On Windows the path is hashed as UTF-16.
 ChromiumExtensionId :: proc(directory: string, allocator := context.temp_allocator) -> string {
     bytes: [dynamic]u8
     bytes.allocator = context.temp_allocator
     when ODIN_OS == .Windows {
-        units: []u16 = make([]u16, len(directory) + 1, context.temp_allocator)
-        count: int = utf16.encode_string(units, directory)
-        for unit in units[:count] {
-            append(&bytes, u8(unit), u8(unit >> 8))
-        }
+        appendUtf16(&bytes, directory)
     } else {
         append(&bytes, ..transmute([]u8)directory)
     }
