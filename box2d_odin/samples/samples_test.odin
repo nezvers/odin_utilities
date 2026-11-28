@@ -1,10 +1,15 @@
 package box2d_samples
 
+import "core:sync"
 import "core:testing"
 import b2 "vendor:box2d"
 import b2o ".."
 
 // Smoke test: every registered sample is created, simulated, drawn and has its controls run, without a window.
+
+// Box2D world creation is not thread safe and the test runner is multi threaded: the two tests take turns (each package is its own program, so the lock of box2d_odin itself is not needed here)
+@(private="file")
+samples_lock: sync.Mutex
 
 @(private="file")
 null_backend: b2o.Backend = {
@@ -37,6 +42,7 @@ InitNullDebugDraw :: proc(debug_draw: ^b2.DebugDraw) {
 
 @(test)
 test_all_samples_run :: proc(t: ^testing.T) {
+    sync.guard(&samples_lock)
     testing.expect(t, b2o.SampleCount() > 0)
 
     host: b2o.SampleHost
@@ -72,6 +78,7 @@ test_all_samples_run :: proc(t: ^testing.T) {
 // body) ran against the world of the next one (Kinematic) and crashed on a body that did not exist. Every neighbouring pair is walked with the key.
 @(test)
 test_an_arrow_key_between_samples_does_not_mix_them :: proc(t: ^testing.T) {
+    sync.guard(&samples_lock)
     host: b2o.SampleHost
     b2o.HostInit(&host, null_backend, {1280, 720})
     InitNullDebugDraw(&host.debug_draw)
