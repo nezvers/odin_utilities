@@ -1,12 +1,14 @@
 // Build the YouTube Shorts extension and optionally start a browser with it loaded. Run from the browser_extension directory:
-//   odin run youtube_shorts/tool -- [browser ...] [--install | --release [--no-open]] [--headless] [--browser-path PATH] [--firefox-port N] [-- odin arguments]
+//   odin run youtube_shorts/tool -- [browser ...] [--install | --release [--no-open]] [--headless] [--drive chrome|edge [--no-build] [--screenshots FOLDER]] [--browser-path PATH] [--firefox-port N] [-- odin arguments]
 // Same arguments as demo/tool, see there. The output is in youtube_shorts/bin/extension.
 package main
 
 import "core:fmt"
 import "core:os"
 import "core:strconv"
+import browser_drive "../../../browser_drive"
 import extension "../.."
+import "../options_drive"
 
 HELPER_EXECUTABLE :: "youtube_shorts/bin/native/shorts_helper_host.exe" when ODIN_OS == .Windows else "youtube_shorts/bin/native/shorts_helper_host"
 
@@ -48,6 +50,9 @@ main :: proc() {
 	install: bool
 	release: bool
 	no_open: bool
+	no_build: bool
+	drive_browser: Maybe(browser_drive.Browser)
+	screenshots: string
 
 	arguments: []string = os.args[1:]
 	for i := 0; i < len(arguments); i += 1 {
@@ -61,6 +66,20 @@ main :: proc() {
 		case "--headless": options.headless = true
 		case "--release": release = true
 		case "--no-open": no_open = true
+		case "--no-build": no_build = true
+		case "--screenshots":
+			i += 1
+			if i >= len(arguments) { usage(); return }
+			screenshots = arguments[i]
+		case "--drive":
+			// the options page in a real browser (needs the chromium build): chrome or edge
+			i += 1
+			if i >= len(arguments) { usage(); return }
+			switch arguments[i] {
+			case "chrome": drive_browser = .CHROME
+			case "edge": drive_browser = .EDGE
+			case: usage(); return
+			}
 		case "--browser-path":
 			i += 1
 			if i >= len(arguments) { usage(); return }
@@ -89,14 +108,20 @@ main :: proc() {
 	for browser in browsers {
 		targets += {extension.BrowserTarget(browser)}
 	}
-	if !buildHelper() {
-		os.exit(1)
-	}
-	if !extension.ExtensionBuild(config, targets) {
-		os.exit(1)
+	if !no_build {
+		if !buildHelper() {
+			os.exit(1)
+		}
+		if !extension.ExtensionBuild(config, targets) {
+			os.exit(1)
+		}
 	}
 	fmt.printfln("Built %s", extension.ExtensionOutputDirectory(config, context.temp_allocator))
 
+	if browser, drive_it := drive_browser.?; drive_it {
+		folder: string = fmt.tprintf("%s/chromium", extension.ExtensionOutputDirectory(config, context.temp_allocator))
+		os.exit(options_drive.OptionsCheck(folder, config.name, browser, screenshots))
+	}
 	if release {
 		// the browser of your main profile, the way a release is installed (see release.odin for what each browser allows)
 		signing_key, signing_secret := SigningCredentials()

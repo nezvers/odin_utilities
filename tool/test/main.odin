@@ -416,6 +416,8 @@ BROWSER_CHECKS := [?]BrowserCheck{
     {"file_browser chrome", {"odin", "run", "file_browser/demo_web/build_web", "--", "--no-build", "--drive", "chrome"}, "", {"file_browser", "ui", "web_build", "web_serve", "browser_drive", "simd", "font", "demo_kit"}},
     {"file_browser firefox", {"odin", "run", "file_browser/demo_web/build_web", "--", "--no-build", "--drive", "firefox"}, "", {"file_browser", "ui", "web_build", "web_serve", "browser_drive", "simd", "font", "demo_kit"}},
     {"web_build page", {"odin", "run", "demo_karl2d/build_web", "--", "--check"}, "web_build", {"web_build", "web_serve", "simd", "font", "demo_kit"}},
+    // the options page of the youtube_shorts extension, loaded as an extension page of Edge (the branded Chrome ignores --load-extension: skipped); builds the extension first, so it takes a while
+    {"youtube_shorts options", {"odin", "run", "youtube_shorts/tool", "--", "edge", "--drive", "edge"}, "browser_extension", {"browser_extension", "browser_drive", "web_build", "web_serve", "demo_kit", "simd", "font"}},
 }
 
 // A check that runs in a browser: the program prints its verdict and exits 0 (passed), 1 (failed) or 3 (no browser on this machine: not a failure)

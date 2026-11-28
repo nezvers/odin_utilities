@@ -47,6 +47,7 @@ DriverConfig :: struct {
     width: int,             // the viewport, 0 - 1280
     height: int,            // 0 - 720
     visible: bool,          // a window instead of headless
+    extension: string,      // Chrome and Edge: an unpacked extension folder to load (absolute path); see DriverExtensionId
     timeout_ms: int,        // for a call, a page load, the start; 0 - 15000
 }
 
@@ -58,6 +59,7 @@ Driver :: struct {
     port: int,
     profile: [PATH_CAPACITY]u8,
     profile_length: int,
+    extension_id: [64]u8,           // DriverExtensionId
     ws: WebSocket,
     next_id: int,
     context_id: [64]u8,                 // BiDi: the tab that is driven
@@ -111,6 +113,10 @@ DriverStart :: proc(driver: ^Driver, config: DriverConfig) -> Error {
         // a profile of its own: a browser that is already open would take the request and exit
         append(&command, "--disable-gpu", fmt.tprintf("--remote-debugging-port=%d", driver.port), fmt.tprintf("--user-data-dir=%s", profile), "--no-first-run",
             "--no-default-browser-check", "--autoplay-policy=no-user-gesture-required", fmt.tprintf("--window-size=%d,%d", driver.config.width, driver.config.height))
+        if len(config.extension) > 0 {
+            // Chrome 137+ ignores --load-extension in the branded build unless this feature is off
+            append(&command, fmt.tprintf("--load-extension=%s", config.extension), "--disable-features=DisableLoadExtensionCommandLineSwitch")
+        }
         if !config.visible { append(&command, "--headless=new") }
     } else {
         append(&command, "--no-remote", "--profile", profile, "--remote-debugging-port", fmt.tprintf("%d", driver.port), "--width", fmt.tprintf("%d", driver.config.width),
@@ -266,6 +272,19 @@ DriverWait :: proc(driver: ^Driver, ms: int) {
     }
 }
 
+// The id of the unpacked extension (DriverConfig.extension, Chrome and Edge) with this manifest name: the host of its pages, `chrome-extension://<id>/options/options.html`. The browser's own
+// chrome://extensions page knows it (a service worker target only exists once the worker was woken, and the browser's built in extensions have targets too), so this navigates the tab there:
+// navigate again afterwards. "" when it is not found. Valid until the next call.
+DriverExtensionId :: proc(driver: ^Driver, name: string) -> string {
+    if driver.protocol != .CDP { return "" }
+    if DriverNavigate(driver, "chrome://extensions/") != .NONE { return "" }
+    expression: string = fmt.tprintf("chrome.developerPrivate.getExtensionsInfo().then(list => (list.find(e => e.location === 'UNPACKED' && e.name === %s) || {{id: ''}}).id)", quote(name))
+    id, error := DriverEvaluate(driver, expression)
+    if error != .NONE || len(id) > len(driver.extension_id) { return "" }
+    copy(driver.extension_id[:], id)
+    return string(driver.extension_id[:len(id)])
+}
+
 // Load a page and wait until it says it is loaded
 DriverNavigate :: proc(driver: ^Driver, url: string) -> Error {
     if driver.protocol == .CDP {
@@ -283,7 +302,7 @@ DriverNavigate :: proc(driver: ^Driver, url: string) -> Error {
 
 // The page's own value of an expression, as text (`String(expression)`: use JSON.stringify(...) in the expression for an object). A promise is waited for. The text is valid until the next call.
 DriverEvaluate :: proc(driver: ^Driver, expression: string) -> (value: string, error: Error) {
-    wrapped: string = quote(fmt.tprintf("String((%s))", expression))
+    wrapped: string = quote(fmt.tprintf("(async () => String(await (%s)))()", expression))
     if driver.protocol == .CDP {
         result, call_error := DriverCall(driver, "Runtime.evaluate", fmt.tprintf(`{{"expression":%s,"returnByValue":true,"awaitPromise":true}}`, wrapped))
         if call_error != .NONE { return "", call_error }
