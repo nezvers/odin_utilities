@@ -13,6 +13,8 @@ TEMPLATE_VERSION :: #config(TEMPLATE_VERSION, 1)
 Counter :: struct {
     object: rawptr,         // the engine object, from `bind`: what `Emit` needs
     total: int,
+    mode: int,
+    gain: f64,
     greeting: [256]u8,      // a result string has to live until the call ends: the instance keeps it
 }
 
@@ -26,6 +28,13 @@ counter_class: ge.Class = {
     // a property is a name that GDScript reads and writes (`counter.total = 5`): it calls the methods `get` and `set_total`
     properties = {
         {"total", .INT, "get", "set_total"},
+        {"mode", .INT, "get_mode", "set_mode"},
+        {"gain", .FLOAT, "get_gain", "set_gain"},
+    },
+    // how the inspector edits them: a dropdown and a slider
+    hints = {
+        {"mode", .ENUM, "Off,Low:5,High:10"},
+        {"gain", .RANGE, "0,1,0.05"},
     },
     signals = {
         {"changed", {.INT}},                    // the new total
@@ -44,6 +53,16 @@ counter_class: ge.Class = {
         // nothing -> int
         {"get", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             return {kind = .INT, number = i64((cast(^Counter)instance).total)}
+        }},
+        {"get_mode", {}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueInt(i64((cast(^Counter)instance).mode)) }},
+        {"set_mode", {.INT}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            (cast(^Counter)instance).mode = int(a[0].number)
+            return {}
+        }},
+        {"get_gain", {}, .FLOAT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueFloat((cast(^Counter)instance).gain) }},
+        {"set_gain", {.FLOAT}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            (cast(^Counter)instance).gain = a[0].real[0]
+            return {}
         }},
         // int -> nothing: the setter of the property `total`
         {"set_total", {.INT}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {

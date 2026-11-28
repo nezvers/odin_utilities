@@ -13,7 +13,7 @@ A task starts with `(high)`, `(medium)` (the default) or `(low)`; `(later)` is p
 - [ ] (low) Kinds for RID, Callable, Signal and PackedVector4Array (they come as NONE, nil as a result)
 - [x] Virtual methods `_ready`, `_enter_tree`, `_exit_tree`, `_process`, `_physics_process` (`Class.virtuals`, a Node parent)
 - [x] Properties over getter and setter methods (`Class.properties`)
-- [ ] (low) Exported enums and property hints (ranges, file paths) for the inspector
+- [x] Exported enums and property hints (`Class.hints`: enum, range, file, ...) for the inspector
 - [x] Build tool `odin run gdextension/tool/build -- <package> <project dir>` (builds for this computer, writes the `.gdextension`, `--import`)
 - [ ] (medium) Build tool: try it on Linux and macOS (the file names are written for all three, only Windows was run); cross builds
 - [x] Objects as values (`OBJECT`) and engine calls from Odin (`ge.Call(object, class, method, hash, args)`, binds cached)

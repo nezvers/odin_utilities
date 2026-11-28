@@ -31,6 +31,17 @@ func _init() -> void:
 	_check(failures, counter.total == 40 and counter.get() == 40, "the property total writes and reads")
 	_check(failures, counter.get_property_list().any(func(p: Dictionary) -> bool: return p.name == "total"), "the property is listed")
 	counter.reset()
+	var hints := {}
+	for p in counter.get_property_list():
+		hints[p.name] = [p.hint, p.hint_string]
+	_check(failures, hints.get("mode") == [PROPERTY_HINT_ENUM, "Off,Low:5,High:10"], "the enum hint reaches the inspector: %s" % [hints.get("mode")])
+	_check(failures, hints.get("gain") == [PROPERTY_HINT_RANGE, "0,1,0.05"], "the range hint: %s" % [hints.get("gain")])
+	_check(failures, hints.get("total") == [PROPERTY_HINT_NONE, ""], "a property without a hint: %s" % [hints.get("total")])
+	counter.mode = 5
+	counter.gain = 0.25
+	_check(failures, counter.mode == 5 and counter.gain == 0.25, "the enum and range properties work")
+	counter.mode = 0
+	counter.gain = 0.0
 	_check(failures, counter.double_all([1, 2.5, "ab", true]) == [2, 5.0, "ab!", true], "an Array in and out: %s" % [counter.double_all([1, 2.5, "ab", true])])
 	_check(failures, counter.double_all([]) == [], "an empty Array")
 	var annotated: Dictionary = counter.annotate({"a": 1, "b": "two", "c": 3.5})

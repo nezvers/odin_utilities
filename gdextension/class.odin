@@ -155,11 +155,43 @@ Virtual :: struct {
 
 // A property of the class (the inspector shows it, GDScript reads and writes it as `object.name`): its getter and setter are methods of the class, found by name (`getter` takes no argument and
 // returns `kind`, `setter` takes one argument of `kind`). A property that is read only has no `setter`.
+// How the inspector edits a property: `Class.hints` lists them by property name (so a property literal stays `{name, kind, getter, setter}`). `.ENUM` with "Off,Low,High" (the values count from 0) or "Off:0,Low:5,High:10" on an INT or a STRING gives a dropdown, `.RANGE` with
+// "0,1,0.01" (minimum, maximum, step; "0,100,1,or_greater" and the other words of Godot) a slider, `.FILE` with "*.png" a file picker, `.MULTILINE_TEXT` a text box, `.FLAGS` a list of check boxes.
 Property :: struct {
     name: cstring,
     kind: ValueKind,
     getter: cstring,
     setter: cstring,
+}
+
+Hint :: struct {
+    property: cstring,      // the name of a property of the class
+    hint: PropertyHint,
+    text: cstring,          // the `hint_string` of Godot
+}
+
+// The values of Godot's PropertyHint (the ones that make sense for a property of an extension class)
+PropertyHint :: enum u32 {
+    NONE = 0,
+    RANGE = 1,
+    ENUM = 2,
+    ENUM_SUGGESTION = 3,        // like ENUM, but any value can be typed
+    EXP_EASING = 4,
+    LINK = 5,
+    FLAGS = 6,
+    LAYERS_2D_RENDER = 7,
+    LAYERS_2D_PHYSICS = 8,
+    LAYERS_3D_RENDER = 10,
+    LAYERS_3D_PHYSICS = 11,
+    FILE = 13,
+    DIR = 14,
+    GLOBAL_FILE = 15,
+    GLOBAL_DIR = 16,
+    RESOURCE_TYPE = 17,         // the text is the class: "Texture2D"
+    MULTILINE_TEXT = 18,
+    EXPRESSION = 19,
+    PLACEHOLDER_TEXT = 20,      // the text is what the empty field shows
+    COLOR_NO_ALPHA = 21,
 }
 
 Class :: struct {
@@ -168,6 +200,7 @@ Class :: struct {
     methods: []Method,
     signals: []Signal,
     properties: []Property,
+    hints: []Hint,                  // optional: inspector hints of properties (enum, range, file, ...)
     virtuals: []Virtual,
     bind: proc(instance: rawptr, object: rawptr),   // optional: gets the engine object of a new instance, for `Emit`
     create: proc() -> rawptr,       // the instance that goes with a new object (what the methods receive)
@@ -178,6 +211,7 @@ Class :: struct {
     method_infos: []GdMethodInfo,
     signal_names: []GdStringName,
     property_names: []GdStringName,    // name, getter, setter of each property: three entries
+    property_hints: []GdString,        // the hint text of each property
     virtual_names: []GdStringName,
     signal_infos: [][MAX_ARGUMENTS]GdPropertyInfo,
     property_infos: [][MAX_ARGUMENTS + 1]GdPropertyInfo,
@@ -498,11 +532,22 @@ registerClass :: proc "c" (class: ^Class) {
         gd.register_method(gd.library, &class.name_id, &class.method_infos[i])
     }
     class.property_names = make([]GdStringName, len(class.properties) * 3)
+    class.property_hints = make([]GdString, len(class.properties))
     for property, i in class.properties {
         class.property_names[i * 3] = stringName(property.name)
         class.property_names[i * 3 + 1] = stringName(property.getter)
         class.property_names[i * 3 + 2] = stringName(property.setter if property.setter != nil else "")
-        info: GdPropertyInfo = {type = variantTypeOf(property.kind), name = &class.property_names[i * 3], class_name = &empty_name, hint_string = &empty_string, usage = usageOf(property.kind)}
+        hint_text: ^GdString = &empty_string
+        hint: PropertyHint
+        for candidate in class.hints {
+            if candidate.property != property.name { continue }
+            hint = candidate.hint
+            if candidate.text != nil {
+                gd.string_new_utf8(&class.property_hints[i], candidate.text)
+                hint_text = &class.property_hints[i]
+            }
+        }
+        info: GdPropertyInfo = {type = variantTypeOf(property.kind), name = &class.property_names[i * 3], hint = u32(hint), class_name = &empty_name, hint_string = hint_text, usage = usageOf(property.kind)}
         gd.register_property(gd.library, &class.name_id, &info, &class.property_names[i * 3 + 2], &class.property_names[i * 3 + 1])
     }
     class.signal_names = make([]GdStringName, len(class.signals))
