@@ -36,6 +36,8 @@
 	if (exports._start) {
 		exports._start();
 	}
+	// the same signal as web_build's index.html: a driver waits for it instead of a fixed time
+	window.odinStarted = !exports.step;
 
 	if (exports.step) {
 		const odin_ctx = exports.default_context_ptr();
@@ -47,7 +49,9 @@
 			const dt = (currTimeStamp - prevTimeStamp) * 0.001;
 			prevTimeStamp = currTimeStamp;
 
-			if (!exports.step(dt, odin_ctx)) {
+			const keep_running = exports.step(dt, odin_ctx);
+			window.odinStarted = true;
+			if (!keep_running) {
 				if (exports.shutdown) {
 					exports.shutdown(dt, odin_ctx);
 				}

@@ -61,8 +61,7 @@ OptionsCheck :: proc(folder: string, name: string, browser: browser_drive.Browse
 	}
 
 	check(&failures, browser_drive.DriverNavigate(driver, url) == .NONE, "the options page loads", browser_drive.DriverLastError(driver))
-	// the page starts its wasm and asks the background for the settings
-	browser_drive.DriverWait(driver, 1500)
+	check(&failures, browser_drive.DriverWaitUntil(driver, "window.odinStarted === true") == .NONE, "the page starts")
 	shot(driver, screenshots, browser_name, "1_start")
 	check(&failures, settings(driver) == SETTINGS_DEFAULT, "a new profile has the defaults", settings(driver))
 
@@ -78,7 +77,7 @@ OptionsCheck :: proc(folder: string, name: string, browser: browser_drive.Browse
 
 	// a page that is opened again shows what the background kept
 	check(&failures, browser_drive.DriverNavigate(driver, url) == .NONE, "the options page loads again")
-	browser_drive.DriverWait(driver, 1500)
+	check(&failures, browser_drive.DriverWaitUntil(driver, "window.odinStarted === true") == .NONE, "the page starts again")
 	check(&failures, settings(driver) == "redirect=1 save=0 download=1", "the settings stay after the page is opened again", settings(driver))
 	click(driver, REDIRECT_BUTTON)
 	check(&failures, settings(driver) == "redirect=0 save=0 download=1", "the first button switches it off again", settings(driver))

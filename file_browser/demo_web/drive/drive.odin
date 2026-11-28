@@ -72,9 +72,8 @@ ClickThrough :: proc(directory: string, browser: browser_drive.Browser, screensh
 	}
 
 	check(&failures, browser_drive.DriverNavigate(driver, fmt.tprintf("http://127.0.0.1:%d/", server.port)) == .NONE, "the page loads", browser_drive.DriverLastError(driver))
-	// the wasm starts after the page: the demo draws into the canvas a moment later
-	browser_drive.DriverWaitUntil(driver, "!!document.getElementById('webgl-canvas')")
-	browser_drive.DriverWait(driver, 2500)
+	// the wasm starts after the page: the template says when the first frame ran
+	check(&failures, browser_drive.DriverWaitUntil(driver, "window.odinStarted === true") == .NONE, "the page starts")
 	check(&failures, browser_drive.DriverTrackDownloads(driver) == .NONE, "downloads are tracked")
 	check(&failures, len(browser_drive.DriverConsoleErrors(driver)) == 0, "the page starts without console errors", browser_drive.DriverConsoleErrors(driver))
 	shot(driver, screenshots, name, "1_start")
