@@ -14,5 +14,14 @@ func _ready() -> void:
 	print("mix -> ", counter.mix(-42, "text", true))
 	counter.reset()
 	print("reset, get -> ", counter.get())
+	# a Tween that Odin makes: the square slides to the right (the engine classes of the generated wrappers)
+	var mover := Node2D.new()
+	var square := ColorRect.new()
+	square.size = Vector2(24, 24)
+	mover.add_child(square)
+	add_child(mover)
+	print("slide -> ", counter.slide_node(mover, Vector2(300, 200), 0.2))
 	if DisplayServer.get_name() == "headless":
+		await get_tree().create_timer(0.6).timeout
+		print("moved to ", mover.position)
 		get_tree().quit()

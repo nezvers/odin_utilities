@@ -36,9 +36,9 @@ test_the_template_extension_works_in_godot :: proc(t: ^testing.T) {
     testing.expectf(t, run_error == nil && state.success && strings.contains(text, "PASS"), "test.gd passes:\n%s", text)
 
     // the scene that is the testing ground runs too (headless it quits by itself)
-    scene, scene_output, scene_errors, scene_error := os.process_exec({command = {"godot", "--headless", "--path", PROJECT, "--quit-after", "60"}}, context.temp_allocator)
+    scene, scene_output, scene_errors, scene_error := os.process_exec({command = {"godot", "--headless", "--path", PROJECT, "--quit-after", "600"}}, context.temp_allocator)
     scene_text: string = strings.concatenate({string(scene_output), string(scene_errors)}, context.temp_allocator)
-    testing.expectf(t, scene_error == nil && scene.success && strings.contains(scene_text, "get -> 12"), "main.tscn runs:\n%s", scene_text)
+    testing.expectf(t, scene_error == nil && scene.success && strings.contains(scene_text, "get -> 12") && strings.contains(scene_text, "moved to (300.0, 200.0)"), "main.tscn runs and the tween arrives:\n%s", scene_text)
 
     // Hot reload: Godot reloads an extension only inside the editor. A second build (TEMPLATE_VERSION=2) is made next to the project, the editor plugin of the project (addons/reload_test) makes
     // an object, copies the second build over the loaded library, reloads the extension and checks that the object answers with the new build and has its property back. This replaces the

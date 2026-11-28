@@ -351,6 +351,14 @@ counter_class: ge.Class = {
             monitoring, _ := engine.Area2DIsMonitoring(a[2].object)
             return ge.ValueFloat(f64(frame) * 1000 + zoom[0] * 100 + zoom[1] * 10 + (1 if monitoring else 0))
         }},
+        // a Tween made from Odin through the generated wrappers: moves a Node2D to `target` in `seconds`
+        {"slide_node", {.OBJECT, .VECTOR2, .FLOAT}, .BOOL, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            tween, ok := engine.NodeCreateTween(a[0].object)
+            if !ok || tween == nil { return ge.ValueBool(false) }
+            engine.TweenSetTrans(tween, 1)                                  // sine
+            _, ok = engine.TweenTweenProperty(tween, a[0].object, "position", a[1], a[2].real[0])
+            return ge.ValueBool(ok)
+        }},
         {"parent_of", {.OBJECT}, .OBJECT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             parent, _ := engine.NodeGetParent(a[0].object)
             return ge.ValueObject(parent)
