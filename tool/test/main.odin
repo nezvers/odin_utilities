@@ -6,6 +6,9 @@
 //     odin run tool/test -- --all           every package that has tests
 //     odin run tool/test -- --list          only say which packages would run
 //     odin run tool/test -- --verbose       print the whole output of a failing package, not only its errors
+//     odin run tool/test -- --cross         instead of the tests: `odin check` the selected packages (with or without tests) for linux_amd64 and darwin_arm64, which finds what only Windows
+//                                           compiles (an import that is used only in a `when ODIN_OS == .Windows` branch, a Windows only call). A package that stops at a missing vendor library
+//                                           ("Compile time panic") or builds only for the web is said to be unchecked, not failed
 //     odin run tool/test -- --levels        also run the packages that use the `simd` library once per instruction set level (SIMD_LEVEL=scalar, sse2, sse4.2, avx, avx2, avx512;
 //                                           a level above the CPU runs its best), so the kernels of the lower levels run on a machine that has more
 //
@@ -36,7 +39,7 @@ Package :: struct {
 main :: proc() {
     explicit: [dynamic]string
     since: string
-    all, list, verbose, levels: bool
+    all, list, verbose, levels, cross: bool
     arguments: []string = os.args[1:]
     for i := 0; i < len(arguments); i += 1 {
         switch arguments[i] {
@@ -44,6 +47,7 @@ main :: proc() {
         case "--list": list = true
         case "--verbose": verbose = true
         case "--levels": levels = true
+        case "--cross": cross = true
         case "--since":
             i += 1
             if i >= len(arguments) { fail("--since needs a commit or branch") }
@@ -72,7 +76,7 @@ main :: proc() {
     selected: map[string]bool
     switch {
     case all:
-        for dir, package_found in packages { if package_found.has_tests { selected[dir] = true } }
+        for dir, package_found in packages { if package_found.has_tests || cross { selected[dir] = true } }
     case len(explicit) > 0:
         for dir in explicit {
             if dir not_in packages { fail(fmt.tprintf("no package %s", dir)) }
@@ -92,7 +96,7 @@ main :: proc() {
             }
         }
         for dir in changed {
-            if package_found, found := packages[dir]; found && package_found.has_tests { selected[dir] = true }
+            if package_found, found := packages[dir]; found && (package_found.has_tests || cross) { selected[dir] = true }
         }
     }
 
@@ -110,6 +114,23 @@ main :: proc() {
 
     failures: int
     start: time.Tick = time.tick_now()
+    if cross {
+        unchecked: int
+        for dir in order {
+            switch crossCheck(dir, packages[dir]) {
+            case .OK:
+            case .FAILED: failures += 1
+            case .UNCHECKED: unchecked += 1
+            }
+        }
+        seconds: f64 = time.duration_seconds(time.tick_since(start))
+        if failures > 0 {
+            fmt.printfln("FAILED: %d of %d packages do not build for Linux or macOS (%d unchecked, %.1f s)", failures, len(order), unchecked, seconds)
+            os.exit(1)
+        }
+        fmt.printfln("%d packages check for Linux and macOS, %d are unchecked (%.1f s)", len(order) - unchecked, unchecked, seconds)
+        return
+    }
     for dir in order {
         if !runPackage(dir, verbose) { failures += 1 }
     }
@@ -211,7 +232,7 @@ changedPackages :: proc(since: string, packages: map[string]^Package) -> map[str
 gitLines :: proc(command: []string) -> [dynamic]string {
     lines: [dynamic]string
     state, stdout, _, err := os.process_exec({command = command}, context.allocator)
-    if err != nil || !state.success { return lines }
+    if err != nil || state.exit_code != 0 { return lines }
     for line in strings.split_lines(string(stdout), context.allocator) {
         text: string = strings.trim_right(line, "\r")
         if text != "" { append(&lines, text) }
@@ -220,6 +241,60 @@ gitLines :: proc(command: []string) -> [dynamic]string {
 }
 
 // One line when the package passes. When it does not: the failed tests and the errors, never the progress lines.
+CROSS_TARGETS :: [?]string{"linux_amd64", "darwin_arm64"}
+// Packages that are built only for the web (they declare `foreign` procedures of the browser): not checked for the desktop
+CROSS_WEB_ONLY :: [?]string{"browser_extension/runtime", "browser_extension/demo", "spacetimedb/module/example/basic"}
+
+CrossResult :: enum { OK, FAILED, UNCHECKED }
+
+// `odin check` of a package for the other systems. Errors that are not the program's: a vendor library that is not compiled here ("Compile time panic"), a package that builds only for the web (every
+// file says `#+build js`) are reported as unchecked.
+crossCheck :: proc(dir: string, package_found: ^Package) -> CrossResult {
+    listed: bool = len(package_found.files) > 0
+    web_only: bool
+    for web in CROSS_WEB_ONLY {
+        if web == dir { web_only = true }
+        for imported in package_found.imports {
+            if imported == web { web_only = true }          // what imports a web only package is one too
+        }
+    }
+    for path in package_found.files {
+        bytes, err := os.read_entire_file(path, context.temp_allocator)
+        if err != nil || !strings.has_prefix(string(bytes), "#+build js") { listed = false; break }
+    }
+    web_only = web_only || listed
+    if web_only {
+        fmt.printfln("skip %-28s builds only for the web", dir)
+        return .UNCHECKED
+    }
+    result: CrossResult = .OK
+    for target in CROSS_TARGETS {
+        state, stdout, stderr, err := os.process_exec({command = {"odin", "check", dir, "-no-entry-point", fmt.tprintf("-target:%s", target), "-strict-style", "-vet"}}, context.temp_allocator)
+        if err != nil {
+            fmt.printfln("FAIL %s: cannot start odin: %v", dir, err)
+            return .FAILED
+        }
+        if state.exit_code == 0 { continue }
+        output: string = strings.concatenate({string(stdout), "\n", string(stderr)}, context.temp_allocator)
+        if strings.contains(output, "Compile time panic") {
+            fmt.printfln("skip %-28s %s: a vendor library is not compiled here", dir, target)
+            if result == .OK { result = .UNCHECKED }
+            continue
+        }
+        fmt.printfln("FAIL %-28s %s", dir, target)
+        printed: int
+        for line in strings.split_lines(output, context.temp_allocator) {
+            if !strings.contains(line, "Error") { continue }
+            fmt.printfln("     %s", strings.trim_right(line, " "))
+            printed += 1
+            if printed >= MAX_ERROR_LINES { break }
+        }
+        return .FAILED
+    }
+    if result == .OK { fmt.printfln("ok   %-28s %s", dir, "linux_amd64, darwin_arm64") }
+    return result
+}
+
 runPackage :: proc(dir: string, verbose: bool) -> bool {
     start: time.Tick = time.tick_now()
     inside: bool
@@ -241,7 +316,7 @@ runPackage :: proc(dir: string, verbose: bool) -> bool {
         if strings.has_prefix(line, "Finished ") { summary = strings.trim_space(line) }
     }
     // the runner can exit with 0 when a test failed: its summary line is the truth
-    if state.success && summary != "" && !strings.contains(summary, "failed") {
+    if state.exit_code == 0 && summary != "" && !strings.contains(summary, "failed") {
         fmt.printfln("ok   %-28s %s (%.1f s)", dir, summary if summary != "" else "no summary", seconds)
         return true
     }
@@ -265,7 +340,7 @@ runLevels :: proc(dir: string, verbose: bool) -> bool {
     start: time.Tick = time.tick_now()
     program: string = fmt.tprintf("%s_levels.exe", baseName(dir))
     build, _, build_stderr, build_err := os.process_exec({command = {"odin", "build", dir, "-build-mode:test", "-strict-style", "-vet", fmt.tprintf("-out:%s", program)}}, context.allocator)
-    if build_err != nil || !build.success {
+    if build_err != nil || build.exit_code != 0 {
         fmt.printfln("FAIL %-28s levels: did not build", dir)
         if verbose { fmt.println(string(build_stderr)) }
         return false
@@ -289,7 +364,7 @@ runLevels :: proc(dir: string, verbose: bool) -> bool {
             if strings.has_prefix(line, "Finished ") { summary = strings.trim_space(line) }
         }
         append(&names, level)
-        if err != nil || !state.success || summary == "" || strings.contains(summary, "failed") { append(&failed, level) }
+        if err != nil || state.exit_code != 0 || summary == "" || strings.contains(summary, "failed") { append(&failed, level) }
     }
     seconds: f64 = time.duration_seconds(time.tick_since(start))
     if len(failed) == 0 {

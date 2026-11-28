@@ -24,7 +24,7 @@ test_godot_script_uses_the_extension_against_a_server :: proc(t: ^testing.T) {
     defer sync.mutex_unlock(&arena_project_lock)
     godot_check, _, _, godot_error := os.process_exec({command = {"godot", "--version"}}, context.temp_allocator)
     module_path: string = spacetimedb.FixturePath("basic-odin")
-    if godot_error != nil || !godot_check.success || module_path == "" || !os.exists(spacetimedb.ServerCliPath()) {
+    if godot_error != nil || godot_check.exit_code != 0 || module_path == "" || !os.exists(spacetimedb.ServerCliPath()) {
         fmt.println("[godot_spacetimedb] no godot or no server: the Godot test is skipped")
         return
     }
@@ -32,7 +32,7 @@ test_godot_script_uses_the_extension_against_a_server :: proc(t: ^testing.T) {
     os.make_directory_all(PROJECT + "/bin")
     dll: string = PROJECT + "/bin/godot_spacetimedb.dll" when ODIN_OS == .Windows else PROJECT + "/bin/libgodot_spacetimedb.so"
     build, _, build_errors, build_error := os.process_exec({command = {"odin", "build", #directory + "..", "-build-mode:dll", "-strict-style", "-vet", fmt.tprintf("-out:%s", dll)}}, context.temp_allocator)
-    testing.expectf(t, build_error == nil && build.success, "the extension builds: %s", string(build_errors))
+    testing.expectf(t, build_error == nil && build.exit_code == 0, "the extension builds: %s", string(build_errors))
 
     root: string = "godot_test_server"
     defer os.remove_all(root)
@@ -52,12 +52,12 @@ test_godot_script_uses_the_extension_against_a_server :: proc(t: ^testing.T) {
     _, _, _, _ = os.process_exec({command = {"godot", "--headless", "--path", PROJECT, "--import"}}, context.temp_allocator)
     state, output, errors, run_error := os.process_exec({command = {"godot", "--headless", "--path", PROJECT, "--script", "test.gd", "--", "3194"}}, context.temp_allocator)
     text: string = strings.concatenate({string(output), string(errors)}, context.temp_allocator)
-    testing.expectf(t, run_error == nil && state.success && strings.contains(text, "PASS"), "the script passes:\n%s", text)
+    testing.expectf(t, run_error == nil && state.exit_code == 0 && strings.contains(text, "PASS"), "the script passes:\n%s", text)
 
     // the Node flavour polls itself and tells the script with signals
     node_state, node_output, node_errors, node_error := os.process_exec({command = {"godot", "--headless", "--path", PROJECT, "--script", "test_node.gd", "--", "3194"}}, context.temp_allocator)
     node_text: string = strings.concatenate({string(node_output), string(node_errors)}, context.temp_allocator)
-    testing.expectf(t, node_error == nil && node_state.success && strings.contains(node_text, "PASS"), "the client node script passes:\n%s", node_text)
+    testing.expectf(t, node_error == nil && node_state.exit_code == 0 && strings.contains(node_text, "PASS"), "the client node script passes:\n%s", node_text)
 }
 
 ARENA_PROJECT :: #directory + "../arena_project"
@@ -69,7 +69,7 @@ test_godot_arena_host_and_join :: proc(t: ^testing.T) {
     sync.mutex_lock(&arena_project_lock)
     defer sync.mutex_unlock(&arena_project_lock)
     godot_check, _, _, godot_error := os.process_exec({command = {"godot", "--version"}}, context.temp_allocator)
-    if godot_error != nil || !godot_check.success || spacetimedb.FixturePath("arena-odin") == "" || !os.exists(spacetimedb.ServerCliPath()) {
+    if godot_error != nil || godot_check.exit_code != 0 || spacetimedb.FixturePath("arena-odin") == "" || !os.exists(spacetimedb.ServerCliPath()) {
         fmt.println("[godot_spacetimedb] no godot or no arena module: the arena test is skipped")
         return
     }
@@ -77,7 +77,7 @@ test_godot_arena_host_and_join :: proc(t: ^testing.T) {
     os.make_directory_all(ARENA_PROJECT + "/bin")
     dll: string = ARENA_PROJECT + "/bin/godot_spacetimedb.dll" when ODIN_OS == .Windows else ARENA_PROJECT + "/bin/libgodot_spacetimedb.so"
     build, _, build_errors, build_error := os.process_exec({command = {"odin", "build", #directory + "..", "-build-mode:dll", "-strict-style", "-vet", fmt.tprintf("-out:%s", dll)}}, context.temp_allocator)
-    testing.expectf(t, build_error == nil && build.success, "the extension builds: %s", string(build_errors))
+    testing.expectf(t, build_error == nil && build.exit_code == 0, "the extension builds: %s", string(build_errors))
 
     // absolute: the Godot process runs in the folder of its project
     cwd, _ := os.get_working_directory(context.temp_allocator)
@@ -87,7 +87,7 @@ test_godot_arena_host_and_join :: proc(t: ^testing.T) {
     _, _, _, _ = os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--import"}}, context.temp_allocator)
     state, output, errors, run_error := os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--script", "test_arena.gd", "--", "3198", root}}, context.temp_allocator)
     text: string = strings.concatenate({string(output), string(errors)}, context.temp_allocator)
-    testing.expectf(t, run_error == nil && state.success && strings.contains(text, "PASS"), "the arena script passes:\n%s", text)
+    testing.expectf(t, run_error == nil && state.exit_code == 0 && strings.contains(text, "PASS"), "the arena script passes:\n%s", text)
 
     // the Node flavour of the arena updates itself: the script reacts to signals
     node_root: string = fmt.tprintf("%s/godot_arena_node_server", cwd)
@@ -95,7 +95,7 @@ test_godot_arena_host_and_join :: proc(t: ^testing.T) {
     defer spacetimedb.ServerRemove(node_root)
     node_state, node_output, node_errors, node_error := os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--script", "test_arena_node.gd", "--", "3196", node_root}}, context.temp_allocator)
     node_text: string = strings.concatenate({string(node_output), string(node_errors)}, context.temp_allocator)
-    testing.expectf(t, node_error == nil && node_state.success && strings.contains(node_text, "PASS"), "the arena node script passes:\n%s", node_text)
+    testing.expectf(t, node_error == nil && node_state.exit_code == 0 && strings.contains(node_text, "PASS"), "the arena node script passes:\n%s", node_text)
 }
 
 // Host and join for any game: the generic classes `SpacetimeDBLobby` and `SpacetimeDBClient` with the `basic` module (nothing of the arena), host and guest in one headless process;
@@ -106,14 +106,14 @@ test_godot_lobby_hosts_and_joins_a_module_that_is_not_the_arena :: proc(t: ^test
     defer sync.mutex_unlock(&arena_project_lock)
     godot_check, _, _, godot_error := os.process_exec({command = {"godot", "--version"}}, context.temp_allocator)
     module: string = spacetimedb.FixturePath("basic-odin")
-    if godot_error != nil || !godot_check.success || module == "" || !os.exists(spacetimedb.ServerCliPath()) {
+    if godot_error != nil || godot_check.exit_code != 0 || module == "" || !os.exists(spacetimedb.ServerCliPath()) {
         fmt.println("[godot_spacetimedb] no godot or no basic module: the lobby test is skipped")
         return
     }
     dll: string = ARENA_PROJECT + "/bin/godot_spacetimedb.dll" when ODIN_OS == .Windows else ARENA_PROJECT + "/bin/libgodot_spacetimedb.so"
     os.make_directory_all(ARENA_PROJECT + "/bin")
     build, _, build_errors, build_error := os.process_exec({command = {"odin", "build", #directory + "..", "-build-mode:dll", "-strict-style", "-vet", fmt.tprintf("-out:%s", dll)}}, context.temp_allocator)
-    testing.expectf(t, build_error == nil && build.success, "the extension builds: %s", string(build_errors))
+    testing.expectf(t, build_error == nil && build.exit_code == 0, "the extension builds: %s", string(build_errors))
 
     cwd, _ := os.get_working_directory(context.temp_allocator)
     root: string = fmt.tprintf("%s/godot_lobby_test_server", cwd)
@@ -122,7 +122,7 @@ test_godot_lobby_hosts_and_joins_a_module_that_is_not_the_arena :: proc(t: ^test
     _, _, _, _ = os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--import"}}, context.temp_allocator)
     state, output, errors, run_error := os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--script", "test_lobby.gd", "--", "3199", root, module}}, context.temp_allocator)
     text: string = strings.concatenate({string(output), string(errors)}, context.temp_allocator)
-    testing.expectf(t, run_error == nil && state.success && strings.contains(text, "PASS"), "the lobby script passes:\n%s", text)
+    testing.expectf(t, run_error == nil && state.exit_code == 0 && strings.contains(text, "PASS"), "the lobby script passes:\n%s", text)
 
     // the Node flavour updates itself from the engine's _process: the script only reacts to signals
     node_root: string = fmt.tprintf("%s/godot_lobby_node_server", cwd)
@@ -130,5 +130,5 @@ test_godot_lobby_hosts_and_joins_a_module_that_is_not_the_arena :: proc(t: ^test
     defer spacetimedb.ServerRemove(node_root)
     node_state, node_output, node_errors, node_error := os.process_exec({command = {"godot", "--headless", "--path", ARENA_PROJECT, "--script", "test_lobby_node.gd", "--", "3197", node_root, module}}, context.temp_allocator)
     node_text: string = strings.concatenate({string(node_output), string(node_errors)}, context.temp_allocator)
-    testing.expectf(t, node_error == nil && node_state.success && strings.contains(node_text, "PASS"), "the lobby node script passes:\n%s", node_text)
+    testing.expectf(t, node_error == nil && node_state.exit_code == 0 && strings.contains(node_text, "PASS"), "the lobby node script passes:\n%s", node_text)
 }

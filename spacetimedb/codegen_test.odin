@@ -46,8 +46,8 @@ test_generator_rejects_what_is_not_a_schema :: proc(t: ^testing.T) {
 @(test)
 test_generated_packages_build_and_work :: proc(t: ^testing.T) {
     check, _, check_errors, check_error := os.process_exec({command = {"odin", "check", FIXTURES + "generated/basic", "-no-entry-point", "-strict-style", "-vet"}}, context.temp_allocator)
-    testing.expectf(t, check_error == nil && check.success, "the generated basic package compiles: %s", string(check_errors))
+    testing.expectf(t, check_error == nil && check.exit_code == 0, "the generated basic package compiles: %s", string(check_errors))
     run, run_output, run_errors, run_error := os.process_exec({command = {"odin", "test", FIXTURES + "generated/rich", "-strict-style", "-vet", "-out:" + "generated_rich_test.exe"}}, context.temp_allocator)
-    testing.expectf(t, run_error == nil && run.success, "the generated rich package passes its tests: %s %s", string(run_output), string(run_errors))
+    testing.expectf(t, run_error == nil && run.exit_code == 0, "the generated rich package passes its tests: %s %s", string(run_output), string(run_errors))
     os.remove("generated_rich_test.exe")
 }

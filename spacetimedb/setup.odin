@@ -95,7 +95,7 @@ setupSay :: proc(options: SetupOptions, text: string) {
 @(private)
 runCommand :: proc(command: []string, working_dir: string = "") -> bool {
     state, _, _, err := os.process_exec({command = command, working_dir = working_dir}, context.temp_allocator)
-    return err == nil && state.success
+    return err == nil && state.exit_code == 0
 }
 
 // Clones what is missing, downloads the server when it is missing. Idempotent: run it as often as you like.

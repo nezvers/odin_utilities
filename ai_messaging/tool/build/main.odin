@@ -50,7 +50,7 @@ main :: proc() {
     if optimize { append(&command, "-o:speed") }
     append(&command, fmt.tprintf("-define:AMSG_COMMIT=%s", commit), fmt.tprintf("-define:AMSG_DIRTY=%v", dirty), fmt.tprintf("-define:AMSG_BUILT=%d", built))
     state, stdout, stderr, error := os.process_exec({command = command[:]}, context.temp_allocator)
-    if error != nil || !state.success {
+    if error != nil || state.exit_code != 0 {
         fmt.eprintln(string(stderr), string(stdout))
         fmt.eprintln("the build failed")
         os.exit(1)
@@ -64,6 +64,6 @@ git :: proc(arguments: ..string) -> string {
     append(&command, "git")
     for argument in arguments { append(&command, argument) }
     state, stdout, _, error := os.process_exec({command = command[:]}, context.temp_allocator)
-    if error != nil || !state.success { return "" }
+    if error != nil || state.exit_code != 0 { return "" }
     return strings.trim_space(string(stdout))
 }

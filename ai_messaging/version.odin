@@ -40,7 +40,7 @@ VersionLatest :: proc() -> (sha: string, date: string, subject: string, message:
     for path in VERSION_PATHS {
         url: string = fmt.tprintf("https://api.github.com/repos/%s/commits?path=%s&per_page=1", VERSION_REPOSITORY, path)
         state, stdout, _, error := os.process_exec({command = {"curl", "-s", "-m", "15", "-H", "User-Agent: amsg", url}}, context.temp_allocator)
-        if error != nil || !state.success {
+        if error != nil || state.exit_code != 0 {
             return "", "", "", "could not run curl (not installed, or no network)"
         }
         body: string = string(stdout)

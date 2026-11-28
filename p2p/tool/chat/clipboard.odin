@@ -34,5 +34,5 @@ ClipboardSet :: proc(text: string) -> bool {
         return false
     }
     state, wait_error := os.process_wait(process)
-    return wait_error == nil && state.success
+    return wait_error == nil && state.exit_code == 0
 }

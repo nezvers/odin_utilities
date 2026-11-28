@@ -69,7 +69,7 @@ main :: proc() {
     append(&command, "odin", "build", package_path, "-build-mode:dll", "-strict-style", "-vet", fmt.tprintf("-out:%s", output))
     if release { append(&command, "-o:speed") }
     state, _, errors, run_error := os.process_exec({command = command[:]}, context.temp_allocator)
-    if run_error != nil || !state.success { fail(fmt.tprintf("the build failed:\n%s", string(errors))) }
+    if run_error != nil || state.exit_code != 0 { fail(fmt.tprintf("the build failed:\n%s", string(errors))) }
     fmt.printfln("built %s", output)
 
     descriptor: string = fmt.tprintf("%s/%s.gdextension", project, name)

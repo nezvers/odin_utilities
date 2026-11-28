@@ -51,7 +51,7 @@ WasmBuild :: proc(config: WasmBuildConfig) -> WasmBuildResult {
     }
     append(&command, ..config.odin_arguments)
     state, _, errors, error := os.process_exec({command = command[:]}, context.temp_allocator)
-    if error != nil || !state.success { return {message = string(errors) if error == nil else "odin could not be started"} }
+    if error != nil || state.exit_code != 0 { return {message = string(errors) if error == nil else "odin could not be started"} }
     data, read_error := os.read_entire_file(config.output, context.temp_allocator)
     if read_error != nil { return {message = "the compiler wrote no output"} }
     info, inspected := WasmInspect(data, context.temp_allocator)

@@ -251,7 +251,7 @@ gitLines :: proc(command: []string) -> [dynamic]string {
     lines: [dynamic]string
     lines.allocator = context.temp_allocator
     state, stdout, _, err := os.process_exec({command = command}, context.temp_allocator)
-    if err != nil || !state.success { return lines }
+    if err != nil || state.exit_code != 0 { return lines }
     for line in strings.split_lines(string(stdout), context.temp_allocator) {
         text: string = strings.trim_right(line, "\r")
         if text != "" { append(&lines, text) }
