@@ -334,6 +334,11 @@ counter_class: ge.Class = {
             answer, ok := ge.CallableCall(counter.callback, {a[0]})
             return answer if ok else ge.ValueInt(-2)
         }},
+        // a generated wrapper that takes a Callable: Object.connect(signal, callable)
+        {"listen", {.OBJECT, .STRING, .CALLABLE}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            status, _ := engine.ObjectConnect(a[0].object, string(a[1].text), a[2].callable)
+            return ge.ValueInt(status)
+        }},
         {"parent_of", {.OBJECT}, .OBJECT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             parent, _ := engine.NodeGetParent(a[0].object)
             return ge.ValueObject(parent)

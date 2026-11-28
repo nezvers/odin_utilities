@@ -18,6 +18,7 @@ import "core:testing"
 
 Kind :: enum {
     NONE,
+    CALLABLE,           // an argument `Callable` (a result would come back as nothing)
     OBJECTS,            // an argument `typedarray::Node`: a slice of objects, sent as a typed Array of that class
     BOOL,
     INT,
@@ -287,6 +288,7 @@ kindOf :: proc(type: string, known: map[string]bool, is_result: bool) -> Kind {
     case "Array": return .ARRAY
     case "Dictionary": return .DICTIONARY
     case "Variant": return .VARIANT
+    case "Callable": return .CALLABLE if !is_result else .NONE
     case "PackedByteArray": return .BYTES
     case "PackedInt64Array": return .PACKED_INTS
     case "PackedInt32Array": return .PACKED_INTS32
@@ -314,6 +316,7 @@ odinType :: proc(kind: Kind) -> string {
     case .VECTOR3: return "[3]f64"
     case .OBJECT: return "rawptr"
     case .OBJECTS: return "[]rawptr"
+    case .CALLABLE: return "[2]u64"
     case .ARRAY, .PACKED_STRINGS: return "[]ge.Value"
     case .DICTIONARY, .VARIANT: return "ge.Value"
     case .BYTES: return "[]u8"
@@ -333,6 +336,7 @@ odinType :: proc(kind: Kind) -> string {
 toValue :: proc(kind: Kind, name: string, element: string = "") -> string {
     switch kind {
     case .OBJECTS: return fmt.tprintf("ge.ValueObjects(%s, \"%s\")", name, element)
+    case .CALLABLE: return fmt.tprintf("ge.Value{{kind = .CALLABLE, callable = %s}}", name)
     case .BOOL: return fmt.tprintf("ge.ValueBool(%s)", name)
     case .INT: return fmt.tprintf("ge.ValueInt(%s)", name)
     case .FLOAT: return fmt.tprintf("ge.ValueFloat(%s)", name)
@@ -381,7 +385,7 @@ fromValue :: proc(kind: Kind) -> string {
         parts: [4]string
         for i in 0 ..< count { parts[i] = fmt.tprintf("i64(result.real[%d])", i) if ints else fmt.tprintf("result.real[%d]", i) }
         return fmt.tprintf("%s{{%s}}", odinType(kind), strings.join(parts[:count], ", ", context.temp_allocator))
-    case .NONE, .OBJECTS: return ""
+    case .NONE, .OBJECTS, .CALLABLE: return ""
     }
     return ""
 }
@@ -404,7 +408,7 @@ defaultOf :: proc(kind: Kind, text: string) -> string {
         }
         return text if strings.contains(text, ".") else fmt.tprintf("%s.0", text)
     case .STRING: if text == `""` { return text }
-    case .VECTOR2, .VECTOR3, .OBJECT, .OBJECTS, .NONE:
+    case .VECTOR2, .VECTOR3, .OBJECT, .OBJECTS, .CALLABLE, .NONE:
     case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION:
     case .ARRAY, .DICTIONARY, .VARIANT, .BYTES, .PACKED_INTS, .PACKED_INTS32, .PACKED_FLOATS, .PACKED_FLOATS32, .PACKED_STRINGS, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS:
     }
@@ -460,6 +464,10 @@ test_wrappers_are_generated_from_the_dump :: proc(t: ^testing.T) {
     testing.expect(t, strings.contains(colored, "ControlGetRect :: proc(self: rawptr) -> ([4]f64, bool) {"))
     testing.expect(t, strings.contains(colored, "ObjectSetMeta :: proc(self: rawptr, name: string, value: ge.Value) -> bool {"), "a Variant argument is a Value")
     testing.expect(t, strings.contains(colored, "ObjectGetMeta :: proc(self: rawptr, name: string, default: ge.Value) -> (ge.Value, bool) {"))
+    timers, timers_ok := Generate(api, {"Object"}, "engine", "..")
+    testing.expect(t, timers_ok)
+    testing.expect(t, strings.contains(timers, "ObjectConnect :: proc(self: rawptr, signal: string, callable: [2]u64, flags: i64 = 0) -> (i64, bool) {"), "a Callable argument is 16 bytes")
+    testing.expect(t, strings.contains(timers, "ge.Value{kind = .CALLABLE, callable = callable}"))
     fonts, fonts_ok := Generate(api, {"Font"}, "engine", "..")
     testing.expect(t, fonts_ok)
     testing.expect(t, strings.contains(fonts, "FontSetFallbacks :: proc(self: rawptr, fallbacks: []rawptr) -> bool {"), "a typed Array of objects is a slice of objects")

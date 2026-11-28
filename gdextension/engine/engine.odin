@@ -162,6 +162,21 @@ ObjectGetIncomingConnections :: proc(self: rawptr) -> ([]ge.Value, bool) {
     return result.items, ok
 }
 
+ObjectConnect :: proc(self: rawptr, signal: string, callable: [2]u64, flags: i64 = 0) -> (i64, bool) {
+    result, ok := ge.Call(self, "Object", "connect", 1518946055, {ge.ValueText(signal), ge.Value{kind = .CALLABLE, callable = callable}, ge.ValueInt(flags)})
+    return result.number, ok
+}
+
+ObjectDisconnect :: proc(self: rawptr, signal: string, callable: [2]u64) -> bool {
+    _, ok := ge.Call(self, "Object", "disconnect", 1874754934, {ge.ValueText(signal), ge.Value{kind = .CALLABLE, callable = callable}})
+    return ok
+}
+
+ObjectIsConnected :: proc(self: rawptr, signal: string, callable: [2]u64) -> (bool, bool) {
+    result, ok := ge.Call(self, "Object", "is_connected", 768136979, {ge.ValueText(signal), ge.Value{kind = .CALLABLE, callable = callable}})
+    return result.number != 0, ok
+}
+
 ObjectHasConnections :: proc(self: rawptr, signal: string) -> (bool, bool) {
     result, ok := ge.Call(self, "Object", "has_connections", 2619796661, {ge.ValueText(signal)})
     return result.number != 0, ok
@@ -2534,6 +2549,11 @@ ControlIsClippingContents :: proc(self: rawptr) -> (bool, bool) {
 
 ControlGrabClickFocus :: proc(self: rawptr) -> bool {
     _, ok := ge.Call(self, "Control", "grab_click_focus", 3218959716, {})
+    return ok
+}
+
+ControlSetDragForwarding :: proc(self: rawptr, drag_func: [2]u64, can_drop_func: [2]u64, drop_func: [2]u64) -> bool {
+    _, ok := ge.Call(self, "Control", "set_drag_forwarding", 1076571380, {ge.Value{kind = .CALLABLE, callable = drag_func}, ge.Value{kind = .CALLABLE, callable = can_drop_func}, ge.Value{kind = .CALLABLE, callable = drop_func}})
     return ok
 }
 

@@ -43,12 +43,16 @@ func _init() -> void:
 	_check(failures, counter.fire(3) == 3 and counter.fire(4) == 7 and captured[0] == 7, "a kept Callable is called later: %s" % [captured])
 	counter.on_total(func(x: int) -> int: return x * 10)
 	var probe := RefCounted.new()
-	counter.on_total(func(x: int) -> int: return probe.get_reference_count())
+	_keep_probe(counter, probe)     # in a function of its own: the stack of the script keeps temporaries until the function returns
 	var held: int = counter.fire(0)
 	counter.on_total(func(x: int) -> int: return x * 10)
 	var released: int = probe.get_reference_count()
 	_check(failures, released == 1 and held > released, "the kept Callable holds what the lambda captured until it is replaced: %s then %s" % [held, released])
 	_check(failures, counter.fire(5) == 50 and captured[0] == 7, "a new callback replaces the kept one")
+	var heard := []
+	_check(failures, counter.listen(counter, "changed", func(total: int) -> void: heard.append(total)) == OK, "Object.connect through a generated wrapper with a Callable")
+	counter.add(1)
+	_check(failures, heard == [counter.get()], "the connected lambda heard the signal: %s" % [heard])
 	counter.reset()
 	var settings := Settings.new()
 	settings.title = "fast"
@@ -224,3 +228,6 @@ func _check(failures: Array, condition: bool, name: String) -> void:
 
 func _double(x: int) -> int:
 	return x * 2
+
+func _keep_probe(counter: Counter, probe: RefCounted) -> void:
+	counter.on_total(func(x: int) -> int: return probe.get_reference_count())
