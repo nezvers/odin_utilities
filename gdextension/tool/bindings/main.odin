@@ -260,7 +260,7 @@ is_flag :: proc(object: json.Object, key: string) -> bool {
 }
 
 // What a type of the dump is for `ge.Call`; NONE when it cannot be carried (a Callable, a Signal, an RID, a typed Array as an argument ...). A StringName or NodePath is sent as a String, and
-// comes back as one. A typed Array of objects (`typedarray::Node`) is a `[]rawptr` argument, sent as a typed Array (`ge.ValueObjects`: the engine checks the element type); as a result it is an Array of Values. Typed Arrays of other types (String, int, RID ...) are not carried.
+// comes back as one. A typed Array of objects (`typedarray::Node`) is a `[]rawptr` argument, sent as a typed Array (`ge.ValueObjects`); as a result it is an Array of Values. Typed Arrays of other types (String, int, RID ...) are not carried.
 @(private)
 kindOf :: proc(type: string, known: map[string]bool, is_result: bool) -> Kind {
     switch type {

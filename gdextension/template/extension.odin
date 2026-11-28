@@ -306,7 +306,7 @@ counter_class: ge.Class = {
             count, _ := engine.NodeGetChildCount(a[0].object)
             return ge.ValueInt(count)
         }},
-        // an engine method that takes a typed Array (`Font.set_fallbacks(Array[Font])`): the engine checks the element type of the argument, ValueObjects makes it typed
+        // an engine method that takes a typed Array (`Font.set_fallbacks(Array[Font])`): ValueObjects makes the argument a typed Array (the Variant call would also convert a plain one)
         {"set_fallbacks", {.OBJECT, .OBJECT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             ge.Call(a[0].object, "Font", "set_fallbacks", 381264803, {ge.ValueObjects({a[1].object}, "Font")})
             fallbacks, _ := ge.Call(a[0].object, "Font", "get_fallbacks", 3995934104, {})
