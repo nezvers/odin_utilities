@@ -56,6 +56,7 @@ main :: proc() {
 		// the page is loaded in a headless Chrome or Edge: what only a browser sees (a wrong import name, a 404) is reported
 		result: web_build.WebBuildCheckResult = web_build.WebBuildCheck(config)
 		fmt.printfln("page check: %v %s", result.status, result.message)
+		if result.status == .NO_BROWSER { os.exit(3) }
 		if result.status == .FAILED || result.status == .NOT_RUN { os.exit(1) }
 	}
 	if !serve { return }

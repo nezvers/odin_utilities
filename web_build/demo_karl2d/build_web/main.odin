@@ -1,6 +1,6 @@
 // Web build of the karl2d demo. Run from the web_build directory:
 //   odin run demo_karl2d/build_web -- [--check] -o:size
-// `--check` then loads the page in a headless Chrome or Edge and reports what it writes to its console as an error. Everything else after `--` goes to `odin build`. The result is in demo_karl2d/game/bin/web, serve that folder.
+// `--check` (exit code 3 when no browser is installed) then loads the page in a headless Chrome or Edge and reports what it writes to its console as an error. Everything else after `--` goes to `odin build`. The result is in demo_karl2d/game/bin/web, serve that folder.
 package main
 
 import "core:fmt"
@@ -30,6 +30,7 @@ main :: proc() {
 	if check {
 		result: web_build.WebBuildCheckResult = web_build.WebBuildCheck(config)
 		fmt.printfln("page check: %v %s", result.status, result.message)
+		if result.status == .NO_BROWSER { os.exit(3) }
 		if result.status == .FAILED || result.status == .NOT_RUN { os.exit(1) }
 	}
 }

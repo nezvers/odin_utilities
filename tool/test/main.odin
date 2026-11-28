@@ -12,7 +12,8 @@
 //     odin run tool/test -- --levels        also run the packages that use the `simd` library once per instruction set level (SIMD_LEVEL=scalar, sse2, sse4.2, avx, avx2, avx512;
 //                                           a level above the CPU runs its best), so the kernels of the lower levels run on a machine that has more
 //     odin run tool/test -- --browser       also run the checks that need a browser, when the package they belong to is selected: `simd` runs its SIMD128 text kernels in a headless Chrome or Edge
-//                                           (simd/web_check, a few seconds). Without a browser on the machine it says so and does not fail
+//                                           (simd/web_check), and the web demos load their page in it and report console errors (`--check` of file_browser/demo_web and web_build/demo_karl2d:
+//                                           they build first, so it takes a while). A check runs when a package it depends on is selected. Without a browser on the machine it says so and does not fail
 //
 // Run it from odin_utilities. A package is a folder with .odin files; one is tested when it has an @(test) proc. A change in a folder
 // counts for that package and, through the imports (`import x "../ui"`), for every package that uses it, so a change of `ui` also runs
@@ -147,13 +148,19 @@ main :: proc() {
         }
     }
     if browser {
-        for dir in order {
-            if dir == "simd" && !runBrowserCheck("simd", {"odin", "run", "simd/web_check/build_web", "--", "--headless"}) { failures += 1 }
+        for check in BROWSER_CHECKS {
+            run: bool = all
+            for dir in order {
+                for trigger in check.triggers {
+                    if dir == trigger { run = true }
+                }
+            }
+            if run && !runBrowserCheck(check.name, check.command, check.working_dir) { failures += 1 }
         }
     }
     seconds: f64 = time.duration_seconds(time.tick_since(start))
     if failures > 0 {
-        fmt.printfln("FAILED: %d of %d packages (%.1f s)", failures, len(order), seconds)
+        fmt.printfln("FAILED: %d failures in %d packages and browser checks (%.1f s)", failures, len(order), seconds)
         os.exit(1)
     }
     fmt.printfln("all %d packages passed (%.1f s)", len(order), seconds)
@@ -394,10 +401,24 @@ baseName :: proc(dir: string) -> string {
     return dir[slash + 1:]
 }
 
+// The checks that need a browser: a program that prints its verdict (see runBrowserCheck) and the packages whose change makes it worth running (the ones it is made of)
+BrowserCheck :: struct {
+    name: string,
+    command: []string,
+    working_dir: string,
+    triggers: []string,
+}
+
+BROWSER_CHECKS := [?]BrowserCheck{
+    {"simd kernels", {"odin", "run", "simd/web_check/build_web", "--", "--headless"}, "", {"simd"}},
+    {"file_browser page", {"odin", "run", "file_browser/demo_web/build_web", "--", "--check"}, "", {"file_browser", "ui", "web_build", "web_serve", "simd", "font", "demo_kit"}},
+    {"web_build page", {"odin", "run", "demo_karl2d/build_web", "--", "--check"}, "web_build", {"web_build", "web_serve", "simd", "font", "demo_kit"}},
+}
+
 // A check that runs in a browser: the program prints its verdict and exits 0 (passed), 1 (failed) or 3 (no browser on this machine: not a failure)
-runBrowserCheck :: proc(name: string, command: []string) -> bool {
+runBrowserCheck :: proc(name: string, command: []string, working_dir: string) -> bool {
     start: time.Tick = time.tick_now()
-    state, stdout, stderr, err := os.process_exec({command = command}, context.allocator)
+    state, stdout, stderr, err := os.process_exec({command = command, working_dir = working_dir}, context.allocator)
     seconds: f64 = time.duration_seconds(time.tick_since(start))
     if err != nil {
         fmt.printfln("FAIL browser %s: cannot start odin: %v", name, err)
