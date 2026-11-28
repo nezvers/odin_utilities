@@ -371,7 +371,46 @@ number_text :: proc(number: i64) -> string {
     return strings.clone(string(digits[at:]), context.temp_allocator)
 }
 
-classes: [1]^ge.Class = {&counter_class}
+// A Resource: GDScript and the inspector make it with `Settings.new()`, it is saved to a .tres file and loaded again with `ResourceSaver` and `load`: the properties are what is stored.
+Settings :: struct {
+    object: rawptr,
+    title: [64]u8,
+    title_length: int,
+    speed: f64,
+}
+
+settings_class: ge.Class = {
+    name = "Settings",
+    parent = "Resource",
+    create = proc() -> rawptr { return new(Settings) },
+    destroy = proc(instance: rawptr) { free(instance) },
+    bind = proc(instance: rawptr, object: rawptr) { (cast(^Settings)instance).object = object },
+    properties = {
+        {"title", .STRING, "get_title", "set_title"},
+        {"speed", .FLOAT, "get_speed", "set_speed"},
+    },
+    hints = {
+        {"speed", .RANGE, "0,10,0.5"},
+    },
+    methods = {
+        {"get_title", {}, .STRING, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            settings: ^Settings = cast(^Settings)instance
+            return ge.ValueText(string(settings.title[:settings.title_length]))
+        }},
+        {"set_title", {.STRING}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            settings: ^Settings = cast(^Settings)instance
+            settings.title_length = copy(settings.title[:], a[0].text)
+            return {}
+        }},
+        {"get_speed", {}, .FLOAT, proc(instance: rawptr, a: []ge.Value) -> ge.Value { return ge.ValueFloat((cast(^Settings)instance).speed) }},
+        {"set_speed", {.FLOAT}, .NONE, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            (cast(^Settings)instance).speed = a[0].real[0]
+            return {}
+        }},
+    },
+}
+
+classes: [2]^ge.Class = {&counter_class, &settings_class}
 
 // `entry_symbol` of godot_project/template.gdextension
 @(export)

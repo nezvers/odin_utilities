@@ -31,6 +31,15 @@ func _init() -> void:
 	_check(failures, counter.total == 40 and counter.get() == 40, "the property total writes and reads")
 	_check(failures, counter.get_property_list().any(func(p: Dictionary) -> bool: return p.name == "total"), "the property is listed")
 	counter.reset()
+	var settings := Settings.new()
+	settings.title = "fast"
+	settings.speed = 2.5
+	var settings_path := "user://odin_template_settings.tres"
+	_check(failures, settings is Resource and ResourceSaver.save(settings, settings_path) == OK, "a Resource of the extension is saved")
+	var loaded: Resource = ResourceLoader.load(settings_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	_check(failures, loaded != null and loaded.title == "fast" and loaded.speed == 2.5, "and loaded again with its properties: %s" % [loaded])
+	_check(failures, FileAccess.get_file_as_string(settings_path).contains('type="Settings"'), "the file names the class")
+	DirAccess.remove_absolute(settings_path)
 	var hints := {}
 	for p in counter.get_property_list():
 		hints[p.name] = [p.hint, p.hint_string]
