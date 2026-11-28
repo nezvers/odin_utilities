@@ -32,7 +32,7 @@ It writes `<source>/build/web` (generated entry) and `<source>/bin/web` (index.h
 For JavaScript that the program needs (karl2d audio) use `copy_files`, `scripts`, `imports_js` and `start_js`, see `demo_karl2d/build_web/main.odin`.
 
 ### Check the page in a browser (optional)
-`WebBuildCheck(config)` loads the built page in a headless Chrome or Edge and returns what the page wrote to its console as an error: a page can compile and link and still not start (a wrong name in the imports, a missing file). `result.status` is `PASSED`, `FAILED` (`result.message` lists the errors), `NO_BROWSER` (nothing is found on the machine: not a failure) or `NOT_RUN`. The demo build tools take `--check`.
+`WebBuildCheck(config)` loads the built page in a headless browser (Chrome, Edge or Firefox, driven with `browser_drive`) and returns what the page wrote to its console as an error: a page can compile and link and still not start (a wrong name in the imports, a missing file). `result.status` is `PASSED`, `FAILED` (`result.message` lists the errors), `NO_BROWSER` (none is installed: not a failure) or `NOT_RUN`. The demo build tools take `--check`.
 
 ## WebAssembly that is not a page (`wasm_build.odin`, `wasm_inspect.odin`)
 `WebBuild` is for a program in a browser. A module for a host (a SpacetimeDB module, a plugin, a game mod) is another kind of wasm: `-target:freestanding_wasm32 -no-entry-point`, no runtime, no JavaScript, the host calls its exports and offers the imports it declares.

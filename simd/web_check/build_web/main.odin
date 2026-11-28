@@ -1,7 +1,7 @@
 // Build the check that runs the text kernels of simd in a browser, and serve it. Run from odin_utilities:
 //
 //   odin run simd/web_check/build_web -- [--open] [--port N]
-//   odin run simd/web_check/build_web -- --headless     build, serve, read the page with a headless Chrome or Edge, print the verdict; exit code 0 passed, 1 failed, 3 no browser found
+//   odin run simd/web_check/build_web -- --headless     build, serve, load the page in every installed browser (Chrome, Edge, Firefox) with browser_drive, print each verdict; exit code 0 passed, 1 failed, 3 no browser found
 //
 // The page shows "SIMD128 PASS: 0 of N checks failed". `--build-only` stops after the build (the folder is simd/web_check/game/bin/web: serve it and open it in a browser, or read it with
 // a headless one: chrome --headless --dump-dom http://127.0.0.1:PORT/).
@@ -13,6 +13,7 @@ import "core:strconv"
 import "core:strings"
 import "core:sync"
 import "core:thread"
+import browser_drive "../../../browser_drive"
 import web_build "../../../web_build"
 import web_serve "../../../web_serve"
 
@@ -71,13 +72,9 @@ ServeJob :: struct {
 	stop: bool,
 }
 
-// Serve the build, let the browser load it, print what its title says. The page runs the check in the start of its wasm; --virtual-time-budget lets the browser wait for it.
+// Serve the build and let every installed browser (Chrome, Edge, Firefox) load it, print what the title of the page says: the page runs the check in the start of its wasm and reports there.
+// Exit codes: 0 every browser passed, 1 one failed, 3 no browser is installed.
 runHeadless :: proc() -> int {
-	browser: string = web_build.WebBuildBrowserFind()
-	if len(browser) == 0 {
-		fmt.println("no Chrome or Edge found: the browser check was not run")
-		return 3
-	}
 	server: web_serve.Server
 	if !web_serve.ServerInit(&server, {directory = SOURCE + "/bin/web", port = 0}) {
 		fmt.eprintln("could not listen on a free port")
@@ -94,24 +91,42 @@ runHeadless :: proc() -> int {
 		thread.destroy(runner)
 	}
 
-	// a profile of its own: a browser that is already open would take the request and exit
-	temp, _ := os.temp_directory(context.temp_allocator)
-	profile: string = fmt.tprintf("%s/odin_utilities_simd_web_check_profile", temp)
-	defer os.remove_all(profile)
-	url: string = fmt.tprintf("http://127.0.0.1:%d/", server.port)
-	state, stdout, stderr, error := os.process_exec({command = {browser, "--headless=new", "--disable-gpu", fmt.tprintf("--user-data-dir=%s", profile), "--virtual-time-budget=60000", "--dump-dom", url}}, context.temp_allocator)
-	if error != nil || state.exit_code != 0 {
-		fmt.printfln("the browser did not run: %v, exit code %d: %s", error, state.exit_code, string(stderr))
+	driver: ^browser_drive.Driver = new(browser_drive.Driver)
+	defer free(driver)
+	tried, failed: int
+	passed: strings.Builder
+	strings.builder_init(&passed, context.temp_allocator)
+	for browser in ([?]browser_drive.Browser{.CHROME, .EDGE, .FIREFOX}) {
+		if len(browser_drive.BrowserFind(browser)) == 0 { continue }
+		tried += 1
+		name: string = browser_drive.BrowserName(browser)
+		if error := browser_drive.DriverStart(driver, {browser = browser}); error != .NONE {
+			fmt.printfln("%s did not start: %v %s", name, error, browser_drive.DriverLastError(driver))
+			failed += 1
+			continue
+		}
+		browser_drive.DriverNavigate(driver, fmt.tprintf("http://127.0.0.1:%d/", server.port))
+		// the check runs while the wasm starts: its verdict is the title
+		browser_drive.DriverWaitUntil(driver, "document.title.startsWith('SIMD128')", 60000)
+		verdict, _ := browser_drive.DriverEvaluate(driver, "document.title")
+		browser_drive.DriverStop(driver)
+		fmt.printfln("%s (%s)", verdict, name)
+		if strings.has_prefix(verdict, "SIMD128 PASS") {
+			if strings.builder_len(passed) > 0 { strings.write_string(&passed, ", ") }
+			strings.write_string(&passed, name)
+		} else {
+			failed += 1
+		}
+	}
+	if tried == 0 {
+		fmt.println("no Chrome, Edge or Firefox found: the browser check was not run")
+		return 3
+	}
+	// the last line is what tool/test shows
+	if failed > 0 {
+		fmt.printfln("SIMD128 FAILED in %d of %d browsers (passed in: %s)", failed, tried, strings.to_string(passed))
 		return 1
 	}
-	page: string = string(stdout)
-	start: int = strings.index(page, "<title>")
-	end: int = strings.index(page, "</title>")
-	if start < 0 || end < start {
-		fmt.println("the page has no title: the check did not report (is the page broken?)")
-		return 1
-	}
-	verdict: string = page[start + len("<title>"):end]
-	fmt.printfln("%s (%s)", verdict, browser[strings.last_index_byte(browser, '/') + 1:])
-	return 0 if strings.has_prefix(verdict, "SIMD128 PASS") else 1
+	fmt.printfln("SIMD128 PASS in %s", strings.to_string(passed))
+	return 0
 }

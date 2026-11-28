@@ -11,7 +11,7 @@
 //                                           ("Compile time panic") or builds only for the web is said to be unchecked, not failed
 //     odin run tool/test -- --levels        also run the packages that use the `simd` library once per instruction set level (SIMD_LEVEL=scalar, sse2, sse4.2, avx, avx2, avx512;
 //                                           a level above the CPU runs its best), so the kernels of the lower levels run on a machine that has more
-//     odin run tool/test -- --browser       also run the checks that need a browser, when the package they belong to is selected: `simd` runs its SIMD128 text kernels in a headless Chrome or Edge
+//     odin run tool/test -- --browser       also run the checks that need a browser, when the package they belong to is selected: `simd` runs its SIMD128 text kernels in every installed browser
 //                                           (simd/web_check), and the web demos load their page in it and report console errors (`--check` of file_browser/demo_web and web_build/demo_karl2d:
 //                                           they build first, so it takes a while). A check runs when a package it depends on is selected. Without a browser on the machine it says so and does not fail
 //
