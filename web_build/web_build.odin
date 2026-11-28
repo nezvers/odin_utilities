@@ -215,3 +215,31 @@ shutdown :: proc() {}
     testing.expect(t, strings.contains(failed.message, "'init' is not declared") && strings.contains(failed.message, "'step' is not declared") && strings.contains(failed.message, "'shutdown' is not declared"), "the failure names the missing procedures")
     testing.expect(t, !os.exists(fmt.tprintf("%s/main.wasm", output)))
 }
+
+// `simd` (and `font`, `demo_kit`, which use it) has 16 byte vector kernels that LLVM cannot lower for wasm without the simd128 feature: it stopped with "Do not know how to split the result of this
+// operator!" and only a build with -target-features:simd128 linked. simd now leaves the kernels out without the feature; this builds programs that use it WITHOUT the flag (not through WebBuild,
+// which passes it) so that the error cannot come back unnoticed.
+@(test)
+test_a_program_that_uses_simd_or_font_links_without_the_simd128_flag :: proc(t: ^testing.T) {
+    temp, temp_error := os.temp_directory(context.temp_allocator)
+    if temp_error != nil { testing.fail_now(t, "no temp directory") }
+    // an absolute path is not an import path: the library folder is a collection of the build
+    root: string = strings.trim_right(fmt.tprintf("%s/..", #directory), "/")
+    Probe :: struct { name: string, imports: string, body: string }
+    probes := [?]Probe{
+        {"simd", `import simd "odin_utilities:simd"`, `x := simd.AsciiRun(transmute([]u8)string("hello"))` + "\n\t_ = x"},
+        {"font", `import font "odin_utilities:font"`, "atlas: font.Atlas\n\t_ = font.SlugCoverage(&atlas, 0, {}, {1, 1})"},
+    }
+    for probe in probes {
+        directory: string = fmt.tprintf("%s/odin_utilities_web_build_probe_%s", temp, probe.name)
+        os.remove_all(directory)
+        os.make_directory_all(directory)
+        defer os.remove_all(directory)
+        source: string = fmt.tprintf("package probe\n\n%s\n\nmain :: proc() {{\n\t%s\n}}\n", probe.imports, probe.body)
+        testing.expect_value(t, os.write_entire_file(fmt.tprintf("%s/probe.odin", directory), source), nil)
+        command: []string = {"odin", "build", directory, fmt.tprintf("-out:%s/probe.wasm", directory), "-target:js_wasm32", fmt.tprintf("-collection:odin_utilities=%s", root)}
+        state, _, errors, error := os.process_exec({command = command}, context.temp_allocator)
+        testing.expectf(t, error == nil && state.exit_code == 0, "%s does not link for js_wasm32 without -target-features:simd128: %s", probe.name, string(errors))
+        testing.expectf(t, os.exists(fmt.tprintf("%s/probe.wasm", directory)), "%s: no wasm", probe.name)
+    }
+}
