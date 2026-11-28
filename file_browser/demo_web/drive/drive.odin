@@ -8,6 +8,7 @@ import "core:os"
 import "core:path/filepath"
 import "core:strings"
 import "core:sync"
+import "core:time"
 import "core:thread"
 import browser_drive "../../../browser_drive"
 import web_serve "../../../web_serve"
@@ -18,6 +19,26 @@ SOUND :: "assets/sounds/damage_sound.wav"
 ServeJob :: struct {
 	server: ^web_serve.Server,
 	stop: bool,
+}
+
+WAIT_MS :: 5000
+SETTLE_MS :: 300    // the page reads a chosen file in the frames after the chooser answered
+
+// Wait until the browser opened `count` file choosers (the page asked for them in the frame after the click)
+waitDialogs :: proc(driver: ^browser_drive.Driver, count: int) {
+	deadline: time.Time = time.time_add(time.now(), WAIT_MS * time.Millisecond)
+	for browser_drive.DriverFileDialogs(driver) < count && time.diff(time.now(), deadline) > 0 {
+		browser_drive.DriverWait(driver, 50)
+	}
+	browser_drive.DriverWait(driver, SETTLE_MS)
+}
+
+// Wait until the page saved a file whose entry (`name:bytes`) contains `text`
+waitDownload :: proc(driver: ^browser_drive.Driver, text: string) {
+	deadline: time.Time = time.time_add(time.now(), WAIT_MS * time.Millisecond)
+	for !strings.contains(browser_drive.DriverDownloads(driver), text) && time.diff(time.now(), deadline) > 0 {
+		browser_drive.DriverWait(driver, 50)
+	}
 }
 
 // Exit codes: 0 passed, 1 failed, 3 the browser is not installed
@@ -81,33 +102,33 @@ ClickThrough :: proc(directory: string, browser: browser_drive.Browser, screensh
 	// open a picture
 	browser_drive.DriverAnswerFileChooser(driver, picture)
 	browser_drive.DriverClick(driver, 84, 58)
-	browser_drive.DriverWait(driver, 2500)
+	waitDialogs(driver, 1)
 	check(&failures, browser_drive.DriverFileDialogs(driver) == 1, "Open picture opens the file chooser of the browser")
 	shot(driver, screenshots, name, "2_picture")
 
 	// open a sound, play it
 	browser_drive.DriverAnswerFileChooser(driver, sound)
 	browser_drive.DriverClick(driver, 224, 58)
-	browser_drive.DriverWait(driver, 2500)
+	waitDialogs(driver, 2)
 	check(&failures, browser_drive.DriverFileDialogs(driver) == 2, "Open sound opens the file chooser of the browser")
 	browser_drive.DriverClick(driver, 274, 96)
-	browser_drive.DriverWait(driver, 600)
+	browser_drive.DriverWait(driver, SETTLE_MS)
 	shot(driver, screenshots, name, "3_sound")
 
 	// save both back: the buttons only work when the files were opened
 	browser_drive.DriverClick(driver, 312, 58)
-	browser_drive.DriverWait(driver, 1200)
+	waitDownload(driver, "player_sheet.png:747")
 	browser_drive.DriverClick(driver, 446, 58)
-	browser_drive.DriverWait(driver, 1200)
+	waitDownload(driver, "damage_sound.wav:27328")
 	downloads: string = browser_drive.DriverDownloads(driver)
 	check(&failures, strings.contains(downloads, "player_sheet.png:747"), "the picture is saved with its 747 bytes", downloads)
 	check(&failures, strings.contains(downloads, "damage_sound.wav:27328"), "the sound is saved with its 27328 bytes", downloads)
 
 	// change the picture, save it under its new name
 	browser_drive.DriverClick(driver, 65, 96)
-	browser_drive.DriverWait(driver, 800)
+	browser_drive.DriverWait(driver, SETTLE_MS)
 	browser_drive.DriverClick(driver, 312, 58)
-	browser_drive.DriverWait(driver, 1200)
+	waitDownload(driver, "player_sheet_inverted.png:")
 	downloads = browser_drive.DriverDownloads(driver)
 	check(&failures, strings.contains(downloads, "player_sheet_inverted.png:"), "the inverted picture is saved under its new name", downloads)
 	shot(driver, screenshots, name, "4_inverted")
