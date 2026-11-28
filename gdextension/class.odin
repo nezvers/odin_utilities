@@ -119,6 +119,13 @@ ValueArray :: proc "contextless" (items: []Value) -> Value {
     return {kind = .ARRAY, items = items}
 }
 
+// A typed Array of objects of `class` ("Node") for an argument or a result: the elements are objects of the engine (the temp allocator holds the list until the end of the call)
+ValueObjects :: proc(objects: []rawptr, class: cstring) -> Value {
+    items: []Value = make([]Value, len(objects), context.temp_allocator)
+    for object, i in objects { items[i] = {kind = .OBJECT, object = object} }
+    return {kind = .ARRAY, items = items, element_class = class}
+}
+
 ValueDictionary :: proc "contextless" (keys: []Value, items: []Value) -> Value {
     assert_contextless(len(keys) == len(items))
     return {kind = .DICTIONARY, keys = keys, items = items}

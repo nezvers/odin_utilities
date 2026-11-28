@@ -18,6 +18,7 @@ import "core:testing"
 
 Kind :: enum {
     NONE,
+    OBJECTS,            // an argument `typedarray::Node`: a slice of objects, sent as a typed Array of that class
     BOOL,
     INT,
     FLOAT,
@@ -200,12 +201,18 @@ writeClass :: proc(builder: ^strings.Builder, class: string, object: json.Object
         if len(arguments) > 6 { continue }
         kinds: [6]Kind
         names: [6]string
+        elements: [6]string         // the class of an OBJECTS argument
         defaults: [6]string
         usable: bool = true
         for argument, i in arguments {
             fields, _ := argument.(json.Object)
             type, _ := fields["type"].(json.String)
             kind: Kind = kindOf(type, known, false)
+            if strings.has_prefix(type, "typedarray::") && type[len("typedarray::"):] in known {
+                // the engine checks the element type of an Array argument: ours is made typed with the class of the element
+                kind = .OBJECTS
+                elements[i] = type[len("typedarray::"):]
+            }
             if kind == .NONE { usable = false; break }
             kinds[i] = kind
             argument_name, _ := fields["name"].(json.String)
@@ -234,7 +241,7 @@ writeClass :: proc(builder: ^strings.Builder, class: string, object: json.Object
         fmt.sbprintf(&builder^, "    %s ok := ge.Call(self, \"%s\", \"%s\", %d, {{", "result," if result_kind != .NONE else "_,", class, name, hash)
         for i in 0 ..< len(arguments) {
             if i > 0 { fmt.sbprint(&builder^, ", ") }
-            fmt.sbprint(&builder^, toValue(kinds[i], names[i]))
+            fmt.sbprint(&builder^, toValue(kinds[i], names[i], elements[i]))
         }
         fmt.sbprintln(&builder^, "})")
         if result_kind == .NONE {
@@ -253,7 +260,7 @@ is_flag :: proc(object: json.Object, key: string) -> bool {
 }
 
 // What a type of the dump is for `ge.Call`; NONE when it cannot be carried (a Callable, a Signal, an RID, a typed Array as an argument ...). A StringName or NodePath is sent as a String, and
-// comes back as one. A typed Array (`typedarray::Node`) is only taken as a result: the engine checks the type of an argument, and an Array made here has none.
+// comes back as one. A typed Array of objects (`typedarray::Node`) is a `[]rawptr` argument, sent as a typed Array (`ge.ValueObjects`: the engine checks the element type); as a result it is an Array of Values. Typed Arrays of other types (String, int, RID ...) are not carried.
 @(private)
 kindOf :: proc(type: string, known: map[string]bool, is_result: bool) -> Kind {
     switch type {
@@ -306,6 +313,7 @@ odinType :: proc(kind: Kind) -> string {
     case .VECTOR2: return "[2]f64"
     case .VECTOR3: return "[3]f64"
     case .OBJECT: return "rawptr"
+    case .OBJECTS: return "[]rawptr"
     case .ARRAY, .PACKED_STRINGS: return "[]ge.Value"
     case .DICTIONARY, .VARIANT: return "ge.Value"
     case .BYTES: return "[]u8"
@@ -322,8 +330,9 @@ odinType :: proc(kind: Kind) -> string {
 }
 
 @(private)
-toValue :: proc(kind: Kind, name: string) -> string {
+toValue :: proc(kind: Kind, name: string, element: string = "") -> string {
     switch kind {
+    case .OBJECTS: return fmt.tprintf("ge.ValueObjects(%s, \"%s\")", name, element)
     case .BOOL: return fmt.tprintf("ge.ValueBool(%s)", name)
     case .INT: return fmt.tprintf("ge.ValueInt(%s)", name)
     case .FLOAT: return fmt.tprintf("ge.ValueFloat(%s)", name)
@@ -372,7 +381,7 @@ fromValue :: proc(kind: Kind) -> string {
         parts: [4]string
         for i in 0 ..< count { parts[i] = fmt.tprintf("i64(result.real[%d])", i) if ints else fmt.tprintf("result.real[%d]", i) }
         return fmt.tprintf("%s{{%s}}", odinType(kind), strings.join(parts[:count], ", ", context.temp_allocator))
-    case .NONE: return ""
+    case .NONE, .OBJECTS: return ""
     }
     return ""
 }
@@ -395,7 +404,7 @@ defaultOf :: proc(kind: Kind, text: string) -> string {
         }
         return text if strings.contains(text, ".") else fmt.tprintf("%s.0", text)
     case .STRING: if text == `""` { return text }
-    case .VECTOR2, .VECTOR3, .OBJECT, .NONE:
+    case .VECTOR2, .VECTOR3, .OBJECT, .OBJECTS, .NONE:
     case .VECTOR2I, .VECTOR3I, .VECTOR4, .VECTOR4I, .RECT2, .RECT2I, .COLOR, .QUATERNION, .PLANE, .AABB, .TRANSFORM2D, .BASIS, .TRANSFORM3D, .PROJECTION:
     case .ARRAY, .DICTIONARY, .VARIANT, .BYTES, .PACKED_INTS, .PACKED_INTS32, .PACKED_FLOATS, .PACKED_FLOATS32, .PACKED_STRINGS, .PACKED_VECTOR2S, .PACKED_VECTOR3S, .PACKED_COLORS:
     }
@@ -451,6 +460,10 @@ test_wrappers_are_generated_from_the_dump :: proc(t: ^testing.T) {
     testing.expect(t, strings.contains(colored, "ControlGetRect :: proc(self: rawptr) -> ([4]f64, bool) {"))
     testing.expect(t, strings.contains(colored, "ObjectSetMeta :: proc(self: rawptr, name: string, value: ge.Value) -> bool {"), "a Variant argument is a Value")
     testing.expect(t, strings.contains(colored, "ObjectGetMeta :: proc(self: rawptr, name: string, default: ge.Value) -> (ge.Value, bool) {"))
+    fonts, fonts_ok := Generate(api, {"Font"}, "engine", "..")
+    testing.expect(t, fonts_ok)
+    testing.expect(t, strings.contains(fonts, "FontSetFallbacks :: proc(self: rawptr, fallbacks: []rawptr) -> bool {"), "a typed Array of objects is a slice of objects")
+    testing.expect(t, strings.contains(fonts, `ge.ValueObjects(fallbacks, "Font")`))
     _, missing := Generate(api, {"NoSuchClass"}, "engine", "..")
     testing.expect(t, !missing)
 }

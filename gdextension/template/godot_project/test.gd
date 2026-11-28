@@ -30,6 +30,9 @@ func _init() -> void:
 	counter.total = 40
 	_check(failures, counter.total == 40 and counter.get() == 40, "the property total writes and reads")
 	_check(failures, counter.get_property_list().any(func(p: Dictionary) -> bool: return p.name == "total"), "the property is listed")
+	var main_font := SystemFont.new()
+	var fallback := SystemFont.new()
+	_check(failures, counter.set_fallbacks(main_font, fallback) == 1 and main_font.fallbacks.size() == 1 and main_font.fallbacks[0] == fallback, "a typed Array argument reaches the engine")
 	counter.reset()
 	var settings := Settings.new()
 	settings.title = "fast"

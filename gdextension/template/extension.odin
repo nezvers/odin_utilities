@@ -306,6 +306,12 @@ counter_class: ge.Class = {
             count, _ := engine.NodeGetChildCount(a[0].object)
             return ge.ValueInt(count)
         }},
+        // an engine method that takes a typed Array (`Font.set_fallbacks(Array[Font])`): the engine checks the element type of the argument, ValueObjects makes it typed
+        {"set_fallbacks", {.OBJECT, .OBJECT}, .INT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
+            ge.Call(a[0].object, "Font", "set_fallbacks", 381264803, {ge.ValueObjects({a[1].object}, "Font")})
+            fallbacks, _ := ge.Call(a[0].object, "Font", "get_fallbacks", 3995934104, {})
+            return ge.ValueInt(i64(len(fallbacks.items)))
+        }},
         {"parent_of", {.OBJECT}, .OBJECT, proc(instance: rawptr, a: []ge.Value) -> ge.Value {
             parent, _ := engine.NodeGetParent(a[0].object)
             return ge.ValueObject(parent)
