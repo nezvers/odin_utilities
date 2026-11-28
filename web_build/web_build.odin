@@ -120,7 +120,7 @@ WebBuildTry :: proc(config: WebBuildConfig) -> WebBuildResult {
     command: [dynamic]string
     command.allocator = context.temp_allocator
     append(&command, "odin", "build", paths.build_directory, fmt.tprintf("-out:%s/main.wasm", paths.output_directory), "-target:js_wasm32")
-    // wasm SIMD is in every current browser; the text kernels of `simd` (used by font and demo_kit) fail in LLVM without it ("Do not know how to split the result of this operator!")
+    // wasm SIMD is in every current browser: with it `simd` (font, demo_kit) runs its 16 byte text kernels, without it the build still links and uses the scalar ones
     append(&command, "-target-features:simd128")
     append(&command, ..config.odin_arguments)
     state, _, errors, error := os.process_exec({command = command[:]}, context.temp_allocator)

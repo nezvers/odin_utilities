@@ -364,7 +364,7 @@ ExtensionBuild :: proc(config: ExtensionConfig, targets: bit_set[Target] = {.CHR
     command: [dynamic]string
     command.allocator = context.temp_allocator
     append(&command, "odin", "build", entry_directory, fmt.tprintf("-out:%s", wasm_path), "-target:js_wasm32")
-    // wasm SIMD is in every current browser; the text kernels of `simd` (used by font and demo_kit) fail in LLVM without it ("Do not know how to split the result of this operator!")
+    // wasm SIMD is in every current browser: with it `simd` (font, demo_kit) runs its 16 byte text kernels, without it the build still links and uses the scalar ones
     append(&command, "-target-features:simd128")
     append(&command, ..config.odin_arguments)
     state, _, errors, error := os.process_exec({command = command[:]}, context.temp_allocator)

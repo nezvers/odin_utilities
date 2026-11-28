@@ -27,6 +27,9 @@ firstBit :: #force_inline proc "contextless" (mask: u32) -> int {
 
 @(private)
 textFillPortable :: proc "contextless" (tables: ^[Level]TextProcs) {
+    // wasm without the simd128 feature cannot lower these kernels (LLVM stops: "Do not know how to split the result of this operator!"), and its levels are SCALAR then:
+    // nothing refers to the kernels, so none is compiled
+    when (ODIN_ARCH == .wasm32 || ODIN_ARCH == .wasm64p32) && !intrinsics.has_target_feature("simd128") { return }
     sixteen: TextProcs = {
         ascii_prefix = asciiPrefix16,
         ascii_run = asciiRun16,

@@ -20,3 +20,4 @@ Dispatch by instruction set, from the research of odin_plug's `dsp`.
 - `odin run simd/tool/info -o:speed -- --bench [--data <folder>]`; `tool/gen` writes fixed seed data files for the text benchmarks.
 - `odin run tool/test -- --levels` runs the packages that use simd at every level.
 - `simd_test.odin` builds synthetic `Cpu` records with `CpuFromFeatures`: never test the manager through the global CPU.
+- wasm: the 16 byte text kernels (`text_vector.odin`) need `-target-features:simd128`; without it `textFillPortable` returns early so nothing refers to them (LLVM otherwise stops with "Do not know how to split the result of this operator!") and the levels stay SCALAR. `WebBuild` passes the flag.
